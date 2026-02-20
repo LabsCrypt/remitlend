@@ -84,3 +84,74 @@ fn test_deposit_unauthorized() {
     // Should fail missing native authorizations
     pool_client.deposit(&provider, &1000);
 }
+
+#[test]
+fn test_withdraw_flow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 1. Setup mock asset
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    // 2. Setup LendingPool
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id);
+
+    // 3. Setup provider with 5000 tokens
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5000);
+
+    // 4. Deposit 3000 tokens
+    pool_client.deposit(&provider, &3000);
+    assert_eq!(token_client.balance(&provider), 2000);
+    assert_eq!(token_client.balance(&pool_id), 3000);
+    assert_eq!(pool_client.get_deposit(&provider), 3000);
+
+    // 5. Withdraw 1000 tokens
+    pool_client.withdraw(&provider, &1000);
+
+    // 6. Verify Balances
+    assert_eq!(token_client.balance(&provider), 3000);
+    assert_eq!(token_client.balance(&pool_id), 2000);
+    assert_eq!(pool_client.get_deposit(&provider), 2000);
+}
+
+#[test]
+#[should_panic(expected = "withdraw amount must be positive")]
+fn test_negative_withdraw_panic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, _stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id);
+
+    let provider = Address::generate(&env);
+    pool_client.withdraw(&provider, &0);
+}
+
+#[test]
+#[should_panic(expected = "insufficient balance")]
+fn test_insufficient_balance_withdraw_panic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5000);
+    pool_client.deposit(&provider, &1000);
+
+    // Attempt to withdraw more than deposited
+    pool_client.withdraw(&provider, &2000);
+}

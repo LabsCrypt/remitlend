@@ -3,7 +3,7 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 
 mod nft {
     soroban_sdk::contractimport!(
-        file = "../remittance_nft/target/wasm32-unknown-unknown/release/remittance_nft.wasm"
+        file = "../target/wasm32-unknown-unknown/release/remittance_nft.wasm"
     );
 }
 
@@ -33,7 +33,7 @@ impl LoanManager {
         // Loan request logic
     }
 
-    pub fn approve_loan(env: Env, loan_id: u32) {
+    pub fn approve_loan(_env: Env, _loan_id: u32) {
         // Approval logic
     }
 
@@ -45,7 +45,9 @@ impl LoanManager {
         // Update score
         let nft_contract: Address = env.storage().instance().get(&DataKey::NftContract).expect("not initialized");
         let nft_client = nft::Client::new(&env, &nft_contract);
-        nft_client.update_score(&borrower, &amount);
+        nft_client.update_score(&borrower, &amount, &None);
     }
 }
 
+#[cfg(test)]
+mod test;

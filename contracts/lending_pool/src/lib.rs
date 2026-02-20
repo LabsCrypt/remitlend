@@ -23,21 +23,16 @@ impl LendingPool {
 
     pub fn deposit(env: Env, provider: Address, amount: i128) {
         provider.require_auth();
-        
         if amount <= 0 {
             panic!("deposit amount must be positive");
         }
-
         let token: Address = env.storage().instance().get(&DataKey::Token).expect("not initialized");
         let token_client = TokenClient::new(&env, &token);
-        
         token_client.transfer(&provider, &env.current_contract_address(), &amount);
-
         let key = DataKey::Deposit(provider.clone());
         let mut current_balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         current_balance += amount;
         env.storage().persistent().set(&key, &current_balance);
-
         env.events().publish((symbol_short!("Deposit"), provider), amount);
     }
 
@@ -46,8 +41,21 @@ impl LendingPool {
         env.storage().persistent().get(&key).unwrap_or(0)
     }
 
-    pub fn withdraw(_env: Env, _provider: Address, _amount: i128) {
-        // Withdraw logic
+    pub fn withdraw(env: Env, provider: Address, amount: i128) {
+        provider.require_auth();
+        if amount <= 0 {
+            panic!("withdraw amount must be positive");
+        }
+        let key = DataKey::Deposit(provider.clone());
+        let current_balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        if current_balance < amount {
+            panic!("insufficient balance");
+        }
+        let token: Address = env.storage().instance().get(&DataKey::Token).expect("not initialized");
+        let token_client = TokenClient::new(&env, &token);
+        token_client.transfer(&env.current_contract_address(), &provider, &amount);
+        env.storage().persistent().set(&key, &(current_balance - amount));
+        env.events().publish((symbol_short!("Withdraw"), provider), amount);
     }
 }
 
