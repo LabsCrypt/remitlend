@@ -42,9 +42,7 @@ const router = Router();
  *       404:
  *         description: User not found or no remittance history available.
  */
-
 router.get('/history/:userId', validate(getRemittanceHistorySchema), getRemittanceHistory);
-
 
 /**
  * @swagger
