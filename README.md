@@ -71,3 +71,43 @@ You connect a Stellar wallet. You mint a remittance NFT that holds your payment 
 5. Approve it in the admin view.
 6. Repay it.
 7. Watch your score respond and your NFT unlock.
+
+## Running with Docker
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) installed and running
+- A `.env` file inside `backend/` (see below)
+
+### Environment variables
+
+Create `backend/.env` with at minimum:
+
+```
+PORT=3001
+```
+
+Add any other variables your app needs (e.g. API keys) to this file. It is already gitignored.
+
+### Local development
+
+From the **repo root**:
+
+```bash
+docker compose up --build
+```
+
+This starts the backend on **http://localhost:3001** with source files mounted for hot-reload.
+To stop: `Ctrl-C`, then `docker compose down`.
+
+### Production image
+
+Build and run the optimised production image directly:
+
+```bash
+# From the backend/ directory
+docker build -t remitlend-backend .
+docker run --env-file .env -p 3001:3001 remitlend-backend
+```
+
+The multistage build compiles TypeScript in a `builder` stage, then copies only the compiled `dist/` and production `node_modules` into the final image — keeping it lean and running as a non-root user.

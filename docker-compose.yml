@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      target: builder       
+    command: npm run dev
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/src:/app/src  
+    restart: unless-stopped
