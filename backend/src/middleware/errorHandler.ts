@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { AppError } from "../errors/AppError.js";
+import logger from "../utils/logger.js";
 
 /**
  * Global error handling middleware.
@@ -40,7 +41,7 @@ export const errorHandler = (
   }
 
   // ── Unexpected / Programming Errors ──────────────────────────
-  console.error("Unhandled error:", err);
+  logger.error("Unhandled error:", err);
 
   const isDevelopment = process.env.NODE_ENV !== "production";
 

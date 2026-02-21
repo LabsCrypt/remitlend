@@ -14,6 +14,7 @@ import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { requestLogger } from "./middleware/requestLogger.js";
 import { AppError } from "./errors/AppError.js";
 
 const app = express();
@@ -38,6 +39,7 @@ app.use(cors(corsOptions));
 app.use(compression());
 app.use(express.json());
 app.use(globalRateLimiter);
+app.use(requestLogger);
 
 app.get("/", (req: Request, res: Response) => {
   res.send("RemitLend Backend is running");
