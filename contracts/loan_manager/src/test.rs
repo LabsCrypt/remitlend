@@ -43,18 +43,38 @@ fn test_loan_request_success() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     // Should succeed and return loan_id
-    let loan_id = manager.request_loan(&borrower, &1000);
+    let loan_id = manager.request_loan(&borrower, &1000, &30);
     assert_eq!(loan_id, 1);
     
     // Verify loan was created with Pending status
     let loan = manager.get_loan(&loan_id);
     assert_eq!(loan.borrower, borrower);
     assert_eq!(loan.amount, 1000);
+    assert_eq!(loan.term, 30);
     assert_eq!(loan.status, LoanStatus::Pending);
 }
 
 #[test]
-#[should_panic(expected = "score too low for loan")]
+fn test_loan_storage() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let loan_id = manager.request_loan(&borrower, &1000, &30);
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.amount, 1000);
+    assert_eq!(loan.term, 30);
+    assert_eq!(loan.borrower, borrower);
+}
+
+#[test]
+#[should_panic(expected = "insufficient reputation score")]
 fn test_loan_request_failure_low_score() {
     let env = Env::default();
     env.mock_all_auths();
@@ -67,7 +87,7 @@ fn test_loan_request_failure_low_score() {
     nft_client.mint(&borrower, &400, &history_hash, &None);
 
     // Should panic
-    manager.request_loan(&borrower, &1000);
+    manager.request_loan(&borrower, &1000, &30);
 }
 
 #[test]
@@ -88,7 +108,7 @@ fn test_approve_loan_flow() {
     stellar_token.mint(&pool_address, &10000);
 
     // 3. Request a loan
-    let loan_id = manager.request_loan(&borrower, &1000);
+    let loan_id = manager.request_loan(&borrower, &1000, &30);
     
     // 4. Verify loan is pending
     let loan = manager.get_loan(&loan_id);
@@ -189,7 +209,7 @@ fn test_approve_already_approved_loan() {
     stellar_token.mint(&pool_address, &10000);
 
     // Request and approve loan
-    let loan_id = manager.request_loan(&borrower, &1000);
+    let loan_id = manager.request_loan(&borrower, &1000, &30);
     manager.approve_loan(&loan_id);
     
     // Try to approve again - should panic
@@ -209,5 +229,5 @@ fn test_request_loan_negative_amount() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     // Try to request loan with negative amount
-    manager.request_loan(&borrower, &-1000);
+    manager.request_loan(&borrower, &-1000, &30);
 }
