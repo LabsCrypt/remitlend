@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::{LoanManager, LoanManagerClient, nft};
-use soroban_sdk::{testutils::{Address as _}, Address, Env, IntoVal};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn setup_test<'a>(env: &Env) -> (LoanManagerClient<'a>, nft::Client<'a>, Address) {
     // 1. Deploy the NFT score mock contract
@@ -25,7 +25,7 @@ fn test_loan_request_success() {
     let env = Env::default();
     env.mock_all_auths();
     
-    let (manager, nft_client, admin) = setup_test(&env);
+    let (manager, nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Give borrower a score high enough to pass (>= 500)
@@ -33,16 +33,35 @@ fn test_loan_request_success() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     // Should succeed without panicking
-    manager.request_loan(&borrower, &1000);
+    manager.request_loan(&borrower, &1000, &30);
 }
 
 #[test]
-#[should_panic(expected = "score too low for loan")]
+fn test_loan_storage() {
+    let env = Env::default();
+    env.mock_all_auths();
+    
+    let (manager, nft_client, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    manager.request_loan(&borrower, &1000, &30);
+
+    let loan = manager.get_loan(&borrower).unwrap();
+    assert_eq!(loan.amount, 1000);
+    assert_eq!(loan.term, 30);
+    assert_eq!(loan.borrower, borrower);
+}
+
+#[test]
+#[should_panic(expected = "insufficient reputation score")]
 fn test_loan_request_failure_low_score() {
     let env = Env::default();
     env.mock_all_auths();
     
-    let (manager, nft_client, admin) = setup_test(&env);
+    let (manager, nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Give borrower a score too low to pass (< 500)
@@ -50,7 +69,7 @@ fn test_loan_request_failure_low_score() {
     nft_client.mint(&borrower, &400, &history_hash, &None);
 
     // Should panic
-    manager.request_loan(&borrower, &1000);
+    manager.request_loan(&borrower, &1000, &30);
 }
 
 #[test]
@@ -70,7 +89,7 @@ fn test_repayment_flow() {
     let env = Env::default();
     env.mock_all_auths();
     
-    let (manager, nft_client, admin) = setup_test(&env);
+    let (manager, nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // 1. Borrower starts with a score of 600
@@ -94,7 +113,7 @@ fn test_access_controls_unauthorized_repay() {
     let env = Env::default();
     // NOT using mock_all_auths() to enforce actual signatures
     
-    let (manager, nft_client, _admin) = setup_test(&env);
+    let (manager, _nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
     
     // Attempting to repay without proper Authorization scope should panic natively.
