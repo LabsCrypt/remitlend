@@ -39,7 +39,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                 },
                 {
-                  "u32": 400
+                  "u32": 600
                 },
                 {
                   "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -334,7 +334,7 @@
                         "symbol": "score"
                       },
                       "val": {
-                        "u32": 400
+                        "u32": 600
                       }
                     }
                   ]
