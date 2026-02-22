@@ -18,6 +18,7 @@ const router = Router();
  *   get:
  *     summary: Get remittance history for a user
  *     description: Retrieve the remittance history for a specific user by their ID.
+ *     tags: [Simulation]
  *     parameters:
  *       - in: path
  *         name: userId
@@ -30,24 +31,13 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 userId:
- *                   type: string
- *                   description: The ID of the user.
- *                 score:
- *                   type: integer
- *                   description: The user's current score.
- *                 streak:
- *                   type: integer
- *                   description: The user's current streak.
- *                 history:
- *                   type: array
- *                   description: The user's remittance history.
- *                   items:
- *                     type: object
+ *               $ref: '#/components/schemas/RemittanceHistory'
  *       404:
  *         description: User not found or no remittance history available.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 
 router.get(
@@ -61,7 +51,8 @@ router.get(
  * /simulate:
  *   post:
  *     summary: Simulate a remittance payment
- *     description: Simulate a remittance payment and return the simulation result.
+ *     description: Simulate a remittance payment and return the updated user score.
+ *     tags: [Simulation]
  *     requestBody:
  *       required: true
  *       content:
@@ -84,19 +75,13 @@ router.get(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Payment of 500 for user 123 simulated.
- *                 newScore:
- *                   type: integer
- *                   example: 760
+ *               $ref: '#/components/schemas/UserScore'
  *       400:
  *         description: Invalid input data.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post(
   "/simulate",

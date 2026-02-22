@@ -19,11 +19,76 @@ const swaggerDefinition = {
       description: "Development server",
     },
   ],
+  components: {
+    securitySchemes: {
+      ApiKeyAuth: {
+        type: "apiKey",
+        in: "header",
+        name: "x-api-key",
+        description: "Internal-only API key for administrative operations",
+      },
+    },
+    schemas: {
+      ErrorResponse: {
+        type: "object",
+        properties: {
+          success: { type: "boolean", example: false },
+          message: { type: "string" },
+          error: {
+            type: "object",
+            properties: {
+              code: { type: "string" },
+              details: { type: "object" },
+            },
+          },
+        },
+      },
+      UserScore: {
+        type: "object",
+        properties: {
+          success: { type: "boolean", example: true },
+          userId: { type: "string" },
+          score: { type: "integer", example: 700 },
+          band: { type: "string", example: "Good" },
+          factors: {
+            type: "object",
+            properties: {
+              repaymentHistory: { type: "string" },
+              creditMix: { type: "string" },
+            },
+          },
+        },
+      },
+      RemittanceHistory: {
+        type: "object",
+        properties: {
+          userId: { type: "string" },
+          score: { type: "integer" },
+          streak: { type: "integer" },
+          history: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                paymentId: { type: "string" },
+                amount: { type: "number" },
+                status: { type: "string" },
+                timestamp: { type: "string", format: "date-time" },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
 };
 
 const options: swaggerJSDoc.Options = {
   swaggerDefinition,
-  apis: [path.resolve(__dirname, "../routes/*.ts")],
+  apis: [
+    path.resolve(__dirname, "../routes/*.ts"),
+    path.resolve(__dirname, "../routes/*.js"),
+  ],
 };
 
 export const swaggerSpec = swaggerJSDoc(options);

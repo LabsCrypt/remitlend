@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env};
 
 
 #[contracttype]
@@ -14,7 +14,6 @@ pub struct RemittanceMetadata {
 pub enum DataKey {
     Metadata(Address),
     Score(Address), // Legacy key for backward compatibility
-    Admin,
     AuthorizedMinter(Address),
 }
 
@@ -23,34 +22,87 @@ pub struct RemittanceNFT;
 
 #[contractimpl]
 impl RemittanceNFT {
+    fn admin_key() -> soroban_sdk::Symbol {
+        symbol_short!("ADMIN")
+    }
+
+    fn admin(env: &Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&Self::admin_key())
+            .expect("not initialized")
+    }
+
+    fn require_admin_or_authorized_minter(env: &Env, minter: Option<Address>) {
+        if let Some(minter_addr) = minter {
+            minter_addr.require_auth();
+            if !env
+                .storage()
+                .persistent()
+                .has(&DataKey::AuthorizedMinter(minter_addr))
+            {
+                panic!("minter is not authorized");
+            }
+        } else {
+            Self::admin(env).require_auth();
+        }
+    }
+
+    fn default_history_hash(env: &Env) -> BytesN<32> {
+        BytesN::from_array(env, &[0u8; 32])
+    }
+
+    fn get_or_migrate_metadata(env: &Env, user: &Address) -> Option<RemittanceMetadata> {
+        let metadata_key = DataKey::Metadata(user.clone());
+        if let Some(metadata) = env.storage().persistent().get(&metadata_key) {
+            return Some(metadata);
+        }
+
+        let score_key = DataKey::Score(user.clone());
+        if let Some(score) = env.storage().persistent().get::<DataKey, u32>(&score_key) {
+            let migrated_metadata = RemittanceMetadata {
+                score,
+                history_hash: Self::default_history_hash(env),
+            };
+            env.storage().persistent().set(&metadata_key, &migrated_metadata);
+            env.storage().persistent().remove(&score_key);
+            return Some(migrated_metadata);
+        }
+
+        None
+    }
+
     pub fn initialize(env: Env, admin: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
+        let admin_key = Self::admin_key();
+        if env.storage().instance().has(&admin_key) {
             panic!("already initialized");
         }
-        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&admin_key, &admin);
         // Admin is automatically authorized to mint
-        env.storage().instance().set(&DataKey::AuthorizedMinter(admin.clone()), &true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AuthorizedMinter(admin.clone()), &true);
     }
 
     /// Authorize a contract or account to mint NFTs
     pub fn authorize_minter(env: Env, minter: Address) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
-        admin.require_auth();
+        Self::admin(&env).require_auth();
         
-        env.storage().instance().set(&DataKey::AuthorizedMinter(minter), &true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AuthorizedMinter(minter), &true);
     }
 
     /// Revoke authorization for a contract or account to mint NFTs
     pub fn revoke_minter(env: Env, minter: Address) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
-        admin.require_auth();
+        Self::admin(&env).require_auth();
         
-        env.storage().instance().remove(&DataKey::AuthorizedMinter(minter));
+        env.storage().persistent().remove(&DataKey::AuthorizedMinter(minter));
     }
 
     /// Check if an address is authorized to mint
     pub fn is_authorized_minter(env: Env, minter: Address) -> bool {
-        env.storage().instance().get(&DataKey::AuthorizedMinter(minter)).unwrap_or(false)
+        env.storage().persistent().has(&DataKey::AuthorizedMinter(minter))
     }
 
     /// Mint an NFT representing a user's remittance history and reputation score
@@ -58,19 +110,7 @@ impl RemittanceNFT {
     /// If minter is provided, it must be authorized and must authorize the call
     /// If minter is None, admin must authorize the call
     pub fn mint(env: Env, user: Address, initial_score: u32, history_hash: BytesN<32>, minter: Option<Address>) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
-        
-        if let Some(minter_addr) = minter {
-            // If minter is provided, require their auth and check authorization
-            minter_addr.require_auth();
-            let is_authorized = env.storage().instance().get(&DataKey::AuthorizedMinter(minter_addr)).unwrap_or(false);
-            if !is_authorized {
-                panic!("minter is not authorized");
-            }
-        } else {
-            // If no minter provided, require admin auth
-            admin.require_auth();
-        }
+        Self::require_admin_or_authorized_minter(&env, minter);
 
         let metadata_key = DataKey::Metadata(user.clone());
         let score_key = DataKey::Score(user.clone());
@@ -90,40 +130,15 @@ impl RemittanceNFT {
 
     /// Get the metadata (score and history hash) for a user's NFT
     pub fn get_metadata(env: Env, user: Address) -> Option<RemittanceMetadata> {
-        let metadata_key = DataKey::Metadata(user.clone());
-        if let Some(metadata) = env.storage().persistent().get(&metadata_key) {
-            return Some(metadata);
-        }
-        
-        // Check for legacy Score data and migrate if found
-        let score_key = DataKey::Score(user.clone());
-        if let Some(score) = env.storage().persistent().get::<DataKey, u32>(&score_key) {
-            // Migrate old Score to new Metadata format
-            let default_hash = BytesN::from_array(&env, &[0u8; 32]); // Zero hash as default
-            let migrated_metadata = RemittanceMetadata {
-                score,
-                history_hash: default_hash,
-            };
-            // Store migrated metadata
-            env.storage().persistent().set(&metadata_key, &migrated_metadata);
-            // Remove old Score data
-            env.storage().persistent().remove(&score_key);
-            return Some(migrated_metadata);
-        }
-        
-        None
+        Self::get_or_migrate_metadata(&env, &user)
     }
 
     /// Get the score for a user
     /// Handles backward compatibility by checking Metadata first, then legacy Score data
     pub fn get_score(env: Env, user: Address) -> u32 {
-        if let Some(metadata) = Self::get_metadata(env.clone(), user.clone()) {
-            return metadata.score;
-        }
-        
-        // Check legacy Score data (shouldn't happen after migration, but safe fallback)
-        let score_key = DataKey::Score(user);
-        env.storage().persistent().get::<DataKey, u32>(&score_key).unwrap_or(0)
+        Self::get_or_migrate_metadata(&env, &user)
+            .map(|metadata| metadata.score)
+            .unwrap_or(0)
     }
 
     /// Update the score for a user's NFT
@@ -131,43 +146,21 @@ impl RemittanceNFT {
     /// If minter is provided, it must be authorized and must authorize the call
     /// If minter is None, admin must authorize the call
     pub fn update_score(env: Env, user: Address, repayment_amount: i128, minter: Option<Address>) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
-        
-        if let Some(minter_addr) = minter {
-            // If minter is provided, require their auth and check authorization
-            minter_addr.require_auth();
-            let is_authorized = env.storage().instance().get(&DataKey::AuthorizedMinter(minter_addr)).unwrap_or(false);
-            if !is_authorized {
-                panic!("minter is not authorized");
-            }
-        } else {
-            // If no minter provided, require admin auth
-            admin.require_auth();
+        if repayment_amount <= 0 {
+            panic!("repayment amount must be positive");
         }
+        Self::require_admin_or_authorized_minter(&env, minter);
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let score_key = DataKey::Score(user.clone());
-        
-        // Get metadata, migrating from legacy Score if necessary
-        let mut metadata = if let Some(md) = env.storage().persistent().get(&metadata_key) {
-            md
-        } else if let Some(score) = env.storage().persistent().get::<DataKey, u32>(&score_key) {
-            // Migrate legacy Score to Metadata
-            let default_hash = BytesN::from_array(&env, &[0u8; 32]);
-            let migrated = RemittanceMetadata {
-                score,
-                history_hash: default_hash,
-            };
-            env.storage().persistent().set(&metadata_key, &migrated);
-            env.storage().persistent().remove(&score_key);
-            migrated
-        } else {
-            panic!("user does not have an NFT");
-        };
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).unwrap_or_else(|| panic!("user does not have an NFT"));
         
         // Simple logic: 1 point per 100 units of repayment
         let points = (repayment_amount / 100) as u32;
-        metadata.score += points;
+        if points == 0 {
+            return;
+        }
+        metadata.score = metadata.score.checked_add(points).expect("score overflow");
 
         env.storage().persistent().set(&metadata_key, &metadata);
     }
@@ -177,40 +170,15 @@ impl RemittanceNFT {
     /// If minter is provided, it must be authorized and must authorize the call
     /// If minter is None, admin must authorize the call
     pub fn update_history_hash(env: Env, user: Address, new_history_hash: BytesN<32>, minter: Option<Address>) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
-        
-        if let Some(minter_addr) = minter {
-            // If minter is provided, require their auth and check authorization
-            minter_addr.require_auth();
-            let is_authorized = env.storage().instance().get(&DataKey::AuthorizedMinter(minter_addr)).unwrap_or(false);
-            if !is_authorized {
-                panic!("minter is not authorized");
-            }
-        } else {
-            // If no minter provided, require admin auth
-            admin.require_auth();
-        }
+        Self::require_admin_or_authorized_minter(&env, minter);
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let score_key = DataKey::Score(user.clone());
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).unwrap_or_else(|| panic!("user does not have an NFT"));
         
-        // Get metadata, migrating from legacy Score if necessary
-        let mut metadata = if let Some(md) = env.storage().persistent().get(&metadata_key) {
-            md
-        } else if let Some(score) = env.storage().persistent().get::<DataKey, u32>(&score_key) {
-            // Migrate legacy Score to Metadata
-            let default_hash = BytesN::from_array(&env, &[0u8; 32]);
-            let migrated = RemittanceMetadata {
-                score,
-                history_hash: default_hash,
-            };
-            env.storage().persistent().set(&metadata_key, &migrated);
-            env.storage().persistent().remove(&score_key);
-            migrated
-        } else {
-            panic!("user does not have an NFT");
-        };
-        
+        if metadata.history_hash == new_history_hash {
+            return;
+        }
         metadata.history_hash = new_history_hash;
 
         env.storage().persistent().set(&metadata_key, &metadata);
@@ -218,5 +186,4 @@ impl RemittanceNFT {
 }
 
 mod test;
-
 

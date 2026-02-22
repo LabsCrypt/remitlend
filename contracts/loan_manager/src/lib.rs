@@ -1,32 +1,45 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
+use soroban_sdk::{contract, contractclient, contractimpl, symbol_short, Address, Env};
 
-mod nft {
-    soroban_sdk::contractimport!(
-        file = "../target/wasm32-unknown-unknown/release/remittance_nft.wasm"
-    );
+#[contractclient(name = "NftClient")]
+pub trait RemittanceNftInterface {
+    fn get_score(env: Env, user: Address) -> u32;
+    fn update_score(env: Env, user: Address, repayment_amount: i128, minter: Option<Address>);
 }
 
 mod events;
-
-#[contracttype]
-#[derive(Clone)]
-pub enum DataKey {
-    NftContract,
-}
 
 #[contract]
 pub struct LoanManager;
 
 #[contractimpl]
 impl LoanManager {
+    fn nft_key() -> soroban_sdk::Symbol {
+        symbol_short!("NFT")
+    }
+
+    fn nft_contract(env: &Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&Self::nft_key())
+            .expect("not initialized")
+    }
+
     pub fn initialize(env: Env, nft_contract: Address) {
-        env.storage().instance().set(&DataKey::NftContract, &nft_contract);
+        let key = Self::nft_key();
+        if env.storage().instance().has(&key) {
+            panic!("already initialized");
+        }
+        env.storage().instance().set(&key, &nft_contract);
     }
 
     pub fn request_loan(env: Env, borrower: Address, amount: i128) {
-        let nft_contract: Address = env.storage().instance().get(&DataKey::NftContract).expect("not initialized");
-        let nft_client = nft::Client::new(&env, &nft_contract);
+        if amount <= 0 {
+            panic!("loan amount must be positive");
+        }
+
+        let nft_contract = Self::nft_contract(&env);
+        let nft_client = NftClient::new(&env, &nft_contract);
         
         let score = nft_client.get_score(&borrower);
         if score < 500 {
@@ -45,13 +58,18 @@ impl LoanManager {
 
     pub fn repay(env: Env, borrower: Address, amount: i128) {
         borrower.require_auth();
+        if amount <= 0 {
+            panic!("repayment amount must be positive");
+        }
         
         // Repayment logic (placeholder)
         
-        // Update score
-        let nft_contract: Address = env.storage().instance().get(&DataKey::NftContract).expect("not initialized");
-        let nft_client = nft::Client::new(&env, &nft_contract);
-        nft_client.update_score(&borrower, &amount, &None);
+        // Skip cross-contract call when repayment rounds to zero score points.
+        if amount >= 100 {
+            let nft_contract = Self::nft_contract(&env);
+            let nft_client = NftClient::new(&env, &nft_contract);
+            nft_client.update_score(&borrower, &amount, &None);
+        }
         
         events::loan_repaid(&env, borrower, amount);
     }

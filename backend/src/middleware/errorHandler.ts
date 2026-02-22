@@ -33,9 +33,17 @@ export const errorHandler = (
 
   // ── Known Operational Errors ─────────────────────────────────
   if (err instanceof AppError) {
+    if (!err.isOperational) {
+      logger.error(`Internal AppError: ${err.message}`, {
+        path: _req.path,
+        method: _req.method,
+        stack: err.stack,
+      });
+    }
+
     res.status(err.statusCode).json({
       success: false,
-      message: err.message,
+      message: err.isOperational ? err.message : "Internal server error",
     });
     return;
   }

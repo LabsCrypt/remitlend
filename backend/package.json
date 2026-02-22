@@ -15,7 +15,8 @@
     "format:check": "prettier --check .",
     "migrate:create": "node-pg-migrate create",
     "migrate:up": "node-pg-migrate up",
-    "migrate:down": "node-pg-migrate down"
+    "migrate:down": "node-pg-migrate down",
+    "seed": "tsx src/seed/index.ts"
   },
   "keywords": [],
   "author": "",

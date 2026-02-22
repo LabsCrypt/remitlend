@@ -1,13 +1,14 @@
 #![cfg(test)]
 
-use crate::{LoanManager, LoanManagerClient, nft};
-use soroban_sdk::{testutils::{Address as _}, Address, Env, IntoVal};
+use crate::{LoanManager, LoanManagerClient};
+use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
-fn setup_test<'a>(env: &Env) -> (LoanManagerClient<'a>, nft::Client<'a>, Address) {
-    // 1. Deploy the NFT score mock contract
+fn setup_test<'a>(env: &Env) -> (LoanManagerClient<'a>, RemittanceNFTClient<'a>, Address) {
+    // 1. Deploy the NFT score contract
     let admin = Address::generate(env);
-    let nft_contract_id = env.register(nft::WASM, ());
-    let nft_client = nft::Client::new(env, &nft_contract_id);
+    let nft_contract_id = env.register(RemittanceNFT, ());
+    let nft_client = RemittanceNFTClient::new(env, &nft_contract_id);
     nft_client.initialize(&admin);
 
     // 2. Deploy the LoanManager contract
@@ -86,6 +87,24 @@ fn test_repayment_flow() {
 
     // 3. Verify the underlying NFT Score was correctly incremented
     assert_eq!(nft_client.get_score(&borrower), 605);
+}
+
+#[test]
+fn test_small_repayment_does_not_change_score() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+    assert_eq!(nft_client.get_score(&borrower), 600);
+
+    env.mock_all_auths_allowing_non_root_auth();
+    manager.repay(&borrower, &99);
+
+    assert_eq!(nft_client.get_score(&borrower), 600);
 }
 
 #[test]

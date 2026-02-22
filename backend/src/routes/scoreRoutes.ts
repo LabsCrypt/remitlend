@@ -16,6 +16,7 @@ const router = Router();
  *       Returns the current credit score, credit band, and key scoring factors
  *       for the specified user. Used by LoanManager and other contracts to
  *       make lending decisions.
+ *     tags: [Score]
  *     parameters:
  *       - in: path
  *         name: userId
@@ -28,23 +29,13 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 userId:
- *                   type: string
- *                 score:
- *                   type: integer
- *                   example: 720
- *                 band:
- *                   type: string
- *                   example: Good
- *                 factors:
- *                   type: object
+ *               $ref: '#/components/schemas/UserScore'
  *       400:
  *         description: Invalid user ID.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/:userId", validate(getScoreSchema), getScore);
 
@@ -57,6 +48,7 @@ router.get("/:userId", validate(getScoreSchema), getScore);
  *       Adjusts the user's credit score by +15 for on-time repayments or
  *       −30 for late payments. Requires the `x-api-key` header to be set
  *       to the value of the `INTERNAL_API_KEY` environment variable.
+ *     tags: [Score]
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
@@ -84,28 +76,19 @@ router.get("/:userId", validate(getScoreSchema), getScore);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 userId:
- *                   type: string
- *                 repaymentAmount:
- *                   type: number
- *                 onTime:
- *                   type: boolean
- *                 oldScore:
- *                   type: integer
- *                 delta:
- *                   type: integer
- *                 newScore:
- *                   type: integer
- *                 band:
- *                   type: string
+ *               $ref: '#/components/schemas/UserScore'
  *       400:
  *         description: Validation error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       401:
  *         description: Unauthorised — missing or invalid API key.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post(
   "/update",
