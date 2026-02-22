@@ -69,4 +69,40 @@ describe("Centralized Error Handling", () => {
       process.env.NODE_ENV = originalEnv;
     });
   });
+
+  /* ── Diagnostic Routes (Integration) ───────────────────────── */
+
+  describe("Specific error scenarios (Diagnostic)", () => {
+    it("should handle operational AppErrors (400 Bad Request)", async () => {
+      const response = await request(app).get("/test/error/operational");
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Diagnostic operational error");
+    });
+
+    it("should handle internal AppErrors (500 Internal Server Error)", async () => {
+      const response = await request(app).get("/test/error/internal");
+
+      expect(response.status).toBe(500);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Internal server error"); // User-friendly message
+    });
+
+    it("should handle unexpected exceptions (500 Internal Server Error)", async () => {
+      const response = await request(app).get("/test/error/unexpected");
+
+      expect(response.status).toBe(500);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Internal server error");
+    });
+
+    it("should catch async exceptions via asyncHandler middleware", async () => {
+      const response = await request(app).get("/test/error/async");
+
+      expect(response.status).toBe(500);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Internal server error");
+    });
+  });
 });

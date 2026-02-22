@@ -15,6 +15,7 @@ import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
+import { asyncHandler } from "./middleware/asyncHandler.js";
 import { AppError } from "./errors/AppError.js";
 
 const app = express();
@@ -55,6 +56,30 @@ app.get("/health", (req, res) => {
 
 app.use("/api", simulationRoutes);
 app.use("/api/score", scoreRoutes);
+
+// ── Diagnostic / Test Routes ─────────────────────────────────────
+// Only exposed in test environment to verify centralized error handling.
+if (process.env.NODE_ENV === "test") {
+  app.get("/test/error/operational", () => {
+    throw AppError.badRequest("Diagnostic operational error");
+  });
+
+  app.get("/test/error/internal", () => {
+    throw AppError.internal("Diagnostic internal error");
+  });
+
+  app.get("/test/error/unexpected", () => {
+    throw new Error("Diagnostic unexpected exception");
+  });
+
+  app.get(
+    "/test/error/async",
+    asyncHandler(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      throw new Error("Diagnostic async exception");
+    }),
+  );
+}
 
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
