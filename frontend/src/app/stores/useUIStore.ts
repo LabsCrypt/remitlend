@@ -153,10 +153,11 @@ export const useUIStore = create<UIStore>()(
                 const id =
                     toast.id ??
                     `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const duration = toast.duration ?? 4000;
                 const fullToast: Toast = {
-                    duration: 4000, // default 4 s
                     ...toast,
                     id,
+                    duration,
                 };
                 set(
                     (state) => ({ toasts: [...state.toasts, fullToast] }),

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/app/components/providers/QueryProvider";
+import { DashboardShell } from "@/app/components/global_ui/DashboardShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -64,8 +65,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* QueryProvider wraps the entire app so any component can use React Query hooks */}
-        <QueryProvider>{children}</QueryProvider>
+        {/* QueryProvider and DashboardShell wrap the entire app */}
+        <QueryProvider>
+          <DashboardShell>{children}</DashboardShell>
+        </QueryProvider>
       </body>
     </html>
   );
