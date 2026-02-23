@@ -26,7 +26,7 @@ fn test_loan_request_success() {
     let env = Env::default();
     env.mock_all_auths();
     
-    let (manager, nft_client, admin) = setup_test(&env);
+    let (manager, nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Give borrower a score high enough to pass (>= 500)
@@ -43,7 +43,7 @@ fn test_loan_request_failure_low_score() {
     let env = Env::default();
     env.mock_all_auths();
     
-    let (manager, nft_client, admin) = setup_test(&env);
+    let (manager, nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Give borrower a score too low to pass (< 500)
@@ -71,7 +71,7 @@ fn test_repayment_flow() {
     let env = Env::default();
     env.mock_all_auths();
     
-    let (manager, nft_client, admin) = setup_test(&env);
+    let (manager, nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // 1. Borrower starts with a score of 600
@@ -113,7 +113,7 @@ fn test_access_controls_unauthorized_repay() {
     let env = Env::default();
     // NOT using mock_all_auths() to enforce actual signatures
     
-    let (manager, nft_client, _admin) = setup_test(&env);
+    let (manager, _nft_client, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
     
     // Attempting to repay without proper Authorization scope should panic natively.

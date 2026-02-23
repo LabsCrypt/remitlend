@@ -16,7 +16,7 @@ fn test_score_lifecycle() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -62,7 +62,7 @@ fn test_history_hash_update() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -90,7 +90,7 @@ fn test_authorized_minter() {
     let admin = Address::generate(&env);
     let authorized_contract = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -112,7 +112,7 @@ fn test_authorized_minter() {
 fn test_not_initialized() {
     let env = Env::default();
     let user = Address::generate(&env);
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     let history_hash = create_test_hash(&env, 1);
@@ -124,7 +124,7 @@ fn test_not_initialized() {
 fn test_already_initialized() {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -140,7 +140,7 @@ fn test_duplicate_mint() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -162,7 +162,7 @@ fn test_update_score_without_nft() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -179,7 +179,7 @@ fn test_backward_compatibility_migration() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -227,7 +227,7 @@ fn test_update_score_migrates_legacy_data() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -264,7 +264,7 @@ fn test_small_repayment_does_not_write_score_change() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
 
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -284,7 +284,7 @@ fn test_update_score_rejects_non_positive_repayment() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
 
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);
@@ -302,7 +302,7 @@ fn test_update_history_hash_migrates_legacy_data() {
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
     
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     client.initialize(&admin);

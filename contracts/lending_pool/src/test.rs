@@ -1,5 +1,10 @@
 #![cfg(test)]
 
+#[cfg(test)]
+extern crate std;
+#[cfg(test)]
+extern crate serde;
+
 use crate::{LendingPool, LendingPoolClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, Env};
@@ -7,6 +12,7 @@ use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
 use test_fuzz::test_fuzz;
 use arbitrary::Arbitrary;
+use serde::{Serialize, Deserialize};
 
 fn create_token_contract<'a>(env: &Env, admin: &Address) -> (Address, StellarAssetClient<'a>, TokenClient<'a>) {
     let contract_id = env.register_stellar_asset_contract_v2(admin.clone());
@@ -45,6 +51,27 @@ fn test_deposit_flow() {
     
     // 7. Verify internal ledger states
     assert_eq!(pool_client.get_deposit(&provider), 3000);
+}
+
+#[test]
+#[should_panic(expected = "already initialized")]
+fn test_initialize_already_initialized() {
+    let env = Env::default();
+    
+    // Setup mock asset
+    let token_admin = Address::generate(&env);
+    let (token_id, _stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    // Setup LendingPool
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    
+    // First init
+    pool_client.initialize(&token_id);
+    
+    // Second init should panic
+    let another_token = Address::generate(&env);
+    pool_client.initialize(&another_token);
 }
 
 #[test]
@@ -88,6 +115,64 @@ fn test_deposit_unauthorized() {
 }
 
 #[test]
+fn test_deposit_multiple_users() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup mock asset & pool
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id);
+
+    // Setup two providers
+    let provider1 = Address::generate(&env);
+    let provider2 = Address::generate(&env);
+    stellar_asset_client.mint(&provider1, &5000);
+    stellar_asset_client.mint(&provider2, &5000);
+
+    // Both deposit
+    pool_client.deposit(&provider1, &2000);
+    pool_client.deposit(&provider2, &1500);
+
+    // Verify independent balances
+    assert_eq!(token_client.balance(&provider1), 3000);
+    assert_eq!(token_client.balance(&provider2), 3500);
+    assert_eq!(token_client.balance(&pool_id), 3500); // 2000 + 1500
+    
+    // Verify internal state
+    assert_eq!(pool_client.get_deposit(&provider1), 2000);
+    assert_eq!(pool_client.get_deposit(&provider2), 1500);
+}
+
+#[test]
+fn test_deposit_updates_existing_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup mock asset & pool
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5000);
+
+    // First deposit
+    pool_client.deposit(&provider, &1000);
+    assert_eq!(pool_client.get_deposit(&provider), 1000);
+
+    // Second deposit
+    pool_client.deposit(&provider, &2500);
+    
+    // Balance should be aggregated
+    assert_eq!(pool_client.get_deposit(&provider), 3500);
+}
+
+#[test]
 fn test_withdraw_flow() {
     let env = Env::default();
     env.mock_all_auths();
@@ -118,6 +203,62 @@ fn test_withdraw_flow() {
     assert_eq!(token_client.balance(&provider), 3000);
     assert_eq!(token_client.balance(&pool_id), 2000);
     assert_eq!(pool_client.get_deposit(&provider), 2000);
+}
+
+#[test]
+fn test_withdraw_partial_and_full() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup mock asset & pool
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5000);
+
+    // Initial Deposit
+    pool_client.deposit(&provider, &4000);
+
+    // Partial withdraw
+    pool_client.withdraw(&provider, &1500);
+    assert_eq!(pool_client.get_deposit(&provider), 2500);
+    assert_eq!(token_client.balance(&provider), 2500); // 5000 - 4000 + 1500
+
+    // Full withdraw of remaining balance
+    pool_client.withdraw(&provider, &2500);
+    assert_eq!(pool_client.get_deposit(&provider), 0); // State should be removed
+    assert_eq!(token_client.balance(&provider), 5000);
+    assert_eq!(token_client.balance(&pool_id), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_withdraw_unauthorized() {
+    let env = Env::default();
+    
+    // Setup mock asset & pool
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id);
+
+    let provider = Address::generate(&env);
+    
+    // Mock auths just to do the deposit
+    env.mock_all_auths();
+    stellar_asset_client.mint(&provider, &5000);
+    pool_client.deposit(&provider, &1000);
+
+    // Reset mocked auths enforcing require_auth() natively for withdraw
+    env.mock_auths(&[]);
+    
+    // Should fail missing native authorizations
+    pool_client.withdraw(&provider, &500);
 }
 
 #[test]
@@ -158,7 +299,7 @@ fn test_insufficient_balance_withdraw_panic() {
     pool_client.withdraw(&provider, &2000);
 }
 
-#[derive(Arbitrary, Debug)]
+#[derive(Arbitrary, Debug, Clone, Serialize, Deserialize)]
 struct FuzzOperation {
     deposit_amount: i128,
     withdraw_amount: i128,
@@ -176,7 +317,7 @@ fn test_deposit_withdraw_invariants(operation: FuzzOperation) {
 
     // Setup mock asset
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     // Setup LendingPool
     let pool_id = env.register(LendingPool, ());
