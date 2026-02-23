@@ -49,7 +49,11 @@ export const errorHandler = (
   }
 
   // ── Unexpected / Programming Errors ──────────────────────────
-  logger.error("Unhandled error:", err);
+  logger.error("Unhandled error", {
+    message: err.message,
+    name: err.name,
+    ...(err.stack && { stack: err.stack }),
+  });
 
   const isDevelopment = process.env.NODE_ENV !== "production";
 

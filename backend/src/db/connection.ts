@@ -1,4 +1,5 @@
 import pg from "pg";
+import logger from "../utils/logger.js";
 
 const { Pool } = pg;
 
@@ -10,7 +11,11 @@ export const query = async (text: string, params?: unknown[]) => {
   const start = Date.now();
   const result = await pool.query(text, params);
   const duration = Date.now() - start;
-  console.log("Executed query", { text: text.substring(0, 50), duration, rows: result.rowCount });
+  logger.debug("Executed query", {
+    text: text.substring(0, 50),
+    duration,
+    rows: result.rowCount,
+  });
   return result;
 };
 
