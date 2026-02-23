@@ -833,6 +833,7 @@ name = "lending_pool"
 version = "0.0.1"
 dependencies = [
  "arbitrary",
+ "serde",
  "soroban-sdk",
  "test-fuzz",
 ]
