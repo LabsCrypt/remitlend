@@ -20,70 +20,68 @@ import { devtools } from "zustand/middleware";
 export type ToastVariant = "success" | "error" | "warning" | "info";
 
 export interface Toast {
-    /** Unique identifier — auto-generated if not provided */
-    id: string;
-    message: string;
-    variant: ToastVariant;
-    /** Duration in ms before auto-dismiss. 0 = never auto-dismiss */
-    duration: number;
+  /** Unique identifier — auto-generated if not provided */
+  id: string;
+  message: string;
+  variant: ToastVariant;
+  /** Duration in ms before auto-dismiss. 0 = never auto-dismiss */
+  duration: number;
 }
 
 // ─── Modal types ──────────────────────────────────────────────────────────────
 
 /** All modal identifiers in the app. Add new modals here as the app grows. */
 export type ModalId =
-    | "connectWallet"
-    | "confirmLoan"
-    | "confirmRemittance"
-    | "kycVerification"
-    | "transactionDetails";
+  | "connectWallet"
+  | "confirmLoan"
+  | "confirmRemittance"
+  | "kycVerification"
+  | "transactionDetails";
 
 export interface ModalState {
-    isOpen: boolean;
-    /** Arbitrary payload passed to the modal for context */
-    data?: unknown;
+  isOpen: boolean;
+  /** Arbitrary payload passed to the modal for context */
+  data?: unknown;
 }
 
 // ─── Store types ──────────────────────────────────────────────────────────────
 
 interface UIState {
-    /** Per-modal open state and data */
-    modals: Record<ModalId, ModalState>;
-    /** FIFO queue of pending toast notifications */
-    toasts: Toast[];
-    /** True while a global loading spinner should be shown */
-    isGlobalLoading: boolean;
-    globalLoadingMessage: string | null;
+  /** Per-modal open state and data */
+  modals: Record<ModalId, ModalState>;
+  /** FIFO queue of pending toast notifications */
+  toasts: Toast[];
+  /** True while a global loading spinner should be shown */
+  isGlobalLoading: boolean;
+  globalLoadingMessage: string | null;
 }
 
 interface UIActions {
-    // ── Modals ────────────────────────────────────────────────────────────────
+  // ── Modals ────────────────────────────────────────────────────────────────
 
-    /** Open a specific modal, optionally with a data payload */
-    openModal: (id: ModalId, data?: unknown) => void;
-    /** Close a specific modal */
-    closeModal: (id: ModalId) => void;
-    /** Close all open modals at once */
-    closeAllModals: () => void;
+  /** Open a specific modal, optionally with a data payload */
+  openModal: (id: ModalId, data?: unknown) => void;
+  /** Close a specific modal */
+  closeModal: (id: ModalId) => void;
+  /** Close all open modals at once */
+  closeAllModals: () => void;
 
-    // ── Toasts ────────────────────────────────────────────────────────────────
+  // ── Toasts ────────────────────────────────────────────────────────────────
 
-    /**
-     * Add a toast notification.
-     * Returns the generated id so the caller can dismiss it programmatically.
-     */
-    addToast: (
-        toast: Omit<Toast, "id"> & { id?: string },
-    ) => string;
-    /** Remove a toast by id */
-    dismissToast: (id: string) => void;
-    /** Clear all toasts */
-    clearToasts: () => void;
+  /**
+   * Add a toast notification.
+   * Returns the generated id so the caller can dismiss it programmatically.
+   */
+  addToast: (toast: Omit<Toast, "id"> & { id?: string }) => string;
+  /** Remove a toast by id */
+  dismissToast: (id: string) => void;
+  /** Clear all toasts */
+  clearToasts: () => void;
 
-    // ── Global loading ────────────────────────────────────────────────────────
+  // ── Global loading ────────────────────────────────────────────────────────
 
-    showGlobalLoading: (message?: string) => void;
-    hideGlobalLoading: () => void;
+  showGlobalLoading: (message?: string) => void;
+  hideGlobalLoading: () => void;
 }
 
 export type UIStore = UIState & UIActions;
@@ -91,24 +89,25 @@ export type UIStore = UIState & UIActions;
 // ─── Default modal state ──────────────────────────────────────────────────────
 
 const ALL_MODALS: ModalId[] = [
-    "connectWallet",
-    "confirmLoan",
-    "confirmRemittance",
-    "kycVerification",
-    "transactionDetails",
+  "connectWallet",
+  "confirmLoan",
+  "confirmRemittance",
+  "kycVerification",
+  "transactionDetails",
 ];
 
-const defaultModals = Object.fromEntries(
-    ALL_MODALS.map((id) => [id, { isOpen: false }]),
-) as Record<ModalId, ModalState>;
+const defaultModals = Object.fromEntries(ALL_MODALS.map((id) => [id, { isOpen: false }])) as Record<
+  ModalId,
+  ModalState
+>;
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 const initialState: UIState = {
-    modals: defaultModals,
-    toasts: [],
-    isGlobalLoading: false,
-    globalLoadingMessage: null,
+  modals: defaultModals,
+  toasts: [],
+  isGlobalLoading: false,
+  globalLoadingMessage: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -166,43 +165,68 @@ export const useUIStore = create<UIStore>()(
                 );
                 return id;
             },
+          }),
+          false,
+          `ui/openModal:${id}`,
+        ),
 
-            dismissToast: (id) =>
-                set(
-                    (state) => ({
-                        toasts: state.toasts.filter((t) => t.id !== id),
-                    }),
-                    false,
-                    "ui/dismissToast",
-                ),
+      closeModal: (id) =>
+        set(
+          (state) => ({
+            modals: {
+              ...state.modals,
+              [id]: { isOpen: false, data: undefined },
+            },
+          }),
+          false,
+          `ui/closeModal:${id}`,
+        ),
 
-            clearToasts: () => set({ toasts: [] }, false, "ui/clearToasts"),
+      closeAllModals: () => set({ modals: defaultModals }, false, "ui/closeAllModals"),
 
-            // ── Global loading ───────────────────────────────────────────────────────
+      // ── Toasts ──────────────────────────────────────────────────────────────
 
-            showGlobalLoading: (message) =>
-                set(
-                    { isGlobalLoading: true, globalLoadingMessage: message ?? null },
-                    false,
-                    "ui/showGlobalLoading",
-                ),
+      addToast: (toast) => {
+        const id = toast.id ?? `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const fullToast: Toast = {
+          duration: 4000, // default 4 s
+          ...toast,
+          id,
+        };
+        set((state) => ({ toasts: [...state.toasts, fullToast] }), false, "ui/addToast");
+        return id;
+      },
 
-            hideGlobalLoading: () =>
-                set(
-                    { isGlobalLoading: false, globalLoadingMessage: null },
-                    false,
-                    "ui/hideGlobalLoading",
-                ),
-        }),
-        { name: "UIStore" },
-    ),
+      dismissToast: (id) =>
+        set(
+          (state) => ({
+            toasts: state.toasts.filter((t) => t.id !== id),
+          }),
+          false,
+          "ui/dismissToast",
+        ),
+
+      clearToasts: () => set({ toasts: [] }, false, "ui/clearToasts"),
+
+      // ── Global loading ───────────────────────────────────────────────────────
+
+      showGlobalLoading: (message) =>
+        set(
+          { isGlobalLoading: true, globalLoadingMessage: message ?? null },
+          false,
+          "ui/showGlobalLoading",
+        ),
+
+      hideGlobalLoading: () =>
+        set({ isGlobalLoading: false, globalLoadingMessage: null }, false, "ui/hideGlobalLoading"),
+    }),
+    { name: "UIStore" },
+  ),
 );
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 
-export const selectModal = (id: ModalId) => (state: UIStore) =>
-    state.modals[id];
+export const selectModal = (id: ModalId) => (state: UIStore) => state.modals[id];
 export const selectToasts = (state: UIStore) => state.toasts;
 export const selectIsGlobalLoading = (state: UIStore) => state.isGlobalLoading;
-export const selectGlobalLoadingMessage = (state: UIStore) =>
-    state.globalLoadingMessage;
+export const selectGlobalLoadingMessage = (state: UIStore) => state.globalLoadingMessage;

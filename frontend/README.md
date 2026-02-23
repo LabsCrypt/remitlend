@@ -5,6 +5,7 @@ Next.js web application for the RemitLend platform, providing user interfaces fo
 ## Overview
 
 The frontend is a modern React application built with Next.js that enables:
+
 - Wallet connection (Freighter, Albedo, etc.)
 - Credit score visualization
 - Remittance NFT minting
@@ -94,6 +95,7 @@ frontend/
 ### Planned Features
 
 #### Borrower Dashboard
+
 - [ ] Wallet connection interface
 - [ ] Credit score display
 - [ ] Remittance NFT minting
@@ -103,6 +105,7 @@ frontend/
 - [ ] Transaction history
 
 #### Lender Dashboard
+
 - [ ] Pool liquidity overview
 - [ ] Deposit/withdraw interface
 - [ ] Loan approval queue
@@ -110,6 +113,7 @@ frontend/
 - [ ] Portfolio analytics
 
 #### Shared Features
+
 - [ ] Real-time transaction status
 - [ ] Notification system
 - [ ] Multi-language support
@@ -125,12 +129,13 @@ frontend/
 Loading indicator component.
 
 ```tsx
-import { Spinner } from '@/app/components/global_ui/Spinner';
+import { Spinner } from "@/app/components/global_ui/Spinner";
 
-<Spinner size="md" />
+<Spinner size="md" />;
 ```
 
 **Props:**
+
 - `size`: 'sm' | 'md' | 'lg' (default: 'md')
 
 ### Planned Components
@@ -151,23 +156,24 @@ import { Spinner } from '@/app/components/global_ui/Spinner';
 The project uses Tailwind CSS 4 for styling with a custom configuration.
 
 **Key Features:**
+
 - Utility-first CSS
 - Responsive design utilities
 - Custom color palette (planned)
 - Dark mode support (planned)
 
 **Example:**
+
 ```tsx
 <div className="flex items-center justify-center min-h-screen bg-gray-50">
-  <h1 className="text-4xl font-bold text-gray-900">
-    Welcome to RemitLend
-  </h1>
+  <h1 className="text-4xl font-bold text-gray-900">Welcome to RemitLend</h1>
 </div>
 ```
 
 ### Global Styles
 
 Global styles are defined in `src/app/globals.css`:
+
 - CSS reset
 - Tailwind directives
 - Custom CSS variables
@@ -180,18 +186,20 @@ Global styles are defined in `src/app/globals.css`:
 Integration with Stellar wallets for transaction signing.
 
 **Supported Wallets:**
+
 - Freighter
 - Albedo
 - Rabet
 - xBull
 
 **Example Usage:**
+
 ```tsx
-import { StellarWalletKit } from '@stellar/wallet-kit';
+import { StellarWalletKit } from "@stellar/wallet-kit";
 
 const kit = new StellarWalletKit({
-  network: 'testnet',
-  selectedWallet: 'freighter',
+  network: "testnet",
+  selectedWallet: "freighter",
 });
 
 // Connect wallet
@@ -208,21 +216,23 @@ const signedTx = await kit.sign(transaction);
 Global state management using React Context API.
 
 **Contexts:**
+
 - `WalletContext` - Wallet connection state
 - `UserContext` - User profile and credit score
 - `LoanContext` - Active loans data
 - `PoolContext` - Lending pool information
 
 **Example:**
+
 ```tsx
-import { useWallet } from '@/contexts/WalletContext';
+import { useWallet } from "@/contexts/WalletContext";
 
 function MyComponent() {
   const { address, connected, connect, disconnect } = useWallet();
-  
+
   return (
     <button onClick={connected ? disconnect : connect}>
-      {connected ? `Connected: ${address}` : 'Connect Wallet'}
+      {connected ? `Connected: ${address}` : "Connect Wallet"}
     </button>
   );
 }
@@ -237,6 +247,7 @@ The frontend communicates with the Express backend for off-chain data.
 **Base URL:** `http://localhost:3001/api`
 
 **Example:**
+
 ```tsx
 async function fetchCreditScore(userId: string) {
   const response = await fetch(`http://localhost:3001/api/score/${userId}`);
@@ -250,14 +261,15 @@ async function fetchCreditScore(userId: string) {
 Direct interaction with Soroban smart contracts via Stellar SDK.
 
 **Example:**
+
 ```tsx
-import { Contract, SorobanRpc } from '@stellar/stellar-sdk';
+import { Contract, SorobanRpc } from "@stellar/stellar-sdk";
 
 const contract = new Contract(contractId);
-const server = new SorobanRpc.Server('https://soroban-testnet.stellar.org');
+const server = new SorobanRpc.Server("https://soroban-testnet.stellar.org");
 
 // Call contract method
-const result = await contract.call('get_score', [nftId]);
+const result = await contract.call("get_score", [nftId]);
 ```
 
 ## Routing
@@ -267,10 +279,12 @@ const result = await contract.call('get_score', [nftId]);
 Next.js 13+ App Router with file-based routing.
 
 **Current Routes:**
+
 - `/` - Landing page
 - `/404` - Not found page
 
 **Planned Routes:**
+
 - `/borrower` - Borrower dashboard
 - `/lender` - Lender dashboard
 - `/loans` - Loan management
@@ -284,12 +298,12 @@ Next.js 13+ App Router with file-based routing.
 
 ```tsx
 export const metadata = {
-  title: 'RemitLend - Credit from Remittances',
-  description: 'Turn your remittance history into credit history',
+  title: "RemitLend - Credit from Remittances",
+  description: "Turn your remittance history into credit history",
   openGraph: {
-    title: 'RemitLend',
-    description: 'Decentralized lending for migrant workers',
-    images: ['/og-image.png'],
+    title: "RemitLend",
+    description: "Decentralized lending for migrant workers",
+    images: ["/og-image.png"],
   },
 };
 ```
@@ -322,13 +336,13 @@ export const metadata = {
 ### Example Test
 
 ```tsx
-import { render, screen } from '@testing-library/react';
-import { Spinner } from '@/app/components/global_ui/Spinner';
+import { render, screen } from "@testing-library/react";
+import { Spinner } from "@/app/components/global_ui/Spinner";
 
-describe('Spinner', () => {
-  it('renders spinner', () => {
+describe("Spinner", () => {
+  it("renders spinner", () => {
     render(<Spinner />);
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 });
 ```

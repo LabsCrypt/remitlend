@@ -51,10 +51,7 @@ export const queryKeys = {
  * - Sets JSON Content-Type
  * - Throws a descriptive error on non-2xx responses
  */
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -63,12 +60,8 @@ async function apiFetch<T>(
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
 
   if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ message: response.statusText }));
-    throw new Error(
-      error.message ?? `Request failed with status ${response.status}`,
-    );
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message ?? `Request failed with status ${response.status}`);
   }
 
   return response.json() as Promise<T>;
@@ -116,9 +109,7 @@ export interface UserBalance {
  * Fetches all loans.
  * Data is cached for 60s (inherits QueryClient default staleTime).
  */
-export function useLoans(
-  options?: Omit<UseQueryOptions<Loan[]>, "queryKey" | "queryFn">,
-) {
+export function useLoans(options?: Omit<UseQueryOptions<Loan[]>, "queryKey" | "queryFn">) {
   return useQuery<Loan[]>({
     queryKey: queryKeys.loans.all(),
     queryFn: () => apiFetch<Loan[]>("/loans"),
@@ -147,11 +138,7 @@ export function useLoan(
  * Automatically invalidates the loans list cache on success.
  */
 export function useCreateLoan(
-  options?: UseMutationOptions<
-    Loan,
-    Error,
-    Omit<Loan, "id" | "createdAt" | "status">
-  >,
+  options?: UseMutationOptions<Loan, Error, Omit<Loan, "id" | "createdAt" | "status">>,
 ) {
   const queryClient = useQueryClient();
 
@@ -204,19 +191,11 @@ export function useRemittance(
  * Invalidates the remittances list cache on success.
  */
 export function useCreateRemittance(
-  options?: UseMutationOptions<
-    Remittance,
-    Error,
-    Omit<Remittance, "id" | "createdAt" | "status">
-  >,
+  options?: UseMutationOptions<Remittance, Error, Omit<Remittance, "id" | "createdAt" | "status">>,
 ) {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    Remittance,
-    Error,
-    Omit<Remittance, "id" | "createdAt" | "status">
-  >({
+  return useMutation<Remittance, Error, Omit<Remittance, "id" | "createdAt" | "status">>({
     mutationFn: (data) =>
       apiFetch<Remittance>("/remittances", {
         method: "POST",
