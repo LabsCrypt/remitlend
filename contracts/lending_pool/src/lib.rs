@@ -6,6 +6,8 @@ use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, E
 #[derive(Clone)]
 pub enum DataKey {
     Deposit(Address),
+    Admin,
+    Token,
 }
 
 #[contract]
@@ -13,23 +15,25 @@ pub struct LendingPool;
 
 #[contractimpl]
 impl LendingPool {
-    fn token_key() -> soroban_sdk::Symbol {
-        symbol_short!("TOKEN")
-    }
-
     fn read_token(env: &Env) -> Address {
         env.storage()
             .instance()
-            .get(&Self::token_key())
+            .get(&DataKey::Token)
             .expect("not initialized")
     }
 
-    pub fn initialize(env: Env, token: Address) {
-        let token_key = Self::token_key();
-        if env.storage().instance().has(&token_key) {
+    pub fn initialize(env: Env, admin: Address, token: Address) {
+        if env.storage().instance().has(&DataKey::Admin) {
             panic!("already initialized");
         }
-        env.storage().instance().set(&token_key, &token);
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Token, &token);
+    }
+
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
     }
 
     pub fn deposit(env: Env, provider: Address, amount: i128) {
