@@ -1,5 +1,3 @@
-
-
 use crate::{LendingPool, LendingPoolClient};
 use arbitrary::Arbitrary;
 use soroban_sdk::testutils::Address as _;
