@@ -543,7 +543,7 @@
                       "n_elem_segments": 0,
                       "n_imports": 13,
                       "n_exports": 13,
-                      "n_data_segment_bytes": 100
+                      "n_data_segment_bytes": 102
                     }
                   }
                 },
@@ -581,3 +581,4 @@
   },
   "events": []
 }
+
