@@ -1,11 +1,27 @@
 import type { Request, Response, NextFunction } from "express";
-import { type ZodSchema } from "zod";
+import { z, type ZodSchema, type ZodType } from "zod";
 
-/**
- * Express middleware factory that validates incoming requests against
- * a Zod schema. On validation failure the error is forwarded to the
- * global error handler via `next(error)`.
- */
+type ValidationSource = "body" | "query" | "params";
+
+const validateSource = (
+  schema: ZodType,
+  source: ValidationSource,
+) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      const data = source === "body" ? req.body : source === "query" ? req.query : req.params;
+      req[source] = schema.parse(data);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+};
+
+export const validateBody = (schema: ZodType) => validateSource(schema, "body");
+export const validateQuery = (schema: ZodType) => validateSource(schema, "query");
+export const validateParams = (schema: ZodType) => validateSource(schema, "params");
+
 export const validate = (schema: ZodSchema) => {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {
@@ -19,4 +35,10 @@ export const validate = (schema: ZodSchema) => {
       next(error);
     }
   };
+};
+
+export const createSchema = {
+  body: <T extends ZodType>(schema: T) => z.object({ body: schema }),
+  query: <T extends ZodType>(schema: T) => z.object({ query: schema }),
+  params: <T extends ZodType>(schema: T) => z.object({ params: schema }),
 };

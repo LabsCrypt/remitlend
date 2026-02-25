@@ -52,6 +52,46 @@ describe("Input Validation", () => {
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
     });
+
+    it("should reject zero amount", async () => {
+      const response = await request(app).post("/api/simulate").send({
+        userId: "user123",
+        amount: 0,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
+
+    it("should reject empty userId", async () => {
+      const response = await request(app).post("/api/simulate").send({
+        userId: "",
+        amount: 500,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
+
+    it("should reject userId that is too long", async () => {
+      const response = await request(app).post("/api/simulate").send({
+        userId: "a".repeat(101),
+        amount: 500,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
+
+    it("should reject non-numeric amount", async () => {
+      const response = await request(app).post("/api/simulate").send({
+        userId: "user123",
+        amount: "five hundred",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
   });
 
   describe("GET /api/history/:userId", () => {
