@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env};
+use soroban_sdk::{contract, contractclient, contractimpl, contracttype, symbol_short, Address, Env};
 
 #[contractclient(name = "NftClient")]
 pub trait RemittanceNftInterface {
@@ -129,8 +129,7 @@ impl LoanManager {
     }
 
     pub fn get_loan(env: Env, loan_id: u32) -> Loan {
-        env.storage().persistent().get(&DataKey::Loan(loan_id)).expect("loan not found")
-    }
+        env.storage().persistent().get(&DataKey::Loan(loan_id)).expect("loan_id not found")
     }
 
     pub fn repay(env: Env, borrower: Address, amount: i128) {
