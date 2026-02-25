@@ -1,6 +1,6 @@
-#![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env};
+#![cfg_attr(not(test), no_std)]
 use soroban_sdk::token::Client as TokenClient;
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env};
 
 #[contracttype]
 #[derive(Clone)]
@@ -46,7 +46,8 @@ impl LendingPool {
             .checked_add(amount)
             .expect("deposit overflow");
         env.storage().persistent().set(&key, &current_balance);
-        env.events().publish((symbol_short!("Deposit"), provider), amount);
+        env.events()
+            .publish((symbol_short!("Deposit"), provider), amount);
     }
 
     pub fn get_deposit(env: Env, provider: Address) -> i128 {
@@ -73,11 +74,15 @@ impl LendingPool {
         } else {
             env.storage().persistent().set(&key, &new_balance);
         }
-        env.events().publish((symbol_short!("Withdraw"), provider), amount);
+        env.events()
+            .publish((symbol_short!("Withdraw"), provider), amount);
     }
 
     pub fn get_token(env: Env) -> Address {
-        env.storage().instance().get(&Self::token_key()).expect("not initialized")
+        env.storage()
+            .instance()
+            .get(&Self::token_key())
+            .expect("not initialized")
     }
 }
 

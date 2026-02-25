@@ -1,6 +1,5 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env};
-
 
 #[contracttype]
 #[derive(Clone)]
@@ -64,7 +63,9 @@ impl RemittanceNFT {
                 score,
                 history_hash: Self::default_history_hash(env),
             };
-            env.storage().persistent().set(&metadata_key, &migrated_metadata);
+            env.storage()
+                .persistent()
+                .set(&metadata_key, &migrated_metadata);
             env.storage().persistent().remove(&score_key);
             return Some(migrated_metadata);
         }
@@ -87,7 +88,7 @@ impl RemittanceNFT {
     /// Authorize a contract or account to mint NFTs
     pub fn authorize_minter(env: Env, minter: Address) {
         Self::admin(&env).require_auth();
-        
+
         env.storage()
             .persistent()
             .set(&DataKey::AuthorizedMinter(minter), &true);
@@ -96,27 +97,39 @@ impl RemittanceNFT {
     /// Revoke authorization for a contract or account to mint NFTs
     pub fn revoke_minter(env: Env, minter: Address) {
         Self::admin(&env).require_auth();
-        
-        env.storage().persistent().remove(&DataKey::AuthorizedMinter(minter));
+
+        env.storage()
+            .persistent()
+            .remove(&DataKey::AuthorizedMinter(minter));
     }
 
     /// Check if an address is authorized to mint
     pub fn is_authorized_minter(env: Env, minter: Address) -> bool {
-        env.storage().persistent().has(&DataKey::AuthorizedMinter(minter))
+        env.storage()
+            .persistent()
+            .has(&DataKey::AuthorizedMinter(minter))
     }
 
     /// Mint an NFT representing a user's remittance history and reputation score
     /// Only authorized contracts/accounts can call this function
     /// If minter is provided, it must be authorized and must authorize the call
     /// If minter is None, admin must authorize the call
-    pub fn mint(env: Env, user: Address, initial_score: u32, history_hash: BytesN<32>, minter: Option<Address>) {
+    pub fn mint(
+        env: Env,
+        user: Address,
+        initial_score: u32,
+        history_hash: BytesN<32>,
+        minter: Option<Address>,
+    ) {
         Self::require_admin_or_authorized_minter(&env, minter);
 
         let metadata_key = DataKey::Metadata(user.clone());
         let score_key = DataKey::Score(user.clone());
-        
+
         // Check if user already has an NFT (either new format or legacy)
-        if env.storage().persistent().has(&metadata_key) || env.storage().persistent().has(&score_key) {
+        if env.storage().persistent().has(&metadata_key)
+            || env.storage().persistent().has(&score_key)
+        {
             panic!("user already has an NFT");
         }
 
@@ -124,7 +137,7 @@ impl RemittanceNFT {
             score: initial_score,
             history_hash,
         };
-        
+
         env.storage().persistent().set(&metadata_key, &metadata);
     }
 
@@ -152,9 +165,9 @@ impl RemittanceNFT {
         Self::require_admin_or_authorized_minter(&env, minter);
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata =
-            Self::get_or_migrate_metadata(&env, &user).unwrap_or_else(|| panic!("user does not have an NFT"));
-        
+        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
+            .unwrap_or_else(|| panic!("user does not have an NFT"));
+
         // Simple logic: 1 point per 100 units of repayment
         let points = (repayment_amount / 100) as u32;
         if points == 0 {
@@ -169,13 +182,18 @@ impl RemittanceNFT {
     /// Only authorized contracts/accounts can call this function
     /// If minter is provided, it must be authorized and must authorize the call
     /// If minter is None, admin must authorize the call
-    pub fn update_history_hash(env: Env, user: Address, new_history_hash: BytesN<32>, minter: Option<Address>) {
+    pub fn update_history_hash(
+        env: Env,
+        user: Address,
+        new_history_hash: BytesN<32>,
+        minter: Option<Address>,
+    ) {
         Self::require_admin_or_authorized_minter(&env, minter);
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata =
-            Self::get_or_migrate_metadata(&env, &user).unwrap_or_else(|| panic!("user does not have an NFT"));
-        
+        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
+            .unwrap_or_else(|| panic!("user does not have an NFT"));
+
         if metadata.history_hash == new_history_hash {
             return;
         }
@@ -185,5 +203,5 @@ impl RemittanceNFT {
     }
 }
 
+#[cfg(test)]
 mod test;
-
