@@ -113,57 +113,18 @@ const initialState: UIState = {
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useUIStore = create<UIStore>()(
-    devtools(
-        (set) => ({
-            ...initialState,
+  devtools(
+    (set) => ({
+      ...initialState,
 
-            // ── Modals ──────────────────────────────────────────────────────────────
+      // ── Modals ──────────────────────────────────────────────────────────────
 
-            openModal: (id, data) =>
-                set(
-                    (state) => ({
-                        modals: {
-                            ...state.modals,
-                            [id]: { isOpen: true, data },
-                        },
-                    }),
-                    false,
-                    `ui/openModal:${id}`,
-                ),
-
-            closeModal: (id) =>
-                set(
-                    (state) => ({
-                        modals: {
-                            ...state.modals,
-                            [id]: { isOpen: false, data: undefined },
-                        },
-                    }),
-                    false,
-                    `ui/closeModal:${id}`,
-                ),
-
-            closeAllModals: () =>
-                set({ modals: defaultModals }, false, "ui/closeAllModals"),
-
-            // ── Toasts ──────────────────────────────────────────────────────────────
-
-            addToast: (toast) => {
-                const id =
-                    toast.id ??
-                    `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-                const duration = toast.duration ?? 4000;
-                const fullToast: Toast = {
-                    ...toast,
-                    id,
-                    duration,
-                };
-                set(
-                    (state) => ({ toasts: [...state.toasts, fullToast] }),
-                    false,
-                    "ui/addToast",
-                );
-                return id;
+      openModal: (id, data) =>
+        set(
+          (state) => ({
+            modals: {
+              ...state.modals,
+              [id]: { isOpen: true, data },
             },
           }),
           false,
@@ -188,10 +149,11 @@ export const useUIStore = create<UIStore>()(
 
       addToast: (toast) => {
         const id = toast.id ?? `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const duration = toast.duration ?? 4000;
         const fullToast: Toast = {
-          duration: 4000, // default 4 s
           ...toast,
           id,
+          duration,
         };
         set((state) => ({ toasts: [...state.toasts, fullToast] }), false, "ui/addToast");
         return id;
