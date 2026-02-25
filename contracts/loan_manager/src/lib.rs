@@ -44,10 +44,6 @@ pub struct LoanManager;
 
 #[contractimpl]
 impl LoanManager {
-    fn nft_key() -> soroban_sdk::Symbol {
-        symbol_short!("NFT")
-    }
-
     fn nft_contract(env: &Env) -> Address {
         env.storage()
             .instance()
