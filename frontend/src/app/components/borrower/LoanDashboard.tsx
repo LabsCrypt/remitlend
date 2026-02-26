@@ -184,7 +184,7 @@ export function LoanDashboard({ borrowerAddress }: { borrowerAddress: string }) 
               <Button
                 onClick={() => handleRepayNow(loan.id)}
                 className="flex-1"
-                variant={isOverdue || isUrgent ? "default" : "outline"}
+                variant={isOverdue || isUrgent ? "primary" : "outline"}
               >
                 {isOverdue ? "Pay Now (Overdue)" : "Repay Now"}
               </Button>
