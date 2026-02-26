@@ -142,7 +142,7 @@ export const getLoanDetails = async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
-        loanId: parseInt(loanId),
+        loanId: parseInt(loanId as string),
         principal,
         accruedInterest,
         totalRepaid,

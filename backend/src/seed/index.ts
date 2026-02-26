@@ -12,13 +12,13 @@ const seedScores = async () => {
   for (const user of seedUsers) {
     const existingUser = await query(
       "SELECT id FROM scores WHERE user_id = $1",
-      [user.user_id]
+      [user.user_id],
     );
 
     if (existingUser.rowCount === 0) {
       await query(
         "INSERT INTO scores (user_id, current_score) VALUES ($1, $2)",
-        [user.user_id, user.current_score]
+        [user.user_id, user.current_score],
       );
       logger.info("Inserted user", {
         user_id: user.user_id,
@@ -36,13 +36,18 @@ const seedRemittanceHistory = async () => {
   for (const remittance of seedRemittances) {
     const existingRecord = await query(
       "SELECT id FROM remittance_history WHERE user_id = $1 AND month = $2",
-      [remittance.user_id, remittance.month]
+      [remittance.user_id, remittance.month],
     );
 
     if (existingRecord.rowCount === 0) {
       await query(
         "INSERT INTO remittance_history (user_id, amount, month, status) VALUES ($1, $2, $3, $4)",
-        [remittance.user_id, remittance.amount, remittance.month, remittance.status]
+        [
+          remittance.user_id,
+          remittance.amount,
+          remittance.month,
+          remittance.status,
+        ],
       );
       logger.info("Inserted remittance", {
         user_id: remittance.user_id,
