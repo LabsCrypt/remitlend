@@ -3,13 +3,15 @@ import { z, type ZodSchema, type ZodType } from "zod";
 
 type ValidationSource = "body" | "query" | "params";
 
-const validateSource = (
-  schema: ZodType,
-  source: ValidationSource,
-) => {
+const validateSource = (schema: ZodType, source: ValidationSource) => {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {
-      const data = source === "body" ? req.body : source === "query" ? req.query : req.params;
+      const data =
+        source === "body"
+          ? req.body
+          : source === "query"
+            ? req.query
+            : req.params;
       req[source] = schema.parse(data);
       next();
     } catch (error) {
@@ -19,8 +21,10 @@ const validateSource = (
 };
 
 export const validateBody = (schema: ZodType) => validateSource(schema, "body");
-export const validateQuery = (schema: ZodType) => validateSource(schema, "query");
-export const validateParams = (schema: ZodType) => validateSource(schema, "params");
+export const validateQuery = (schema: ZodType) =>
+  validateSource(schema, "query");
+export const validateParams = (schema: ZodType) =>
+  validateSource(schema, "params");
 
 export const validate = (schema: ZodSchema) => {
   return (req: Request, _res: Response, next: NextFunction) => {

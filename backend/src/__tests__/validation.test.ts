@@ -74,10 +74,12 @@ describe("Input Validation", () => {
     });
 
     it("should reject userId that is too long", async () => {
-      const response = await request(app).post("/api/simulate").send({
-        userId: "a".repeat(101),
-        amount: 500,
-      });
+      const response = await request(app)
+        .post("/api/simulate")
+        .send({
+          userId: "a".repeat(101),
+          amount: 500,
+        });
 
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);

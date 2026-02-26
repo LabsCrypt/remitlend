@@ -5,6 +5,7 @@ Express.js backend service for the RemitLend platform, providing API endpoints f
 ## Overview
 
 The backend serves as a bridge between the frontend application and the Stellar blockchain, handling:
+
 - Credit score generation and verification
 - Remittance history simulation (for MVP)
 - NFT metadata provision
@@ -88,6 +89,7 @@ npm run format:check # Check code formatting
 Check if the API is running.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -102,9 +104,11 @@ Check if the API is running.
 Get the credit score for a specific user based on their remittance history.
 
 **Parameters:**
+
 - `userId` (string) - User identifier
 
 **Response:**
+
 ```json
 {
   "userId": "user123",
@@ -119,6 +123,7 @@ Get the credit score for a specific user based on their remittance history.
 ```
 
 **Error Responses:**
+
 - `400` - Invalid user ID
 - `404` - User not found
 - `500` - Server error
@@ -130,6 +135,7 @@ Get the credit score for a specific user based on their remittance history.
 Simulate remittance history for testing purposes.
 
 **Request Body:**
+
 ```json
 {
   "userId": "user123",
@@ -144,6 +150,7 @@ Simulate remittance history for testing purposes.
 ```
 
 **Response:**
+
 ```json
 {
   "userId": "user123",
@@ -159,6 +166,7 @@ Interactive API documentation is available via Swagger UI when the server is run
 **URL**: [http://localhost:3001/api-docs](http://localhost:3001/api-docs)
 
 The Swagger documentation provides:
+
 - Complete endpoint specifications
 - Request/response schemas
 - Interactive API testing
@@ -210,7 +218,7 @@ backend/
 Centralized error handling middleware that catches and formats errors.
 
 ```typescript
-import { errorHandler } from './middleware/errorHandler';
+import { errorHandler } from "./middleware/errorHandler";
 app.use(errorHandler);
 ```
 
@@ -219,10 +227,10 @@ app.use(errorHandler);
 Request validation using Zod schemas.
 
 ```typescript
-import { validate } from './middleware/validation';
-import { mySchema } from './schemas/mySchemas';
+import { validate } from "./middleware/validation";
+import { mySchema } from "./schemas/mySchemas";
 
-router.post('/endpoint', validate(mySchema), controller);
+router.post("/endpoint", validate(mySchema), controller);
 ```
 
 ### Rate Limiter
@@ -230,8 +238,8 @@ router.post('/endpoint', validate(mySchema), controller);
 Protects endpoints from abuse with configurable rate limits.
 
 ```typescript
-import { rateLimiter } from './middleware/rateLimiter';
-app.use('/api/', rateLimiter);
+import { rateLimiter } from "./middleware/rateLimiter";
+app.use("/api/", rateLimiter);
 ```
 
 ### Async Handler
@@ -239,11 +247,14 @@ app.use('/api/', rateLimiter);
 Wraps async route handlers to catch errors automatically.
 
 ```typescript
-import { asyncHandler } from './middleware/asyncHandler';
+import { asyncHandler } from "./middleware/asyncHandler";
 
-router.get('/endpoint', asyncHandler(async (req, res) => {
-  // Async code here
-}));
+router.get(
+  "/endpoint",
+  asyncHandler(async (req, res) => {
+    // Async code here
+  }),
+);
 ```
 
 ## Testing
@@ -267,16 +278,14 @@ npm test -- --watch
 ### Test Structure
 
 ```typescript
-import request from 'supertest';
-import app from '../app';
+import request from "supertest";
+import app from "../app";
 
-describe('GET /api/health', () => {
-  it('should return 200 OK', async () => {
-    const response = await request(app)
-      .get('/api/health')
-      .expect(200);
-    
-    expect(response.body).toHaveProperty('status', 'ok');
+describe("GET /api/health", () => {
+  it("should return 200 OK", async () => {
+    const response = await request(app).get("/api/health").expect(200);
+
+    expect(response.body).toHaveProperty("status", "ok");
   });
 });
 ```
@@ -284,6 +293,7 @@ describe('GET /api/health', () => {
 ### Test Coverage
 
 Aim for >80% code coverage on new code. Current coverage:
+
 - Statements: Check with `npm test -- --coverage`
 - Branches: Check with `npm test -- --coverage`
 - Functions: Check with `npm test -- --coverage`
@@ -294,9 +304,9 @@ Aim for >80% code coverage on new code. Current coverage:
 ### Custom Error Class
 
 ```typescript
-import { AppError } from './errors/AppError';
+import { AppError } from "./errors/AppError";
 
-throw new AppError('User not found', 404);
+throw new AppError("User not found", 404);
 ```
 
 ### Error Response Format
@@ -317,22 +327,24 @@ Validation schemas are defined using Zod in the `schemas/` directory.
 ### Example Schema
 
 ```typescript
-import { z } from 'zod';
+import { z } from "zod";
 
 export const getUserScoreSchema = z.object({
   params: z.object({
-    userId: z.string().min(1, 'User ID is required'),
+    userId: z.string().min(1, "User ID is required"),
   }),
 });
 
 export const simulateRemittanceSchema = z.object({
   body: z.object({
     userId: z.string().min(1),
-    transactions: z.array(z.object({
-      amount: z.number().positive(),
-      date: z.string(),
-      recipient: z.string(),
-    })),
+    transactions: z.array(
+      z.object({
+        amount: z.number().positive(),
+        date: z.string(),
+        recipient: z.string(),
+      }),
+    ),
   }),
 });
 ```
@@ -340,18 +352,21 @@ export const simulateRemittanceSchema = z.object({
 ## Future Enhancements
 
 ### Phase 1: Real Remittance Integration
+
 - [ ] Wise API integration
 - [ ] Western Union API integration
 - [ ] Remittance data verification
 - [ ] Historical data import
 
 ### Phase 2: Enhanced Features
+
 - [ ] User authentication (JWT)
 - [ ] Database integration (PostgreSQL)
 - [ ] IPFS integration for NFT metadata
 - [ ] Webhook support for blockchain events
 
 ### Phase 3: Production Ready
+
 - [ ] Caching layer (Redis)
 - [ ] Logging and monitoring
 - [ ] CI/CD pipeline

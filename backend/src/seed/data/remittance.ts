@@ -42,10 +42,30 @@ export const seedRemittances: SeedRemittance[] = [
   { user_id: "test_user", amount: 275, month: "April", status: "Completed" },
   { user_id: "test_user", amount: 250, month: "May", status: "Completed" },
 
-  { user_id: "alice_stellar", amount: 800, month: "January", status: "Completed" },
-  { user_id: "alice_stellar", amount: 850, month: "February", status: "Completed" },
-  { user_id: "alice_stellar", amount: 900, month: "March", status: "Completed" },
-  { user_id: "alice_stellar", amount: 875, month: "April", status: "Completed" },
+  {
+    user_id: "alice_stellar",
+    amount: 800,
+    month: "January",
+    status: "Completed",
+  },
+  {
+    user_id: "alice_stellar",
+    amount: 850,
+    month: "February",
+    status: "Completed",
+  },
+  {
+    user_id: "alice_stellar",
+    amount: 900,
+    month: "March",
+    status: "Completed",
+  },
+  {
+    user_id: "alice_stellar",
+    amount: 875,
+    month: "April",
+    status: "Completed",
+  },
   { user_id: "alice_stellar", amount: 950, month: "May", status: "Completed" },
 
   { user_id: "bob_remit", amount: 600, month: "January", status: "Completed" },
@@ -54,8 +74,18 @@ export const seedRemittances: SeedRemittance[] = [
   { user_id: "bob_remit", amount: 650, month: "April", status: "Completed" },
   { user_id: "bob_remit", amount: 600, month: "May", status: "Completed" },
 
-  { user_id: "charlie_test", amount: 400, month: "January", status: "Completed" },
-  { user_id: "charlie_test", amount: 450, month: "February", status: "Completed" },
+  {
+    user_id: "charlie_test",
+    amount: 400,
+    month: "January",
+    status: "Completed",
+  },
+  {
+    user_id: "charlie_test",
+    amount: 450,
+    month: "February",
+    status: "Completed",
+  },
   { user_id: "charlie_test", amount: 400, month: "March", status: "Completed" },
   { user_id: "charlie_test", amount: 425, month: "April", status: "Completed" },
   { user_id: "charlie_test", amount: 400, month: "May", status: "Completed" },
