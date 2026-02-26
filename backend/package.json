@@ -22,6 +22,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@stellar/stellar-sdk": "^14.5.0",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
