@@ -192,3 +192,5 @@ impl LoanManager {
         events::loan_repaid(&env, borrower, amount);
     }
 }
+#[cfg(test)]
+mod test;

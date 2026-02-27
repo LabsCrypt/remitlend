@@ -124,7 +124,7 @@ fn test_approve_loan_success() {
 #[should_panic]
 fn test_approve_loan_unauthorized() {
     let env = Env::default();
-    let (manager, _nft_client, _pool, _token, _token_admin, admin) = setup_test(&env);
+    let (manager, _nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let unauthorized = Address::generate(&env);
     
     env.as_contract(&manager.address, || {
@@ -138,7 +138,7 @@ fn test_repayment_flow() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (manager, _nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
+    let (manager, nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // 1. Borrower starts with a score of 600

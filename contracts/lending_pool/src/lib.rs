@@ -92,6 +92,13 @@ impl LendingPool {
     pub fn get_token(env: Env) -> Address {
         Self::read_token(&env)
     }
+
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized")
+    }
 }
 
 #[cfg(test)]

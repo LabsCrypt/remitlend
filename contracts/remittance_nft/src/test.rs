@@ -1,6 +1,6 @@
 #![cfg(test)]
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal};
 
 fn create_test_hash(env: &Env, value: u8) -> BytesN<32> {
     let mut hash_bytes = [0u8; 32];
@@ -110,6 +110,7 @@ fn test_authorized_minter() {
 #[test]
 #[should_panic]
 fn test_authorize_minter_unauthorized() {
+    // 1. Setup
     let env = Env::default();
     let admin = Address::generate(&env);
     let unauthorized = Address::generate(&env);
@@ -118,9 +119,21 @@ fn test_authorize_minter_unauthorized() {
     let client = RemittanceNFTClient::new(&env, &contract_id);
     client.initialize(&admin);
 
-    // Call from unauthorized address without mock_all_auths should fail natives checks
-    unauthorized.require_auth(); // This is just to satisfy the environment if needed, 
-    // but the point is that client.authorize_minter will check for ADMIN auth.
+    // 2. Mock authenticating as unauthorized user
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &unauthorized,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "authorize_minter",
+                args: (Address::generate(&env),).into_val(&env),
+                sub_invokes: &[],
+            },
+        },
+    ]);
+
+    // 3. This should panic because authorize_minter requires ADMIN auth, 
+    // but we are providing unauthorized user auth.
     client.authorize_minter(&Address::generate(&env));
 }
 
@@ -129,7 +142,7 @@ fn test_authorize_minter_unauthorized() {
 fn test_not_initialized() {
     let env = Env::default();
     let user = Address::generate(&env);
-    let contract_id = env.register_contract(None, RemittanceNFT);
+    let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     let history_hash = create_test_hash(&env, 1);
