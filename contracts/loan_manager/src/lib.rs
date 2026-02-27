@@ -44,14 +44,10 @@ pub struct LoanManager;
 
 #[contractimpl]
 impl LoanManager {
-    fn nft_key() -> soroban_sdk::Symbol {
-        symbol_short!("NFT")
-    }
-
     fn nft_contract(env: &Env) -> Address {
         env.storage()
             .instance()
-            .get(&Self::nft_key())
+            .get(&DataKey::NftContract)
             .expect("not initialized")
     }
 
@@ -76,6 +72,12 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::LoanCounter, &0u32);
     }
 
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+    }
+
     pub fn request_loan(env: Env, borrower: Address, amount: i128) -> u32 {
         borrower.require_auth();
 
@@ -83,13 +85,8 @@ impl LoanManager {
             panic!("loan amount must be positive");
         }
 
-        let nft_contract: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::NftContract)
-            .expect("not initialized");
+        let nft_contract = Self::nft_contract(&env);
         let nft_client = NftClient::new(&env, &nft_contract);
-
         let score = nft_client.get_score(&borrower);
         if score < 500 {
             panic!("score too low for loan");
@@ -195,3 +192,5 @@ impl LoanManager {
         events::loan_repaid(&env, borrower, amount);
     }
 }
+#[cfg(test)]
+mod test;
