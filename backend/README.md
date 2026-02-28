@@ -6,11 +6,11 @@ Express.js backend service for the RemitLend platform, providing API endpoints f
 
 The backend serves as a bridge between the frontend application and the Stellar blockchain, handling:
 
-- Credit score generation and verification
-- Remittance history simulation (for MVP)
-- NFT metadata provision
-- API documentation via Swagger
-- Request validation and rate limiting
+- **Loan Event Indexing**: A robust polling service that watches Soroban RPC for `LoanRequested`, `LoanApproved`, and `LoanRepaid` events.
+- **Credit Scoring**: Generation and verification of borrower scores based on indexed history.
+- **Remittance Simulation**: API support for generating mocked remittance data for testing.
+- **NFT Metadata**: Serving metadata for the Remittance NFT collection.
+- **Security**: Request validation, rate limiting, and centralized error handling.
 
 ## Tech Stack
 

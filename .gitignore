@@ -8,3 +8,4 @@ dist
 coverage
 *.log
 .idea
+create_issues.sh
