@@ -55,29 +55,27 @@ fn test_set_admin() {
     let token_id = Address::generate(&env);
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
-    
+
     pool_client.initialize(&admin, &token_id);
 
     let new_admin = Address::generate(&env);
     pool_client.set_admin(&new_admin);
-    
+
     assert_eq!(pool_client.get_admin(), new_admin);
 
     // Attempt to set admin again with old admin (who is no longer admin) should fail
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &admin,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                fn_name: "set_admin",
-                args: (&admin,).into_val(&env),
-                sub_invokes: &[],
-            },
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            fn_name: "set_admin",
+            args: (&admin,).into_val(&env),
+            sub_invokes: &[],
         },
-    ]);
-    
+    }]);
+
     // This should panic because old admin is no longer authorized
-    // We use a separate test case for the panic to keep this test clean if needed, 
+    // We use a separate test case for the panic to keep this test clean if needed,
     // but the suggestion was to verify it fails.
 }
 
@@ -89,7 +87,7 @@ fn test_set_admin_unauthorized() {
     let token_id = Address::generate(&env);
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
-    
+
     pool_client.initialize(&admin, &token_id);
 
     let new_admin = Address::generate(&env);

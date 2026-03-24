@@ -126,7 +126,7 @@ fn test_approve_loan_unauthorized() {
     let env = Env::default();
     let (manager, _nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let unauthorized = Address::generate(&env);
-    
+
     env.as_contract(&manager.address, || {
         unauthorized.require_auth();
         manager.approve_loan(&1);

@@ -31,7 +31,11 @@ impl LendingPool {
     }
 
     pub fn set_admin(env: Env, new_admin: Address) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &new_admin);
     }
