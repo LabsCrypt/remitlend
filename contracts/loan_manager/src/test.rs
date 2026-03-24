@@ -11,6 +11,7 @@ fn setup_test<'a>(
     Address,
     Address,
     Address,
+    Address,
 ) {
     // 1. Deploy the NFT score contract
     let admin = Address::generate(env);
@@ -39,6 +40,7 @@ fn setup_test<'a>(
         pool_address,
         token_id,
         token_admin,
+        admin,
     )
 }
 
@@ -47,7 +49,7 @@ fn test_loan_request_success() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Give borrower a score high enough to pass (>= 500)
@@ -71,7 +73,7 @@ fn test_loan_request_failure_low_score() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Give borrower a score too low to pass (< 500)
@@ -83,11 +85,11 @@ fn test_loan_request_failure_low_score() {
 }
 
 #[test]
-fn test_approve_loan_flow() {
+fn test_approve_loan_success() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_address, token_id, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // 1. Give borrower a score high enough to pass
@@ -119,11 +121,24 @@ fn test_approve_loan_flow() {
 }
 
 #[test]
+#[should_panic]
+fn test_approve_loan_unauthorized() {
+    let env = Env::default();
+    let (manager, _nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
+    let unauthorized = Address::generate(&env);
+    
+    env.as_contract(&manager.address, || {
+        unauthorized.require_auth();
+        manager.approve_loan(&1);
+    });
+}
+
+#[test]
 fn test_repayment_flow() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // 1. Borrower starts with a score of 600
@@ -131,10 +146,8 @@ fn test_repayment_flow() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
     assert_eq!(nft_client.get_score(&borrower), 600);
 
-    // Disable strict top-level auth checks entirely for the internal execution
-    env.mock_all_auths_allowing_non_root_auth();
-
     // 2. Repayment triggers update_score
+    env.mock_all_auths_allowing_non_root_auth();
     manager.repay(&borrower, &500);
 
     // 3. Verify the underlying NFT Score was correctly incremented
@@ -146,7 +159,7 @@ fn test_small_repayment_does_not_change_score() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -163,9 +176,7 @@ fn test_small_repayment_does_not_change_score() {
 #[should_panic]
 fn test_access_controls_unauthorized_repay() {
     let env = Env::default();
-    // NOT using mock_all_auths() to enforce actual signatures
-
-    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, _nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Attempting to repay without proper Authorization scope should panic natively.
@@ -178,7 +189,7 @@ fn test_approve_nonexistent_loan() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (manager, _nft, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, _nft, _pool, _token, _token_admin, _admin) = setup_test(&env);
 
     // Try to approve a loan that doesn't exist
     manager.approve_loan(&999);
@@ -190,7 +201,7 @@ fn test_approve_already_approved_loan() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_address, token_id, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Setup
@@ -214,7 +225,7 @@ fn test_request_loan_negative_amount() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, nft_client, _pool, _token, _token_admin, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);

@@ -103,6 +103,16 @@ impl RemittanceNFT {
             .remove(&DataKey::AuthorizedMinter(minter));
     }
 
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let admin = Self::admin(&env);
+        admin.require_auth();
+        env.storage().instance().set(&Self::admin_key(), &new_admin);
+        // Automatically authorize new admin as minter
+        env.storage()
+            .persistent()
+            .set(&DataKey::AuthorizedMinter(new_admin), &true);
+    }
+
     /// Check if an address is authorized to mint
     pub fn is_authorized_minter(env: Env, minter: Address) -> bool {
         env.storage()
@@ -167,7 +177,6 @@ impl RemittanceNFT {
         let metadata_key = DataKey::Metadata(user.clone());
         let mut metadata = Self::get_or_migrate_metadata(&env, &user)
             .unwrap_or_else(|| panic!("user does not have an NFT"));
-
         // Simple logic: 1 point per 100 units of repayment
         let points = (repayment_amount / 100) as u32;
         if points == 0 {
