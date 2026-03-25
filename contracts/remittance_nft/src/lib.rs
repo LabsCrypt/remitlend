@@ -12,8 +12,9 @@ pub struct RemittanceMetadata {
 #[derive(Clone)]
 pub enum DataKey {
     Metadata(Address),
-    Score(Address), // Legacy key for backward compatibility
+    Score(Address),
     AuthorizedMinter(Address),
+    Seized(Address),
 }
 
 #[contract]
@@ -238,6 +239,36 @@ impl RemittanceNFT {
             (symbol_short!("HashUpd"), user),
             metadata.history_hash.clone(),
         );
+    }
+
+    pub fn seize_collateral(env: Env, user: Address, minter: Option<Address>) {
+        Self::require_admin_or_authorized_minter(&env, minter);
+
+        let metadata_key = DataKey::Metadata(user.clone());
+        if !env.storage().persistent().has(&metadata_key) {
+            let score_key = DataKey::Score(user.clone());
+            if !env.storage().persistent().has(&score_key) {
+                panic!("user does not have an NFT");
+            }
+        }
+
+        let seized_key = DataKey::Seized(user.clone());
+        if env.storage().persistent().has(&seized_key) {
+            panic!("collateral already seized");
+        }
+
+        env.storage().persistent().set(&seized_key, &true);
+        Self::bump_persistent_ttl(&env, &seized_key);
+        env.events().publish((symbol_short!("Seized"), user), ());
+    }
+
+    pub fn is_seized(env: Env, user: Address) -> bool {
+        let seized_key = DataKey::Seized(user.clone());
+        let is_seized = env.storage().persistent().has(&seized_key);
+        if is_seized {
+            Self::bump_persistent_ttl(&env, &seized_key);
+        }
+        is_seized
     }
 }
 

@@ -13,6 +13,7 @@ import simulationRoutes from "./routes/simulationRoutes.js";
 import scoreRoutes from "./routes/scoreRoutes.js";
 import loanRoutes from "./routes/loanRoutes.js";
 import indexerRoutes from "./routes/indexerRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
@@ -52,7 +53,11 @@ const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://localhost:")) {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      origin.startsWith("http://localhost:")
+    ) {
       return callback(null, true);
     }
     return callback(new Error("Not allowed by CORS"));
@@ -84,6 +89,7 @@ app.use("/api", simulationRoutes);
 app.use("/api/score", scoreRoutes);
 app.use("/api/loans", loanRoutes);
 app.use("/api/indexer", indexerRoutes);
+app.use("/api/auth", authRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────
 // Only exposed in test environment to verify centralized error handling.

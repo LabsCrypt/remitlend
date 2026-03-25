@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { query } from "../db/connection.js";
+import { cacheService } from "../services/cacheService.js";
 
 // ---------------------------------------------------------------------------
 // Score computation helpers
@@ -52,12 +53,32 @@ const LATE_DELTA = -30;
 export const getScore = asyncHandler(async (req: Request, res: Response) => {
   const { userId } = req.params as { userId: string };
 
+  const cacheKey = `score:userId:${userId}`;
+  const cachedScoreParams = await cacheService.get<{ score: number, band: CreditBand }>(cacheKey);
+
+  if (cachedScoreParams) {
+    res.json({
+      success: true,
+      userId,
+      score: cachedScoreParams.score,
+      band: cachedScoreParams.band,
+      factors: {
+        repaymentHistory: "On-time payments increase score by 15 pts each",
+        latePaymentPenalty: "Late payments decrease score by 30 pts each",
+        range: "500 (Poor) – 850 (Excellent)",
+      },
+    });
+    return;
+  }
+
   const result = await query("SELECT current_score FROM scores WHERE user_id = $1", [
     userId,
   ]);
 
   const score = result.rows.length > 0 ? result.rows[0].current_score : 500;
   const band = getCreditBand(score);
+
+  await cacheService.set(cacheKey, { score, band }, 300); // 5 minutes TTL
 
   res.json({
     success: true,
@@ -110,6 +131,10 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
 
   const newScore = result.rows[0].current_score;
   const band = getCreditBand(newScore);
+
+  // Invalidate cache
+  const cacheKey = `score:userId:${userId}`;
+  await cacheService.delete(cacheKey);
 
   res.json({
     success: true,

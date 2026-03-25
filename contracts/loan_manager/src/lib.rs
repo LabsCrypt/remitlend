@@ -1,12 +1,14 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, symbol_short, Address, Env,
+    contract, contractclient, contractimpl, contracttype, symbol_short, Address, Env, Vec,
 };
 
 #[contractclient(name = "NftClient")]
 pub trait RemittanceNftInterface {
     fn get_score(env: Env, user: Address) -> u32;
     fn update_score(env: Env, user: Address, repayment_amount: i128, minter: Option<Address>);
+    fn seize_collateral(env: Env, user: Address, minter: Option<Address>);
+    fn is_seized(env: Env, user: Address) -> bool;
 }
 
 mod events;
@@ -25,6 +27,12 @@ pub enum LoanStatus {
 pub struct Loan {
     pub borrower: Address,
     pub amount: i128,
+    pub principal_paid: i128,
+    pub interest_paid: i128,
+    pub accrued_interest: i128,
+    pub interest_rate_bps: u32,
+    pub due_date: u32,
+    pub last_interest_ledger: u32,
     pub status: LoanStatus,
 }
 
@@ -50,6 +58,8 @@ impl LoanManager {
     const INSTANCE_TTL_BUMP: u32 = 518400;
     const PERSISTENT_TTL_THRESHOLD: u32 = 17280;
     const PERSISTENT_TTL_BUMP: u32 = 518400;
+    const DEFAULT_INTEREST_RATE_BPS: u32 = 1200;
+    const DEFAULT_TERM_LEDGERS: u32 = 17280;
 
     fn bump_instance_ttl(env: &Env) {
         env.storage()
@@ -83,6 +93,50 @@ impl LoanManager {
         if paused {
             panic!("contract is paused");
         }
+    }
+
+    fn remaining_principal(loan: &Loan) -> i128 {
+        loan.amount
+            .checked_sub(loan.principal_paid)
+            .expect("principal paid exceeds amount")
+    }
+
+    fn accrue_interest(env: &Env, loan: &mut Loan) {
+        if loan.status != LoanStatus::Approved {
+            return;
+        }
+
+        let current_ledger = env.ledger().sequence();
+        if loan.last_interest_ledger == 0 || current_ledger <= loan.last_interest_ledger {
+            return;
+        }
+
+        let remaining_principal = Self::remaining_principal(loan);
+        if remaining_principal <= 0 {
+            loan.last_interest_ledger = current_ledger;
+            return;
+        }
+
+        let elapsed_ledgers = current_ledger - loan.last_interest_ledger;
+        let interest_delta = remaining_principal
+            .checked_mul(loan.interest_rate_bps as i128)
+            .and_then(|value| value.checked_mul(elapsed_ledgers as i128))
+            .and_then(|value| value.checked_div(10_000))
+            .and_then(|value| value.checked_div(Self::DEFAULT_TERM_LEDGERS as i128))
+            .expect("interest overflow");
+
+        loan.accrued_interest = loan
+            .accrued_interest
+            .checked_add(interest_delta)
+            .expect("interest overflow");
+        loan.last_interest_ledger = current_ledger;
+    }
+
+    fn current_total_debt(env: &Env, loan: &mut Loan) -> i128 {
+        Self::accrue_interest(env, loan);
+        Self::remaining_principal(loan)
+            .checked_add(loan.accrued_interest)
+            .expect("debt overflow")
     }
 
     pub fn initialize(
@@ -144,6 +198,12 @@ impl LoanManager {
         let loan = Loan {
             borrower: borrower.clone(),
             amount,
+            principal_paid: 0,
+            interest_paid: 0,
+            accrued_interest: 0,
+            interest_rate_bps: Self::DEFAULT_INTEREST_RATE_BPS,
+            due_date: 0,
+            last_interest_ledger: 0,
             status: LoanStatus::Pending,
         };
 
@@ -191,6 +251,8 @@ impl LoanManager {
 
         // Update loan status to Approved
         loan.status = LoanStatus::Approved;
+        loan.due_date = env.ledger().sequence() + Self::DEFAULT_TERM_LEDGERS;
+        loan.last_interest_ledger = env.ledger().sequence();
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
 
@@ -215,16 +277,19 @@ impl LoanManager {
 
     pub fn get_loan(env: Env, loan_id: u32) -> Loan {
         let loan_key = DataKey::Loan(loan_id);
-        let loan = env
+        let mut loan = env
             .storage()
             .persistent()
             .get(&loan_key)
             .expect("loan not found");
         Self::bump_persistent_ttl(&env, &loan_key);
+        Self::accrue_interest(&env, &mut loan);
         loan
     }
 
-    pub fn repay(env: Env, borrower: Address, amount: i128) {
+    pub fn repay(env: Env, borrower: Address, loan_id: u32, amount: i128) {
+        use soroban_sdk::token::TokenClient;
+
         borrower.require_auth();
         Self::assert_not_paused(&env);
 
@@ -232,7 +297,66 @@ impl LoanManager {
             panic!("repayment amount must be positive");
         }
 
-        // Repayment logic (placeholder)
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .expect("loan not found");
+
+        if loan.borrower != borrower {
+            panic!("borrower does not own loan");
+        }
+        if loan.status != LoanStatus::Approved {
+            panic!("loan is not active");
+        }
+
+        let current_ledger = env.ledger().sequence();
+        if current_ledger > loan.due_date {
+            panic!("loan is past due");
+        }
+
+        let total_debt = Self::current_total_debt(&env, &mut loan);
+        if amount > total_debt {
+            panic!("repayment exceeds current total debt");
+        }
+
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+        let token_client = TokenClient::new(&env, &token);
+        token_client.transfer(&borrower, &lending_pool, &amount);
+
+        let interest_payment = amount.min(loan.accrued_interest);
+        let principal_payment = amount
+            .checked_sub(interest_payment)
+            .expect("repayment underflow");
+
+        loan.interest_paid = loan
+            .interest_paid
+            .checked_add(interest_payment)
+            .expect("interest paid overflow");
+        loan.accrued_interest = loan
+            .accrued_interest
+            .checked_sub(interest_payment)
+            .expect("interest underflow");
+        loan.principal_paid = loan
+            .principal_paid
+            .checked_add(principal_payment)
+            .expect("principal paid overflow");
+
+        if loan.principal_paid == loan.amount && loan.accrued_interest == 0 {
+            loan.status = LoanStatus::Repaid;
+        }
+
+        env.storage().persistent().set(&loan_key, &loan);
 
         // Skip cross-contract call when repayment rounds to zero score points.
         if amount >= 100 {
@@ -241,7 +365,7 @@ impl LoanManager {
             nft_client.update_score(&borrower, &amount, &None);
         }
 
-        events::loan_repaid(&env, borrower, amount);
+        events::loan_repaid(&env, borrower, loan_id, amount);
     }
 
     pub fn set_min_score(env: Env, min_score: u32) {
@@ -294,6 +418,81 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
         events::unpaused(&env);
+    }
+
+    pub fn check_default(env: Env, loan_id: u32) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+        Self::assert_not_paused(&env);
+
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .expect("loan not found");
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        if loan.status != LoanStatus::Approved {
+            panic!("loan is not active");
+        }
+
+        let current_ledger = env.ledger().sequence();
+        if current_ledger <= loan.due_date {
+            panic!("loan is not past due");
+        }
+
+        loan.status = LoanStatus::Defaulted;
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        let nft_contract = Self::nft_contract(&env);
+        let nft_client = NftClient::new(&env, &nft_contract);
+        nft_client.seize_collateral(&loan.borrower, &None);
+
+        events::loan_defaulted(&env, loan_id, loan.borrower.clone());
+    }
+
+    pub fn check_defaults(env: Env, loan_ids: Vec<u32>) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+        Self::assert_not_paused(&env);
+
+        for loan_id in loan_ids.iter() {
+            let loan_key = DataKey::Loan(loan_id);
+            let mut loan: Loan = match env.storage().persistent().get(&loan_key) {
+                Some(l) => l,
+                None => continue,
+            };
+            Self::bump_persistent_ttl(&env, &loan_key);
+
+            if loan.status != LoanStatus::Approved {
+                continue;
+            }
+
+            let current_ledger = env.ledger().sequence();
+            if current_ledger <= loan.due_date {
+                continue;
+            }
+
+            loan.status = LoanStatus::Defaulted;
+            env.storage().persistent().set(&loan_key, &loan);
+            Self::bump_persistent_ttl(&env, &loan_key);
+
+            let nft_contract = Self::nft_contract(&env);
+            let nft_client = NftClient::new(&env, &nft_contract);
+            nft_client.seize_collateral(&loan.borrower, &None);
+
+            events::loan_defaulted(&env, loan_id, loan.borrower.clone());
+        }
     }
 }
 
