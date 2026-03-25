@@ -14,6 +14,7 @@ import scoreRoutes from "./routes/scoreRoutes.js";
 import loanRoutes from "./routes/loanRoutes.js";
 import indexerRoutes from "./routes/indexerRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
@@ -90,6 +91,7 @@ app.use("/api/score", scoreRoutes);
 app.use("/api/loans", loanRoutes);
 app.use("/api/indexer", indexerRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────
 // Only exposed in test environment to verify centralized error handling.

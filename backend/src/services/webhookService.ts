@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
+import { loanEventNotifier } from "./loanEventNotifier.js";
 
 export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "LoanRequested",
@@ -101,6 +102,9 @@ export class WebhookService {
   }
 
   async deliverEvent(event: IndexedLoanEvent) {
+    // Send user notifications for loan events
+    await this.sendUserNotifications(event);
+
     const result = await query(
       `SELECT id, callback_url, event_types, secret
        FROM webhook_subscriptions
@@ -118,6 +122,28 @@ export class WebhookService {
         this.deliverToSubscription(subscription, event),
       ),
     );
+  }
+
+  private async sendUserNotifications(event: IndexedLoanEvent) {
+    try {
+      switch (event.eventType) {
+        case "LoanRequested":
+        case "LoanApproved":
+          await loanEventNotifier.notifyLoanApplicationStatusChange(event);
+          break;
+        case "LoanRepaid":
+          await loanEventNotifier.notifyLoanRepaid(event);
+          break;
+        default:
+          logger.debug("No notification handler for event type", { eventType: event.eventType });
+      }
+    } catch (error) {
+      logger.error("Failed to send user notifications", { 
+        eventType: event.eventType, 
+        loanId: event.loanId, 
+        error 
+      });
+    }
   }
 
   private async deliverToSubscription(
