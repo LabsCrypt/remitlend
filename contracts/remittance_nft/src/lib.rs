@@ -21,11 +21,31 @@ pub struct RemittanceNFT;
 
 #[contractimpl]
 impl RemittanceNFT {
+    const INSTANCE_TTL_THRESHOLD: u32 = 17280;
+    const INSTANCE_TTL_BUMP: u32 = 518400;
+    const PERSISTENT_TTL_THRESHOLD: u32 = 17280;
+    const PERSISTENT_TTL_BUMP: u32 = 518400;
+
     fn admin_key() -> soroban_sdk::Symbol {
         symbol_short!("ADMIN")
     }
 
+    fn bump_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_BUMP);
+    }
+
+    fn bump_persistent_ttl(env: &Env, key: &DataKey) {
+        env.storage().persistent().extend_ttl(
+            key,
+            Self::PERSISTENT_TTL_THRESHOLD,
+            Self::PERSISTENT_TTL_BUMP,
+        );
+    }
+
     fn admin(env: &Env) -> Address {
+        Self::bump_instance_ttl(env);
         env.storage()
             .instance()
             .get(&Self::admin_key())
@@ -35,11 +55,12 @@ impl RemittanceNFT {
     fn require_admin_or_authorized_minter(env: &Env, minter: Option<Address>) {
         if let Some(minter_addr) = minter {
             minter_addr.require_auth();
-            if !env
-                .storage()
-                .persistent()
-                .has(&DataKey::AuthorizedMinter(minter_addr))
-            {
+            let key = DataKey::AuthorizedMinter(minter_addr);
+            let is_authorized = env.storage().persistent().has(&key);
+            if is_authorized {
+                Self::bump_persistent_ttl(env, &key);
+            }
+            if !is_authorized {
                 panic!("minter is not authorized");
             }
         } else {
@@ -54,6 +75,7 @@ impl RemittanceNFT {
     fn get_or_migrate_metadata(env: &Env, user: &Address) -> Option<RemittanceMetadata> {
         let metadata_key = DataKey::Metadata(user.clone());
         if let Some(metadata) = env.storage().persistent().get(&metadata_key) {
+            Self::bump_persistent_ttl(env, &metadata_key);
             return Some(metadata);
         }
 
@@ -66,6 +88,7 @@ impl RemittanceNFT {
             env.storage()
                 .persistent()
                 .set(&metadata_key, &migrated_metadata);
+            Self::bump_persistent_ttl(env, &metadata_key);
             env.storage().persistent().remove(&score_key);
             return Some(migrated_metadata);
         }
@@ -79,19 +102,20 @@ impl RemittanceNFT {
             panic!("already initialized");
         }
         env.storage().instance().set(&admin_key, &admin);
+        Self::bump_instance_ttl(&env);
         // Admin is automatically authorized to mint
-        env.storage()
-            .persistent()
-            .set(&DataKey::AuthorizedMinter(admin.clone()), &true);
+        let key = DataKey::AuthorizedMinter(admin.clone());
+        env.storage().persistent().set(&key, &true);
+        Self::bump_persistent_ttl(&env, &key);
     }
 
     /// Authorize a contract or account to mint NFTs
     pub fn authorize_minter(env: Env, minter: Address) {
         Self::admin(&env).require_auth();
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::AuthorizedMinter(minter), &true);
+        let key = DataKey::AuthorizedMinter(minter);
+        env.storage().persistent().set(&key, &true);
+        Self::bump_persistent_ttl(&env, &key);
     }
 
     /// Revoke authorization for a contract or account to mint NFTs
@@ -105,9 +129,12 @@ impl RemittanceNFT {
 
     /// Check if an address is authorized to mint
     pub fn is_authorized_minter(env: Env, minter: Address) -> bool {
-        env.storage()
-            .persistent()
-            .has(&DataKey::AuthorizedMinter(minter))
+        let key = DataKey::AuthorizedMinter(minter);
+        let is_authorized = env.storage().persistent().has(&key);
+        if is_authorized {
+            Self::bump_persistent_ttl(&env, &key);
+        }
+        is_authorized
     }
 
     /// Mint an NFT representing a user's remittance history and reputation score
@@ -139,6 +166,7 @@ impl RemittanceNFT {
         };
 
         env.storage().persistent().set(&metadata_key, &metadata);
+        Self::bump_persistent_ttl(&env, &metadata_key);
         env.events()
             .publish((symbol_short!("Mint"), user), initial_score);
     }
@@ -178,6 +206,7 @@ impl RemittanceNFT {
         metadata.score = metadata.score.checked_add(points).expect("score overflow");
 
         env.storage().persistent().set(&metadata_key, &metadata);
+        Self::bump_persistent_ttl(&env, &metadata_key);
         env.events()
             .publish((symbol_short!("ScoreUpd"), user), metadata.score);
     }
@@ -204,8 +233,11 @@ impl RemittanceNFT {
         metadata.history_hash = new_history_hash;
 
         env.storage().persistent().set(&metadata_key, &metadata);
-        env.events()
-            .publish((symbol_short!("HashUpd"), user), metadata.history_hash.clone());
+        Self::bump_persistent_ttl(&env, &metadata_key);
+        env.events().publish(
+            (symbol_short!("HashUpd"), user),
+            metadata.history_hash.clone(),
+        );
     }
 }
 

@@ -15,11 +15,31 @@ pub struct LendingPool;
 
 #[contractimpl]
 impl LendingPool {
+    const INSTANCE_TTL_THRESHOLD: u32 = 17280;
+    const INSTANCE_TTL_BUMP: u32 = 518400;
+    const PERSISTENT_TTL_THRESHOLD: u32 = 17280;
+    const PERSISTENT_TTL_BUMP: u32 = 518400;
+
     fn token_key() -> soroban_sdk::Symbol {
         symbol_short!("TOKEN")
     }
 
+    fn bump_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_BUMP);
+    }
+
+    fn bump_persistent_ttl(env: &Env, key: &DataKey) {
+        env.storage().persistent().extend_ttl(
+            key,
+            Self::PERSISTENT_TTL_THRESHOLD,
+            Self::PERSISTENT_TTL_BUMP,
+        );
+    }
+
     fn read_token(env: &Env) -> Address {
+        Self::bump_instance_ttl(env);
         env.storage()
             .instance()
             .get(&Self::token_key())
@@ -27,7 +47,12 @@ impl LendingPool {
     }
 
     fn assert_not_paused(env: &Env) {
-        let paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+        Self::bump_instance_ttl(env);
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
         if paused {
             panic!("contract is paused");
         }
@@ -41,12 +66,13 @@ impl LendingPool {
         env.storage().instance().set(&token_key, &token);
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
+        Self::bump_instance_ttl(&env);
     }
 
     pub fn deposit(env: Env, provider: Address, amount: i128) {
         provider.require_auth();
         Self::assert_not_paused(&env);
-        
+
         if amount <= 0 {
             panic!("deposit amount must be positive");
         }
@@ -59,13 +85,18 @@ impl LendingPool {
             .checked_add(amount)
             .expect("deposit overflow");
         env.storage().persistent().set(&key, &current_balance);
+        Self::bump_persistent_ttl(&env, &key);
         env.events()
             .publish((symbol_short!("Deposit"), provider), amount);
     }
 
     pub fn get_deposit(env: Env, provider: Address) -> i128 {
         let key = DataKey::Deposit(provider);
-        env.storage().persistent().get(&key).unwrap_or(0)
+        let balance = env.storage().persistent().get(&key).unwrap_or(0);
+        if balance > 0 {
+            Self::bump_persistent_ttl(&env, &key);
+        }
+        balance
     }
 
     pub fn withdraw(env: Env, provider: Address, amount: i128) {
@@ -95,6 +126,7 @@ impl LendingPool {
             env.storage().persistent().remove(&key);
         } else {
             env.storage().persistent().set(&key, &new_balance);
+            Self::bump_persistent_ttl(&env, &key);
         }
         env.events()
             .publish((symbol_short!("Withdraw"), provider), amount);
@@ -113,8 +145,8 @@ impl LendingPool {
         admin.require_auth();
 
         env.storage().instance().set(&DataKey::Paused, &true);
-        env.events()
-            .publish((symbol_short!("Paused"),), ());
+        Self::bump_instance_ttl(&env);
+        env.events().publish((symbol_short!("Paused"),), ());
     }
 
     pub fn unpause(env: Env) {
@@ -126,8 +158,8 @@ impl LendingPool {
         admin.require_auth();
 
         env.storage().instance().set(&DataKey::Paused, &false);
-        env.events()
-            .publish((symbol_short!("Unpaused"),), ());
+        Self::bump_instance_ttl(&env);
+        env.events().publish((symbol_short!("Unpaused"),), ());
     }
 }
 
