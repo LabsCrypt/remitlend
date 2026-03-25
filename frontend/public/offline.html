@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RemitLend - Offline</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .container {
+      text-align: center;
+      max-width: 400px;
+    }
+    
+    .icon {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 30px;
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      border-radius: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      font-weight: bold;
+      box-shadow: 0 20px 40px rgba(37, 99, 235, 0.3);
+    }
+    
+    h1 {
+      font-size: 28px;
+      margin-bottom: 15px;
+      font-weight: 700;
+    }
+    
+    p {
+      font-size: 16px;
+      line-height: 1.6;
+      margin-bottom: 25px;
+      opacity: 0.8;
+    }
+    
+    .btn {
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 30px rgba(37, 99, 235, 0.4);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+    }
+    
+    .connection-status {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    
+    .pulse {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background: #ef4444;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.3; }
+      100% { opacity: 1; }
+    }
+    
+    .online .pulse {
+      background: #10b981;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">RL</div>
+    <h1>You're Offline</h1>
+    <p>
+      It looks like you've lost your internet connection. Some features may not be available until you're back online.
+    </p>
+    <button class="btn" onclick="window.location.reload()">
+      Try Again
+    </button>
+    <div class="connection-status" id="status">
+      <span class="pulse"></span>
+      Checking connection...
+    </div>
+  </div>
+
+  <script>
+    // Check connection status
+    function updateConnectionStatus() {
+      const status = document.getElementById('status');
+      const body = document.body;
+      
+      if (navigator.onLine) {
+        status.innerHTML = '<span class="pulse"></span>Connection restored! Redirecting...';
+        body.classList.add('online');
+        
+        // Redirect to home after a short delay
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1500);
+      } else {
+        status.innerHTML = '<span class="pulse"></span>No internet connection';
+        body.classList.remove('online');
+      }
+    }
+    
+    // Listen for connection changes
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+    
+    // Initial check
+    updateConnectionStatus();
+    
+    // Try to reconnect every 5 seconds
+    setInterval(() => {
+      if (!navigator.onLine) {
+        fetch('/health', { 
+          method: 'HEAD',
+          cache: 'no-cache'
+        }).then(() => {
+          updateConnectionStatus();
+        }).catch(() => {
+          // Still offline
+        });
+      }
+    }, 5000);
+  </script>
+</body>
+</html>

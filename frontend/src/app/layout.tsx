@@ -5,6 +5,7 @@ import { QueryProvider } from "./components/providers/QueryProvider";
 import { DashboardShell } from "./components/global_ui/DashboardShell";
 import { Toaster } from "./components/ui/Toast";
 import { LevelUpModal } from "./components/gamification/LevelUpModal";
+import { PWAInstallPrompt, PWAStatusIndicator } from "@/components/PWAComponents";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,15 @@ export const metadata: Metadata = {
     "Borderless Finance",
   ],
   authors: [{ name: "RemitLend Team" }],
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "RemitLend",
+  },
+  formatDetection: {
+    telephone: false,
+  },
   openGraph: {
     title: "RemitLend - Borderless P2P Lending & Remittance",
     description:
@@ -64,11 +74,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="theme-color" content="#2563eb" />
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
+        <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#2563eb" />
+        <meta name="msapplication-TileColor" content="#2563eb" />
+        <meta name="msapplication-config" content="/browserconfig.xml" />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <QueryProvider>
           <DashboardShell>{children}</DashboardShell>
           <Toaster />
           <LevelUpModal />
+          <PWAInstallPrompt />
+          <PWAStatusIndicator />
         </QueryProvider>
       </body>
     </html>
