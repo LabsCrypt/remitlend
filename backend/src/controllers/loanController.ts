@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
+import { parseQueryParams, createPaginatedResponse } from "../utils/pagination.js";
 
 /**
  * Get active loans for a borrower
@@ -8,7 +9,7 @@ import logger from "../utils/logger.js";
 export const getBorrowerLoans = async (req: Request, res: Response) => {
   try {
     const { borrower } = req.params;
-    const { status = "active" } = req.query;
+    const { limit, offset, sort, status, dateRange, amountRange } = parseQueryParams(req);
 
     if (!borrower) {
       return res.status(400).json({
@@ -68,17 +69,47 @@ export const getBorrowerLoans = async (req: Request, res: Response) => {
     });
 
     // Filter by status if specified
-    const filteredLoans =
-      status === "all" ? loans : loans.filter((loan) => loan.status === status);
+    let filteredLoans = loans;
+    if (status && status !== "all") {
+      filteredLoans = filteredLoans.filter((loan) => loan.status === status);
+    }
+    if (amountRange) {
+      filteredLoans = filteredLoans.filter(
+        (loan) => loan.principal >= amountRange.min && loan.principal <= amountRange.max
+      );
+    }
+    if (dateRange) {
+      filteredLoans = filteredLoans.filter((loan) => {
+        if (!loan.approvedAt) return false;
+        const d = new Date(loan.approvedAt);
+        return d >= dateRange.start && d <= dateRange.end;
+      });
+    }
 
-    res.json({
-      success: true,
-      data: {
-        borrower,
-        loans: filteredLoans,
-        totalLoans: filteredLoans.length,
-      },
-    });
+    // Sorting
+    if (sort) {
+      const isDesc = sort.startsWith("-");
+      const sortField = sort.replace(/^-/, "");
+      filteredLoans.sort((a, b) => {
+        let valA = (a as any)[sortField];
+        let valB = (b as any)[sortField];
+        if (typeof valA === "string") valA = valA.toLowerCase();
+        if (typeof valB === "string") valB = valB.toLowerCase();
+        
+        if (valA < valB) return isDesc ? 1 : -1;
+        if (valA > valB) return isDesc ? -1 : 1;
+        return 0;
+      });
+    }
+
+    // Pagination
+    const totalLoans = filteredLoans.length;
+    const paginatedLoans = filteredLoans.slice(offset, offset + limit);
+
+    res.json(createPaginatedResponse({
+      borrower,
+      loans: paginatedLoans,
+    }, totalLoans, limit, offset));
   } catch (error) {
     logger.error("Failed to get borrower loans", { error });
     res.status(500).json({

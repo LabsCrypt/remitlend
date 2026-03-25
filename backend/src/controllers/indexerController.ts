@@ -6,6 +6,7 @@ import {
   webhookService,
   type WebhookEventType,
 } from "../services/webhookService.js";
+import { parseQueryParams, createPaginatedResponse } from "../utils/pagination.js";
 
 /**
  * Get indexer status
@@ -70,34 +71,46 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
 export const getBorrowerEvents = async (req: Request, res: Response) => {
   try {
     const { borrower } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit, offset, sort, status, dateRange, amountRange } = parseQueryParams(req);
 
-    const result = await query(
-      `SELECT event_id, event_type, loan_id, borrower, amount, 
-              ledger, ledger_closed_at, tx_hash, created_at
-       FROM loan_events
-       WHERE borrower = $1
-       ORDER BY ledger DESC
-       LIMIT $2 OFFSET $3`,
-      [borrower, limit, offset],
-    );
+    const params: unknown[] = [borrower];
+    let whereClause = "WHERE borrower = $1";
 
-    const total = await query(
-      "SELECT COUNT(*) as count FROM loan_events WHERE borrower = $1",
-      [borrower],
-    );
+    if (status && status !== "all") {
+      params.push(status);
+      whereClause += ` AND event_type = $${params.length}`;
+    }
+    if (amountRange) {
+      params.push(amountRange.min, amountRange.max);
+      whereClause += ` AND CAST(amount AS NUMERIC) BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+    if (dateRange) {
+      params.push(dateRange.start.toISOString(), dateRange.end.toISOString());
+      whereClause += ` AND ledger_closed_at BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
 
-    res.json({
-      success: true,
-      data: {
-        events: result.rows,
-        pagination: {
-          total: parseInt(total.rows[0].count),
-          limit: parseInt(limit as string),
-          offset: parseInt(offset as string),
-        },
-      },
-    });
+    let orderField = "ledger";
+    let orderDir = "DESC";
+    if (sort) {
+      orderDir = sort.startsWith("-") ? "DESC" : "ASC";
+      orderField = sort.replace(/^-/, "");
+      const allowedVars = ["event_type", "amount", "ledger", "ledger_closed_at"];
+      if (!allowedVars.includes(orderField)) orderField = "ledger";
+    }
+
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount, 
+             ledger, ledger_closed_at, tx_hash, created_at
+      FROM loan_events
+      ${whereClause}
+      ORDER BY ${orderField} ${orderDir}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+
+    const result = await query(queryText, [...params, limit, offset]);
+    const totalCount = await query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params);
+
+    res.json(createPaginatedResponse(result.rows, parseInt(totalCount.rows[0].count), limit, offset));
   } catch (error) {
     logger.error("Failed to get borrower events", { error });
     res.status(500).json({
@@ -113,6 +126,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
 export const getLoanEvents = async (req: Request, res: Response) => {
   try {
     const { loanId } = req.params;
+    const { limit, offset, sort, status, dateRange, amountRange } = parseQueryParams(req);
 
     if (!loanId) {
       return res.status(400).json({
@@ -121,22 +135,44 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const result = await query(
-      `SELECT event_id, event_type, loan_id, borrower, amount, 
-              ledger, ledger_closed_at, tx_hash, created_at
-       FROM loan_events
-       WHERE loan_id = $1
-       ORDER BY ledger ASC`,
-      [loanId],
-    );
+    const params: unknown[] = [loanId];
+    let whereClause = "WHERE loan_id = $1";
 
-    res.json({
-      success: true,
-      data: {
-        loanId: parseInt(loanId as string),
-        events: result.rows,
-      },
-    });
+    if (status && status !== "all") {
+      params.push(status);
+      whereClause += ` AND event_type = $${params.length}`;
+    }
+    if (amountRange) {
+      params.push(amountRange.min, amountRange.max);
+      whereClause += ` AND CAST(amount AS NUMERIC) BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+    if (dateRange) {
+      params.push(dateRange.start.toISOString(), dateRange.end.toISOString());
+      whereClause += ` AND ledger_closed_at BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
+
+    let orderField = "ledger";
+    let orderDir = "ASC";
+    if (sort) {
+      orderDir = sort.startsWith("-") ? "DESC" : "ASC";
+      orderField = sort.replace(/^-/, "");
+      const allowedVars = ["event_type", "amount", "ledger", "ledger_closed_at"];
+      if (!allowedVars.includes(orderField)) orderField = "ledger";
+    }
+
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount, 
+             ledger, ledger_closed_at, tx_hash, created_at
+      FROM loan_events
+      ${whereClause}
+      ORDER BY ${orderField} ${orderDir}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+
+    const result = await query(queryText, [...params, limit, offset]);
+    const totalCount = await query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params);
+
+    res.json(createPaginatedResponse(result.rows, parseInt(totalCount.rows[0].count), limit, offset));
   } catch (error) {
     logger.error("Failed to get loan events", { error });
     res.status(500).json({
@@ -151,32 +187,55 @@ export const getLoanEvents = async (req: Request, res: Response) => {
  */
 export const getRecentEvents = async (req: Request, res: Response) => {
   try {
-    const { limit = 20, eventType } = req.query;
+    const { limit, offset, sort, status, dateRange, amountRange } = parseQueryParams(req);
 
-    let queryText = `
+    const params: unknown[] = [];
+    let whereClause = "";
+
+    const addWhere = (condition: string) => {
+      whereClause += whereClause === "" ? `WHERE ${condition}` : ` AND ${condition}`;
+    };
+
+    if (status && status !== "all") {
+      params.push(status);
+      addWhere(`event_type = $${params.length}`);
+    } else if (req.query.eventType) {
+      // Backwards compatibility with eventType param
+      params.push(req.query.eventType);
+      addWhere(`event_type = $${params.length}`);
+    }
+    
+    if (amountRange) {
+      params.push(amountRange.min, amountRange.max);
+      addWhere(`CAST(amount AS NUMERIC) BETWEEN $${params.length - 1} AND $${params.length}`);
+    }
+    if (dateRange) {
+      params.push(dateRange.start.toISOString(), dateRange.end.toISOString());
+      addWhere(`ledger_closed_at BETWEEN $${params.length - 1} AND $${params.length}`);
+    }
+
+    let orderField = "ledger";
+    let orderDir = "DESC";
+    if (sort) {
+      orderDir = sort.startsWith("-") ? "DESC" : "ASC";
+      orderField = sort.replace(/^-/, "");
+      const allowedVars = ["event_type", "amount", "ledger", "ledger_closed_at"];
+      if (!allowedVars.includes(orderField)) orderField = "ledger";
+    }
+
+    const queryText = `
       SELECT event_id, event_type, loan_id, borrower, amount, 
              ledger, ledger_closed_at, tx_hash, created_at
       FROM loan_events
+      ${whereClause}
+      ORDER BY ${orderField} ${orderDir}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `;
 
-    const params: unknown[] = [];
+    const result = await query(queryText, [...params, limit, offset]);
+    const totalCount = await query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params);
 
-    if (eventType) {
-      queryText += " WHERE event_type = $1";
-      params.push(eventType);
-    }
-
-    queryText += ` ORDER BY ledger DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
-
-    const result = await query(queryText, params);
-
-    res.json({
-      success: true,
-      data: {
-        events: result.rows,
-      },
-    });
+    res.json(createPaginatedResponse(result.rows, parseInt(totalCount.rows[0].count), limit, offset));
   } catch (error) {
     logger.error("Failed to get recent events", { error });
     res.status(500).json({
