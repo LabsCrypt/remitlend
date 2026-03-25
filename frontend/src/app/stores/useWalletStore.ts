@@ -15,7 +15,7 @@
  */
 
 import { create } from "zustand";
-import { devtools } from "zustand/middleware";
+import { devtools, persist } from "zustand/middleware";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -41,6 +41,8 @@ interface WalletState {
   status: WalletStatus;
   /** Connected wallet address (checksummed) — null when disconnected */
   address: string | null;
+  /** The type of wallet connected (e.g. injected, walletconnect) */
+  walletType: string | null;
   /** Current network info */
   network: WalletNetwork | null;
   /** Token balances for the connected wallet */
@@ -53,7 +55,7 @@ interface WalletState {
 
 interface WalletActions {
   /** Call after a successful wallet.connect() to store the result */
-  setConnected: (address: string, network: WalletNetwork) => void;
+  setConnected: (address: string, network: WalletNetwork | null, walletType?: string) => void;
   /** Call on disconnect or user-initiated Sign Out with wallet */
   disconnect: () => void;
   /** Update balances after fetching from the chain */
@@ -72,6 +74,7 @@ export type WalletStore = WalletState & WalletActions;
 const initialState: WalletState = {
   status: "disconnected",
   address: null,
+  walletType: null,
   network: null,
   balances: [],
   isLoadingBalances: false,
@@ -82,36 +85,47 @@ const initialState: WalletState = {
 
 export const useWalletStore = create<WalletStore>()(
   devtools(
-    (set) => ({
-      ...initialState,
+    persist(
+      (set) => ({
+        ...initialState,
 
-      setConnected: (address, network) =>
-        set(
-          {
-            status: "connected",
-            address,
-            network,
-            error: null,
-          },
-          false,
-          "wallet/setConnected",
-        ),
+        setConnected: (address, network, walletType) =>
+          set(
+            {
+              status: "connected",
+              address,
+              network,
+              walletType: walletType || "injected",
+              error: null,
+            },
+            false,
+            "wallet/setConnected",
+          ),
 
-      disconnect: () => set({ ...initialState }, false, "wallet/disconnect"),
+        disconnect: () => set({ ...initialState }, false, "wallet/disconnect"),
 
-      setBalances: (balances) =>
-        set({ balances, isLoadingBalances: false }, false, "wallet/setBalances"),
+        setBalances: (balances) =>
+          set({ balances, isLoadingBalances: false }, false, "wallet/setBalances"),
 
-      setNetwork: (network) => set({ network }, false, "wallet/setNetwork"),
+        setNetwork: (network) => set({ network }, false, "wallet/setNetwork"),
 
-      setStatus: (status) => set({ status }, false, "wallet/setStatus"),
+        setStatus: (status) => set({ status }, false, "wallet/setStatus"),
 
-      setError: (error) =>
-        set({ error, status: "error", isLoadingBalances: false }, false, "wallet/setError"),
+        setError: (error) =>
+          set({ error, status: "error", isLoadingBalances: false }, false, "wallet/setError"),
 
-      setLoadingBalances: (isLoadingBalances) =>
-        set({ isLoadingBalances }, false, "wallet/setLoadingBalances"),
-    }),
+        setLoadingBalances: (isLoadingBalances) =>
+          set({ isLoadingBalances }, false, "wallet/setLoadingBalances"),
+      }),
+      { 
+        name: "wallet-session",
+        partialize: (state) => ({ 
+          address: state.address, 
+          walletType: state.walletType, 
+          status: state.status 
+        }),
+      }
+    ),
     { name: "WalletStore" },
   ),
 );
