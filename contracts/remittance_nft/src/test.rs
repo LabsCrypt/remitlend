@@ -419,3 +419,62 @@ fn test_score_update_is_isolated_to_owner() {
     assert_eq!(alice_metadata.score, 109);
     assert_eq!(bob_metadata.score, 200);
 }
+
+#[test]
+fn test_seize_collateral() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(&user, &500, &history_hash, &None);
+
+    assert!(!client.is_seized(&user));
+
+    client.seize_collateral(&user, &None);
+
+    assert!(client.is_seized(&user));
+}
+
+#[test]
+#[should_panic(expected = "user does not have an NFT")]
+fn test_seize_collateral_no_nft() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    client.seize_collateral(&user, &None);
+}
+
+#[test]
+#[should_panic(expected = "collateral already seized")]
+fn test_seize_collateral_already_seized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(&user, &500, &history_hash, &None);
+
+    client.seize_collateral(&user, &None);
+    client.seize_collateral(&user, &None);
+}

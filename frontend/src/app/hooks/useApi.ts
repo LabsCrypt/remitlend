@@ -103,6 +103,19 @@ export interface UserBalance {
   currency: string;
 }
 
+export interface CreditScoreHistory {
+  date: string;
+  score: number;
+  event?: string;
+}
+
+export interface YieldHistory {
+  date: string;
+  earnings: number;
+  apy: number;
+  principal?: number;
+}
+
 // ─── Loan hooks ───────────────────────────────────────────────────────────────
 
 /**
@@ -136,15 +149,20 @@ export function useLoan(
 /**
  * Creates a new loan application.
  * Automatically invalidates the loans list cache on success.
+ * Returns mutation with txHash in the response for toast integration.
  */
 export function useCreateLoan(
-  options?: UseMutationOptions<Loan, Error, Omit<Loan, "id" | "createdAt" | "status">>,
+  options?: UseMutationOptions<
+    Loan & { txHash?: string },
+    Error,
+    Omit<Loan, "id" | "createdAt" | "status">
+  >,
 ) {
   const queryClient = useQueryClient();
 
-  return useMutation<Loan, Error, Omit<Loan, "id" | "createdAt" | "status">>({
+  return useMutation<Loan & { txHash?: string }, Error, Omit<Loan, "id" | "createdAt" | "status">>({
     mutationFn: (data) =>
-      apiFetch<Loan>("/loans", {
+      apiFetch<Loan & { txHash?: string }>("/loans", {
         method: "POST",
         body: JSON.stringify(data),
       }),
@@ -189,15 +207,24 @@ export function useRemittance(
 /**
  * Creates a new remittance.
  * Invalidates the remittances list cache on success.
+ * Returns mutation with txHash in the response for toast integration.
  */
 export function useCreateRemittance(
-  options?: UseMutationOptions<Remittance, Error, Omit<Remittance, "id" | "createdAt" | "status">>,
+  options?: UseMutationOptions<
+    Remittance & { txHash?: string },
+    Error,
+    Omit<Remittance, "id" | "createdAt" | "status">
+  >,
 ) {
   const queryClient = useQueryClient();
 
-  return useMutation<Remittance, Error, Omit<Remittance, "id" | "createdAt" | "status">>({
+  return useMutation<
+    Remittance & { txHash?: string },
+    Error,
+    Omit<Remittance, "id" | "createdAt" | "status">
+  >({
     mutationFn: (data) =>
-      apiFetch<Remittance>("/remittances", {
+      apiFetch<Remittance & { txHash?: string }>("/remittances", {
         method: "POST",
         body: JSON.stringify(data),
       }),
@@ -232,6 +259,40 @@ export function useUserBalance(
   return useQuery<UserBalance>({
     queryKey: queryKeys.user.balance(),
     queryFn: () => apiFetch<UserBalance>("/user/balance"),
+    ...options,
+  });
+}
+
+// ─── Chart data hooks ─────────────────────────────────────────────────────────
+
+/**
+ * Fetches credit score history for trend visualization.
+ * Returns historical score data points over time.
+ */
+export function useCreditScoreHistory(
+  userId: string | undefined,
+  options?: Omit<UseQueryOptions<CreditScoreHistory[]>, "queryKey" | "queryFn">,
+) {
+  return useQuery<CreditScoreHistory[]>({
+    queryKey: ["creditScoreHistory", userId],
+    queryFn: () => apiFetch<CreditScoreHistory[]>(`/score/${userId}/history`),
+    enabled: !!userId,
+    ...options,
+  });
+}
+
+/**
+ * Fetches yield earnings history for lenders.
+ * Returns historical yield performance data.
+ */
+export function useYieldHistory(
+  userId: string | undefined,
+  options?: Omit<UseQueryOptions<YieldHistory[]>, "queryKey" | "queryFn">,
+) {
+  return useQuery<YieldHistory[]>({
+    queryKey: ["yieldHistory", userId],
+    queryFn: () => apiFetch<YieldHistory[]>(`/yield/${userId}/history`),
+    enabled: !!userId,
     ...options,
   });
 }

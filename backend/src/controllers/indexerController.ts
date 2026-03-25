@@ -7,6 +7,7 @@ import {
   type WebhookEventType,
 } from "../services/webhookService.js";
 import { parseQueryParams, createPaginatedResponse } from "../utils/pagination.js";
+import { cacheService } from "../services/cacheService.js";
 
 /**
  * Get indexer status
@@ -75,6 +76,26 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
 
     const params: unknown[] = [borrower];
     let whereClause = "WHERE borrower = $1";
+    const cacheKey = `events:borrower:${borrower}:limit:${limit}:offset:${offset}`;
+    const cachedData = await cacheService.get(cacheKey);
+
+    if (cachedData) {
+      res.json({
+        success: true,
+        data: cachedData,
+      });
+      return;
+    }
+
+    const result = await query(
+      `SELECT event_id, event_type, loan_id, borrower, amount, 
+              ledger, ledger_closed_at, tx_hash, created_at
+       FROM loan_events
+       WHERE borrower = $1
+       ORDER BY ledger DESC
+       LIMIT $2 OFFSET $3`,
+      [borrower, limit, offset],
+    );
 
     if (status && status !== "all") {
       params.push(status);
@@ -111,6 +132,21 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
     const totalCount = await query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params);
 
     res.json(createPaginatedResponse(result.rows, parseInt(totalCount.rows[0].count), limit, offset));
+    const data = {
+      events: result.rows,
+      pagination: {
+        total: parseInt(total.rows[0].count),
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+      },
+    };
+
+    await cacheService.set(cacheKey, data, 300); // 5 minutes TTL
+
+    res.json({
+      success: true,
+      data,
+    });
   } catch (error) {
     logger.error("Failed to get borrower events", { error });
     res.status(500).json({
@@ -173,6 +209,37 @@ export const getLoanEvents = async (req: Request, res: Response) => {
     const totalCount = await query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params);
 
     res.json(createPaginatedResponse(result.rows, parseInt(totalCount.rows[0].count), limit, offset));
+    const cacheKey = `events:loan:${loanId}`;
+    const cachedData = await cacheService.get(cacheKey);
+
+    if (cachedData) {
+      res.json({
+        success: true,
+        data: cachedData,
+      });
+      return;
+    }
+
+    const result = await query(
+      `SELECT event_id, event_type, loan_id, borrower, amount, 
+              ledger, ledger_closed_at, tx_hash, created_at
+       FROM loan_events
+       WHERE loan_id = $1
+       ORDER BY ledger ASC`,
+      [loanId],
+    );
+
+    const data = {
+      loanId: parseInt(loanId as string),
+      events: result.rows,
+    };
+
+    await cacheService.set(cacheKey, data, 300); // 5 minutes TTL
+
+    res.json({
+      success: true,
+      data,
+    });
   } catch (error) {
     logger.error("Failed to get loan events", { error });
     res.status(500).json({
@@ -188,6 +255,24 @@ export const getLoanEvents = async (req: Request, res: Response) => {
 export const getRecentEvents = async (req: Request, res: Response) => {
   try {
     const { limit, offset, sort, status, dateRange, amountRange } = parseQueryParams(req);
+    const { limit = 20, eventType } = req.query;
+
+    const cacheKey = `events:recent:limit:${limit}:type:${eventType || 'all'}`;
+    const cachedData = await cacheService.get(cacheKey);
+
+    if (cachedData) {
+      res.json({
+        success: true,
+        data: cachedData,
+      });
+      return;
+    }
+
+    let queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount, 
+             ledger, ledger_closed_at, tx_hash, created_at
+      FROM loan_events
+    `;
 
     const params: unknown[] = [];
     let whereClause = "";
@@ -236,6 +321,16 @@ export const getRecentEvents = async (req: Request, res: Response) => {
     const totalCount = await query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params);
 
     res.json(createPaginatedResponse(result.rows, parseInt(totalCount.rows[0].count), limit, offset));
+    const data = {
+      events: result.rows,
+    };
+
+    await cacheService.set(cacheKey, data, 120); // 2 minutes TTL for recent events
+
+    res.json({
+      success: true,
+      data,
+    });
   } catch (error) {
     logger.error("Failed to get recent events", { error });
     res.status(500).json({
