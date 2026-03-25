@@ -15,6 +15,23 @@ import {
 import { Wallet, ArrowUpRight, ArrowDownLeft, Send, HandCoins } from "lucide-react";
 
 export default function TransactionPreviewDemo() {
+  // Gate demo page in production
+  if (process.env.NODE_ENV === "production") {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-8">
+        <Card className="max-w-md">
+          <CardContent className="p-8 text-center">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100 mb-2">
+              Demo Not Available
+            </h1>
+            <p className="text-gray-600 dark:text-zinc-400">
+              This demo page is only available in development mode.
+            </p>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
   const txPreview = useTransactionPreview();
 
   const demoTransactions = [

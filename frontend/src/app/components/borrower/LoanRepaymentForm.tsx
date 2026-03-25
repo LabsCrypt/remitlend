@@ -73,11 +73,11 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
     // Simulate API call delay
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // In a real implementation, this would call the smart contract
-    console.log(`Repaying loan ${loanId} with ${amount} USDC`);
+    // TODO: Replace with actual smart contract call
+    // Example: await loanContract.repay(loanId, amount);
 
-    // Show success message (handled by useContractMutation in real implementation)
-    alert(`Successfully repaid ${amount} USDC for Loan #${loanId}`);
+    // TODO: Success notification will be handled by useContractMutation wrapper
+    // when integrated with actual contract calls
 
     // Reset form
     setAmount("");

@@ -248,7 +248,11 @@ function DepositForm() {
 
   return (
     <>
-      <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      <input
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+      />
       <button onClick={handleDeposit}>Deposit</button>
 
       {txPreview.data && (
@@ -293,7 +297,7 @@ The component uses Tailwind CSS and supports dark mode out of the box. It follow
 
 ## Testing
 
-Visit `/transaction-preview-demo` to see interactive examples of all transaction types.
+Visit `/transaction-preview-demo` (development only) to see interactive examples of all transaction types.
 
 ## Future Enhancements
 
