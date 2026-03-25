@@ -11,8 +11,14 @@ import {
   CardContent,
   CardFooter,
 } from "../components/ui/Card";
-import { Modal } from "../components/ui/Modal";
+import dynamic from "next/dynamic";
 import { Search, Mail, Lock, User, Terminal, ChevronRight } from "lucide-react";
+
+// Dynamically load the Modal component since it is conditionally rendered
+const Modal = dynamic(() => import("../components/ui/Modal").then(mod => mod.Modal), {
+  ssr: false,
+});
+
 
 export default function UIDemoPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
