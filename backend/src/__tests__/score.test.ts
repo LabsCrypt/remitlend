@@ -13,7 +13,7 @@ jest.unstable_mockModule("../db/connection.js", () => ({
 const { query } = (await import("../db/connection.js")) as any;
 const { default: app } = (await import("../app.js")) as any;
 
-const mockedQuery = query as jest.Mock;
+const mockedQuery = query as jest.MockedFunction<typeof query>;
 const VALID_API_KEY = "test-internal-key";
 
 beforeAll(() => {

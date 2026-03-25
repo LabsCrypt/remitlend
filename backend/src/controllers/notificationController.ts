@@ -45,7 +45,7 @@ export const getUserNotificationPreferences = async (req: Request, res: Response
         sms_notifications_enabled,
         whatsapp_notifications_enabled
       FROM user_profiles
-      WHERE stellar_public_key = $1`,
+      WHERE public_key = $1`,
       [payload.publicKey],
     );
 
@@ -142,7 +142,7 @@ export const updateUserNotificationPreferences = async (req: Request, res: Respo
     const queryText = `
       UPDATE user_profiles
       SET ${updates.join(", ")}
-      WHERE stellar_public_key = $${paramIndex}
+      WHERE public_key = $${paramIndex}
       RETURNING 
         email,
         phone_number,
@@ -191,14 +191,14 @@ export const updateUserNotificationPreferences = async (req: Request, res: Respo
 export const createUserProfileIfNeeded = async (stellarPublicKey: string): Promise<void> => {
   try {
     const existingProfile = await query(
-      "SELECT stellar_public_key FROM user_profiles WHERE stellar_public_key = $1",
+      "SELECT public_key FROM user_profiles WHERE public_key = $1",
       [stellarPublicKey],
     );
 
     if (existingProfile.rows.length === 0) {
       await query(
         `INSERT INTO user_profiles (
-          stellar_public_key,
+          public_key,
           email_notifications_enabled,
           sms_notifications_enabled,
           whatsapp_notifications_enabled,
@@ -251,7 +251,7 @@ export const testNotificationSettings = async (req: Request, res: Response) => {
         sms_notifications_enabled,
         whatsapp_notifications_enabled
       FROM user_profiles
-      WHERE stellar_public_key = $1`,
+      WHERE public_key = $1`,
       [payload.publicKey],
     );
 

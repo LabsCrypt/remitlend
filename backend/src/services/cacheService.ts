@@ -12,7 +12,7 @@ class CacheService {
       url: REDIS_URL,
     });
 
-    this.client.on("error", (err) => {
+    this.client.on("error", (err: Error) => {
       logger.error("Redis Client Error", err);
       this.isConnected = false;
     });

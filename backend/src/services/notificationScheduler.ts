@@ -276,7 +276,7 @@ export class NotificationScheduler {
         sms_notifications_enabled,
         whatsapp_notifications_enabled
       FROM user_profiles
-      WHERE stellar_public_key = $1
+      WHERE public_key = $1
     `;
 
     const result = await query(queryText, [borrower]);

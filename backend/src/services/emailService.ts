@@ -35,7 +35,7 @@ export class EmailService {
 
   async sendEmail(notification: EmailNotification): Promise<boolean> {
     try {
-      const msg: sgMail.MailDataRequired = {
+      let msg: any = {
         to: notification.to,
         from: this.fromEmail,
         subject: notification.subject,
@@ -45,8 +45,17 @@ export class EmailService {
         msg.templateId = notification.templateId;
         msg.dynamicTemplateData = notification.templateData;
       } else {
-        msg.text = notification.text || "";
-        msg.html = notification.html || notification.text || "";
+        const content: any[] = [];
+        if (notification.text) {
+          content.push({ type: 'text/plain', value: notification.text });
+        }
+        if (notification.html) {
+          content.push({ type: 'text/html', value: notification.html });
+        }
+        if (content.length === 0 && notification.text) {
+          content.push({ type: 'text/plain', value: notification.text });
+        }
+        msg.content = content;
       }
 
       await sgMail.send(msg);
