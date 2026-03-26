@@ -41,6 +41,11 @@ pub fn late_fee_charged(env: &Env, loan_id: u32, fee_amount: i128) {
     env.events().publish(topics, fee_amount);
 }
 
+pub fn min_score_updated(env: &Env, old_score: u32, new_score: u32) {
+    env.events()
+        .publish((symbol_short!("MinScore"),), (old_score, new_score));
+}
+
 pub fn paused(env: &Env) {
     let topics = (Symbol::new(env, "Paused"),);
     env.events().publish(topics, ());

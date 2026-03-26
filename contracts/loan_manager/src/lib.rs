@@ -81,6 +81,9 @@ pub struct Loan {
     pub last_interest_ledger: u32,
     pub last_late_fee_ledger: u32,
     pub status: LoanStatus,
+    /// How many extensions have been granted for this loan.
+    /// Capped at MaxExtensions to prevent indefinite deferral.
+    pub extension_count: u32,
 }
 
 #[contracttype]
@@ -144,6 +147,15 @@ impl LoanManager {
             Self::PERSISTENT_TTL_THRESHOLD,
             Self::PERSISTENT_TTL_BUMP,
         );
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    fn get_admin(env: &Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized")
     }
 
     fn nft_contract(env: &Env) -> Address {
@@ -720,6 +732,7 @@ impl LoanManager {
             last_interest_ledger: 0,
             last_late_fee_ledger: 0,
             status: LoanStatus::Pending,
+            extension_count: 0,
         };
 
         env.storage()
@@ -901,6 +914,7 @@ impl LoanManager {
         }
 
         env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
         Self::bump_persistent_ttl(&env, &loan_key);
 
         if amount >= 100 {
