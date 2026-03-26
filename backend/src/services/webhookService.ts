@@ -5,6 +5,8 @@ import logger from "../utils/logger.js";
 export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "LoanRequested",
   "LoanApproved",
+  "LoanRejected",
+  "LoanDisbursed",
   "LoanRepaid",
   "LoanDefaulted",
 ] as const;
@@ -102,6 +104,9 @@ export class WebhookService {
   }
 
   async deliverEvent(event: IndexedLoanEvent) {
+    // Send user notifications for loan events
+    await this.sendUserNotifications(event);
+
     const result = await query(
       `SELECT id, callback_url, event_types, secret
        FROM webhook_subscriptions
@@ -269,6 +274,35 @@ export class WebhookService {
       event_types: toEventTypes(row.event_types),
       secret: row.secret ? String(row.secret) : null,
     };
+  }
+
+  private async sendUserNotifications(event: IndexedLoanEvent) {
+    try {
+      const { loanEventNotifier } = await import("./loanEventNotifier.js");
+      
+      switch (event.eventType) {
+        case "LoanRequested":
+        case "LoanApproved":
+        case "LoanRejected":
+          await loanEventNotifier.notifyLoanApplicationStatusChange(event);
+          break;
+        case "LoanDisbursed":
+          await loanEventNotifier.notifyLoanDisbursed(event);
+          break;
+        case "LoanRepaid":
+          await loanEventNotifier.notifyLoanRepaid(event);
+          break;
+        default:
+          logger.debug("No notification handler for event type", { eventType: event.eventType });
+      }
+    } catch (error) {
+      logger.error("Failed to send user notifications for loan event", {
+        eventType: event.eventType,
+        loanId: event.loanId,
+        borrower: event.borrower,
+        error,
+      });
+    }
   }
 }
 

@@ -6,6 +6,7 @@ import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
+import { notificationScheduler } from "./services/notificationScheduler.js";
 
 dotenv.config();
 
@@ -19,6 +20,9 @@ app.listen(port, () => {
 
   // Start periodic on-chain default checks (if configured)
   startDefaultCheckerScheduler();
+
+  // Start the notification scheduler
+  notificationScheduler.start();
 });
 
 // Graceful shutdown
@@ -26,6 +30,7 @@ process.on("SIGTERM", () => {
   logger.info("SIGTERM signal received: closing HTTP server");
   stopIndexer();
   stopDefaultCheckerScheduler();
+  notificationScheduler.stop();
   process.exit(0);
 });
 
@@ -33,5 +38,6 @@ process.on("SIGINT", () => {
   logger.info("SIGINT signal received: closing HTTP server");
   stopIndexer();
   stopDefaultCheckerScheduler();
+  notificationScheduler.stop();
   process.exit(0);
 });
