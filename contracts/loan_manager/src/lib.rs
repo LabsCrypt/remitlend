@@ -81,8 +81,8 @@ pub struct Loan {
     pub last_interest_ledger: u32,
     pub last_late_fee_ledger: u32,
     pub status: LoanStatus,
-    /// How many extensions have been granted for this loan.
-    /// Capped at MaxExtensions to prevent indefinite deferral.
+    // How many extensions have been granted for this loan.
+    // Capped at MaxExtensions to prevent indefinite deferral.
     pub extension_count: u32,
 }
 
@@ -151,12 +151,12 @@ impl LoanManager {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    fn get_admin(env: &Env) -> Address {
-        env.storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .expect("not initialized")
-    }
+    // fn get_admin(env: &Env) -> Address {
+    //     env.storage()
+    //         .instance()
+    //         .get(&DataKey::Admin)
+    //         .expect("not initialized")
+    // }
 
     fn nft_contract(env: &Env) -> Address {
         Self::bump_instance_ttl(env);
