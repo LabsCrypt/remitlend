@@ -1,33 +1,30 @@
 import { EventIndexer } from "../../src/services/eventIndexer.js";
 import { webhookService } from "../../src/services/webhookService.js";
 import { query } from "../../src/db/connection.js";
-//@ts-ignore
-import { SorobanRpc } from "@stellar/stellar-sdk";
+import { Soroban } from "@stellar/stellar-sdk"; // v14+ uses SorobanClient pattern
 
 jest.mock("../../src/db/connection.js", () => ({
   query: jest.fn(),
 }));
 
 jest.mock("@stellar/stellar-sdk", () => {
+  const mockGetEvents = jest.fn();
   return {
     __esModule: true,
-    SorobanRpc: {
-      Server: jest.fn(),
+    Soroban: {
+      // Soroban.newClient() returns an object with getEvents
+      newClient: jest.fn(() => ({
+        getEvents: mockGetEvents,
+      })),
     },
     scValToNative: jest.fn((val) => val),
-    xdr: {
-      ScVal: class {},
-    },
+    xdr: { ScVal: class {} },
   };
 });
 
-jest.mock("../../src/services/webhookService.js", () => {
-  return {
-    webhookService: {
-      dispatch: jest.fn(),
-    },
-  };
-});
+jest.mock("../../src/services/webhookService.js", () => ({
+  webhookService: { dispatch: jest.fn() },
+}));
 
 const mockQuery = query as jest.Mock;
 const mockDispatch = webhookService.dispatch as jest.Mock;
@@ -39,20 +36,14 @@ describe("EventIndexer Integration Tests", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockGetEvents = jest.fn();
-
-    (SorobanRpc.Server as unknown as jest.Mock).mockImplementation(() => ({
-      getEvents: mockGetEvents,
-    }));
+    mockGetEvents = (Soroban as any).newClient().getEvents;
 
     indexer = new EventIndexer("http://rpc", "contract-123");
   });
 
   const mockScVal = (value: any) => ({
     toXDR: () => "base64",
-    sym: () => ({
-      toString: () => value,
-    }),
+    sym: () => ({ toString: () => value }),
   });
 
   const baseEvent = {
@@ -65,11 +56,7 @@ describe("EventIndexer Integration Tests", () => {
   };
 
   function buildEvent(type: string, topicExtras: any[] = [], value: any = "100") {
-    return {
-      ...baseEvent,
-      topic: [mockScVal(type), ...topicExtras],
-      value: mockScVal(value),
-    };
+    return { ...baseEvent, topic: [mockScVal(type), ...topicExtras], value: mockScVal(value) };
   }
 
   // =========================
@@ -105,21 +92,14 @@ describe("EventIndexer Integration Tests", () => {
   });
 
   it("parses LoanRepaid and updates score", async () => {
-    const event = buildEvent(
-      "LoanRepaid",
-      [mockScVal("user1"), mockScVal(1)],
-      "300"
-    );
+    const event = buildEvent("LoanRepaid", [mockScVal("user1"), mockScVal(1)], "300");
 
     mockGetEvents.mockResolvedValue({ events: [event] });
     mockQuery.mockResolvedValue({ rows: [] });
 
     await indexer.processEvents(1, 200);
 
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO scores"),
-      expect.any(Array)
-    );
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO scores"), expect.any(Array));
   });
 
   it("parses LoanDefaulted and penalizes score", async () => {
@@ -130,10 +110,7 @@ describe("EventIndexer Integration Tests", () => {
 
     await indexer.processEvents(1, 200);
 
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO scores"),
-      expect.any(Array)
-    );
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO scores"), expect.any(Array));
   });
 
   // =========================
@@ -145,7 +122,6 @@ describe("EventIndexer Integration Tests", () => {
 
     mockGetEvents.mockResolvedValue({ events: [event] });
 
-    // duplicate found
     mockQuery.mockResolvedValueOnce({ rows: [1] });
 
     await indexer.processEvents(1, 200);
