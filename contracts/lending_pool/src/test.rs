@@ -444,7 +444,7 @@ fn test_pool_stats() {
 
     // Return the borrowed tokens to test full withdrawal
     token_client.transfer(&borrower, &pool_id, &1750);
-    
+
     // Withdraw all for provider 2
     pool_client.withdraw(&provider2, &2000);
     let stats = pool_client.get_pool_stats();
