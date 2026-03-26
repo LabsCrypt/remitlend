@@ -1,4 +1,4 @@
-use crate::{DataKey, LoanManager, LoanManagerClient, LoanStatus};
+use crate::{DataKey, LoanError, LoanManager, LoanManagerClient, LoanStatus};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
@@ -190,13 +190,13 @@ fn test_configurable_interest_rate_and_default_term() {
 }
 
 #[test]
-#[should_panic(expected = "interest rate must be positive")]
 fn test_set_interest_rate_zero_rejected() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
-    manager.set_interest_rate(&0);
+    let result = manager.try_set_interest_rate(&0);
+    assert_eq!(result, Err(Ok(LoanError::InvalidRate)));
 }
 
 #[test]
@@ -346,7 +346,6 @@ fn test_full_repayment_ignores_minimum_amount() {
 }
 
 #[test]
-#[should_panic(expected = "loan amount exceeds max loan amount")]
 fn test_request_loan_above_max_amount_fails() {
     let env = Env::default();
     env.mock_all_auths();
@@ -358,7 +357,8 @@ fn test_request_loan_above_max_amount_fails() {
     nft_client.mint(&borrower, &700, &history_hash, &None);
     manager.set_max_loan_amount(&500);
 
-    manager.request_loan(&borrower, &600);
+    let result = manager.try_request_loan(&borrower, &600);
+    assert_eq!(result, Err(Ok(LoanError::InvalidAmount)));
 }
 
 #[test]

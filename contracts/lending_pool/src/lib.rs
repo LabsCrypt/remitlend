@@ -463,7 +463,7 @@ impl LendingPool {
                 (Symbol::new(&env, "YieldClaimFailed"), provider),
                 Symbol::new(&env, "NoYieldAvailable"),
             );
-            return;
+            return Ok(());
         }
 
         let pool_balance = Self::pool_balance(&env, &token);

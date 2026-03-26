@@ -429,7 +429,7 @@ impl RemittanceNFT {
         // Simple logic: 1 point per 100 units of repayment
         let points_i128 = repayment_amount / 100;
         if points_i128 == 0 {
-            return;
+            return Ok(());
         }
         let points = if points_i128 > (Self::MAX_SCORE as i128) {
             Self::MAX_SCORE

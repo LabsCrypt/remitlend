@@ -1049,7 +1049,7 @@ impl LoanManager {
         Self::min_repayment_amount(&env)
     }
 
-    pub fn set_max_loans_per_borrower(env: Env, max_loans: u32) {
+    pub fn set_max_loans_per_borrower(env: Env, max_loans: u32) -> Result<(), LoanError> {
         if max_loans == 0 {
             return Err(LoanError::InvalidAmount);
         }
