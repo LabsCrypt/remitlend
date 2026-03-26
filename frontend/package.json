@@ -12,6 +12,7 @@
     "prepare": "cd .. && husky install frontend/.husky"
   },
   "dependencies": {
+    "@stellar/stellar-sdk": "^13.3.0",
     "@tanstack/react-query": "^5.11.2",
     "@tanstack/react-query-devtools": "^5.91.3",
     "clsx": "^2.1.1",
