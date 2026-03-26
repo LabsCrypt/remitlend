@@ -13,6 +13,11 @@ pub trait RemittanceNftInterface {
     fn record_default(env: Env, user: Address, minter: Option<Address>);
 }
 
+#[contractclient(name = "RateOracleClient")]
+pub trait RateOracleInterface {
+    fn get_rate(env: Env, borrower: Address, amount: i128, score: u32) -> u32;
+}
+
 mod events;
 
 #[contracttype]
@@ -64,6 +69,7 @@ pub enum DataKey {
     MinTermLedgers,
     MaxTermLedgers,
     Collateral(u32),
+    RateOracle,
 }
 
 #[contract]
@@ -477,7 +483,18 @@ impl LoanManager {
             accrued_interest: 0,
             late_fee_paid: 0,
             accrued_late_fee: 0,
-            interest_rate_bps: Self::read_interest_rate(&env),
+            interest_rate_bps: {
+                if let Some(oracle) = env
+                    .storage()
+                    .instance()
+                    .get::<_, Address>(&DataKey::RateOracle)
+                {
+                    let oracle_client = RateOracleClient::new(&env, &oracle);
+                    oracle_client.get_rate(&borrower, &amount, &score)
+                } else {
+                    Self::read_interest_rate(&env)
+                }
+            },
             due_date: 0,
             last_interest_ledger: 0,
             last_late_fee_ledger: 0,
@@ -888,6 +905,13 @@ impl LoanManager {
 
     pub fn get_interest_rate(env: Env) -> u32 {
         Self::read_interest_rate(&env)
+    }
+
+    pub fn set_rate_oracle(env: Env, oracle: Address) {
+        Self::admin(&env).require_auth();
+        env.storage().instance().set(&DataKey::RateOracle, &oracle);
+        Self::bump_instance_ttl(&env);
+        events::rate_oracle_updated(&env, oracle);
     }
 
     pub fn set_default_term(env: Env, ledgers: u32) {

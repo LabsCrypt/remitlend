@@ -361,7 +361,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       }
                     ]
@@ -613,6 +613,33 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "MaxLoanAmount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 50000
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "MaxLoansPerBorrower"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 3
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "NftContract"
                             }
                           ]
@@ -654,7 +681,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       }
                     ]

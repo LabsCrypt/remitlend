@@ -27,7 +27,6 @@
     ],
     [],
     [],
-    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
@@ -41,7 +40,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                 },
                 {
-                  "u32": 600
+                  "u32": 700
                 },
                 {
                   "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -69,7 +68,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 1000
+                    "lo": 500
                   }
                 }
               ]
@@ -280,7 +279,7 @@
                         "symbol": "score"
                       },
                       "val": {
-                        "u32": 600
+                        "u32": 700
                       }
                     }
                   ]
@@ -419,7 +418,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 1000
+                          "lo": 500
                         }
                       }
                     },
