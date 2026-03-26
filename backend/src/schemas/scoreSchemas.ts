@@ -3,20 +3,14 @@ import { z } from "zod";
 // Schema for GET /score/:userId
 export const getScoreSchema = z.object({
   params: z.object({
-    userId: z
-      .string()
-      .min(1, "User ID is required")
-      .max(100, "User ID is too long"),
+    userId: z.string().min(1).max(100),
   }),
 });
 
 // Schema for POST /score/update
 export const updateScoreSchema = z.object({
   body: z.object({
-    userId: z
-      .string()
-      .min(1, "User ID is required")
-      .max(100, "User ID is too long"),
+    userId: z.string().min(1).max(100),
     repaymentAmount: z
       .number()
       .positive("Repayment amount must be positive")

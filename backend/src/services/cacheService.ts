@@ -25,9 +25,9 @@ class CacheService {
     this.client.on("reconnecting", () => {
       logger.info("Redis Client Reconnecting");
     });
-    
+
     // Attempt to connect immediately. If it fails it will reconnect in the background.
-    this.connect().catch(err => {
+    this.connect().catch((err) => {
       logger.error("Initial Redis connection failed", err);
     });
   }
@@ -44,10 +44,14 @@ class CacheService {
    * @param value The value to cache (will be stringified)
    * @param ttlSeconds The TTL in seconds (default: 300 = 5 minutes)
    */
-  async set(key: string, value: any, ttlSeconds: number = 300): Promise<void> {
+  async set(
+    key: string,
+    value: unknown,
+    ttlSeconds: number = 300,
+  ): Promise<void> {
     try {
       if (!this.isConnected) return;
-      
+
       const stringValue = JSON.stringify(value);
       await this.client.setEx(key, ttlSeconds, stringValue);
     } catch (error) {
@@ -100,6 +104,20 @@ class CacheService {
       }
     } catch (error) {
       logger.error(`Error invalidating pattern ${pattern}`, { error });
+    }
+  }
+
+  /**
+   * Ping the Redis server to verify connectivity.
+   * Returns "ok" on success or "error" if unreachable.
+   */
+  async ping(): Promise<"ok" | "error"> {
+    try {
+      if (!this.isConnected) return "error";
+      const reply = await this.client.ping();
+      return reply === "PONG" ? "ok" : "error";
+    } catch {
+      return "error";
     }
   }
 

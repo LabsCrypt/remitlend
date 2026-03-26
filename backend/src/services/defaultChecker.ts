@@ -65,7 +65,8 @@ export class DefaultChecker {
   private pollSleepMs: number;
 
   constructor() {
-    this.rpcUrl = process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
+    this.rpcUrl =
+      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
     this.contractId = process.env.LOAN_MANAGER_CONTRACT_ID || "";
     this.termLedgers = parsePositiveInt(
       process.env.LOAN_TERM_LEDGERS,
@@ -76,11 +77,21 @@ export class DefaultChecker {
       process.env.DEFAULT_CHECK_MAX_LOANS_PER_RUN,
       500,
     );
-    this.pollAttempts = parsePositiveInt(process.env.DEFAULT_CHECK_POLL_ATTEMPTS, 30);
-    this.pollSleepMs = parsePositiveInt(process.env.DEFAULT_CHECK_POLL_SLEEP_MS, 1_000);
+    this.pollAttempts = parsePositiveInt(
+      process.env.DEFAULT_CHECK_POLL_ATTEMPTS,
+      30,
+    );
+    this.pollSleepMs = parsePositiveInt(
+      process.env.DEFAULT_CHECK_POLL_SLEEP_MS,
+      1_000,
+    );
   }
 
-  private assertConfigured(): { signer: Keypair; server: rpc.Server; passphrase: string } {
+  private assertConfigured(): {
+    signer: Keypair;
+    server: rpc.Server;
+    passphrase: string;
+  } {
     if (!this.contractId) {
       throw AppError.internal(
         "Default checker misconfiguration: LOAN_MANAGER_CONTRACT_ID is not set",
@@ -189,12 +200,18 @@ export class DefaultChecker {
     );
 
     const row = result.rows[0] as
-      | { overdue_count?: string | bigint; oldest_due_ledger?: string | bigint | null }
+      | {
+          overdue_count?: string | bigint;
+          oldest_due_ledger?: string | bigint | null;
+        }
       | undefined;
 
-    const overdueCount = row?.overdue_count != null ? Number(row.overdue_count) : 0;
+    const overdueCount =
+      row?.overdue_count != null ? Number(row.overdue_count) : 0;
     const oldestDueLedger =
-      row?.oldest_due_ledger != null ? Number(row.oldest_due_ledger) : undefined;
+      row?.oldest_due_ledger != null
+        ? Number(row.oldest_due_ledger)
+        : undefined;
 
     const ledgersPastOldestDue =
       oldestDueLedger != null && Number.isFinite(oldestDueLedger)
@@ -300,9 +317,7 @@ export class DefaultChecker {
 
     const explicitIds = loanIds
       ? Array.from(
-          new Set(
-            loanIds.filter((id) => Number.isInteger(id) && id > 0),
-          ),
+          new Set(loanIds.filter((id) => Number.isInteger(id) && id > 0)),
         )
       : undefined;
 
@@ -359,7 +374,9 @@ export class DefaultChecker {
       currentLedger,
       termLedgers: this.termLedgers,
       overdueCount: stats.overdueCount,
-      ...(stats.oldestDueLedger !== undefined ? { oldestDueLedger: stats.oldestDueLedger } : {}),
+      ...(stats.oldestDueLedger !== undefined
+        ? { oldestDueLedger: stats.oldestDueLedger }
+        : {}),
       ...(stats.ledgersPastOldestDue !== undefined
         ? { ledgersPastOldestDue: stats.ledgersPastOldestDue }
         : {}),
@@ -380,7 +397,10 @@ export function startDefaultCheckerScheduler(): void {
     return;
   }
 
-  if (!process.env.LOAN_MANAGER_CONTRACT_ID || !process.env.LOAN_MANAGER_ADMIN_SECRET) {
+  if (
+    !process.env.LOAN_MANAGER_CONTRACT_ID ||
+    !process.env.LOAN_MANAGER_ADMIN_SECRET
+  ) {
     logger.warn(
       "Default checker scheduler disabled (set LOAN_MANAGER_CONTRACT_ID and LOAN_MANAGER_ADMIN_SECRET)",
     );

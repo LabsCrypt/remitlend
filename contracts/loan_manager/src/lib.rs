@@ -52,6 +52,8 @@ pub enum DataKey {
     MinScore,
     Paused,
     LateFeeRateBps,
+    MinTermLedgers,
+    MaxTermLedgers,
 }
 
 #[contract]
@@ -332,9 +334,16 @@ impl LoanManager {
             panic!("loan is not pending");
         }
 
+        // Determine term length from admin-configured default (falls back to compile-time constant)
+        let term_ledgers: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinTermLedgers)
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
+
         // Update loan status to Approved
         loan.status = LoanStatus::Approved;
-        loan.due_date = env.ledger().sequence() + Self::DEFAULT_TERM_LEDGERS;
+        loan.due_date = env.ledger().sequence() + term_ledgers;
         loan.last_interest_ledger = env.ledger().sequence();
         loan.last_late_fee_ledger = loan.due_date;
         env.storage().persistent().set(&loan_key, &loan);
@@ -512,6 +521,76 @@ impl LoanManager {
             .instance()
             .get(&DataKey::MinScore)
             .unwrap_or(500)
+    }
+
+    /// Set the minimum term length (in ledgers) for new loans. Admin only.
+    pub fn set_min_term_ledgers(env: Env, min_term: u32) {
+        if min_term == 0 {
+            panic!("min term must be greater than zero");
+        }
+        let max_term: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MaxTermLedgers)
+            .unwrap_or(u32::MAX);
+        if min_term > max_term {
+            panic!("min term cannot exceed max term");
+        }
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::MinTermLedgers, &min_term);
+        Self::bump_instance_ttl(&env);
+        events::term_limits_updated(&env, min_term, max_term);
+    }
+
+    /// Get the minimum term length (in ledgers). Defaults to DEFAULT_TERM_LEDGERS.
+    pub fn get_min_term_ledgers(env: Env) -> u32 {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::MinTermLedgers)
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS)
+    }
+
+    /// Set the maximum term length (in ledgers) for new loans. Admin only.
+    pub fn set_max_term_ledgers(env: Env, max_term: u32) {
+        if max_term == 0 {
+            panic!("max term must be greater than zero");
+        }
+        let min_term: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinTermLedgers)
+            .unwrap_or(0);
+        if max_term < min_term {
+            panic!("max term cannot be less than min term");
+        }
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::MaxTermLedgers, &max_term);
+        Self::bump_instance_ttl(&env);
+        events::term_limits_updated(&env, min_term, max_term);
+    }
+
+    /// Get the maximum term length (in ledgers). Defaults to DEFAULT_TERM_LEDGERS.
+    pub fn get_max_term_ledgers(env: Env) -> u32 {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::MaxTermLedgers)
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS)
     }
 
     pub fn pause(env: Env) {

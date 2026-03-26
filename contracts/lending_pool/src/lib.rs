@@ -8,6 +8,8 @@ pub enum DataKey {
     Deposit(Address),
     Admin,
     Paused,
+    MaxPoolSize,
+    TotalDeposits,
 }
 
 #[contract]
@@ -58,6 +60,13 @@ impl LendingPool {
         }
     }
 
+    fn read_total_deposits(env: &Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalDeposits)
+            .unwrap_or(0)
+    }
+
     pub fn initialize(env: Env, token: Address, admin: Address) {
         let token_key = Self::token_key();
         if env.storage().instance().has(&token_key) {
@@ -66,7 +75,43 @@ impl LendingPool {
         env.storage().instance().set(&token_key, &token);
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDeposits, &0_i128);
         Self::bump_instance_ttl(&env);
+    }
+
+    /// Admin-only: set the maximum total deposits the pool will accept.
+    /// Pass `0` to remove the cap entirely.
+    pub fn set_max_pool_size(env: Env, max: i128) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+
+        if max < 0 {
+            panic!("max pool size must be non-negative");
+        }
+        env.storage().instance().set(&DataKey::MaxPoolSize, &max);
+        Self::bump_instance_ttl(&env);
+        env.events().publish((symbol_short!("MaxPool"),), max);
+    }
+
+    /// Returns the current max pool size cap (0 = no cap).
+    pub fn get_max_pool_size(env: Env) -> i128 {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::MaxPoolSize)
+            .unwrap_or(0)
+    }
+
+    /// Returns the current sum of all provider deposits.
+    pub fn get_total_deposits(env: Env) -> i128 {
+        Self::bump_instance_ttl(&env);
+        Self::read_total_deposits(&env)
     }
 
     pub fn deposit(env: Env, provider: Address, amount: i128) {
@@ -76,9 +121,26 @@ impl LendingPool {
         if amount <= 0 {
             panic!("deposit amount must be positive");
         }
+
+        // Enforce max pool size cap when set (non-zero).
+        let max: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MaxPoolSize)
+            .unwrap_or(0);
+        if max > 0 {
+            let total = Self::read_total_deposits(&env);
+            let new_total = total.checked_add(amount).expect("deposit overflow");
+            if new_total > max {
+                panic!("deposit exceeds max pool size");
+            }
+        }
+
         let token = Self::read_token(&env);
         let token_client = TokenClient::new(&env, &token);
         token_client.transfer(&provider, &env.current_contract_address(), &amount);
+
+        // Update per-provider balance.
         let key = DataKey::Deposit(provider.clone());
         let mut current_balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         current_balance = current_balance
@@ -86,6 +148,16 @@ impl LendingPool {
             .expect("deposit overflow");
         env.storage().persistent().set(&key, &current_balance);
         Self::bump_persistent_ttl(&env, &key);
+
+        // Update global total.
+        let new_total = Self::read_total_deposits(&env)
+            .checked_add(amount)
+            .expect("total deposits overflow");
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDeposits, &new_total);
+        Self::bump_instance_ttl(&env);
+
         env.events()
             .publish((symbol_short!("Deposit"), provider), amount);
     }
@@ -119,6 +191,8 @@ impl LendingPool {
             panic!("insufficient pool liquidity");
         }
         token_client.transfer(&pool_address, &provider, &amount);
+
+        // Update per-provider balance.
         let new_balance = current_balance
             .checked_sub(amount)
             .expect("withdraw underflow");
@@ -128,6 +202,16 @@ impl LendingPool {
             env.storage().persistent().set(&key, &new_balance);
             Self::bump_persistent_ttl(&env, &key);
         }
+
+        // Update global total.
+        let new_total = Self::read_total_deposits(&env)
+            .checked_sub(amount)
+            .expect("total deposits underflow");
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDeposits, &new_total);
+        Self::bump_instance_ttl(&env);
+
         env.events()
             .publish((symbol_short!("Withdraw"), provider), amount);
     }

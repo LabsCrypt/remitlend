@@ -184,7 +184,7 @@ export const getRecentEvents = async (req: Request, res: Response) => {
   try {
     const { limit = 20, eventType } = req.query;
 
-    const cacheKey = `events:recent:limit:${limit}:type:${eventType || 'all'}`;
+    const cacheKey = `events:recent:limit:${limit}:type:${eventType || "all"}`;
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {

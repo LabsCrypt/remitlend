@@ -19,7 +19,13 @@ export const requireJwtAuth = (
 ): void => {
   const authHeader = req.headers.authorization;
 
-  const token = extractBearerToken(authHeader);
+  // For SSE connections the browser's EventSource API cannot set custom
+  // headers, so we also accept the token as a `?token=` query parameter.
+  // We prioritise the Authorization header when both are present.
+  const rawQueryToken =
+    typeof req.query.token === "string" ? req.query.token : undefined;
+
+  const token = extractBearerToken(authHeader) ?? rawQueryToken ?? null;
   if (!token) {
     throw AppError.unauthorized("Missing or invalid Authorization header");
   }
@@ -96,7 +102,9 @@ export const requireWalletParamMatchesJwt = (paramName: string) => {
     }
 
     if (requested !== authenticatedWallet) {
-      throw AppError.forbidden("You are not authorized to access this resource");
+      throw AppError.forbidden(
+        "You are not authorized to access this resource",
+      );
     }
 
     next();

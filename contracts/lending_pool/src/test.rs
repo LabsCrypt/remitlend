@@ -233,3 +233,151 @@ fn test_deposit_withdraw_invariants() {
         );
     }
 }
+
+// ── MaxPoolSize tests ────────────────────────────────────────────────────────
+
+#[test]
+fn test_set_and_get_max_pool_size() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, _stellar_asset_client, _token_client) =
+        create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+
+    // Default: no cap
+    assert_eq!(pool_client.get_max_pool_size(), 0);
+
+    pool_client.set_max_pool_size(&10_000);
+    assert_eq!(pool_client.get_max_pool_size(), 10_000);
+}
+
+#[test]
+fn test_deposit_within_cap_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+    pool_client.set_max_pool_size(&5_000);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5_000);
+
+    pool_client.deposit(&provider, &5_000);
+    assert_eq!(pool_client.get_deposit(&provider), 5_000);
+    assert_eq!(pool_client.get_total_deposits(), 5_000);
+}
+
+#[test]
+#[should_panic(expected = "deposit exceeds max pool size")]
+fn test_deposit_exceeds_cap_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+    pool_client.set_max_pool_size(&1_000);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &2_000);
+
+    // Should panic — 1001 > cap of 1000
+    pool_client.deposit(&provider, &1_001);
+}
+
+#[test]
+fn test_withdraw_reduces_total_deposits() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+    pool_client.set_max_pool_size(&5_000);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &3_000);
+    pool_client.deposit(&provider, &3_000);
+    assert_eq!(pool_client.get_total_deposits(), 3_000);
+
+    pool_client.withdraw(&provider, &1_000);
+    assert_eq!(pool_client.get_total_deposits(), 2_000);
+}
+
+#[test]
+fn test_deposit_after_withdraw_frees_cap_space() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+    pool_client.set_max_pool_size(&3_000);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &3_000);
+    pool_client.deposit(&provider, &3_000);
+
+    // Pool is full; withdraw 1000 to free space
+    pool_client.withdraw(&provider, &1_000);
+
+    // Re-deposit 1000 — should succeed now
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &1_000);
+    assert_eq!(pool_client.get_total_deposits(), 3_000);
+}
+
+#[test]
+fn test_no_cap_allows_unlimited_deposits() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+    // No set_max_pool_size call — cap stays 0 (unlimited)
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000_000);
+    pool_client.deposit(&provider, &1_000_000);
+    assert_eq!(pool_client.get_total_deposits(), 1_000_000);
+}
+
+#[test]
+#[should_panic(expected = "max pool size must be non-negative")]
+fn test_set_negative_max_pool_size_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, _stellar_asset_client, _token_client) =
+        create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+
+    pool_client.set_max_pool_size(&-1);
+}

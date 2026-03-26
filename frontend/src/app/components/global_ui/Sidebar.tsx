@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   HandCoins,
+  PiggyBank,
   SendHorizontal,
   Settings,
   X,
@@ -27,6 +28,7 @@ interface SidebarProps {
 const navItems = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Loans", href: "/loans", icon: HandCoins },
+  { name: "Lend", href: "/lend", icon: PiggyBank },
   { name: "Remittances", href: "/remittances", icon: SendHorizontal },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Kingdom", href: "/kingdom", icon: Crown },

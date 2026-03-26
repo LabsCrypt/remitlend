@@ -32,6 +32,9 @@ export function LoanFormExample() {
     successMessage: "Loan created successfully!",
     errorMessage: "Failed to create loan",
     network: "testnet",
+    gamificationXP: 25,
+    gamificationReason: "First loan request",
+    gamificationAchievement: "first_loan",
   });
 
   // Approach 2: Manual toast control (for custom logic)

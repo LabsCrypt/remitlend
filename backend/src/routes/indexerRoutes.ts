@@ -9,7 +9,10 @@ import {
   deleteWebhookSubscription,
 } from "../controllers/indexerController.js";
 import { requireApiKey } from "../middleware/auth.js";
-import { requireJwtAuth, requireWalletOwnership } from "../middleware/jwtAuth.js";
+import {
+  requireJwtAuth,
+  requireWalletOwnership,
+} from "../middleware/jwtAuth.js";
 import { requireLoanBorrowerAccess } from "../middleware/loanAccess.js";
 
 const router = Router();
