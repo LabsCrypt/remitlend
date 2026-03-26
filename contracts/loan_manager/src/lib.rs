@@ -689,7 +689,9 @@ impl LoanManager {
             .expect("not initialized");
         admin.require_auth();
 
-        env.storage().instance().set(&DataKey::MaxLoanAmount, &amount);
+        env.storage()
+            .instance()
+            .set(&DataKey::MaxLoanAmount, &amount);
         Self::bump_instance_ttl(&env);
     }
 
