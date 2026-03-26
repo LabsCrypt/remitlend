@@ -404,9 +404,7 @@ impl RemittanceNFT {
             return;
         }
         let old_score = metadata.score;
-        metadata.score = old_score
-            .saturating_add(points)
-            .min(Self::MAX_CREDIT_SCORE);
+        metadata.score = old_score.saturating_add(points).min(Self::MAX_CREDIT_SCORE);
 
         env.storage().persistent().set(&metadata_key, &metadata);
         Self::bump_persistent_ttl(&env, &metadata_key);
@@ -438,13 +436,7 @@ impl RemittanceNFT {
         metadata.score = new_score;
         env.storage().persistent().set(&metadata_key, &metadata);
         Self::bump_persistent_ttl(&env, &metadata_key);
-        Self::append_score_history(
-            &env,
-            &user,
-            old_score,
-            new_score,
-            symbol_short!("DEC"),
-        );
+        Self::append_score_history(&env, &user, old_score, new_score, symbol_short!("DEC"));
         env.events().publish(
             (symbol_short!("ScoreDecr"), user),
             (old_score, new_score, symbol_short!("PEN")),
