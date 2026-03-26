@@ -11,9 +11,10 @@ function cn(...inputs: ClassValue[]) {
 interface HeaderProps {
   onMenuClick?: () => void;
   className?: string;
+  hideMenuOnMobile?: boolean;
 }
 
-export function Header({ onMenuClick, className }: HeaderProps) {
+export function Header({ onMenuClick, className, hideMenuOnMobile }: HeaderProps) {
   return (
     <header
       className={cn(
@@ -22,12 +23,14 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       )}
     >
       <div className="flex items-center gap-4 lg:gap-0">
-        <button
-          onClick={onMenuClick}
-          className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden"
-        >
-          <Menu className="h-6 w-6" />
-        </button>
+        {!hideMenuOnMobile && (
+          <button
+            onClick={onMenuClick}
+            className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        )}
 
         <div className="hidden lg:flex relative max-w-md">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">

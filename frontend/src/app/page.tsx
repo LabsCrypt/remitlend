@@ -4,15 +4,15 @@ import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";
 export default function Home() {
   return (
     <main
-      className="space-y-8 min-h-screen p-8 lg:p-12 max-w-7xl mx-auto"
+      className="space-y-6 sm:space-y-8 min-h-screen p-4 sm:p-6 lg:p-8 lg:p-12 max-w-7xl mx-auto"
       aria-labelledby="dashboard-title"
     >
       {/* Welcome Section */}
       <header>
-        <h1 id="dashboard-title" className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+        <h1 id="dashboard-title" className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-50">
           Good morning, John!
         </h1>
-        <p className="text-zinc-500 dark:text-zinc-400">
+        <p className="text-zinc-500 dark:text-zinc-400 text-sm sm:text-base">
           Here is what&apos;s happening with your portfolio today.
         </p>
       </header>
@@ -21,7 +21,7 @@ export default function Home() {
       <ErrorBoundary scope="dashboard summary" variant="section">
         <section
           aria-label="Portfolio Statistics"
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4"
         >
           {[
             {
@@ -55,11 +55,11 @@ export default function Home() {
           ].map((stat, i) => (
             <article
               key={i}
-              className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950"
+              className="rounded-xl border border-zinc-200 bg-white p-3 sm:p-6 dark:border-zinc-800 dark:bg-zinc-950"
             >
               <div className="flex items-center justify-between">
                 <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900" aria-hidden="true">
-                  <stat.icon className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                  <stat.icon className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <span
                   className={`text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -72,19 +72,19 @@ export default function Home() {
                   {stat.change}
                 </span>
               </div>
-              <div className="mt-4">
-                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{stat.label}</p>
-                <h3 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{stat.value}</h3>
+              <div className="mt-3 sm:mt-4">
+                <p className="text-xs sm:text-sm font-medium text-zinc-500 dark:text-zinc-400">{stat.label}</p>
+                <h3 className="text-lg sm:text-2xl font-bold text-zinc-900 dark:text-zinc-50">{stat.value}</h3>
               </div>
             </article>
           ))}
         </section>
       </ErrorBoundary>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:gap-8 lg:grid-cols-3">
         <ErrorBoundary scope="recent activity panel" variant="section">
           <section aria-labelledby="activity-heading" className="lg:col-span-2 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <h2
                 id="activity-heading"
                 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2"
@@ -127,35 +127,37 @@ export default function Home() {
                 ].map((item, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors"
+                    className="flex items-center gap-4 p-4 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors"
                   >
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`h-10 w-10 rounded-full flex items-center justify-center ${
-                          item.status === "completed"
-                            ? "bg-green-50 dark:bg-green-500/10"
-                            : "bg-indigo-50 dark:bg-indigo-500/10"
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {item.amount.startsWith("+") ? (
-                          <ArrowDownLeft className="h-5 w-5 text-green-600 dark:text-green-400" />
-                        ) : (
-                          <ArrowUpRight className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                          {item.type}
-                        </p>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400">{item.desc}</p>
-                      </div>
+                    <div
+                      className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        item.status === "completed"
+                          ? "bg-green-50 dark:bg-green-500/10"
+                          : "bg-indigo-50 dark:bg-indigo-500/10"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {item.amount.startsWith("+") ? (
+                        <ArrowDownLeft className="h-5 w-5 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <ArrowUpRight className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                      )}
                     </div>
-                    <div className="text-right">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 truncate">
+                        {item.type}
+                      </p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                        {item.desc}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
                       <p className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
                         {item.amount}
                       </p>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{item.time}</p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                        {item.time}
+                      </p>
                     </div>
                   </div>
                 ))}

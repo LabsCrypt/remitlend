@@ -16,7 +16,7 @@ export default async function RepayLoanPage({ params }: { params: Promise<{ loan
         </p>
       </header>
 
-      <form className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
+      <form className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-4 sm:p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
         <div>
           <label
             htmlFor="repayment-amount"

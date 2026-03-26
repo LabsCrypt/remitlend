@@ -35,7 +35,7 @@ export default function LoansPage() {
       </header>
 
       <ErrorBoundary scope="loan summary cards" variant="section">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {[
             { label: "Outstanding", value: "$2,220", icon: CircleDollarSign },
             { label: "Due This Week", value: "1 loan", icon: CalendarRange },
@@ -67,24 +67,30 @@ export default function LoansPage() {
             {loans.map((loan) => (
               <article
                 key={loan.id}
-                className="flex flex-col gap-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800 md:flex-row md:items-center md:justify-between"
+                className="flex flex-col gap-4 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div>
-                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                <div className="flex-1 min-w-0">
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 truncate">
                     Loan #{loan.id}
                   </p>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{loan.borrower}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 truncate">
+                    {loan.borrower}
+                  </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <span className="rounded-full bg-zinc-100 px-3 py-1 font-medium text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-sm">
+                  <span className="rounded-full bg-zinc-100 px-3 py-1 font-medium text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 whitespace-nowrap">
                     {loan.status}
                   </span>
-                  <span className="text-zinc-600 dark:text-zinc-400">{loan.balance}</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">Due {loan.dueDate}</span>
+                  <span className="text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+                    {loan.balance}
+                  </span>
+                  <span className="text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+                    Due {loan.dueDate}
+                  </span>
                 </div>
                 <Link
                   href={`/loans/${loan.id}`}
-                  className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   View details
                   <ArrowRight className="h-4 w-4" />
