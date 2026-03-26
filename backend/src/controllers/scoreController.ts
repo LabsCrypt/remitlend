@@ -54,7 +54,10 @@ export const getScore = asyncHandler(async (req: Request, res: Response) => {
   const { userId } = req.params as { userId: string };
 
   const cacheKey = `score:userId:${userId}`;
-  const cachedScoreParams = await cacheService.get<{ score: number, band: CreditBand }>(cacheKey);
+  const cachedScoreParams = await cacheService.get<{
+    score: number;
+    band: CreditBand;
+  }>(cacheKey);
 
   if (cachedScoreParams) {
     res.json({
@@ -71,9 +74,10 @@ export const getScore = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const result = await query("SELECT current_score FROM scores WHERE user_id = $1", [
-    userId,
-  ]);
+  const result = await query(
+    "SELECT current_score FROM scores WHERE user_id = $1",
+    [userId],
+  );
 
   const score = result.rows.length > 0 ? result.rows[0].current_score : 500;
   const band = getCreditBand(score);
@@ -110,10 +114,12 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
   };
 
   // Get old score first for the response
-  const oldResult = await query("SELECT current_score FROM scores WHERE user_id = $1", [
-    userId,
-  ]);
-  const oldScore = oldResult.rows.length > 0 ? oldResult.rows[0].current_score : 500;
+  const oldResult = await query(
+    "SELECT current_score FROM scores WHERE user_id = $1",
+    [userId],
+  );
+  const oldScore =
+    oldResult.rows.length > 0 ? oldResult.rows[0].current_score : 500;
 
   const delta = onTime ? ON_TIME_DELTA : LATE_DELTA;
 

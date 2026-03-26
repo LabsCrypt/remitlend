@@ -15,6 +15,7 @@
 
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
+import { useGamificationStore } from "./useGamificationStore";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ export interface User {
 interface UserState {
   /** Authenticated user, or null when logged out */
   user: User | null;
+  /** JWT token for API authentication */
+  authToken: string | null;
   /** True while an auth operation (login/logout/refresh) is in progress */
   isLoading: boolean;
   /** Error message from the last failed auth operation */
@@ -41,6 +44,8 @@ interface UserState {
 interface UserActions {
   /** Call this after a successful login or session hydration */
   setUser: (user: User) => void;
+  /** Store the JWT token received after login */
+  setAuthToken: (token: string | null) => void;
   /** Call this on logout or session expiry — clears all user data */
   clearUser: () => void;
   /** Call this to update individual fields (e.g. after KYC verification) */
@@ -55,6 +60,7 @@ export type UserStore = UserState & UserActions;
 
 const initialState: UserState = {
   user: null,
+  authToken: null,
   isLoading: false,
   error: null,
   isAuthenticated: false,
@@ -82,14 +88,20 @@ export const useUserStore = create<UserStore>()(
 
         clearUser: () => set({ ...initialState }, false, "user/clearUser"),
 
-        updateUser: (partial) =>
+        setAuthToken: (authToken) => set({ authToken }, false, "user/setAuthToken"),
+
+        updateUser: (partial) => {
+          if (partial.kycVerified) {
+            useGamificationStore.getState().addXP(30, "Profile completion");
+          }
           set(
             (state) => ({
               user: state.user ? { ...state.user, ...partial } : null,
             }),
             false,
             "user/updateUser",
-          ),
+          );
+        },
 
         setLoading: (isLoading) => set({ isLoading }, false, "user/setLoading"),
 
@@ -98,7 +110,11 @@ export const useUserStore = create<UserStore>()(
       {
         name: "remitlend-user",
         // Only persist the user object — not transient loading/error state
-        partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+        partialize: (state) => ({
+          user: state.user,
+          authToken: state.authToken,
+          isAuthenticated: state.isAuthenticated,
+        }),
       },
     ),
     { name: "UserStore" },
@@ -110,6 +126,7 @@ export const useUserStore = create<UserStore>()(
 // which would bypass Zustand's shallow-equality bailout.
 
 export const selectUser = (state: UserStore) => state.user;
+export const selectAuthToken = (state: UserStore) => state.authToken;
 export const selectIsAuthenticated = (state: UserStore) => state.isAuthenticated;
 export const selectUserIsLoading = (state: UserStore) => state.isLoading;
 export const selectUserError = (state: UserStore) => state.error;

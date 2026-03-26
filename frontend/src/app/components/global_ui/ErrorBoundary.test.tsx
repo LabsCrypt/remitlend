@@ -34,14 +34,20 @@ describe("ErrorBoundary", () => {
 
   it("renders fallback UI when a child throws an error", () => {
     render(
-      <ErrorBoundary>
+      <ErrorBoundary scope="analytics dashboard" variant="section">
         <ProblemChild />
       </ErrorBoundary>,
     );
 
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
     expect(screen.getByText("Try Again")).toBeInTheDocument();
-    expect(screen.getByText("Return Home")).toBeInTheDocument();
+    expect(
+      screen.getByText(/analytics dashboard hit an unexpected runtime error/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Report this issue" })).toHaveAttribute(
+      "href",
+      "https://github.com/LabsCrypt/remitlend/issues/new",
+    );
     expect(screen.getByText("Test error")).toBeInTheDocument();
   });
 

@@ -1,8 +1,12 @@
 "use client";
 
-import { Bell, Menu, Search, User, Wallet } from "lucide-react";
+import { Menu, Search, User, Wallet } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { ThemeToggle } from "../ui/ThemeToggle";
+import { NotificationDropdown } from "./NotificationDropdown";
+import { useWalletStore } from "../../stores/useWalletStore";
+import { useGamificationStore } from "../../stores/useGamificationStore";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,6 +18,21 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuClick, className }: HeaderProps) {
+  const isConnected = useWalletStore((state) => state.status === "connected");
+  const setConnected = useWalletStore((state) => state.setConnected);
+  const disconnect = useWalletStore((state) => state.disconnect);
+  const address = useWalletStore((state) => state.address);
+  const gamificationStore = useGamificationStore();
+
+  const handleWalletToggle = () => {
+    if (isConnected) {
+      disconnect();
+    } else {
+      setConnected("0x123...abc", { chainId: 1, name: "Stellar", isSupported: true });
+      gamificationStore.addXP(10, "Wallet connection");
+    }
+  };
+
   return (
     <header
       className={cn(
@@ -42,21 +61,26 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
-        <button className="hidden sm:flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-500/20">
+        <button
+          onClick={handleWalletToggle}
+          className="hidden sm:flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-500/20"
+        >
           <Wallet className="h-4 w-4" />
-          Connect Wallet
+          {isConnected ? "Disconnect" : "Connect Wallet"}
         </button>
 
-        <button className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900">
+        <button
+          onClick={handleWalletToggle}
+          className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+        >
           <Wallet className="h-5 w-5 text-indigo-600" />
         </button>
 
         <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
 
-        <button className="relative p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900">
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 flex h-2 w-2 rounded-full bg-indigo-500 border-2 border-white dark:border-zinc-950" />
-        </button>
+        <ThemeToggle />
+
+        <NotificationDropdown />
 
         <button className="flex items-center gap-2 rounded-full p-1 border border-zinc-200 hover:border-zinc-300 transition-colors dark:border-zinc-800 dark:hover:border-zinc-700">
           <div className="h-7 w-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">

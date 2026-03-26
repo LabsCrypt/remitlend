@@ -49,11 +49,13 @@ interface GamificationState {
   // UI state
   showLevelUpModal: boolean;
   pendingLevelUp: LevelUpReward | null;
+  recentXPGain: { amount: number; reason: string; id: number } | null;
 }
 
 interface GamificationActions {
   // XP and leveling
   addXP: (amount: number, reason?: string) => void;
+  clearRecentXPGain: () => void;
   setLevel: (level: number) => void;
   checkLevelUp: () => void;
   dismissLevelUp: () => void;
@@ -194,6 +196,7 @@ const initialState: GamificationState = {
   soundVolume: 0.5,
   showLevelUpModal: false,
   pendingLevelUp: null,
+  recentXPGain: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -208,11 +211,21 @@ export const useGamificationStore = create<GamificationStore>()(
           const currentXP = get().xp;
           const newXP = currentXP + amount;
 
-          set({ xp: newXP }, false, `gamification/addXP:${reason || "unknown"}`);
+          set(
+            {
+              xp: newXP,
+              recentXPGain: { amount, reason: reason || "", id: Date.now() },
+            },
+            false,
+            `gamification/addXP:${reason || "unknown"}`,
+          );
 
           // Check for level up
           get().checkLevelUp();
         },
+
+        clearRecentXPGain: () =>
+          set({ recentXPGain: null }, false, "gamification/clearRecentXPGain"),
 
         setLevel: (level) => {
           const kingdomTitle = getKingdomTitle(level);

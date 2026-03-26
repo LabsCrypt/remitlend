@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   /* WCAG AA Compliant: #171717 on #ffffff (15.9:1) */
   --background: #ffffff;
@@ -21,6 +23,12 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+/* Class-based dark mode for manual toggle */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {

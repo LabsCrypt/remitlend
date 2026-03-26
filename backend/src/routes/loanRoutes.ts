@@ -3,8 +3,13 @@ import {
   getBorrowerLoans,
   getLoanDetails,
 } from "../controllers/loanController.js";
-import { requireJwtAuth, requireWalletOwnership } from "../middleware/jwtAuth.js";
+import {
+  requireJwtAuth,
+  requireWalletOwnership,
+} from "../middleware/jwtAuth.js";
 import { requireLoanBorrowerAccess } from "../middleware/loanAccess.js";
+import { validate } from "../middleware/validation.js";
+import { borrowerParamSchema } from "../schemas/stellarSchemas.js";
 
 const router = Router();
 
@@ -44,6 +49,7 @@ router.get(
   "/borrower/:borrower",
   requireJwtAuth,
   requireWalletOwnership,
+  validate(borrowerParamSchema),
   getBorrowerLoans,
 );
 

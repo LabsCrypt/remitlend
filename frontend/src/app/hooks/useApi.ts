@@ -15,6 +15,7 @@ import {
   type UseQueryOptions,
   type UseMutationOptions,
 } from "@tanstack/react-query";
+import { useUserStore } from "../stores/useUserStore";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -41,6 +42,12 @@ export const queryKeys = {
     profile: () => ["user", "profile"] as const,
     balance: () => ["user", "balance"] as const,
   },
+  notifications: {
+    all: () => ["notifications"] as const,
+  },
+  borrowerLoans: {
+    byAddress: (address: string) => ["borrowerLoans", address] as const,
+  },
 } as const;
 
 // ─── Base fetch helper ────────────────────────────────────────────────────────
@@ -49,12 +56,20 @@ export const queryKeys = {
  * Thin fetch wrapper that:
  * - Prepends the API base URL
  * - Sets JSON Content-Type
+ * - Attaches the JWT Bearer token when one is stored
  * - Throws a descriptive error on non-2xx responses
  */
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+
+  // Attach JWT token if available (reads directly from Zustand store state,
+  // safe to call outside React render since Zustand stores are singletons).
+  const token = useUserStore.getState().authToken;
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
@@ -114,6 +129,25 @@ export interface YieldHistory {
   earnings: number;
   apy: number;
   principal?: number;
+}
+
+export interface BorrowerLoan {
+  id: number;
+  principal: number;
+  accruedInterest: number;
+  totalOwed: number;
+  totalRepaid: number;
+  nextPaymentDeadline: string;
+  status: "active" | "pending" | "repaid";
+  borrower: string;
+  approvedAt?: string;
+}
+
+export interface LoanStats {
+  totalActive: number;
+  totalOwed: number;
+  nextPaymentDue: string | null;
+  overdueCount: number;
 }
 
 // ─── Loan hooks ───────────────────────────────────────────────────────────────
@@ -294,5 +328,123 @@ export function useYieldHistory(
     queryFn: () => apiFetch<YieldHistory[]>(`/yield/${userId}/history`),
     enabled: !!userId,
     ...options,
+  });
+}
+
+// ─── Borrower loans hook ──────────────────────────────────────────────────────
+
+interface BorrowerLoansApiResponse {
+  success: boolean;
+  data: { borrower: string; loans: BorrowerLoan[]; totalLoans: number };
+}
+
+/**
+ * Fetches all loans for a borrower address.
+ * Results are cached by address so multiple components sharing the same
+ * address incur only one network request (TanStack deduplication).
+ * Also computes derived stats (totals, overdue count, next deadline).
+ */
+export function useBorrowerLoans(borrowerAddress: string | undefined) {
+  const query = useQuery<BorrowerLoansApiResponse>({
+    queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress ?? ""),
+    queryFn: () => apiFetch<BorrowerLoansApiResponse>(`/loans/borrower/${borrowerAddress}`),
+    enabled: !!borrowerAddress,
+    staleTime: 30_000,
+  });
+
+  const loans = query.data?.data.loans ?? [];
+
+  const activeLoans = loans.filter((l) => l.status === "active");
+  const now = new Date();
+  const overdueLoans = activeLoans.filter((l) => new Date(l.nextPaymentDeadline) < now);
+  const upcomingDeadlines = activeLoans
+    .filter((l) => new Date(l.nextPaymentDeadline) >= now)
+    .sort(
+      (a, b) =>
+        new Date(a.nextPaymentDeadline).getTime() - new Date(b.nextPaymentDeadline).getTime(),
+    );
+
+  const stats: LoanStats = {
+    totalActive: activeLoans.length,
+    totalOwed: activeLoans.reduce((sum, l) => sum + l.totalOwed, 0),
+    nextPaymentDue: upcomingDeadlines[0]?.nextPaymentDeadline ?? null,
+    overdueCount: overdueLoans.length,
+  };
+
+  return { ...query, loans, stats };
+}
+
+// ─── Notification types & hooks ───────────────────────────────────────────────
+
+export type NotificationType =
+  | "loan_approved"
+  | "repayment_due"
+  | "repayment_confirmed"
+  | "loan_defaulted"
+  | "score_changed";
+
+export interface AppNotification {
+  id: number;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  loanId?: number;
+  read: boolean;
+  createdAt: string;
+}
+
+interface NotificationsResponse {
+  notifications: AppNotification[];
+  unreadCount: number;
+}
+
+/**
+ * Fetches the authenticated user's notifications.
+ * Polls every 60s as a fallback alongside the SSE stream.
+ */
+export function useNotifications(
+  options?: Omit<UseQueryOptions<NotificationsResponse>, "queryKey" | "queryFn">,
+) {
+  return useQuery<NotificationsResponse>({
+    queryKey: queryKeys.notifications.all(),
+    queryFn: async () => {
+      const res = await apiFetch<{ success: boolean; data: NotificationsResponse }>(
+        "/notifications?limit=50",
+      );
+      return res.data;
+    },
+    refetchInterval: 60_000,
+    ...options,
+  });
+}
+
+/**
+ * Marks specific notifications as read.
+ */
+export function useMarkNotificationsRead() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, number[]>({
+    mutationFn: (ids) =>
+      apiFetch<void>("/notifications/mark-read", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all() });
+    },
+  });
+}
+
+/**
+ * Marks all notifications as read.
+ */
+export function useMarkAllNotificationsRead() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, void>({
+    mutationFn: () => apiFetch<void>("/notifications/mark-all-read", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all() });
+    },
   });
 }

@@ -102,3 +102,8 @@ pub fn loan_defaulted(env: &Env, loan_id: u32, borrower: Address) {
     let topics = (Symbol::new(env, "LoanDefaulted"), loan_id);
     env.events().publish(topics, borrower);
 }
+
+pub fn term_limits_updated(env: &Env, min_term: u32, max_term: u32) {
+    let topics = (Symbol::new(env, "TermLimitsUpdated"),);
+    env.events().publish(topics, (min_term, max_term));
+}

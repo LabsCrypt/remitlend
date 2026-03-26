@@ -5,6 +5,8 @@ import { QueryProvider } from "./components/providers/QueryProvider";
 import { DashboardShell } from "./components/global_ui/DashboardShell";
 import { Toaster } from "./components/ui/Toast";
 import { LevelUpModal } from "./components/gamification/LevelUpModal";
+import { GlobalXPGain } from "./components/global_ui/GlobalXPGain";
+import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -63,12 +65,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("remitlend-theme");var d=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches);if(d)document.documentElement.classList.add("dark")}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <QueryProvider>
-          <DashboardShell>{children}</DashboardShell>
+          <DashboardShell>
+            <ErrorBoundary scope="active page" variant="section">
+              {children}
+            </ErrorBoundary>
+          </DashboardShell>
           <Toaster />
           <LevelUpModal />
+          <GlobalXPGain />
         </QueryProvider>
       </body>
     </html>

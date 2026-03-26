@@ -8,6 +8,7 @@ import { TransactionPreviewModal } from "../transaction/TransactionPreviewModal"
 import { useTransactionPreview } from "../../hooks/useTransactionPreview";
 import { formatLoanRepayment } from "../../utils/transactionFormatter";
 import { DollarSign, AlertCircle } from "lucide-react";
+import { useGamificationStore } from "../../stores/useGamificationStore";
 
 interface LoanRepaymentFormProps {
   loanId: number;
@@ -19,6 +20,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const txPreview = useTransactionPreview();
+  const gamificationStore = useGamificationStore();
 
   const handleAmountChange = (value: string) => {
     setAmount(value);
@@ -78,6 +80,19 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
 
     // TODO: Success notification will be handled by useContractMutation wrapper
     // when integrated with actual contract calls
+
+    // TEMPORARY: Trigger gamification directly since there's no actual API mutation yet
+    gamificationStore.addXP(50, "Loan repayment");
+    gamificationStore.unlockAchievement("first_repayment");
+
+    // Also trigger on-time streak if applicable (demo purpose here)
+    const isStreak = Math.random() > 0.5; // Simulate streak detection
+    if (isStreak) {
+      setTimeout(() => {
+        gamificationStore.addXP(100, "On-time repayment streak");
+        gamificationStore.unlockAchievement("streak_master");
+      }, 1000); // Trigger after first notification
+    }
 
     // Reset form
     setAmount("");

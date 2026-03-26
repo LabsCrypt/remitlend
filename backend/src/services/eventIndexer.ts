@@ -6,6 +6,7 @@ import {
   type IndexedLoanEvent,
   type WebhookEventType,
 } from "./webhookService.js";
+import { notificationService } from "./notificationService.js";
 
 interface IndexerConfig {
   rpcUrl: string;
@@ -172,6 +173,15 @@ export class EventIndexer {
       }
       await query("COMMIT", []);
 
+      // Create in-app notifications (fire-and-forget, outside DB transaction)
+      await Promise.all(
+        events.map((event) =>
+          this.createNotificationForEvent(event).catch((err) => {
+            logger.error("Notification creation error", { err, eventId: event.eventId });
+          }),
+        ),
+      );
+
       await Promise.all(
         events.map((event) =>
           webhookService.deliverEvent(event).catch((error) => {
@@ -188,17 +198,79 @@ export class EventIndexer {
     }
   }
 
+  private async createNotificationForEvent(event: LoanEvent): Promise<void> {
+    if (!event.borrower) return;
+
+    type NotifParams = Parameters<typeof notificationService.createNotification>[0];
+    let params: NotifParams | null = null;
+
+    switch (event.eventType) {
+      case "LoanApproved":
+        params = {
+          userId: event.borrower,
+          type: "loan_approved",
+          title: "Loan Approved",
+          message: event.loanId
+            ? `Your loan #${event.loanId} has been approved.`
+            : "Your loan has been approved.",
+          loanId: event.loanId,
+        };
+        break;
+      case "LoanRepaid":
+        params = {
+          userId: event.borrower,
+          type: "repayment_confirmed",
+          title: "Repayment Confirmed",
+          message: event.loanId
+            ? `Repayment for loan #${event.loanId} has been confirmed.`
+            : "Your loan repayment has been confirmed.",
+          loanId: event.loanId,
+        };
+        break;
+      case "LoanDefaulted":
+        params = {
+          userId: event.borrower,
+          type: "loan_defaulted",
+          title: "Loan Defaulted",
+          message: event.loanId
+            ? `Loan #${event.loanId} has been marked as defaulted.`
+            : "A loan has been marked as defaulted.",
+          loanId: event.loanId,
+        };
+        break;
+      default:
+        // LoanRequested does not need a notification (user triggered it)
+        return;
+    }
+
+    if (params) {
+      await notificationService.createNotification(params);
+    }
+  }
+
   private async updateUserScore(userId: string, delta: number): Promise<void> {
-    await query(
+    const result = await query(
       `INSERT INTO scores (user_id, current_score)
        VALUES ($1, $2)
        ON CONFLICT (user_id) 
        DO UPDATE SET 
          current_score = LEAST(850, GREATEST(300, scores.current_score + $3)),
-         updated_at = CURRENT_TIMESTAMP`,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING current_score`,
       [userId, 500 + delta, delta],
     );
     logger.info("Updated user score from indexer", { userId, delta });
+
+    // Notify user about score change
+    const newScore = result.rows[0]?.current_score as number | undefined;
+    if (newScore !== undefined) {
+      await notificationService.createNotification({
+        userId,
+        type: "score_changed",
+        title: "Credit Score Updated",
+        message: `Your credit score has been updated to ${newScore}.`,
+      }).catch((err) => logger.error("Score notification error", { err, userId }));
+    }
   }
 
   private async getIndexerState() {

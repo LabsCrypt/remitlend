@@ -20,6 +20,7 @@
 import { type UseMutationResult } from "@tanstack/react-query";
 import { useContractToast } from "./useContractToast";
 import { useCallback, useRef } from "react";
+import { useGamificationStore } from "../stores/useGamificationStore";
 
 interface ContractMutationOptions {
   /** Message shown during pending state */
@@ -32,6 +33,12 @@ interface ContractMutationOptions {
   network?: "testnet" | "public";
   /** Disable automatic toast notifications */
   disableToast?: boolean;
+  /** Gamification XP to award on success */
+  gamificationXP?: number;
+  /** Gamification reason for XP */
+  gamificationReason?: string;
+  /** Gamification achievement ID to unlock on success */
+  gamificationAchievement?: string;
 }
 
 /**
@@ -43,6 +50,7 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
   options: ContractMutationOptions = {},
 ) {
   const toast = useContractToast();
+  const gamificationStore = useGamificationStore();
   const toastIdRef = useRef<string | number | null>(null);
 
   const {
@@ -51,7 +59,26 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
     errorMessage = "Transaction failed",
     network = "testnet",
     disableToast = false,
+    gamificationXP,
+    gamificationReason,
+    gamificationAchievement,
   } = options;
+
+  const triggerGamification = useCallback(() => {
+    if (gamificationXP) {
+      // Small delay to let the toast appear first
+      setTimeout(() => {
+        gamificationStore.addXP(gamificationXP, gamificationReason);
+        if (gamificationAchievement) {
+          gamificationStore.unlockAchievement(gamificationAchievement);
+        }
+      }, 500);
+    } else if (gamificationAchievement) {
+      setTimeout(() => {
+        gamificationStore.unlockAchievement(gamificationAchievement);
+      }, 500);
+    }
+  }, [gamificationXP, gamificationReason, gamificationAchievement, gamificationStore]);
 
   const mutate = useCallback(
     (variables: TVariables, mutationOptions?: Parameters<typeof mutation.mutate>[1]) => {
@@ -69,6 +96,7 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
               network,
             });
           }
+          triggerGamification();
           mutationOptions?.onSuccess?.(data, vars, onMutateResult, context);
         },
         onError: (error, vars, onMutateResult, context) => {
@@ -100,6 +128,8 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
             network,
           });
         }
+
+        triggerGamification();
 
         return data;
       } catch (error) {

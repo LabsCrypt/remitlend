@@ -2,6 +2,8 @@
 
 First off, thank you for considering contributing to RemitLend! It's people like you who make RemitLend a powerful tool for providing fair lending access to migrant workers worldwide.
 
+This document provides a set of guidelines for contributing to RemitLend and its packages. These are mostly guidelines, not rules. Use your best judgment, and feel free to propose changes to this document in a pull request.
+
 ## 📋 Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
@@ -87,7 +89,7 @@ When opening a PR, ensure your description includes:
 
 Before submitting, verify your changes by running:
 
-### Frontend (Vite/React)
+### Frontend (Next.js/React)
 ```bash
 cd frontend
 npm run lint

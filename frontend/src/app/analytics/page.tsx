@@ -1,4 +1,5 @@
 import { FinancialPerformanceDashboard } from "../components/dashboards/FinancialPerformanceDashboard";
+import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 
 export default function AnalyticsPage() {
   // In a real app, this would come from authentication context
@@ -13,7 +14,9 @@ export default function AnalyticsPage() {
         </p>
       </header>
 
-      <FinancialPerformanceDashboard userId={userId} userType="both" />
+      <ErrorBoundary scope="analytics dashboard" variant="section">
+        <FinancialPerformanceDashboard userId={userId} userType="both" />
+      </ErrorBoundary>
     </main>
   );
 }
