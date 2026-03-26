@@ -13,11 +13,18 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-              "function_name": "authorize_minter",
+              "function_name": "mint",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                }
+                },
+                {
+                  "u32": 500
+                },
+                {
+                  "bytes": "1700000000000000000000000000000000000000000000000000000000000000"
+                },
+                "void"
               ]
             }
           },
@@ -38,10 +45,10 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "u32": 500
+                  "u32": 450
                 },
                 {
-                  "bytes": "0400000000000000000000000000000000000000000000000000000000000000"
+                  "bytes": "1800000000000000000000000000000000000000000000000000000000000000"
                 },
                 "void"
               ]
@@ -51,27 +58,6 @@
         }
       ]
     ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-              "function_name": "burn",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                },
-                "void"
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [],
     []
   ],
   "ledger": {
@@ -106,39 +92,6 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": 801925984706572462
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          6311999
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": 1033654523790656264
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": 1033654523790656264
                   }
                 },
                 "durability": "temporary",
@@ -235,7 +188,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "AuthorizedMinter"
+                  "symbol": "Metadata"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -255,7 +208,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "AuthorizedMinter"
+                      "symbol": "Metadata"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -264,7 +217,24 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "bool": true
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "history_hash"
+                      },
+                      "val": {
+                        "bytes": "1700000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "score"
+                      },
+                      "val": {
+                        "u32": 500
+                      }
+                    }
+                  ]
                 }
               }
             },
@@ -280,7 +250,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "Burned"
+                  "symbol": "Metadata"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -300,7 +270,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "Burned"
+                      "symbol": "Metadata"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -309,7 +279,24 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "bool": true
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "history_hash"
+                      },
+                      "val": {
+                        "bytes": "1800000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "score"
+                      },
+                      "val": {
+                        "u32": 450
+                      }
+                    }
+                  ]
                 }
               }
             },

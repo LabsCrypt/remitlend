@@ -1,5 +1,5 @@
 use crate::{LendingPool, LendingPoolClient};
-use soroban_sdk::testutils::Address as _;
+use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{Address, Env};
@@ -267,6 +267,59 @@ fn test_claim_yield_distributes_pro_rata_interest() {
 }
 
 #[test]
+fn test_claim_yield_with_no_realized_yield_is_noop() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &1_000);
+
+    let provider_balance_before = token_client.balance(&provider);
+    let pool_balance_before = token_client.balance(&pool_id);
+
+    // Should not panic when no yield is available.
+    pool_client.claim_yield(&provider);
+
+    assert_eq!(token_client.balance(&provider), provider_balance_before);
+    assert_eq!(token_client.balance(&pool_id), pool_balance_before);
+    assert_eq!(pool_client.get_deposit(&provider), 1_000);
+}
+
+#[test]
+fn test_second_claim_without_new_yield_is_noop() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &1_000);
+
+    // Realize yield and claim it once.
+    stellar_asset_client.mint(&pool_id, &100);
+    pool_client.claim_yield(&provider);
+    let balance_after_first_claim = token_client.balance(&provider);
+
+    // No new realized yield; second claim should be a no-op.
+    pool_client.claim_yield(&provider);
+    assert_eq!(token_client.balance(&provider), balance_after_first_claim);
+}
+
+#[test]
 fn test_admin_transfer_flow() {
     let env = Env::default();
     env.mock_all_auths();
@@ -494,4 +547,62 @@ fn test_pool_stats() {
     let stats = pool_client.get_pool_stats();
     assert_eq!(stats.total_deposits, 0);
     assert_eq!(stats.depositor_count, 0);
+}
+
+#[test]
+fn test_concurrent_deposit_withdraw_same_ledger() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+
+    let provider_a = Address::generate(&env);
+    let provider_b = Address::generate(&env);
+    stellar_asset_client.mint(&provider_a, &2000);
+    stellar_asset_client.mint(&provider_b, &2000);
+
+    // Initial sequence
+    env.ledger().set_sequence_number(100);
+
+    // All these happen in the same ledger sequence
+    pool_client.deposit(&provider_a, &1000);
+
+    // Simulate interest being earned (minted to pool)
+    stellar_asset_client.mint(&pool_id, &100);
+
+    pool_client.deposit(&provider_b, &1000);
+
+    // More interest
+    stellar_asset_client.mint(&pool_id, &50);
+
+    pool_client.withdraw(&provider_a, &500);
+
+    // Check balances
+    // provider_a: 2000 - 1000 + 500 = 1500 (tokens)
+    // plus accrued yield.
+    // Interest 1: 100 added. Total deposits was 1000.
+    // AccYieldPerDeposit becomes 100 * SCALE / 1000.
+    // Interest 2: 50 added. Total deposits was 2000.
+    // AccYieldPerDeposit becomes (100/1000 + 50/2000) * SCALE.
+
+    assert_eq!(token_client.balance(&provider_a), 1500);
+    assert_eq!(token_client.balance(&provider_b), 1000);
+
+    // Claim yield and verify
+    pool_client.claim_yield(&provider_a);
+    pool_client.claim_yield(&provider_b);
+
+    // Provider A yield: 100% of Int1 (100) + 50% of Int2 (25) = 125
+    // Provider B yield: 0% of Int1 (0) + 50% of Int2 (25) = 25
+    // Total yield = 150. Matches mints.
+
+    assert_eq!(token_client.balance(&provider_a), 1625);
+    assert_eq!(token_client.balance(&provider_b), 1025);
+
+    assert_eq!(pool_client.get_total_deposits(), 1500);
 }

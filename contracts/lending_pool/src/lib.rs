@@ -197,6 +197,11 @@ impl LendingPool {
             .instance()
             .set(&DataKey::UnclaimedYieldPool, &next_unclaimed);
         Self::bump_instance_ttl(env);
+
+        env.events().publish(
+            (Symbol::new(env, "YieldSynced"),),
+            (new_yield, total_deposits, next_index),
+        );
     }
 
     fn harvest_provider(env: &Env, provider: &Address) {
@@ -484,7 +489,11 @@ impl LendingPool {
 
         let claimable = Self::read_claimable_yield(&env, &provider);
         if claimable <= 0 {
-            panic!("no yield available");
+            env.events().publish(
+                (Symbol::new(&env, "YieldClaimFailed"), provider),
+                Symbol::new(&env, "NoYieldAvailable"),
+            );
+            return;
         }
 
         let pool_balance = Self::pool_balance(&env);

@@ -1,4 +1,4 @@
-use crate::{LoanManager, LoanManagerClient, LoanStatus};
+use crate::{DataKey, LoanManager, LoanManagerClient, LoanStatus};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
@@ -30,6 +30,9 @@ fn setup_test<'a>(
     // 4. Deploy the LoanManager contract
     let loan_manager_id = env.register(LoanManager, ());
     let loan_manager_client = LoanManagerClient::new(env, &loan_manager_id);
+
+    // Authorize LoanManager on NFT contract before initialization
+    nft_client.authorize_minter(&loan_manager_id);
 
     // 5. Initialize the Loan Manager with the NFT contract, lending pool, token, and admin
     loan_manager_client.initialize(&nft_contract_id, &pool_address, &token_id, &admin);
@@ -184,6 +187,44 @@ fn test_configurable_interest_rate_and_default_term() {
 
     let approved_loan = manager.get_loan(&loan_id);
     assert_eq!(approved_loan.due_date, approval_ledger + 20_000);
+}
+
+#[test]
+#[should_panic(expected = "interest rate must be positive")]
+fn test_set_interest_rate_zero_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    manager.set_interest_rate(&0);
+}
+
+#[test]
+fn test_legacy_zero_interest_config_falls_back_to_default() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    // Simulate a legacy/misconfigured zero interest rate in instance storage.
+    env.as_contract(&manager.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::InterestRateBps, &0u32);
+    });
+
+    assert_eq!(manager.get_interest_rate(), 1_200);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    let pending_loan = manager.get_loan(&loan_id);
+    assert_eq!(pending_loan.interest_rate_bps, 1_200);
 }
 
 #[test]

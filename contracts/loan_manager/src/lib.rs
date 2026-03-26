@@ -13,6 +13,7 @@ pub trait RemittanceNftInterface {
     fn seize_collateral(env: Env, user: Address, minter: Option<Address>);
     fn is_seized(env: Env, user: Address) -> bool;
     fn record_default(env: Env, user: Address, minter: Option<Address>);
+    fn is_authorized_minter(env: Env, minter: Address) -> bool;
 }
 
 mod events;
@@ -124,10 +125,17 @@ impl LoanManager {
 
     fn read_interest_rate(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
-        env.storage()
+        let configured_rate = env
+            .storage()
             .instance()
             .get(&DataKey::InterestRateBps)
-            .unwrap_or(Self::DEFAULT_INTEREST_RATE_BPS)
+            .unwrap_or(Self::DEFAULT_INTEREST_RATE_BPS);
+
+        if configured_rate == 0 {
+            Self::DEFAULT_INTEREST_RATE_BPS
+        } else {
+            configured_rate
+        }
     }
 
     fn read_default_term(env: &Env) -> u32 {
@@ -418,6 +426,11 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::LoanCounter, &0u32);
         env.storage().instance().set(&DataKey::Paused, &false);
+
+        let nft_client = NftClient::new(&env, &nft_contract);
+        if !nft_client.is_authorized_minter(&env.current_contract_address()) {
+            panic!("LoanManager must be authorized minter on NFT contract");
+        }
         env.storage()
             .instance()
             .set(&DataKey::Version, &Self::CURRENT_VERSION);
@@ -707,12 +720,15 @@ impl LoanManager {
         if completed {
             let nft_contract = Self::nft_contract(&env);
             let nft_client = NftClient::new(&env, &nft_contract);
-            let delta = if was_late {
-                -Self::LATE_REPAYMENT_SCORE_PENALTY
+            if was_late {
+                nft_client.decrease_score(
+                    &borrower,
+                    &Self::LATE_REPAYMENT_SCORE_PENALTY.unsigned_abs(),
+                    &Some(env.current_contract_address()),
+                );
             } else {
-                Self::ON_TIME_REPAYMENT_SCORE_BONUS
-            };
-            nft_client.apply_score_delta(&borrower, &delta, &None);
+                nft_client.update_score(&borrower, &amount, &Some(env.current_contract_address()));
+            }
         }
 
         if late_fee_delta > 0 {
@@ -1109,8 +1125,12 @@ impl LoanManager {
 
         let nft_contract = Self::nft_contract(&env);
         let nft_client = NftClient::new(&env, &nft_contract);
-        nft_client.decrease_score(&loan.borrower, &Self::DEFAULT_SCORE_PENALTY_POINTS, &None);
-        nft_client.record_default(&loan.borrower, &None);
+        nft_client.decrease_score(
+            &loan.borrower,
+            &Self::DEFAULT_SCORE_PENALTY_POINTS,
+            &Some(env.current_contract_address()),
+        );
+        nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
 
         events::loan_defaulted(&env, loan_id, loan.borrower.clone());
     }
@@ -1148,8 +1168,12 @@ impl LoanManager {
 
             let nft_contract = Self::nft_contract(&env);
             let nft_client = NftClient::new(&env, &nft_contract);
-            nft_client.decrease_score(&loan.borrower, &Self::DEFAULT_SCORE_PENALTY_POINTS, &None);
-            nft_client.record_default(&loan.borrower, &None);
+            nft_client.decrease_score(
+                &loan.borrower,
+                &Self::DEFAULT_SCORE_PENALTY_POINTS,
+                &Some(env.current_contract_address()),
+            );
+            nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
 
             events::loan_defaulted(&env, loan_id, loan.borrower.clone());
         }

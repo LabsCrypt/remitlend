@@ -779,3 +779,54 @@ fn test_transfer_rejects_unauthorized_minter() {
 
     client.transfer(&from, &to, &Some(unauthorized_minter));
 }
+
+#[test]
+fn test_score_cap_at_850() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let history_hash = create_test_hash(&env, 1);
+
+    // Test initial mint cap
+    client.mint(&user, &900, &history_hash, &None);
+    assert_eq!(client.get_score(&user), 850);
+
+    // Test update_score cap
+    // Current score is 850. Add large repayment.
+    client.update_score(&user, &100000, &None);
+    assert_eq!(client.get_score(&user), 850);
+}
+
+#[test]
+fn test_score_overflow_handling() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(&user, &800, &history_hash, &None);
+
+    // Very large repayment that would overflow u32 if converted to points (e.g., u32::MAX * 100 + 1)
+    // repayment_amount is i128, so it can be very large.
+    // points = repayment_amount / 100
+    let huge_repayment: i128 = (u32::MAX as i128) * 100 + 100;
+    client.update_score(&user, &huge_repayment, &None);
+
+    // Should be capped at 850
+    assert_eq!(client.get_score(&user), 850);
+}
