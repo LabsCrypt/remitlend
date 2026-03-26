@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 5,
+    "address": 4,
     "nonce": 0
   },
   "auth": [
@@ -133,8 +133,6 @@
                         "key": {
                           "vec": [
                             {
-<<<<<<< HEAD
-=======
                               "symbol": "AccYieldPerDeposit"
                             }
                           ]
@@ -150,15 +148,11 @@
                         "key": {
                           "vec": [
                             {
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                               "symbol": "Admin"
                             }
                           ]
                         },
                         "val": {
-<<<<<<< HEAD
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-=======
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
                       },
@@ -187,7 +181,6 @@
                             "hi": 0,
                             "lo": 0
                           }
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                         }
                       },
                       {
@@ -201,8 +194,6 @@
                         "val": {
                           "bool": false
                         }
-<<<<<<< HEAD
-=======
                       },
                       {
                         "key": {
@@ -245,7 +236,6 @@
                         "val": {
                           "u32": 1
                         }
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                       }
                     ]
                   }

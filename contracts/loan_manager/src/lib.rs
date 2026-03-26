@@ -41,7 +41,6 @@ pub struct Loan {
     pub last_interest_ledger: u32,
     pub last_late_fee_ledger: u32,
     pub status: LoanStatus,
-    pub due_date: u32,
 }
 
 #[contracttype]
@@ -368,7 +367,6 @@ impl LoanManager {
         env.storage().persistent().remove(&collateral_key);
     }
 
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
     pub fn initialize(
         env: Env,
         nft_contract: Address,
@@ -485,11 +483,10 @@ impl LoanManager {
             late_fee_paid: 0,
             accrued_late_fee: 0,
             interest_rate_bps: Self::read_interest_rate(&env),
-            due_date: 0,
+            due_date: 0, // Set when approved
             last_interest_ledger: 0,
             last_late_fee_ledger: 0,
             status: LoanStatus::Pending,
-            due_date: 0, // Set when approved
         };
 
         env.storage()
@@ -541,7 +538,6 @@ impl LoanManager {
             panic!("loan is not pending");
         }
 
-<<<<<<< HEAD
         let term_ledgers = Self::read_default_term(&env);
 
         // Update loan status to Approved and set due date
@@ -1021,9 +1017,12 @@ impl LoanManager {
             panic!("loan is not active");
         }
 
+        let grace_period = Self::get_grace_period(env.clone());
         let current_ledger = env.ledger().sequence();
-        if current_ledger <= loan.due_date {
-            panic!("loan is not past due");
+        
+        // Only mark as defaulted if past due date + grace period
+        if current_ledger <= loan.due_date + grace_period {
+            panic!("loan is not past due (including grace period)");
         }
 
         loan.status = LoanStatus::Defaulted;
@@ -1131,29 +1130,6 @@ impl LoanManager {
             .unwrap_or(4320)
     }
 
-    pub fn check_default(env: Env, loan_id: u32) {
-        let loan_key = DataKey::Loan(loan_id);
-        let mut loan: Loan = env
-            .storage()
-            .persistent()
-            .get(&loan_key)
-            .expect("loan not found");
-
-        if loan.status != LoanStatus::Approved {
-            return;
-        }
-
-        let grace_period = Self::get_grace_period(env.clone());
-        let current_ledger = env.ledger().sequence();
-
-        // Only mark as defaulted if past due date + grace period
-        if current_ledger > loan.due_date + grace_period {
-            loan.status = LoanStatus::Defaulted;
-            env.storage().persistent().set(&loan_key, &loan);
-            env.events()
-                .publish((symbol_short!("Default"), loan.borrower.clone()), loan_id);
-        }
-    }
 }
 
 #[cfg(test)]

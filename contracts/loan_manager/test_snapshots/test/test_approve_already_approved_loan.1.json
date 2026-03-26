@@ -442,7 +442,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       }
                     ]
@@ -528,11 +528,7 @@
             "key": {
               "vec": [
                 {
-<<<<<<< HEAD
-                  "symbol": "BorrowerLoans"
-=======
                   "symbol": "BorrowerLoanCount"
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
@@ -552,11 +548,7 @@
                 "key": {
                   "vec": [
                     {
-<<<<<<< HEAD
-                      "symbol": "BorrowerLoans"
-=======
                       "symbol": "BorrowerLoanCount"
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
@@ -565,25 +557,62 @@
                 },
                 "durability": "persistent",
                 "val": {
-<<<<<<< HEAD
-                  "vec": [
-                    {
-                      "u32": 1
-                    }
-                  ]
-=======
                   "u32": 1
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                 }
               }
             },
             "ext": "v0"
           },
-<<<<<<< HEAD
-          4095
-=======
           518400
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "BorrowerLoans"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "BorrowerLoans"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u32": 1
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [
@@ -669,9 +698,6 @@
                         "symbol": "due_date"
                       },
                       "val": {
-<<<<<<< HEAD
-                        "u32": 432000
-=======
                         "u32": 17280
                       }
                     },
@@ -730,7 +756,6 @@
                           "hi": 0,
                           "lo": 0
                         }
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                       }
                     },
                     {
@@ -793,20 +818,24 @@
                         "key": {
                           "vec": [
                             {
-<<<<<<< HEAD
                               "symbol": "GracePeriod"
-=======
-                              "symbol": "LateFeeRateBps"
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                             }
                           ]
                         },
                         "val": {
-<<<<<<< HEAD
                           "u32": 4320
-=======
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "LateFeeRateBps"
+                            }
+                          ]
+                        },
+                        "val": {
                           "u32": 500
->>>>>>> 82d243cf71ca8fa687066842c27124383473518c
                         }
                       },
                       {
@@ -905,7 +934,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       }
                     ]

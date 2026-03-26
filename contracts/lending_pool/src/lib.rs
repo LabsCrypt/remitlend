@@ -608,7 +608,13 @@ impl LendingPool {
         
         token_client.transfer(&pool_address, &provider, &balance);
         env.storage().persistent().remove(&key);
-        Self::decrement_depositor_count(&env);
+        
+        // Decrement depositor count
+        let count = Self::read_depositor_count(&env);
+        env.storage()
+            .instance()
+            .set(&DataKey::DepositorCount, &(count.saturating_sub(1)));
+        
         env.events()
             .publish((symbol_short!("WithdAll"), provider), balance);
     }
@@ -633,7 +639,13 @@ impl LendingPool {
         // Full withdrawal only
         token_client.transfer(&pool_address, &provider, &balance);
         env.storage().persistent().remove(&key);
-        Self::decrement_depositor_count(&env);
+        
+        // Decrement depositor count
+        let count = Self::read_depositor_count(&env);
+        env.storage()
+            .instance()
+            .set(&DataKey::DepositorCount, &(count.saturating_sub(1)));
+        
         env.events()
             .publish((symbol_short!("EmergWd"), provider), balance);
     }

@@ -451,8 +451,9 @@ fn test_check_default_success() {
 
     assert!(!nft_client.is_seized(&borrower));
 
+    // Advance past due date + grace period (17280 + 4320 = 21600)
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 22_000);
 
     manager.check_default(&loan_id);
 
@@ -464,7 +465,7 @@ fn test_check_default_success() {
 }
 
 #[test]
-#[should_panic(expected = "loan is not past due")]
+#[should_panic(expected = "loan is not past due (including grace period)")]
 fn test_check_default_not_past_due() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -674,8 +675,9 @@ fn test_collateral_is_seized_on_default() {
     let pool_balance_before_default = token_client.balance(&pool_address);
     let contract_balance_before_default = token_client.balance(&manager.address);
 
+    // Advance past due date + grace period (17280 + 4320 = 21600)
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 22_000);
     manager.check_default(&loan_id);
 
     assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
