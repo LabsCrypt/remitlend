@@ -674,6 +674,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "DefaultWindowLedgers"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 17280
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "GracePeriodLedgers"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 4320
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "LateFeeRateBps"
                             }
                           ]

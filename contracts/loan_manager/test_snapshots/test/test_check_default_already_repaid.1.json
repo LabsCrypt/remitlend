@@ -248,7 +248,7 @@
   ],
   "ledger": {
     "protocol_version": 22,
-    "sequence_number": 20000,
+    "sequence_number": 40000,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
@@ -556,7 +556,7 @@
                         "symbol": "score"
                       },
                       "val": {
-                        "u32": 610
+                        "u32": 615
                       }
                     }
                   ]
@@ -620,7 +620,7 @@
                             "symbol": "new_score"
                           },
                           "val": {
-                            "u32": 610
+                            "u32": 615
                           }
                         },
                         {
@@ -636,7 +636,7 @@
                             "symbol": "reason"
                           },
                           "val": {
-                            "symbol": "REPAY"
+                            "symbol": "ADJ"
                           }
                         }
                       ]
@@ -973,7 +973,7 @@
                         "symbol": "last_late_fee_ledger"
                       },
                       "val": {
-                        "u32": 17280
+                        "u32": 21600
                       }
                     },
                     {
@@ -1052,6 +1052,30 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "DefaultWindowLedgers"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 17280
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "GracePeriodLedgers"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 4320
                         }
                       },
                       {

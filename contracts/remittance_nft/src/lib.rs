@@ -455,6 +455,45 @@ impl RemittanceNFT {
     }
 
     /// Update the history hash for a user's NFT.
+    pub fn apply_score_delta(
+        env: Env,
+        user: Address,
+        delta: i32,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
+
+        let metadata_key = DataKey::Metadata(user.clone());
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
+
+        let old_score = metadata.score as i64;
+        let next_score = old_score + delta as i64;
+        let bounded_score = if next_score < 0 { 0 } else { next_score };
+        let next_score_u32 = u32::try_from(bounded_score).expect("score overflow");
+
+        if next_score_u32 == metadata.score {
+            return Ok(());
+        }
+
+        let previous_score = metadata.score;
+        metadata.score = next_score_u32;
+
+        env.storage().persistent().set(&metadata_key, &metadata);
+        Self::bump_persistent_ttl(&env, &metadata_key);
+        Self::append_score_history(
+            &env,
+            &user,
+            previous_score,
+            metadata.score,
+            symbol_short!("ADJ"),
+        );
+        env.events()
+            .publish((symbol_short!("ScoreUpd"), user), metadata.score);
+        Ok(())
+    }
+
+    /// Update the history hash for a user's NFT.
     pub fn update_history_hash(
         env: Env,
         user: Address,
