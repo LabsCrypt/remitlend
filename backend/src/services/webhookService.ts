@@ -7,6 +7,10 @@ export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "LoanApproved",
   "LoanRepaid",
   "LoanDefaulted",
+  "Seized",
+  "Paused",
+  "Unpaused",
+  "MinScoreUpdated",
 ] as const;
 
 export type WebhookEventType = (typeof SUPPORTED_WEBHOOK_EVENT_TYPES)[number];
@@ -17,6 +21,8 @@ export interface IndexedLoanEvent {
   loanId?: number;
   borrower: string;
   amount?: string;
+  interestRateBps?: number;
+  termLedgers?: number;
   ledger: number;
   ledgerClosedAt: Date;
   txHash: string;

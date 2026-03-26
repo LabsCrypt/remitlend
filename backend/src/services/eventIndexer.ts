@@ -26,6 +26,8 @@ interface LoanEvent extends IndexedLoanEvent {
   contractId: string;
   topics: string[];
   value: string;
+  interestRateBps?: number;
+  termLedgers?: number;
 }
 
 export class EventIndexer {
@@ -98,6 +100,8 @@ export class EventIndexer {
         let borrower = "";
         let loanId: number | undefined;
         let amount: string | undefined;
+        let interestRateBps: number | undefined;
+        let termLedgers: number | undefined;
 
         if (type === "LoanRequested") {
           borrower = this.decodeAddress(e.topic[1]);
@@ -105,6 +109,9 @@ export class EventIndexer {
         } else if (type === "LoanApproved") {
           loanId = this.decodeLoanId(e.topic[1]);
           if (loanId === undefined) continue;
+          // Capture current contract defaults at time of approval
+          interestRateBps = 1200; // Matches contract DEFAULT_INTEREST_RATE_BPS
+          termLedgers = 17280; // Matches contract DEFAULT_TERM_LEDGERS
         } else if (type === "LoanRepaid") {
           if (!e.topic[2]) continue;
           borrower = this.decodeAddress(e.topic[1]);
@@ -115,6 +122,8 @@ export class EventIndexer {
           loanId = this.decodeLoanId(e.topic[1]);
           if (loanId === undefined) continue;
           borrower = this.decodeAddress(e.value);
+        } else if (type === "Seized") {
+          borrower = this.decodeAddress(e.topic[1]);
         }
 
         const evt: LoanEvent = {
@@ -125,10 +134,12 @@ export class EventIndexer {
           ledgerClosedAt: new Date(e.ledgerClosedAt),
           txHash: e.txHash,
           contractId: e.contractId.toString(),
-          topics: e.topic.map((t) => t.toXDR("base64")),
+          topics: e.topic.map((t: any) => t.toXDR("base64")),
           value: e.value.toXDR("base64"),
           ...(amount !== undefined ? { amount } : {}),
           ...(loanId !== undefined ? { loanId } : {}),
+          ...(interestRateBps !== undefined ? { interestRateBps } : {}),
+          ...(termLedgers !== undefined ? { termLedgers } : {}),
         };
         result.push(evt);
       } catch (err) {
@@ -149,8 +160,8 @@ export class EventIndexer {
         );
         if (ex.rows.length) continue;
         await query(
-          `INSERT INTO loan_events (event_id, event_type, loan_id, borrower, amount, ledger, ledger_closed_at, tx_hash, contract_id, topics, value)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          `INSERT INTO loan_events (event_id, event_type, loan_id, borrower, amount, ledger, ledger_closed_at, tx_hash, contract_id, topics, value, interest_rate_bps, term_ledgers)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [
             e.eventId,
             e.eventType,
@@ -163,12 +174,16 @@ export class EventIndexer {
             e.contractId,
             JSON.stringify(e.topics),
             e.value,
+            e.interestRateBps || null,
+            e.termLedgers || null,
           ],
         );
 
         // Update user credit score if it's a repayment
         if (e.eventType === "LoanRepaid") {
           await this.updateUserScore(e.borrower, 15); // +15 for repayment
+        } else if (e.eventType === "LoanDefaulted") {
+          await this.updateUserScore(e.borrower, -50); // penalty for default
         }
       }
       await query("COMMIT", []);
@@ -213,7 +228,7 @@ export class EventIndexer {
           message: event.loanId
             ? `Your loan #${event.loanId} has been approved.`
             : "Your loan has been approved.",
-          loanId: event.loanId,
+          ...(event.loanId !== undefined ? { loanId: event.loanId } : {}),
         };
         break;
       case "LoanRepaid":
@@ -224,7 +239,7 @@ export class EventIndexer {
           message: event.loanId
             ? `Repayment for loan #${event.loanId} has been confirmed.`
             : "Your loan repayment has been confirmed.",
-          loanId: event.loanId,
+          ...(event.loanId !== undefined ? { loanId: event.loanId } : {}),
         };
         break;
       case "LoanDefaulted":
@@ -235,7 +250,7 @@ export class EventIndexer {
           message: event.loanId
             ? `Loan #${event.loanId} has been marked as defaulted.`
             : "A loan has been marked as defaulted.",
-          loanId: event.loanId,
+          ...(event.loanId !== undefined ? { loanId: event.loanId } : {}),
         };
         break;
       default:
@@ -298,12 +313,17 @@ export class EventIndexer {
   private decodeEventType(x: xdr.ScVal): WebhookEventType | null {
     try {
       const s = x.sym().toString();
-      return s === "LoanRequested" ||
-        s === "LoanApproved" ||
-        s === "LoanRepaid" ||
-        s === "LoanDefaulted"
-        ? s
-        : null;
+      const supported: string[] = [
+        "LoanRequested",
+        "LoanApproved",
+        "LoanRepaid",
+        "LoanDefaulted",
+        "Seized",
+        "Paused",
+        "Unpaused",
+        "MinScoreUpdated",
+      ];
+      return supported.includes(s) ? (s as WebhookEventType) : null;
     } catch {
       return null;
     }
