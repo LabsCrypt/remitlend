@@ -475,9 +475,10 @@ impl LoanManager {
         env.storage()
             .instance()
             .set(&DataKey::LateFeeRateBps, &Self::DEFAULT_LATE_FEE_RATE_BPS);
-        env.storage()
-            .instance()
-            .set(&DataKey::GracePeriodLedgers, &Self::DEFAULT_GRACE_PERIOD_LEDGERS);
+        env.storage().instance().set(
+            &DataKey::GracePeriodLedgers,
+            &Self::DEFAULT_GRACE_PERIOD_LEDGERS,
+        );
         env.storage().instance().set(
             &DataKey::DefaultWindowLedgers,
             &Self::DEFAULT_DEFAULT_WINDOW_LEDGERS,
