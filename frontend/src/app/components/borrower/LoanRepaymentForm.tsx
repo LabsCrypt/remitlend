@@ -1,14 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { TransactionPreviewModal } from "../transaction/TransactionPreviewModal";
 import { useTransactionPreview } from "../../hooks/useTransactionPreview";
+import { useContractToast } from "../../hooks/useContractToast";
 import { formatLoanRepayment } from "../../utils/transactionFormatter";
-import { DollarSign, AlertCircle } from "lucide-react";
+import {
+  prepareRepayTransaction,
+  signAndSubmitTransaction,
+} from "../../utils/contractService";
+import { queryKeys } from "../../hooks/useApi";
+import { useWalletStore, selectWalletAddress } from "../../stores/useWalletStore";
 import { useGamificationStore } from "../../stores/useGamificationStore";
+import { DollarSign, AlertCircle } from "lucide-react";
 
 interface LoanRepaymentFormProps {
   loanId: number;
@@ -19,8 +27,13 @@ interface LoanRepaymentFormProps {
 export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRepaymentFormProps) {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
+
   const txPreview = useTransactionPreview();
+  const toast = useContractToast();
+  const queryClient = useQueryClient();
   const gamificationStore = useGamificationStore();
+  const borrowerAddress = useWalletStore(selectWalletAddress);
 
   const handleAmountChange = (value: string) => {
     setAmount(value);
@@ -53,49 +66,67 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
     return true;
   };
 
-  const handleRepayClick = () => {
+  const handleRepayClick = async () => {
     if (!validateAmount()) return;
+    if (!borrowerAddress) {
+      setError("No wallet connected");
+      return;
+    }
 
     const numAmount = parseFloat(amount);
 
-    // Show transaction preview modal
-    const previewData = formatLoanRepayment({
-      loanId,
-      amount: numAmount,
-    });
-
-    txPreview.show(previewData, async () => {
-      // This is where the actual transaction would be executed
-      // For now, we'll simulate it
-      await simulateRepayment(loanId, numAmount);
-    });
-  };
-
-  const simulateRepayment = async (loanId: number, amount: number): Promise<void> => {
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    // TODO: Replace with actual smart contract call
-    // Example: await loanContract.repay(loanId, amount);
-
-    // TODO: Success notification will be handled by useContractMutation wrapper
-    // when integrated with actual contract calls
-
-    // TEMPORARY: Trigger gamification directly since there's no actual API mutation yet
-    gamificationStore.addXP(50, "Loan repayment");
-    gamificationStore.unlockAchievement("first_repayment");
-
-    // Also trigger on-time streak if applicable (demo purpose here)
-    const isStreak = Math.random() > 0.5; // Simulate streak detection
-    if (isStreak) {
-      setTimeout(() => {
-        gamificationStore.addXP(100, "On-time repayment streak");
-        gamificationStore.unlockAchievement("streak_master");
-      }, 1000); // Trigger after first notification
+    // Step 1: build + simulate on Soroban RPC to get the unsigned XDR.
+    // Doing this before opening the modal means the user sees a verified
+    // transaction (with correct resource fees) rather than an estimate.
+    setIsPreparing(true);
+    let xdr: string;
+    try {
+      xdr = await prepareRepayTransaction(borrowerAddress, loanId, numAmount);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to prepare transaction";
+      setError(message);
+      setIsPreparing(false);
+      return;
     }
+    setIsPreparing(false);
 
-    // Reset form
-    setAmount("");
+    // Step 2: show the preview modal with the verified XDR attached.
+    const previewData = formatLoanRepayment({ loanId, amount: numAmount });
+
+    txPreview.show({ ...previewData, rawXDR: xdr }, async () => {
+      // Step 3 (on confirm): sign with Freighter and submit.
+      const toastId = toast.showPending("Submitting repayment...");
+
+      try {
+        const txHash = await signAndSubmitTransaction(xdr);
+
+        toast.showSuccess(toastId, {
+          successMessage: "Repayment confirmed on-chain!",
+          txHash,
+          network: "testnet",
+        });
+
+        // Invalidate all loan-related queries so the UI reflects the new state
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.loans.all() }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(String(loanId)) }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress),
+          }),
+        ]);
+
+        // Award gamification XP for a real repayment
+        gamificationStore.addXP(50, "Loan repayment");
+        gamificationStore.unlockAchievement("first_repayment");
+
+        setAmount("");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Repayment failed";
+        toast.showError(toastId, { errorMessage: message });
+        // Re-throw so useTransactionPreview keeps the modal open for retry
+        throw err;
+      }
+    });
   };
 
   const handlePayFullAmount = () => {
@@ -161,10 +192,11 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
           <Button
             variant="primary"
             onClick={handleRepayClick}
-            disabled={!amount || !!error}
+            disabled={!amount || !!error || !borrowerAddress || isPreparing}
+            isLoading={isPreparing}
             className="w-full"
           >
-            Review Repayment
+            {isPreparing ? "Preparing..." : "Review Repayment"}
           </Button>
         </CardContent>
       </Card>
