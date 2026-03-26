@@ -9,6 +9,7 @@ pub trait RemittanceNftInterface {
     fn get_score(env: Env, user: Address) -> u32;
     fn update_score(env: Env, user: Address, repayment_amount: i128, minter: Option<Address>);
     fn apply_score_delta(env: Env, user: Address, delta: i32, minter: Option<Address>);
+    fn decrease_score(env: Env, user: Address, penalty_points: u32, minter: Option<Address>);
     fn seize_collateral(env: Env, user: Address, minter: Option<Address>);
     fn is_seized(env: Env, user: Address) -> bool;
     fn record_default(env: Env, user: Address, minter: Option<Address>);
@@ -88,6 +89,7 @@ impl LoanManager {
     const DEFAULT_DEFAULT_WINDOW_LEDGERS: u32 = Self::DEFAULT_TERM_LEDGERS;
     const ON_TIME_REPAYMENT_SCORE_BONUS: i32 = 15;
     const LATE_REPAYMENT_SCORE_PENALTY: i32 = 10;
+    const DEFAULT_SCORE_PENALTY_POINTS: u32 = 50;
 
     fn bump_instance_ttl(env: &Env) {
         env.storage()
@@ -967,6 +969,7 @@ impl LoanManager {
 
         let nft_contract = Self::nft_contract(&env);
         let nft_client = NftClient::new(&env, &nft_contract);
+        nft_client.decrease_score(&loan.borrower, &Self::DEFAULT_SCORE_PENALTY_POINTS, &None);
         nft_client.record_default(&loan.borrower, &None);
 
         events::loan_defaulted(&env, loan_id, loan.borrower.clone());
@@ -1004,6 +1007,7 @@ impl LoanManager {
 
             let nft_contract = Self::nft_contract(&env);
             let nft_client = NftClient::new(&env, &nft_contract);
+            nft_client.decrease_score(&loan.borrower, &Self::DEFAULT_SCORE_PENALTY_POINTS, &None);
             nft_client.record_default(&loan.borrower, &None);
 
             events::loan_defaulted(&env, loan_id, loan.borrower.clone());
