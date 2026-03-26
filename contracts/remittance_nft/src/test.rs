@@ -329,10 +329,29 @@ fn test_apply_score_delta_floors_at_zero() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &8, &history_hash, &None);
+    client.mint(&user, &350, &history_hash, &None);
 
     client.apply_score_delta(&user, &-50, &None);
-    assert_eq!(client.get_score(&user), 0);
+    assert_eq!(client.get_score(&user), 300);
+}
+
+#[test]
+fn test_decrease_score_applies_floor_at_300() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let history_hash = create_test_hash(&env, 8);
+    client.mint(&user, &320, &history_hash, &None);
+
+    client.decrease_score(&user, &50, &None);
+    assert_eq!(client.get_score(&user), 300);
 }
 
 #[test]

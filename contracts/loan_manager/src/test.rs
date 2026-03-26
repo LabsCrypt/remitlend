@@ -498,6 +498,7 @@ fn test_check_default_success() {
     assert_eq!(loan.status, LoanStatus::Defaulted);
 
     assert_eq!(nft_client.get_default_count(&borrower), 1);
+    assert_eq!(nft_client.get_score(&borrower), 550);
     assert!(nft_client.is_seized(&borrower));
 }
 
@@ -610,6 +611,9 @@ fn test_check_defaults_batch() {
     assert_eq!(manager.get_loan(&loan_id2).status, LoanStatus::Defaulted);
     assert_eq!(manager.get_loan(&loan_id3).status, LoanStatus::Defaulted);
 
+    assert_eq!(nft_client.get_score(&borrower1), 550);
+    assert_eq!(nft_client.get_score(&borrower2), 550);
+    assert_eq!(nft_client.get_score(&borrower3), 550);
     assert!(nft_client.is_seized(&borrower1));
     assert!(nft_client.is_seized(&borrower2));
     assert!(nft_client.is_seized(&borrower3));
