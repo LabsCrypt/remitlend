@@ -9,7 +9,10 @@ import { TransactionPreviewModal } from "../transaction/TransactionPreviewModal"
 import { useTransactionPreview } from "../../hooks/useTransactionPreview";
 import { useContractToast } from "../../hooks/useContractToast";
 import { formatLoanRepayment } from "../../utils/transactionFormatter";
-import { executeRepayTransaction } from "../../utils/contractService";
+import {
+  prepareRepayTransaction,
+  signAndSubmitTransaction,
+} from "../../utils/contractService";
 import { queryKeys } from "../../hooks/useApi";
 import { useWalletStore, selectWalletAddress } from "../../stores/useWalletStore";
 import { useGamificationStore } from "../../stores/useGamificationStore";
@@ -24,6 +27,7 @@ interface LoanRepaymentFormProps {
 export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRepaymentFormProps) {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
 
   const txPreview = useTransactionPreview();
   const toast = useContractToast();
@@ -62,7 +66,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
     return true;
   };
 
-  const handleRepayClick = () => {
+  const handleRepayClick = async () => {
     if (!validateAmount()) return;
     if (!borrowerAddress) {
       setError("No wallet connected");
@@ -70,15 +74,32 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
     }
 
     const numAmount = parseFloat(amount);
+
+    // Step 1: build + simulate on Soroban RPC to get the unsigned XDR.
+    // Doing this before opening the modal means the user sees a verified
+    // transaction (with correct resource fees) rather than an estimate.
+    setIsPreparing(true);
+    let xdr: string;
+    try {
+      xdr = await prepareRepayTransaction(borrowerAddress, loanId, numAmount);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to prepare transaction";
+      setError(message);
+      setIsPreparing(false);
+      return;
+    }
+    setIsPreparing(false);
+
+    // Step 2: show the preview modal with the verified XDR attached.
     const previewData = formatLoanRepayment({ loanId, amount: numAmount });
 
-    txPreview.show(previewData, async () => {
+    txPreview.show({ ...previewData, rawXDR: xdr }, async () => {
+      // Step 3 (on confirm): sign with Freighter and submit.
       const toastId = toast.showPending("Submitting repayment...");
 
       try {
-        const txHash = await executeRepayTransaction(borrowerAddress, loanId, numAmount);
+        const txHash = await signAndSubmitTransaction(xdr);
 
-        // Update toast to success with Stellar Explorer link
         toast.showSuccess(toastId, {
           successMessage: "Repayment confirmed on-chain!",
           txHash,
@@ -171,10 +192,11 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
           <Button
             variant="primary"
             onClick={handleRepayClick}
-            disabled={!amount || !!error || !borrowerAddress}
+            disabled={!amount || !!error || !borrowerAddress || isPreparing}
+            isLoading={isPreparing}
             className="w-full"
           >
-            Review Repayment
+            {isPreparing ? "Preparing..." : "Review Repayment"}
           </Button>
         </CardContent>
       </Card>

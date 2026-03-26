@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
-import { AlertTriangle, ArrowRight, Info, Fuel } from "lucide-react";
+import { AlertTriangle, ArrowRight, Info, Fuel, ChevronDown, ChevronUp } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -35,6 +35,8 @@ export interface TransactionPreviewData {
   estimatedGasFee?: string;
   network: string;
   contractAddress?: string;
+  /** Base64-encoded XDR of the assembled (unsigned) transaction envelope */
+  rawXDR?: string;
 }
 
 interface TransactionPreviewModalProps {
@@ -55,6 +57,7 @@ export function TransactionPreviewModal({
   isLoading = false,
 }: TransactionPreviewModalProps) {
   const [hasAcknowledged, setHasAcknowledged] = React.useState(false);
+  const [isXDRExpanded, setIsXDRExpanded] = React.useState(false);
 
   // Reset acknowledgment when modal opens
   React.useEffect(() => {
@@ -181,6 +184,46 @@ export function TransactionPreviewModal({
             <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
               Actual fee may vary based on network conditions
             </p>
+          </div>
+        )}
+
+        {/* Raw XDR — collapsible for advanced users */}
+        {data.rawXDR && (
+          <div className="rounded-lg border border-gray-200 dark:border-zinc-800">
+            <button
+              type="button"
+              onClick={() => setIsXDRExpanded((prev) => !prev)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left"
+            >
+              <span className="text-xs font-semibold text-gray-600 dark:text-zinc-400 uppercase tracking-wide">
+                Raw Transaction XDR
+              </span>
+              {isXDRExpanded ? (
+                <ChevronUp className="h-4 w-4 text-gray-400 dark:text-zinc-500" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-gray-400 dark:text-zinc-500" />
+              )}
+            </button>
+            {isXDRExpanded && (
+              <div className="border-t border-gray-200 dark:border-zinc-800 p-4">
+                <p className="mb-2 text-xs text-gray-500 dark:text-zinc-500">
+                  Base64-encoded, assembled unsigned transaction envelope. You can verify this
+                  on{" "}
+                  <a
+                    href={`https://laboratory.stellar.org/#xdr-viewer?input=${encodeURIComponent(data.rawXDR)}&type=TransactionEnvelope`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-blue-600 dark:text-blue-400"
+                  >
+                    Stellar Laboratory
+                  </a>
+                  .
+                </p>
+                <pre className="overflow-x-auto rounded bg-gray-100 dark:bg-zinc-900 p-3 text-[10px] leading-relaxed font-mono text-gray-700 dark:text-zinc-300 break-all whitespace-pre-wrap">
+                  {data.rawXDR}
+                </pre>
+              </div>
+            )}
           </div>
         )}
 

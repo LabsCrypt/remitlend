@@ -2,14 +2,24 @@
  * utils/contractService.ts
  *
  * Soroban contract interaction utilities for the frontend.
- * Builds, simulates, signs (via Freighter), and submits transactions.
  *
- * Required peer dependencies (not bundled with the frontend by default):
- *   npm install @stellar/stellar-sdk @stellar/freighter-api
+ * The repayment flow is split into two explicit steps so the UI can show the
+ * user the raw XDR (verified transaction envelope) inside the preview modal
+ * before asking them to sign with Freighter:
+ *
+ *   1. prepareRepayTransaction  — builds the tx, simulates on Soroban RPC,
+ *                                  assembles the footprint, returns the unsigned
+ *                                  XDR string.
+ *   2. signAndSubmitTransaction — signs via Freighter, submits to the network,
+ *                                  polls until confirmed, returns the tx hash.
+ *
+ * Required peer dependencies (listed in package.json):
+ *   @stellar/stellar-sdk  ^13
+ *   @stellar/freighter-api ^2
  *
  * Environment variables:
- *   NEXT_PUBLIC_MANAGER_CONTRACT_ID   — deployed LoanManager contract address
- *   NEXT_PUBLIC_SOROBAN_RPC_URL       — Soroban RPC endpoint (defaults to testnet)
+ *   NEXT_PUBLIC_MANAGER_CONTRACT_ID        — deployed LoanManager contract address
+ *   NEXT_PUBLIC_SOROBAN_RPC_URL            — Soroban RPC endpoint (defaults to testnet)
  *   NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE — network passphrase (defaults to testnet)
  */
 
@@ -32,17 +42,21 @@ const POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_ATTEMPTS = 30; // 60 seconds total
 
 /**
- * Builds, signs via Freighter, submits, and polls a `repay` transaction.
+ * Step 1 — Build and simulate.
  *
- * Corresponds to the loan_manager contract function:
- *   repay(borrower: Address, loan_id: u32, amount: i128)
+ * Constructs a `repay(borrower, loan_id, amount)` transaction, simulates it
+ * on the Soroban RPC to populate the footprint and resource fees, then returns
+ * the assembled (but still unsigned) transaction as a base64-encoded XDR string.
+ *
+ * Throwing here (e.g. sim error, account not found) prevents the preview modal
+ * from opening so the user never sees an invalid transaction.
  *
  * @param borrowerAddress  Connected wallet's Stellar address
  * @param loanId           On-chain loan ID (u32)
  * @param amount           Human-readable amount (e.g. 100.0 for 100 USDC)
- * @returns                Confirmed transaction hash
+ * @returns                Unsigned, assembled XDR string ready for signing
  */
-export async function executeRepayTransaction(
+export async function prepareRepayTransaction(
   borrowerAddress: string,
   loanId: number,
   amount: number,
@@ -55,11 +69,7 @@ export async function executeRepayTransaction(
 
   // Dynamic imports keep these heavy packages out of the initial bundle
   // and prevent crashes during SSR (these APIs only work in the browser).
-  const [sdk, freighterApi] = await Promise.all([
-    import("@stellar/stellar-sdk"),
-    import("@stellar/freighter-api"),
-  ]);
-
+  const sdk = await import("@stellar/stellar-sdk");
   const { Contract, TransactionBuilder, BASE_FEE, nativeToScVal, rpc } = sdk;
   const server = new rpc.Server(SOROBAN_RPC_URL);
 
@@ -99,11 +109,32 @@ export async function executeRepayTransaction(
 
   // Assemble: merges the simulation's footprint and fee into the transaction.
   const assembled = rpc.assembleTransaction(tx, simResult).build();
-  const unsignedXDR = assembled.toXDR();
+  return assembled.toXDR();
+}
+
+/**
+ * Step 2 — Sign and submit.
+ *
+ * Takes the assembled (unsigned) XDR returned by `prepareRepayTransaction`,
+ * requests a signature from Freighter, submits to the network, and polls until
+ * the transaction is finalized.
+ *
+ * @param xdr  Unsigned, assembled XDR string (from prepareRepayTransaction)
+ * @returns    Confirmed transaction hash
+ */
+export async function signAndSubmitTransaction(xdr: string): Promise<string> {
+  // Dynamic imports for SSR safety
+  const [sdk, freighterApi] = await Promise.all([
+    import("@stellar/stellar-sdk"),
+    import("@stellar/freighter-api"),
+  ]);
+
+  const { TransactionBuilder, rpc } = sdk;
+  const server = new rpc.Server(SOROBAN_RPC_URL);
 
   // Sign with Freighter browser extension.
   // Freighter v3 returns a string; v4+ returns { signedXDR: string }.
-  const signResult = await freighterApi.signTransaction(unsignedXDR, {
+  const signResult = await freighterApi.signTransaction(xdr, {
     networkPassphrase: STELLAR_NETWORK_PASSPHRASE,
   });
   const signedXDR =
