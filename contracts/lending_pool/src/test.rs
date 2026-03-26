@@ -381,3 +381,66 @@ fn test_set_negative_max_pool_size_panics() {
 
     pool_client.set_max_pool_size(&-1);
 }
+
+#[test]
+fn test_pool_stats() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) =
+        create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+
+    let provider1 = Address::generate(&env);
+    let provider2 = Address::generate(&env);
+    let borrower = Address::generate(&env);
+
+    stellar_asset_client.mint(&provider1, &5000);
+    stellar_asset_client.mint(&provider2, &5000);
+
+    // Initial stats
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 0);
+    assert_eq!(stats.depositor_count, 0);
+    assert_eq!(stats.utilization_bps, 0);
+
+    // After first deposit
+    pool_client.deposit(&provider1, &2000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 2000);
+    assert_eq!(stats.depositor_count, 1);
+    assert_eq!(stats.utilization_bps, 0);
+
+    // After second deposit
+    pool_client.deposit(&provider2, &2000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 4000);
+    assert_eq!(stats.depositor_count, 2);
+
+    // Simulate borrowing (utilization)
+    let token_client = TokenClient::new(&env, &token_id);
+    token_client.transfer(&pool_id, &borrower, &1000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 4000);
+    assert_eq!(stats.pool_token_balance, 3000);
+    assert_eq!(stats.utilization_bps, 2500); // 1000/4000 = 25%
+
+    // Full withdrawal provider 1
+    pool_client.withdraw(&provider1, &2000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 2000);
+    assert_eq!(stats.depositor_count, 1);
+
+    // Return the borrowed tokens to test full withdrawal
+    token_client.transfer(&borrower, &pool_id, &1000);
+
+    // Withdraw all for provider 2
+    pool_client.withdraw(&provider2, &2000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 0);
+    assert_eq!(stats.depositor_count, 0);
+}
