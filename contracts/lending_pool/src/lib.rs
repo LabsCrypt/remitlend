@@ -10,6 +10,15 @@ pub enum DataKey {
     Paused,
     MaxPoolSize,
     TotalDeposits,
+    DepositorCount,
+}
+
+#[contracttype]
+pub struct PoolStats {
+    pub total_deposits: i128,
+    pub pool_token_balance: i128,
+    pub depositor_count: u32,
+    pub utilization_bps: u32, // (total_deposits - pool_balance) / total_deposits * 10000
 }
 
 #[contract]
@@ -67,6 +76,13 @@ impl LendingPool {
             .unwrap_or(0)
     }
 
+    fn read_depositor_count(env: &Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::DepositorCount)
+            .unwrap_or(0)
+    }
+
     pub fn initialize(env: Env, token: Address, admin: Address) {
         let token_key = Self::token_key();
         if env.storage().instance().has(&token_key) {
@@ -78,6 +94,9 @@ impl LendingPool {
         env.storage()
             .instance()
             .set(&DataKey::TotalDeposits, &0_i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::DepositorCount, &0_u32);
         Self::bump_instance_ttl(&env);
     }
 
@@ -114,6 +133,44 @@ impl LendingPool {
         Self::read_total_deposits(&env)
     }
 
+    /// Returns the number of unique addresses with a non-zero deposit.
+    pub fn get_depositor_count(env: Env) -> u32 {
+        Self::bump_instance_ttl(&env);
+        Self::read_depositor_count(&env)
+    }
+
+    /// Returns comprehensive pool health statistics.
+    pub fn get_pool_stats(env: Env) -> PoolStats {
+        Self::bump_instance_ttl(&env);
+        let total_deposits = Self::read_total_deposits(&env);
+        let depositor_count = Self::read_depositor_count(&env);
+        let token = Self::read_token(&env);
+        let token_client = TokenClient::new(&env, &token);
+        let pool_token_balance = token_client.balance(&env.current_contract_address());
+
+        let utilization_bps = if total_deposits == 0 {
+            0
+        } else {
+            let lent_amount = total_deposits.checked_sub(pool_token_balance).unwrap_or(0);
+            if lent_amount <= 0 {
+                0
+            } else {
+                // (lent_amount * 10000) / total_deposits
+                let utilization = (lent_amount.checked_mul(10000).unwrap_or(0))
+                    .checked_div(total_deposits)
+                    .unwrap_or(0);
+                utilization as u32
+            }
+        };
+
+        PoolStats {
+            total_deposits,
+            pool_token_balance,
+            depositor_count,
+            utilization_bps,
+        }
+    }
+
     pub fn deposit(env: Env, provider: Address, amount: i128) {
         provider.require_auth();
         Self::assert_not_paused(&env);
@@ -143,6 +200,14 @@ impl LendingPool {
         // Update per-provider balance.
         let key = DataKey::Deposit(provider.clone());
         let mut current_balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+
+        if current_balance == 0 {
+            let count = Self::read_depositor_count(&env);
+            env.storage()
+                .instance()
+                .set(&DataKey::DepositorCount, &(count + 1));
+        }
+
         current_balance = current_balance
             .checked_add(amount)
             .expect("deposit overflow");
@@ -198,6 +263,10 @@ impl LendingPool {
             .expect("withdraw underflow");
         if new_balance == 0 {
             env.storage().persistent().remove(&key);
+            let count = Self::read_depositor_count(&env);
+            env.storage()
+                .instance()
+                .set(&DataKey::DepositorCount, &count.saturating_sub(1));
         } else {
             env.storage().persistent().set(&key, &new_balance);
             Self::bump_persistent_ttl(&env, &key);

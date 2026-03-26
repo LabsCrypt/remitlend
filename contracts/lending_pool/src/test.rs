@@ -381,3 +381,73 @@ fn test_set_negative_max_pool_size_panics() {
 
     pool_client.set_max_pool_size(&-1);
 }
+
+#[test]
+fn test_pool_stats() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_id, &token_admin);
+
+    let provider1 = Address::generate(&env);
+    let provider2 = Address::generate(&env);
+
+    stellar_asset_client.mint(&provider1, &1000);
+    stellar_asset_client.mint(&provider2, &2000);
+
+    // Initial stats
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 0);
+    assert_eq!(stats.depositor_count, 0);
+    assert_eq!(stats.utilization_bps, 0);
+
+    // First deposit
+    pool_client.deposit(&provider1, &1000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 1000);
+    assert_eq!(stats.depositor_count, 1);
+    assert_eq!(stats.pool_token_balance, 1000);
+    assert_eq!(stats.utilization_bps, 0);
+
+    // Second deposit (new provider)
+    pool_client.deposit(&provider2, &2000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 3000);
+    assert_eq!(stats.depositor_count, 2);
+    assert_eq!(stats.pool_token_balance, 3000);
+
+    // Third deposit (existing provider)
+    stellar_asset_client.mint(&provider1, &500);
+    pool_client.deposit(&provider1, &500);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 3500);
+    assert_eq!(stats.depositor_count, 2);
+
+    // Simulate utilization (lend out 1750 tokens - 50% utilization)
+    let borrower = Address::generate(&env);
+    token_client.transfer(&pool_id, &borrower, &1750);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 3500);
+    assert_eq!(stats.pool_token_balance, 1750);
+    assert_eq!(stats.utilization_bps, 5000); // 50%
+
+    // Withdraw 1000 for provider 1 (should succeed as 1000 <= 1750)
+    pool_client.withdraw(&provider1, &1000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 2500);
+    assert_eq!(stats.depositor_count, 2);
+
+    // Return the borrowed tokens to test full withdrawal
+    token_client.transfer(&borrower, &pool_id, &1750);
+    
+    // Withdraw all for provider 2
+    pool_client.withdraw(&provider2, &2000);
+    let stats = pool_client.get_pool_stats();
+    assert_eq!(stats.total_deposits, 500);
+    assert_eq!(stats.depositor_count, 1);
+}
