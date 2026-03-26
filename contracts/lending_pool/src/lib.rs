@@ -368,8 +368,7 @@ impl LendingPool {
 
         let cur_total_shares = Self::total_shares(&env, &token);
         let total_assets = Self::pool_balance(&env, &token);
-        let assets_to_return =
-            Self::calc_assets_to_redeem(shares, total_assets, cur_total_shares);
+        let assets_to_return = Self::calc_assets_to_redeem(shares, total_assets, cur_total_shares);
 
         if assets_to_return <= 0 {
             return Err(PoolError::InvalidAmount);
@@ -386,9 +385,10 @@ impl LendingPool {
         if remaining == 0 {
             env.storage().persistent().remove(&share_key);
             let count = Self::read_depositor_count(&env, &token);
-            env.storage()
-                .instance()
-                .set(&DataKey::DepositorCount(token.clone()), &count.saturating_sub(1));
+            env.storage().instance().set(
+                &DataKey::DepositorCount(token.clone()),
+                &count.saturating_sub(1),
+            );
         } else {
             env.storage().persistent().set(&share_key, &remaining);
             Self::bump_persistent_ttl(&env, &share_key);
@@ -404,14 +404,17 @@ impl LendingPool {
         // Reduce tracked principal by the redeemed amount.  Saturating
         // subtraction prevents underflow when the redemption includes yield
         // that caused total_assets > total_deposits.
-        let new_total_deposits = Self::total_deposits(&env, &token).saturating_sub(assets_to_return);
+        let new_total_deposits =
+            Self::total_deposits(&env, &token).saturating_sub(assets_to_return);
         env.storage()
             .instance()
             .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
 
         Self::bump_instance_ttl(&env);
-        env.events()
-            .publish((symbol_short!("Withdraw"), provider, token), assets_to_return);
+        env.events().publish(
+            (symbol_short!("Withdraw"), provider, token),
+            assets_to_return,
+        );
         Ok(())
     }
 

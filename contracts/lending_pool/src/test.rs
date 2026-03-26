@@ -68,8 +68,7 @@ fn test_deposit_unauthorized() {
     let env = Env::default();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -142,8 +141,7 @@ fn test_insufficient_balance_withdraw_panic() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -211,8 +209,7 @@ fn test_share_price_increases_when_interest_arrives() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -422,8 +419,7 @@ fn test_deposit_within_cap_succeeds() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -445,8 +441,7 @@ fn test_deposit_exceeds_cap_panics() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -465,8 +460,7 @@ fn test_withdraw_reduces_total_deposits() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -489,8 +483,7 @@ fn test_deposit_after_withdraw_frees_cap_space() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -515,8 +508,7 @@ fn test_no_cap_allows_unlimited_deposits() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
@@ -553,8 +545,7 @@ fn test_pool_stats() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let (token_id, stellar_asset_client, _token_client) =
-        create_token_contract(&env, &token_admin);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
     let pool_id = env.register(LendingPool, ());
     let pool_client = LendingPoolClient::new(&env, &pool_id);
