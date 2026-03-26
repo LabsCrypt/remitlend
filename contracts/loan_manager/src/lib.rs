@@ -8,6 +8,7 @@ use soroban_sdk::{
 pub trait RemittanceNftInterface {
     fn get_score(env: Env, user: Address) -> u32;
     fn update_score(env: Env, user: Address, repayment_amount: i128, minter: Option<Address>);
+    fn apply_score_delta(env: Env, user: Address, delta: i32, minter: Option<Address>);
     fn seize_collateral(env: Env, user: Address, minter: Option<Address>);
     fn is_seized(env: Env, user: Address) -> bool;
     fn record_default(env: Env, user: Address, minter: Option<Address>);
@@ -64,6 +65,8 @@ pub enum DataKey {
     MinTermLedgers,
     MaxTermLedgers,
     Collateral(u32),
+    GracePeriodLedgers,
+    DefaultWindowLedgers,
 }
 
 #[contract]
@@ -82,6 +85,10 @@ impl LoanManager {
     const MAX_LATE_FEE_CAP_BPS: u32 = 2500;
     const DEFAULT_MAX_LOAN_AMOUNT: i128 = 50_000;
     const DEFAULT_MAX_LOANS_PER_BORROWER: u32 = 3;
+    const DEFAULT_GRACE_PERIOD_LEDGERS: u32 = 4_320;
+    const DEFAULT_DEFAULT_WINDOW_LEDGERS: u32 = Self::DEFAULT_TERM_LEDGERS;
+    const ON_TIME_REPAYMENT_SCORE_BONUS: i32 = 15;
+    const LATE_REPAYMENT_SCORE_PENALTY: i32 = 10;
 
     fn bump_instance_ttl(env: &Env) {
         env.storage()
@@ -186,6 +193,22 @@ impl LoanManager {
             .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS)
     }
 
+    fn grace_period_ledgers(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::GracePeriodLedgers)
+            .unwrap_or(Self::DEFAULT_GRACE_PERIOD_LEDGERS)
+    }
+
+    fn default_window_ledgers(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::DefaultWindowLedgers)
+            .unwrap_or(Self::DEFAULT_DEFAULT_WINDOW_LEDGERS)
+    }
+
     fn max_loan_amount(env: &Env) -> i128 {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -240,11 +263,19 @@ impl LoanManager {
         }
 
         let current_ledger = env.ledger().sequence();
-        if loan.due_date == 0 || current_ledger <= loan.due_date {
+        if loan.due_date == 0 {
             return 0;
         }
 
-        let late_fee_start = loan.last_late_fee_ledger.max(loan.due_date);
+        let grace_ends = loan
+            .due_date
+            .checked_add(Self::grace_period_ledgers(env))
+            .expect("grace period overflow");
+        if current_ledger <= grace_ends {
+            return 0;
+        }
+
+        let late_fee_start = loan.last_late_fee_ledger.max(grace_ends);
         if current_ledger <= late_fee_start {
             return 0;
         }
@@ -398,6 +429,13 @@ impl LoanManager {
         env.storage()
             .instance()
             .set(&DataKey::LateFeeRateBps, &Self::DEFAULT_LATE_FEE_RATE_BPS);
+        env.storage()
+            .instance()
+            .set(&DataKey::GracePeriodLedgers, &Self::DEFAULT_GRACE_PERIOD_LEDGERS);
+        env.storage().instance().set(
+            &DataKey::DefaultWindowLedgers,
+            &Self::DEFAULT_DEFAULT_WINDOW_LEDGERS,
+        );
         Self::bump_instance_ttl(&env);
     }
 
@@ -527,7 +565,10 @@ impl LoanManager {
         loan.status = LoanStatus::Approved;
         loan.due_date = env.ledger().sequence() + term_ledgers;
         loan.last_interest_ledger = env.ledger().sequence();
-        loan.last_late_fee_ledger = loan.due_date;
+        loan.last_late_fee_ledger = loan
+            .due_date
+            .checked_add(Self::grace_period_ledgers(&env))
+            .expect("grace period overflow");
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
 
@@ -640,6 +681,13 @@ impl LoanManager {
             .checked_add(principal_payment)
             .expect("principal paid overflow");
 
+        let was_late = env.ledger().sequence()
+            > loan
+                .due_date
+                .checked_add(Self::grace_period_ledgers(&env))
+                .expect("grace period overflow");
+
+        let mut completed = false;
         if loan.principal_paid == loan.amount
             && loan.accrued_interest == 0
             && loan.accrued_late_fee == 0
@@ -647,16 +695,21 @@ impl LoanManager {
             loan.status = LoanStatus::Repaid;
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
             Self::release_collateral_internal(&env, loan_id, &loan.borrower);
+            completed = true;
         }
 
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
 
-        // Skip cross-contract call when repayment rounds to zero score points.
-        if amount >= 100 {
+        if completed {
             let nft_contract = Self::nft_contract(&env);
             let nft_client = NftClient::new(&env, &nft_contract);
-            nft_client.update_score(&borrower, &amount, &None);
+            let delta = if was_late {
+                -Self::LATE_REPAYMENT_SCORE_PENALTY
+            } else {
+                Self::ON_TIME_REPAYMENT_SCORE_BONUS
+            };
+            nft_client.apply_score_delta(&borrower, &delta, &None);
         }
 
         if late_fee_delta > 0 {
@@ -801,6 +854,46 @@ impl LoanManager {
 
     pub fn get_late_fee_rate(env: Env) -> u32 {
         Self::late_fee_rate_bps(&env)
+    }
+
+    pub fn set_grace_period_ledgers(env: Env, ledgers: u32) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::GracePeriodLedgers, &ledgers);
+        Self::bump_instance_ttl(&env);
+    }
+
+    pub fn get_grace_period_ledgers(env: Env) -> u32 {
+        Self::grace_period_ledgers(&env)
+    }
+
+    pub fn set_default_window_ledgers(env: Env, ledgers: u32) {
+        if ledgers == 0 {
+            panic!("default window must be positive");
+        }
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::DefaultWindowLedgers, &ledgers);
+        Self::bump_instance_ttl(&env);
+    }
+
+    pub fn get_default_window_ledgers(env: Env) -> u32 {
+        Self::default_window_ledgers(&env)
     }
 
     pub fn set_min_score(env: Env, min_score: u32) {
@@ -997,7 +1090,11 @@ impl LoanManager {
         }
 
         let current_ledger = env.ledger().sequence();
-        if current_ledger <= loan.due_date {
+        let default_eligible_after = loan
+            .due_date
+            .checked_add(Self::default_window_ledgers(&env))
+            .expect("default window overflow");
+        if current_ledger <= default_eligible_after {
             panic!("loan is not past due");
         }
 
@@ -1031,7 +1128,11 @@ impl LoanManager {
             }
 
             let current_ledger = env.ledger().sequence();
-            if current_ledger <= loan.due_date {
+            let default_eligible_after = loan
+                .due_date
+                .checked_add(Self::default_window_ledgers(&env))
+                .expect("default window overflow");
+            if current_ledger <= default_eligible_after {
                 continue;
             }
 
