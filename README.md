@@ -23,6 +23,7 @@ RemitLend treats remittance history as credit history. Migrant workers prove the
 - **NFT-Based Collateral**: Remittance NFTs serve as proof of reliability and loan collateral.
 - **Decentralized Lending Pools**: Lenders provide liquidity and earn transparent yields.
 - **Transparent & Auditable**: All transactions and loan terms recorded on-chain.
+- **Progressive Web App**: Installable mobile experience with offline support for emerging markets.
 
 ## 🏗 Project Structure
 
@@ -37,9 +38,10 @@ The repository is organized as a monorepo containing three core packages:
 ## 🛠 Tech Stack
 
 - **Blockchain**: [Stellar](https://stellar.org) (Soroban Smart Contracts)
-- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS, PWA
 - **Backend**: Node.js, Express, TypeScript, Jest
 - **Wallet Integration**: [Stellar Wallet Kit](https://github.com/stellar/stellar-wallet-kit) (Freighter)
+- **PWA Features**: Service Worker, Offline Support, Installable App
 
 ## 🏁 Getting Started
 
@@ -182,6 +184,36 @@ The repository is organized as a monorepo containing three core packages:
      --rpc-url https://soroban-testnet.stellar.org \
      --network-passphrase "Test SDF Network ; September 2015"
    ```
+
+## 📱 Progressive Web App (PWA)
+
+RemitLend is built as a Progressive Web App to provide users in emerging markets with a native app-like experience. Users can install the app directly from their browser without app store dependencies.
+
+### PWA Features
+- **Installable**: Add RemitLend to your home screen
+- **Offline Support**: Access core features without internet connection
+- **Fast Loading**: Instant access with service worker caching
+- **Mobile-First**: Optimized for mobile devices and slower networks
+
+### Installation
+
+#### Android (Chrome)
+1. Visit RemitLend in Chrome
+2. Tap the menu icon (⋮) → "Install app"
+3. Confirm installation
+
+#### iOS (Safari)
+1. Visit RemitLend in Safari
+2. Tap Share icon (□↑) → "Add to Home Screen"
+3. Confirm addition
+
+#### Desktop
+1. Visit RemitLend in Chrome/Edge
+2. Click the install icon in the address bar
+3. Confirm installation
+
+### PWA Development
+For detailed PWA implementation guide, see [frontend/PWA-GUIDE.md](frontend/PWA-GUIDE.md).
 
 ## 🤝 Contributing
 
