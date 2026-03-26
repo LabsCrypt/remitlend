@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { Breadcrumbs } from "./Breadcrumbs";
+import { BottomNavigation } from "./BottomNavigation";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -39,16 +40,19 @@ export function DashboardShell({ children }: DashboardShellProps) {
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <Header onMenuClick={() => setIsSidebarOpen(true)} />
+        <Header onMenuClick={() => setIsSidebarOpen(true)} hideMenuOnMobile={true} />
 
         {/* Dynamic Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto p-4 pb-20 sm:p-6 lg:p-8 lg:pb-8">
           <div className="mx-auto max-w-7xl">
             <Breadcrumbs />
             {children}
           </div>
         </main>
       </div>
+      
+      {/* Bottom Navigation - Mobile only */}
+      <BottomNavigation />
     </div>
   );
 }
