@@ -30,6 +30,7 @@ interface NotificationPrefs {
   loanDefaulted: boolean;
   scoreChanged: boolean;
   email: boolean;
+  sms: boolean;
   inApp: boolean;
 }
 
@@ -248,6 +249,7 @@ function NotificationsSection() {
     loanDefaulted: true,
     scoreChanged: false,
     email: false,
+    sms: false,
     inApp: true,
   });
 
@@ -269,6 +271,7 @@ function NotificationsSection() {
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
           <Toggle checked={prefs.inApp} onChange={() => toggle("inApp")} label="In-App Notifications" description="Show notifications inside RemitLend" />
           <Toggle checked={prefs.email} onChange={() => toggle("email")} label="Email Notifications" description="Requires a verified email address" />
+          <Toggle checked={prefs.sms} onChange={() => toggle("sms")} label="SMS Notifications" description="Requires a verified phone number" />
         </div>
 
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 pb-2 pt-4">
