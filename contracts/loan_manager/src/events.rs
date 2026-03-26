@@ -5,9 +5,14 @@ pub fn loan_requested(env: &Env, borrower: Address, amount: i128) {
     env.events().publish(topics, amount);
 }
 
-pub fn loan_approved(env: &Env, loan_id: u32) {
+pub fn loan_approved(env: &Env, loan_id: u32, borrower: Address) {
     let topics = (Symbol::new(env, "LoanApproved"), loan_id);
-    env.events().publish(topics, ());
+    env.events().publish(topics, borrower);
+}
+
+pub fn loan_refinanced(env: &Env, loan_id: u32, borrower: Address, new_amount: i128, new_term: u32) {
+    let topics = (Symbol::new(env, "LoanRefinanced"), loan_id, borrower);
+    env.events().publish(topics, (new_amount, new_term));
 }
 
 pub fn loan_repaid(env: &Env, borrower: Address, loan_id: u32, amount: i128) {
