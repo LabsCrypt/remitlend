@@ -36,10 +36,8 @@ pub fn unpaused(env: &Env) {
 }
 
 pub(crate) fn fee_collected(env: &Env, loan_id: u32, amount: i128, treasury: Address) {
-    env.events().publish(
-        (symbol_short!("FeeCollct"), loan_id),
-        (amount, treasury),
-    );
+    env.events()
+        .publish((symbol_short!("FeeCollct"), loan_id), (amount, treasury));
 }
 
 // pub fn min_score_updated(env: &Env, old_score: u32, new_score: u32) {

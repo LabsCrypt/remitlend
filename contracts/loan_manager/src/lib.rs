@@ -56,8 +56,8 @@ pub enum DataKey {
     Paused,
     LateFeeRateBps,
 
-    ProtocolFeeRateBps, 
-    TreasuryAddress, 
+    ProtocolFeeRateBps,
+    TreasuryAddress,
 }
 
 #[contract]
@@ -274,9 +274,10 @@ impl LoanManager {
             .instance()
             .set(&DataKey::LateFeeRateBps, &Self::DEFAULT_LATE_FEE_RATE_BPS);
 
-        env.storage()
-            .instance()
-            .set(&DataKey::ProtocolFeeRateBps, &Self::DEFAULT_PROTOCOL_FEE_RATE_BPS);
+        env.storage().instance().set(
+            &DataKey::ProtocolFeeRateBps,
+            &Self::DEFAULT_PROTOCOL_FEE_RATE_BPS,
+        );
         env.storage()
             .instance()
             .set(&DataKey::TreasuryAddress, &treasury_address);
@@ -440,25 +441,25 @@ impl LoanManager {
 
         let (total_debt, late_fee_delta) = Self::current_total_debt(&env, &mut loan);
 
-
         let protocol_fee_rate = Self::protocol_fee_rate_bps(&env);
         let protocol_fee = amount
-           .checked_mul(protocol_fee_rate as i128)
-           .and_then(|value| value.checked_div(10_000))
-           .expect("protocol fee calculation overflow");
+            .checked_mul(protocol_fee_rate as i128)
+            .and_then(|value| value.checked_div(10_000))
+            .expect("protocol fee calculation overflow");
 
         // The actual amount going to the lending pool, after fee deduction
         let amount_to_pool = amount
-           .checked_sub(protocol_fee)
-           .expect("repayment underflow after fee deduction");
+            .checked_sub(protocol_fee)
+            .expect("repayment underflow after fee deduction");
 
         // Panic if the amount to pool is negative or repayment too low after fees
         if amount_to_pool <= 0 && amount > 0 {
-             panic!("repayment too low to cover protocol fee or negative amount to pool");
+            panic!("repayment too low to cover protocol fee or negative amount to pool");
         }
 
         // The check below should use the amount going to the pool, not the total amount
-        if amount_to_pool > total_debt { // Compare amount_to_pool against total_debt
+        if amount_to_pool > total_debt {
+            // Compare amount_to_pool against total_debt
             panic!("repayment exceeds current total debt after fee deduction");
         }
 
@@ -521,7 +522,6 @@ impl LoanManager {
 
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
-        
 
         // Skip cross-contract call when repayment rounds to zero score points.
         if amount >= 100 {
@@ -558,29 +558,27 @@ impl LoanManager {
         Self::late_fee_rate_bps(&env)
     }
 
-        pub fn set_protocol_fee_rate(env: Env, rate_bps: u32) {
+    pub fn set_protocol_fee_rate(env: Env, rate_bps: u32) {
         if rate_bps > 10_000 {
             panic!("protocol fee rate exceeds 100%");
         }
 
         let admin: Address = env
-           .storage()
-           .instance()
-           .get(&DataKey::Admin)
-           .expect("not initialized");
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
         admin.require_auth();
 
         env.storage()
-           .instance()
-           .set(&DataKey::ProtocolFeeRateBps, &rate_bps);
+            .instance()
+            .set(&DataKey::ProtocolFeeRateBps, &rate_bps);
         Self::bump_instance_ttl(&env);
     }
 
-    
     pub fn get_protocol_fee_rate(env: Env) -> u32 {
         Self::protocol_fee_rate_bps(&env)
     }
-
 
     pub fn get_treasury_address(env: Env) -> Address {
         Self::treasury_address(&env)
