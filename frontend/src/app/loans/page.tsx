@@ -80,6 +80,13 @@ export default function LoansPage() {
             Review active facilities, due dates, and repayment windows from one place.
           </p>
         </div>
+        <Link
+          href="/request-loan"
+          className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+        >
+          Request Loan
+          <ArrowRight className="h-4 w-4" />
+        </Link>
       </header>
 
       <ErrorBoundary scope="loan summary cards" variant="section">
@@ -152,7 +159,7 @@ export default function LoansPage() {
                 You do not have loans in this category yet.
               </p>
               <Link
-                href="/"
+                href="/request-loan"
                 className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
               >
                 Request a loan

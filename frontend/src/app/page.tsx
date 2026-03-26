@@ -9,6 +9,7 @@ import {
   ExternalLink,
   WalletCards,
 } from "lucide-react";
+import Link from "next/link";
 import {
   useWalletStore,
   selectIsWalletConnected,
@@ -274,21 +275,23 @@ export default function Home() {
               Quick Actions
             </h2>
             <div className="space-y-3">
-              {[
-                { title: "Apply for Loan", desc: "Get instant liquidity", color: "bg-indigo-600" },
-                { title: "Send Remittance", desc: "Transfer funds globally", color: "bg-zinc-900" },
-              ].map((action, i) => (
-                <button
-                  key={i}
-                  className={`w-full text-left p-4 rounded-xl ${action.color} text-white hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/10 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold">{action.title}</span>
-                    <ExternalLink className="h-4 w-4 opacity-50" aria-hidden="true" />
-                  </div>
-                  <p className="text-xs opacity-80">{action.desc}</p>
-                </button>
-              ))}
+              <Link
+                href="/request-loan"
+                className="block w-full rounded-xl bg-indigo-600 p-4 text-left text-white shadow-lg shadow-indigo-500/10 transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="font-bold">Apply for Loan</span>
+                  <ExternalLink className="h-4 w-4 opacity-50" aria-hidden="true" />
+                </div>
+                <p className="text-xs opacity-80">Get instant liquidity</p>
+              </Link>
+              <button className="w-full rounded-xl bg-zinc-900 p-4 text-left text-white shadow-lg shadow-indigo-500/10 transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="font-bold">Send Remittance</span>
+                  <ExternalLink className="h-4 w-4 opacity-50" aria-hidden="true" />
+                </div>
+                <p className="text-xs opacity-80">Transfer funds globally</p>
+              </button>
             </div>
 
             {/* Credit Score Gauge */}
