@@ -1019,7 +1019,7 @@ impl LoanManager {
 
         let grace_period = Self::get_grace_period(env.clone());
         let current_ledger = env.ledger().sequence();
-        
+
         // Only mark as defaulted if past due date + grace period
         if current_ledger <= loan.due_date + grace_period {
             panic!("loan is not past due (including grace period)");
@@ -1129,7 +1129,6 @@ impl LoanManager {
             .get(&DataKey::GracePeriod)
             .unwrap_or(4320)
     }
-
 }
 
 #[cfg(test)]

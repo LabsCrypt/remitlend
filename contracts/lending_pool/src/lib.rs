@@ -597,7 +597,7 @@ impl LendingPool {
         if balance == 0 {
             panic!("no deposit to withdraw");
         }
-        
+
         let token = Self::read_token(&env);
         let token_client = TokenClient::new(&env, &token);
         let pool_address = env.current_contract_address();
@@ -605,16 +605,16 @@ impl LendingPool {
         if pool_balance < balance {
             panic!("insufficient pool liquidity");
         }
-        
+
         token_client.transfer(&pool_address, &provider, &balance);
         env.storage().persistent().remove(&key);
-        
+
         // Decrement depositor count
         let count = Self::read_depositor_count(&env);
         env.storage()
             .instance()
             .set(&DataKey::DepositorCount, &(count.saturating_sub(1)));
-        
+
         env.events()
             .publish((symbol_short!("WithdAll"), provider), balance);
     }
@@ -627,7 +627,7 @@ impl LendingPool {
         if balance == 0 {
             panic!("no deposit to withdraw");
         }
-        
+
         let token = Self::read_token(&env);
         let token_client = TokenClient::new(&env, &token);
         let pool_address = env.current_contract_address();
@@ -635,17 +635,17 @@ impl LendingPool {
         if pool_balance < balance {
             panic!("insufficient pool liquidity");
         }
-        
+
         // Full withdrawal only
         token_client.transfer(&pool_address, &provider, &balance);
         env.storage().persistent().remove(&key);
-        
+
         // Decrement depositor count
         let count = Self::read_depositor_count(&env);
         env.storage()
             .instance()
             .set(&DataKey::DepositorCount, &(count.saturating_sub(1)));
-        
+
         env.events()
             .publish((symbol_short!("EmergWd"), provider), balance);
     }
