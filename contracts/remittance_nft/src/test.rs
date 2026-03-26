@@ -295,6 +295,47 @@ fn test_update_score_rejects_non_positive_repayment() {
 }
 
 #[test]
+fn test_apply_score_delta_supports_positive_and_negative_adjustments() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(&user, &500, &history_hash, &None);
+
+    client.apply_score_delta(&user, &15, &None);
+    assert_eq!(client.get_score(&user), 515);
+
+    client.apply_score_delta(&user, &-10, &None);
+    assert_eq!(client.get_score(&user), 505);
+}
+
+#[test]
+fn test_apply_score_delta_floors_at_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(&user, &8, &history_hash, &None);
+
+    client.apply_score_delta(&user, &-50, &None);
+    assert_eq!(client.get_score(&user), 0);
+}
+
+#[test]
 fn test_update_history_hash_migrates_legacy_data() {
     let env = Env::default();
     env.mock_all_auths();
