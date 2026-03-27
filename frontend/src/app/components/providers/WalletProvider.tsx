@@ -1,26 +1,9 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
-import {
-  requestAccess,
-  getPublicKey,
-  getNetwork,
-  isConnected,
-  signTransaction,
-} from "@stellar/freighter-api";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { requestAccess, getNetwork, isConnected, signTransaction } from "@stellar/freighter-api";
 import { Horizon } from "@stellar/stellar-sdk";
-import {
-  useWalletStore,
-  type TokenBalance,
-  type WalletNetwork,
-} from "../../stores/useWalletStore";
+import { useWalletStore, type TokenBalance, type WalletNetwork } from "../../stores/useWalletStore";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -41,25 +24,24 @@ const WalletContext = createContext<WalletContextType | null>(null);
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SUPPORTED_NETWORKS: Record<string, { name: string; horizonUrl: string }> =
-  {
-    "Test SDF Network ; September 2015": {
-      name: "Testnet",
-      horizonUrl: "https://horizon-testnet.stellar.org",
-    },
-    "Public Global Stellar Network ; September 2015": {
-      name: "Mainnet",
-      horizonUrl: "https://horizon.stellar.org",
-    },
-    "Testnet": {
-      name: "Testnet",
-      horizonUrl: "https://horizon-testnet.stellar.org",
-    },
-    "Public": {
-      name: "Mainnet",
-      horizonUrl: "https://horizon.stellar.org",
-    },
-  };
+const SUPPORTED_NETWORKS: Record<string, { name: string; horizonUrl: string }> = {
+  "Test SDF Network ; September 2015": {
+    name: "Testnet",
+    horizonUrl: "https://horizon-testnet.stellar.org",
+  },
+  "Public Global Stellar Network ; September 2015": {
+    name: "Mainnet",
+    horizonUrl: "https://horizon.stellar.org",
+  },
+  Testnet: {
+    name: "Testnet",
+    horizonUrl: "https://horizon-testnet.stellar.org",
+  },
+  Public: {
+    name: "Mainnet",
+    horizonUrl: "https://horizon.stellar.org",
+  },
+};
 
 const LOCAL_STORAGE_KEY = "remitlend-wallet-connected";
 
@@ -70,17 +52,13 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
-function getNetworkInfo(
-  networkPassphrase: string,
-): WalletNetwork & { horizonUrl: string } {
+function getNetworkInfo(networkPassphrase: string): WalletNetwork & { horizonUrl: string } {
   const supported = SUPPORTED_NETWORKS[networkPassphrase];
   const isSupported = !!supported;
 
   // Generate a numeric chainId for compatibility (hash of network passphrase)
   // This ensures EVM-style chainId compatibility in the store
-  const chainId = networkPassphrase
-    .split("")
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const chainId = networkPassphrase.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
 
   return {
     chainId,
@@ -90,10 +68,7 @@ function getNetworkInfo(
   };
 }
 
-async function fetchBalances(
-  publicKey: string,
-  horizonUrl: string,
-): Promise<TokenBalance[]> {
+async function fetchBalances(publicKey: string, horizonUrl: string): Promise<TokenBalance[]> {
   try {
     const server = new Horizon.Server(horizonUrl);
     const account = await server.loadAccount(publicKey);
@@ -106,8 +81,17 @@ async function fetchBalances(
           usdValue: null,
         };
       }
+      // For credit_alphanum4 and credit_alphanum12 assets
+      if ("asset_code" in balance) {
+        return {
+          symbol: balance.asset_code || "UNKNOWN",
+          amount: balance.balance,
+          usdValue: null,
+        };
+      }
+      // For liquidity pool or other types
       return {
-        symbol: balance.asset_code || "UNKNOWN",
+        symbol: "LP",
         amount: balance.balance,
         usdValue: null,
       };
@@ -152,8 +136,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
           return;
         }
 
-        const publicKey = await getPublicKey();
-        const networkPassphrase = await getNetwork();
+        // In Freighter API v6, requestAccess returns { address: string }
+        const result = await requestAccess();
+        const publicKey = result.address;
+        if (!publicKey) {
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          return;
+        }
+
+        const networkResult = await getNetwork();
+        const networkPassphrase = networkResult.networkPassphrase;
         const networkInfo = getNetworkInfo(networkPassphrase);
 
         store.setConnected(publicKey, {
@@ -180,10 +172,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     const handleAccountChange = async () => {
       try {
-        const newPublicKey = await getPublicKey();
+        // Re-request access to get current account
+        const result = await requestAccess();
+        const newPublicKey = result.address;
         if (newPublicKey !== store.address) {
           // Account changed, update store
-          const networkPassphrase = await getNetwork();
+          const networkResult = await getNetwork();
+          const networkPassphrase = networkResult.networkPassphrase;
           const networkInfo = getNetworkInfo(networkPassphrase);
 
           store.setConnected(newPublicKey, {
@@ -192,10 +187,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
             isSupported: networkInfo.isSupported,
           });
 
-          const balances = await fetchBalances(
-            newPublicKey,
-            networkInfo.horizonUrl,
-          );
+          const balances = await fetchBalances(newPublicKey, networkInfo.horizonUrl);
           store.setBalances(balances);
         }
       } catch (error) {
@@ -222,17 +214,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
         );
       }
 
-      // Request access to wallet
-      await requestAccess();
-
-      // Get public key
-      const publicKey = await getPublicKey();
+      // Request access to wallet (returns { address: string } in v6)
+      const result = await requestAccess();
+      const publicKey = result.address;
       if (!publicKey) {
         throw new Error("No public key returned from wallet");
       }
 
       // Get network info
-      const networkPassphrase = await getNetwork();
+      const networkResult = await getNetwork();
+      const networkPassphrase = networkResult.networkPassphrase;
       const networkInfo = getNetworkInfo(networkPassphrase);
 
       if (!networkInfo.isSupported) {
@@ -256,8 +247,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       const balances = await fetchBalances(publicKey, networkInfo.horizonUrl);
       store.setBalances(balances);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Failed to connect wallet";
+      const errorMessage = error instanceof Error ? error.message : "Failed to connect wallet";
       setConnectionError(errorMessage);
       store.setError(errorMessage);
       localStorage.removeItem(LOCAL_STORAGE_KEY);
@@ -275,16 +265,15 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const handleSignTransaction = useCallback(
     async (xdr: string): Promise<string> => {
       try {
-        const signed = await signTransaction(xdr, {
+        const result = await signTransaction(xdr, {
           networkPassphrase:
             store.network?.name === "Mainnet"
               ? "Public Global Stellar Network ; September 2015"
               : "Test SDF Network ; September 2015",
         });
-        return signed;
+        return result.signedTxXdr;
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Failed to sign transaction";
+        const errorMessage = error instanceof Error ? error.message : "Failed to sign transaction";
         throw new Error(errorMessage);
       }
     },
@@ -299,9 +288,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     connectionError,
   };
 
-  return (
-    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
-  );
+  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────────────

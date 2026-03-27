@@ -253,8 +253,7 @@ function NotificationsSection() {
     inApp: true,
   });
 
-  const toggle = (key: keyof NotificationPrefs) =>
-    setPrefs((p) => ({ ...p, [key]: !p[key] }));
+  const toggle = (key: keyof NotificationPrefs) => setPrefs((p) => ({ ...p, [key]: !p[key] }));
 
   return (
     <Card>
@@ -269,20 +268,60 @@ function NotificationsSection() {
           Delivery
         </p>
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          <Toggle checked={prefs.inApp} onChange={() => toggle("inApp")} label="In-App Notifications" description="Show notifications inside RemitLend" />
-          <Toggle checked={prefs.email} onChange={() => toggle("email")} label="Email Notifications" description="Requires a verified email address" />
-          <Toggle checked={prefs.sms} onChange={() => toggle("sms")} label="SMS Notifications" description="Requires a verified phone number" />
+          <Toggle
+            checked={prefs.inApp}
+            onChange={() => toggle("inApp")}
+            label="In-App Notifications"
+            description="Show notifications inside RemitLend"
+          />
+          <Toggle
+            checked={prefs.email}
+            onChange={() => toggle("email")}
+            label="Email Notifications"
+            description="Requires a verified email address"
+          />
+          <Toggle
+            checked={prefs.sms}
+            onChange={() => toggle("sms")}
+            label="SMS Notifications"
+            description="Requires a verified phone number"
+          />
         </div>
 
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 pb-2 pt-4">
           Events
         </p>
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          <Toggle checked={prefs.loanApproved} onChange={() => toggle("loanApproved")} label="Loan Approved" description="When your loan application is approved" />
-          <Toggle checked={prefs.repaymentDue} onChange={() => toggle("repaymentDue")} label="Repayment Due" description="Reminder before a payment is due" />
-          <Toggle checked={prefs.repaymentConfirmed} onChange={() => toggle("repaymentConfirmed")} label="Repayment Confirmed" description="When a repayment is recorded on-chain" />
-          <Toggle checked={prefs.loanDefaulted} onChange={() => toggle("loanDefaulted")} label="Loan Defaulted" description="When a loan is marked as defaulted" />
-          <Toggle checked={prefs.scoreChanged} onChange={() => toggle("scoreChanged")} label="Credit Score Changed" description="When your score goes up or down" />
+          <Toggle
+            checked={prefs.loanApproved}
+            onChange={() => toggle("loanApproved")}
+            label="Loan Approved"
+            description="When your loan application is approved"
+          />
+          <Toggle
+            checked={prefs.repaymentDue}
+            onChange={() => toggle("repaymentDue")}
+            label="Repayment Due"
+            description="Reminder before a payment is due"
+          />
+          <Toggle
+            checked={prefs.repaymentConfirmed}
+            onChange={() => toggle("repaymentConfirmed")}
+            label="Repayment Confirmed"
+            description="When a repayment is recorded on-chain"
+          />
+          <Toggle
+            checked={prefs.loanDefaulted}
+            onChange={() => toggle("loanDefaulted")}
+            label="Loan Defaulted"
+            description="When a loan is marked as defaulted"
+          />
+          <Toggle
+            checked={prefs.scoreChanged}
+            onChange={() => toggle("scoreChanged")}
+            label="Credit Score Changed"
+            description="When your score goes up or down"
+          />
         </div>
       </CardContent>
     </Card>
@@ -314,9 +353,7 @@ function SecuritySection() {
             <div className="flex justify-between text-sm">
               <span className="text-zinc-500 dark:text-zinc-400">Started</span>
               <span className="text-zinc-900 dark:text-zinc-100 font-medium">
-                {user?.sessionStartedAt
-                  ? new Date(user.sessionStartedAt).toLocaleString()
-                  : "—"}
+                {user?.sessionStartedAt ? new Date(user.sessionStartedAt).toLocaleString() : "—"}
               </span>
             </div>
             <div className="flex justify-between text-sm">
@@ -450,9 +487,7 @@ export default function SettingsPage() {
   return (
     <main className="space-y-8 min-h-screen p-8 lg:p-12 max-w-5xl mx-auto">
       <header>
-        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">
-          Account
-        </p>
+        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Account</p>
         <h1 className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Settings</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
           Manage your profile, wallet, notifications, and preferences.
