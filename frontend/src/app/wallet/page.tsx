@@ -213,7 +213,7 @@ function BalancesCard({ address, horizonUrl }: { address: string; horizonUrl: st
       <CardContent>
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <Spinner size="md" />
+            <Spinner size={24} type={"spin"} />
           </div>
         ) : isError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
@@ -312,7 +312,7 @@ function TransactionHistoryCard({
       <CardContent>
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <Spinner size="md" />
+            <Spinner size={24} type={"spin"} />
           </div>
         ) : isError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
@@ -330,7 +330,7 @@ function TransactionHistoryCard({
               <div key={p.id} className="flex items-center justify-between py-3 gap-4">
                 <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${
                       isInflow(p)
                         ? "bg-green-50 dark:bg-green-500/10"
                         : "bg-zinc-50 dark:bg-zinc-900"
@@ -351,7 +351,7 @@ function TransactionHistoryCard({
                     </p>
                   </div>
                 </div>
-                <div className="text-right flex-shrink-0 flex items-center gap-2">
+                <div className="text-right shrink-0 flex items-center gap-2">
                   <div>
                     <p
                       className={`text-sm font-bold ${
