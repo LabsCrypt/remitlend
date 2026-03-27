@@ -267,8 +267,8 @@ fn test_repayment_flow() {
     let completed = manager.get_loan(&loan_id);
     assert_eq!(completed.status, LoanStatus::Repaid);
 
-    // Score updates on completion based on repayment_amount / 100 in remittance_nft::update_score.
-    assert_eq!(nft_client.get_score(&borrower), 605);
+    // Score updates include both partial and final repayment contributions.
+    assert_eq!(nft_client.get_score(&borrower), 610);
 }
 
 #[test]
@@ -645,7 +645,6 @@ fn test_check_default_already_repaid() {
 }
 
 #[test]
-#[should_panic(expected = "loan is not past due")]
 fn test_check_default_respects_default_window() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -666,7 +665,8 @@ fn test_check_default_respects_default_window() {
     let due_date = manager.get_loan(&loan_id).due_date;
     env.ledger().set_sequence_number(due_date + 9_999);
 
-    manager.check_default(&loan_id);
+    let result = manager.try_check_default(&loan_id);
+    assert_eq!(result, Err(Ok(LoanError::LoanNotPastDue)));
 }
 
 #[test]
