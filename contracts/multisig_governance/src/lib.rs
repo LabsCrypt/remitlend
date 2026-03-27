@@ -262,16 +262,18 @@ impl GovernanceContract {
 
         let new_admin = pending.proposed_admin.clone();
 
-        // Checks-effects-interactions: clear state before cross-contract call
-        env.storage().instance().remove(&KEY_PENDING);
-        env.storage().instance().set(&KEY_ADMIN, &new_admin);
-
-        // Cross-contract call to update admin in the RemitLend protocol contract
+        // 1. Interactions: Cross-contract call to update global admin in the RemitLend protocol contract.
+        // If this call fails (panics/traps), the entire transaction will rollback by default in Soroban.
+        // We call this FIRST to ensure the remote state change is attempted before committing local changes.
         env.invoke_contract::<()>(
             &target,
             &symbol_short!("set_admin"),
             soroban_sdk::vec![&env, new_admin.clone().into_val(&env)],
         );
+
+        // 2. Effects: Clear pending transfer and update local admin state only after successful interaction.
+        env.storage().instance().remove(&KEY_PENDING);
+        env.storage().instance().set(&KEY_ADMIN, &new_admin);
 
         env.events().publish(
             (symbol_short!("GovFin"), new_admin.clone()),

@@ -35,9 +35,6 @@
               "function_name": "set_max_pool_size",
               "args": [
                 {
-                  "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 5000
@@ -86,9 +83,6 @@
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
                 },
                 {
                   "i128": {
@@ -274,13 +268,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "Shares"
+                  "symbol": "Deposit"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
                 }
               ]
             },
@@ -297,13 +288,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "Shares"
+                      "symbol": "Deposit"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                    },
-                    {
-                      "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
                     }
                   ]
                 },
@@ -346,6 +334,29 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "TOKEN"
+                        },
+                        "val": {
+                          "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AccYieldPerDeposit"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
                           "vec": [
                             {
                               "symbol": "Admin"
@@ -361,9 +372,6 @@
                           "vec": [
                             {
                               "symbol": "DepositorCount"
-                            },
-                            {
-                              "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
                             }
                           ]
                         },
@@ -376,9 +384,6 @@
                           "vec": [
                             {
                               "symbol": "MaxPoolSize"
-                            },
-                            {
-                              "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
                             }
                           ]
                         },
@@ -406,9 +411,6 @@
                           "vec": [
                             {
                               "symbol": "TotalDeposits"
-                            },
-                            {
-                              "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
                             }
                           ]
                         },
@@ -423,17 +425,14 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "TotalShares"
-                            },
-                            {
-                              "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
+                              "symbol": "UnclaimedYieldPool"
                             }
                           ]
                         },
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 5000
+                            "lo": 0
                           }
                         }
                       },
@@ -446,7 +445,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 2
+                          "u32": 1
                         }
                       }
                     ]

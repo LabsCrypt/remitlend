@@ -6,6 +6,7 @@ import { ArrowRight, CalendarRange, CircleDollarSign, ShieldCheck } from "lucide
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { LoansListSkeleton } from "../components/skeletons/LoansListSkeleton";
 import { useBorrowerLoans } from "../hooks/useApi";
+import { LoanStatusBadge } from "../components/ui/LoanStatusBadge";
 import { useWalletStore, selectWalletAddress } from "../stores/useWalletStore";
 
 const PAGE_SIZE = 6;
@@ -180,9 +181,7 @@ export default function LoansPage() {
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">{loan.borrower}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 text-sm">
-                    <span className="rounded-full bg-zinc-100 px-3 py-1 font-medium capitalize text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                      {loan.displayStatus}
-                    </span>
+                    <LoanStatusBadge status={loan.displayStatus} />
                     <span className="text-zinc-600 dark:text-zinc-400">
                       {formatCurrency(loan.totalOwed)}
                     </span>

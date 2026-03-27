@@ -15,6 +15,18 @@ import logger from "../utils/logger.js";
 export const streamEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const borrower = req.query.borrower as string | undefined;
+    const userKey = req.user?.publicKey;
+
+    if (!userKey) {
+      throw AppError.unauthorized("Authentication required");
+    }
+
+    if (!eventStreamService.canOpenConnection(userKey)) {
+      throw new AppError(
+        `Maximum of ${eventStreamService.getMaxConnectionsPerUser()} SSE connections allowed per user`,
+        429,
+      );
+    }
 
     // SSE headers
     res.setHeader("Content-Type", "text/event-stream");
@@ -65,14 +77,14 @@ export const streamEvents = asyncHandler(
         logger.error("SSE init fetch error", { borrower, err });
       }
 
-      unsubscribe = eventStreamService.subscribeBorrower(borrower, res);
+      unsubscribe = eventStreamService.subscribeBorrower(userKey, borrower, res);
     } else {
       // Admin stream — send connection count
       const counts = eventStreamService.getConnectionCount();
       res.write(
         `data: ${JSON.stringify({ type: "init", connections: counts })}\n\n`,
       );
-      unsubscribe = eventStreamService.subscribeAll(res);
+      unsubscribe = eventStreamService.subscribeAll(userKey, res);
     }
 
     const cleanup = () => {

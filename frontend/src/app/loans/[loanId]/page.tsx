@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { ChevronRight, ExternalLink, Wallet } from "lucide-react";
 import { LoanDetailSkeleton } from "../../components/skeletons/LoanDetailSkeleton";
 import { useLoan } from "../../hooks/useApi";
+import { LoanStatusBadge } from "../../components/ui/LoanStatusBadge";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -49,12 +50,6 @@ export default function LoanDetailsPage() {
       ? Math.min((loan.totalRepaid / (loan.totalRepaid + loan.totalOwed)) * 100, 100)
       : 100;
   const latestTxHash = loan.events.find((event) => Boolean(event.txHash))?.txHash;
-  const statusTone =
-    loan.status === "repaid"
-      ? "text-green-600 dark:text-green-400"
-      : loan.status === "defaulted"
-        ? "text-red-600 dark:text-red-400"
-        : "text-indigo-600 dark:text-indigo-400";
 
   return (
     <section className="space-y-6">
@@ -97,9 +92,10 @@ export default function LoanDetailsPage() {
             <div className="h-2 w-full rounded-full bg-zinc-200 dark:bg-zinc-800">
               <div className="h-2 rounded-full bg-indigo-600" style={{ width: `${progress}%` }} />
             </div>
-            <p className={`mt-3 text-sm font-semibold capitalize ${statusTone}`}>
-              Status: {loan.status}
-            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">Status:</p>
+              <LoanStatusBadge status={loan.status} />
+            </div>
           </div>
 
           <div className="mt-6">

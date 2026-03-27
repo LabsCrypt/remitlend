@@ -119,6 +119,7 @@ app.get(
   }),
 );
 
+// Legacy routes (deprecated, maintained for backward compatibility)
 app.use("/api", simulationRoutes);
 app.use("/api/score", scoreRoutes);
 app.use("/api/loans", loanRoutes);
@@ -128,6 +129,14 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/events", eventRoutes);
+
+// Versioned API routes (v1 - current)
+app.use("/api/v1", simulationRoutes);
+app.use("/api/v1/score", scoreRoutes);
+app.use("/api/v1/loans", loanRoutes);
+app.use("/api/v1/indexer", indexerRoutes);
+app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/auth", authRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────
 // Only exposed in test environment to verify centralized error handling.

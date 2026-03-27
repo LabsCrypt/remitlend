@@ -331,6 +331,7 @@ function TransactionHistoryCard({
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${
+                    className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${
                       isInflow(p)
                         ? "bg-green-50 dark:bg-green-500/10"
                         : "bg-zinc-50 dark:bg-zinc-900"

@@ -12,10 +12,11 @@ import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
+import { eventStreamService } from "./services/eventStreamService.js";
 
 const port = process.env.PORT || 3001;
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   logger.info(`Server is running on port ${port}`);
 
   // Start the event indexer
@@ -25,17 +26,23 @@ app.listen(port, () => {
   startDefaultCheckerScheduler();
 });
 
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  logger.info("SIGTERM signal received: closing HTTP server");
-  stopIndexer();
-  stopDefaultCheckerScheduler();
-  process.exit(0);
-});
+const shutdown = (signal: "SIGTERM" | "SIGINT") => {
+  logger.info(`${signal} signal received: closing HTTP server`);
 
-process.on("SIGINT", () => {
-  logger.info("SIGINT signal received: closing HTTP server");
   stopIndexer();
   stopDefaultCheckerScheduler();
-  process.exit(0);
-});
+  eventStreamService.closeAllConnections("Server shutting down");
+
+  server.close((err) => {
+    if (err) {
+      logger.error("HTTP server shutdown failed", { signal, err });
+      process.exit(1);
+      return;
+    }
+
+    process.exit(0);
+  });
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

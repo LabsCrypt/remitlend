@@ -5,6 +5,10 @@ import {
   login,
   verify,
 } from "../controllers/authController.js";
+import {
+  challengeRateLimiter,
+  verifyRateLimiter,
+} from "../middleware/rateLimiter.js";
 import { requireJwtAuth } from "../middleware/jwtAuth.js";
 import { validateBody } from "../middleware/validation.js";
 
@@ -42,7 +46,12 @@ const loginSchema = z.object({
  *       200:
  *         description: Challenge payload
  */
-router.post("/challenge", validateBody(challengeSchema), requestChallenge);
+router.post(
+  "/challenge",
+  challengeRateLimiter,
+  validateBody(challengeSchema),
+  requestChallenge,
+);
 
 /**
  * @swagger
@@ -70,7 +79,7 @@ router.post("/challenge", validateBody(challengeSchema), requestChallenge);
  *       200:
  *         description: JWT issued
  */
-router.post("/login", validateBody(loginSchema), login);
+router.post("/login", verifyRateLimiter, validateBody(loginSchema), login);
 
 /**
  * @swagger

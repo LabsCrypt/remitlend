@@ -118,13 +118,14 @@ function ConnectWalletPrompt() {
 export default function RemittancesPage() {
   const isConnected = useWalletStore(selectIsWalletConnected);
   const address = useWalletStore(selectWalletAddress);
-
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
+
+  const [currentTimestamp] = useState(() => Date.now());
 
   const { data: remittances, isLoading, isError } = useRemittances({ enabled: isConnected });
 
@@ -165,9 +166,18 @@ export default function RemittancesPage() {
             ),
           )
         : 1;
+    const oldestCompletedAt = completed[completed.length - 1]?.createdAt;
+    const months = oldestCompletedAt
+      ? Math.max(
+          1,
+          Math.ceil(
+            (currentTimestamp - new Date(oldestCompletedAt).getTime()) / (1000 * 60 * 60 * 24 * 30),
+          ),
+        )
+      : 1;
     const frequency = completed.length / months;
     return { totalRemitted, avgAmount, count: completed.length, frequency };
-  }, [remittances]);
+  }, [remittances, currentTimestamp]);
 
   const isFiltered =
     statusFilter !== "all" || !!searchQuery || !!dateFrom || !!dateTo || !!minAmount || !!maxAmount;

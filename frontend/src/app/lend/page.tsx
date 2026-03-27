@@ -14,6 +14,7 @@ import {
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { YieldEarningsChart } from "../components/charts/YieldEarningsChart";
 import { useDepositorPortfolio, useLoans, usePoolStats, useYieldHistory } from "../hooks/useApi";
+import { LoanStatusBadge } from "../components/ui/LoanStatusBadge";
 import { selectWalletAddress, useWalletStore } from "../stores/useWalletStore";
 
 function formatCurrency(value: number) {
@@ -257,9 +258,7 @@ export default function LendPage() {
                     <span>{formatCurrency(loan.amount)}</span>
                     <span>{loan.interestRate.toFixed(2)}% APR</span>
                     <span>{loan.termDays} days</span>
-                    <span className="rounded-full bg-zinc-100 px-3 py-1 font-medium capitalize text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                      {loan.status}
-                    </span>
+                    <LoanStatusBadge status={loan.status} />
                   </div>
                   <Link
                     href={`/loans/${loan.id}`}

@@ -2,14 +2,34 @@ use super::*;
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::{Address, Env, Vec};
 #[allow(deprecated)]
+#[contract]
+pub struct MockTarget;
+
+#[contractimpl]
+impl MockTarget {
+    pub fn set_admin(env: Env, new_admin: Address) {
+        env.storage()
+            .instance()
+            .set(&symbol_short!("admin"), &new_admin);
+    }
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&symbol_short!("admin"))
+            .unwrap()
+    }
+}
+
 fn setup() -> (Env, GovernanceContractClient<'static>, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
-    let id = env.register_contract(None, GovernanceContract);
-    // let id = env.register
+    let id = env.register(GovernanceContract, ());
     let client = GovernanceContractClient::new(&env, &id);
     let admin = Address::generate(&env);
-    let target = Address::generate(&env);
+
+    let target_id = env.register(MockTarget, ());
+    let target = target_id.clone();
+
     client.initialize(&admin, &target);
     (env, client, admin, target)
 }
@@ -25,6 +45,31 @@ fn set_ts(env: &Env, ts: u64) {
         min_persistent_entry_ttl: 1_000_000,
         max_entry_ttl: 10_000_000,
     });
+}
+
+#[test]
+fn finalize_succeeds_and_updates_local_and_remote_state() {
+    let (env, client, admin, target) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.approve_transfer(&s);
+
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+
+    // Call finalize
+    client.finalize_admin_transfer(&admin);
+
+    // 1. Local state updated
+    assert_eq!(client.get_current_admin(), proposed);
+    assert!(!client.has_pending_transfer());
+
+    // 2. Remote state updated (MockTarget)
+    let target_client = MockTargetClient::new(&env, &target);
+    assert_eq!(target_client.get_admin(), proposed);
 }
 
 #[test]

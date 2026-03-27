@@ -5,6 +5,7 @@ import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import type { BorrowerLoan } from "../../hooks/useApi";
 import { formatCurrency, formatDate, getDaysUntilDeadline } from "./loanFormatters";
+import { LoanStatusBadge } from "../ui/LoanStatusBadge";
 
 export interface LoanCardProps {
   loan: BorrowerLoan;
@@ -34,15 +35,7 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
               ? "bg-yellow-100 text-yellow-800"
               : "bg-green-100 text-green-800",
         }
-      : {
-          label: loan.status.charAt(0).toUpperCase() + loan.status.slice(1),
-          className:
-            loan.status === "active"
-              ? "bg-green-100 text-green-800"
-              : loan.status === "pending"
-                ? "bg-yellow-100 text-yellow-800"
-                : "bg-gray-100 text-gray-800",
-        };
+      : null;
 
   // ── Deadline colours ───────────────────────────────────────────────────────
   const deadlineBg = isOverdue ? "bg-red-50" : isUrgent ? "bg-yellow-50" : "bg-gray-50";
@@ -70,9 +63,13 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
       <div className="flex justify-between items-start mb-4">
         <div>
           <h3 className="text-lg font-semibold">Loan #{loan.id}</h3>
-          <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1 ${badge.className}`}>
-            {badge.label}
-          </span>
+          {badge ? (
+            <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1 ${badge.className}`}>
+              {badge.label}
+            </span>
+          ) : (
+            <LoanStatusBadge status={loan.status} className="mt-1" />
+          )}
         </div>
         <div className="text-right">
           <p className="text-sm text-gray-600">Total Owed</p>

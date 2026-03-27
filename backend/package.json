@@ -16,7 +16,9 @@
     "migrate:create": "node-pg-migrate create",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
-    "seed": "tsx src/seed/index.ts"
+    "seed": "npm run seed:dev",
+    "seed:dev": "tsx src/seed/index.ts",
+    "seed:reset": "tsx src/seed/index.ts --reset"
   },
   "keywords": [],
   "author": "",
