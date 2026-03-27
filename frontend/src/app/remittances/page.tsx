@@ -352,7 +352,7 @@ export default function RemittancesPage() {
         <section aria-label="Remittance history">
           {isLoading ? (
             <div className="flex justify-center py-20">
-              <Spinner size="lg" />
+              <Spinner size={48} type={"spin"} />
             </div>
           ) : isError ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-900/50 dark:bg-red-950/20">
@@ -393,7 +393,7 @@ export default function RemittancesPage() {
                       className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors"
                     >
                       <div className="col-span-4 flex items-center gap-3 min-w-0">
-                        <div className="h-8 w-8 rounded-full bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
+                        <div className="h-8 w-8 rounded-full bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
                           <SendHorizontal className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate font-mono">
