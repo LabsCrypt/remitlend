@@ -157,13 +157,13 @@ export default function RemittancesPage() {
     const months =
       completed.length > 0
         ? Math.max(
-          1,
-          Math.ceil(
-            (new Date().getTime() -
-              new Date(completed[completed.length - 1]?.createdAt ?? Date.now()).getTime()) /
-            (1000 * 60 * 60 * 24 * 30),
-          ),
-        )
+            1,
+            Math.ceil(
+              (new Date().getTime() -
+                new Date(completed[completed.length - 1]?.createdAt ?? Date.now()).getTime()) /
+                (1000 * 60 * 60 * 24 * 30),
+            ),
+          )
         : 1;
     const frequency = completed.length / months;
     return { totalRemitted, avgAmount, count: completed.length, frequency };
@@ -272,10 +272,11 @@ export default function RemittancesPage() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${statusFilter === s
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                    statusFilter === s
                       ? "bg-indigo-600 text-white"
                       : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                    }`}
+                  }`}
                 >
                   {s === "all" ? "All" : STATUS_CONFIG[s].label}
                 </button>

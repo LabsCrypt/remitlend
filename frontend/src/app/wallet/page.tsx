@@ -330,10 +330,11 @@ function TransactionHistoryCard({
               <div key={p.id} className="flex items-center justify-between py-3 gap-4">
                 <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${isInflow(p)
+                    className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      isInflow(p)
                         ? "bg-green-50 dark:bg-green-500/10"
                         : "bg-zinc-50 dark:bg-zinc-900"
-                      }`}
+                    }`}
                   >
                     {isInflow(p) ? (
                       <ArrowDownLeft className="h-4 w-4 text-green-600 dark:text-green-400" />
@@ -353,10 +354,11 @@ function TransactionHistoryCard({
                 <div className="text-right flex-shrink-0 flex items-center gap-2">
                   <div>
                     <p
-                      className={`text-sm font-bold ${isInflow(p)
+                      className={`text-sm font-bold ${
+                        isInflow(p)
                           ? "text-green-600 dark:text-green-400"
                           : "text-zinc-900 dark:text-zinc-50"
-                        }`}
+                      }`}
                     >
                       {isInflow(p) ? "+" : "-"}
                       {paymentAmount(p)}
@@ -410,10 +412,11 @@ export default function WalletPage() {
             <div className="flex items-center justify-between flex-wrap gap-3">
               <CardTitle>Stellar Address</CardTitle>
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${network?.isSupported
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                  network?.isSupported
                     ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
                     : "bg-yellow-50 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400"
-                  }`}
+                }`}
               >
                 <Globe className="h-3 w-3" />
                 {network?.name ?? "Unknown Network"}
