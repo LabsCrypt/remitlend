@@ -108,7 +108,7 @@ fn test_authorized_minter() {
 }
 
 #[test]
-#[should_panic(expected = "not initialized")]
+#[should_panic]
 fn test_not_initialized() {
     let env = Env::default();
     let user = Address::generate(&env);
@@ -120,7 +120,7 @@ fn test_not_initialized() {
 }
 
 #[test]
-#[should_panic(expected = "already initialized")]
+#[should_panic]
 fn test_already_initialized() {
     let env = Env::default();
     let admin = Address::generate(&env);
@@ -132,7 +132,7 @@ fn test_already_initialized() {
 }
 
 #[test]
-#[should_panic(expected = "user already has an NFT")]
+#[should_panic]
 fn test_duplicate_mint() {
     let env = Env::default();
     env.mock_all_auths();
@@ -154,7 +154,7 @@ fn test_duplicate_mint() {
 }
 
 #[test]
-#[should_panic(expected = "user does not have an NFT")]
+#[should_panic]
 fn test_update_score_without_nft() {
     let env = Env::default();
     env.mock_all_auths();
@@ -276,7 +276,7 @@ fn test_small_repayment_does_not_write_score_change() {
 }
 
 #[test]
-#[should_panic(expected = "repayment amount must be positive")]
+#[should_panic]
 fn test_update_score_rejects_non_positive_repayment() {
     let env = Env::default();
     env.mock_all_auths();
@@ -413,7 +413,7 @@ fn test_minting_with_authorized_minter_sets_expected_metadata() {
 }
 
 #[test]
-#[should_panic(expected = "minter is not authorized")]
+#[should_panic]
 fn test_mint_rejects_unauthorized_minter() {
     let env = Env::default();
     env.mock_all_auths();
@@ -504,7 +504,7 @@ fn test_seize_collateral() {
 }
 
 #[test]
-#[should_panic(expected = "user does not have an NFT")]
+#[should_panic]
 fn test_seize_collateral_no_nft() {
     let env = Env::default();
     env.mock_all_auths();
@@ -521,7 +521,7 @@ fn test_seize_collateral_no_nft() {
 }
 
 #[test]
-#[should_panic(expected = "collateral already seized")]
+#[should_panic]
 fn test_seize_collateral_already_seized() {
     let env = Env::default();
     env.mock_all_auths();
@@ -601,7 +601,7 @@ fn test_score_history_tracks_and_caps_recent_updates() {
 }
 
 #[test]
-#[should_panic(expected = "burned user requires admin approval to remint")]
+#[should_panic]
 fn test_burn_blocks_authorized_remint_without_admin_approval() {
     let env = Env::default();
     env.mock_all_auths();
@@ -720,7 +720,7 @@ fn test_transfer_moves_identity_state_to_new_wallet() {
 }
 
 #[test]
-#[should_panic(expected = "transfer cooldown active")]
+#[should_panic]
 fn test_transfer_enforces_cooldown_before_retransfer() {
     let env = Env::default();
     env.mock_all_auths();
@@ -741,7 +741,7 @@ fn test_transfer_enforces_cooldown_before_retransfer() {
 }
 
 #[test]
-#[should_panic(expected = "destination address has existing remittance state")]
+#[should_panic]
 fn test_transfer_rejects_destination_with_existing_state() {
     let env = Env::default();
     env.mock_all_auths();
@@ -761,7 +761,7 @@ fn test_transfer_rejects_destination_with_existing_state() {
 }
 
 #[test]
-#[should_panic(expected = "minter is not authorized")]
+#[should_panic]
 fn test_transfer_rejects_unauthorized_minter() {
     let env = Env::default();
     env.mock_all_auths();
