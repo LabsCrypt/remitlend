@@ -149,7 +149,9 @@ export const getLoanDetails = asyncHandler(
       (principal * rateBps * elapsedLedgers) / (10000 * termLedgers);
 
     const totalOwed = principal + accruedInterest - totalRepaid;
-    const isDefaulted = events.some((e: any) => e.event_type === "LoanDefaulted");
+    const isDefaulted = events.some(
+      (e: any) => e.event_type === "LoanDefaulted",
+    );
 
     res.json({
       success: true,
@@ -188,43 +190,41 @@ export const getLoanDetails = asyncHandler(
  *
  * Body: { amount: number, borrowerPublicKey: string }
  */
-export const requestLoan = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { amount, borrowerPublicKey } = req.body as {
-      amount: number;
-      borrowerPublicKey: string;
-    };
+export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
+  const { amount, borrowerPublicKey } = req.body as {
+    amount: number;
+    borrowerPublicKey: string;
+  };
 
-    if (!borrowerPublicKey || !amount || amount <= 0) {
-      throw AppError.badRequest(
-        "borrowerPublicKey and a positive amount are required",
-      );
-    }
-
-    // Ensure the borrowerPublicKey matches the authenticated wallet
-    if (borrowerPublicKey !== req.user?.publicKey) {
-      throw AppError.forbidden(
-        "borrowerPublicKey must match your authenticated wallet",
-      );
-    }
-
-    const result = await sorobanService.buildRequestLoanTx(
-      borrowerPublicKey,
-      amount,
+  if (!borrowerPublicKey || !amount || amount <= 0) {
+    throw AppError.badRequest(
+      "borrowerPublicKey and a positive amount are required",
     );
+  }
 
-    logger.info("Loan request transaction built", {
-      borrower: borrowerPublicKey,
-      amount,
-    });
+  // Ensure the borrowerPublicKey matches the authenticated wallet
+  if (borrowerPublicKey !== req.user?.publicKey) {
+    throw AppError.forbidden(
+      "borrowerPublicKey must match your authenticated wallet",
+    );
+  }
 
-    res.json({
-      success: true,
-      unsignedTxXdr: result.unsignedTxXdr,
-      networkPassphrase: result.networkPassphrase,
-    });
-  },
-);
+  const result = await sorobanService.buildRequestLoanTx(
+    borrowerPublicKey,
+    amount,
+  );
+
+  logger.info("Loan request transaction built", {
+    borrower: borrowerPublicKey,
+    amount,
+  });
+
+  res.json({
+    success: true,
+    unsignedTxXdr: result.unsignedTxXdr,
+    networkPassphrase: result.networkPassphrase,
+  });
+});
 
 /**
  * POST /api/loans/:loanId/repay
@@ -235,52 +235,50 @@ export const requestLoan = asyncHandler(
  *
  * Body: { amount: number, borrowerPublicKey: string }
  */
-export const repayLoan = asyncHandler(
-  async (req: Request, res: Response) => {
-    const loanId = req.params.loanId as string;
-    const { amount, borrowerPublicKey } = req.body as {
-      amount: number;
-      borrowerPublicKey: string;
-    };
+export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
+  const loanId = req.params.loanId as string;
+  const { amount, borrowerPublicKey } = req.body as {
+    amount: number;
+    borrowerPublicKey: string;
+  };
 
-    if (!borrowerPublicKey || !amount || amount <= 0) {
-      throw AppError.badRequest(
-        "borrowerPublicKey and a positive amount are required",
-      );
-    }
-
-    // Ensure the borrowerPublicKey matches the authenticated wallet
-    if (borrowerPublicKey !== req.user?.publicKey) {
-      throw AppError.forbidden(
-        "borrowerPublicKey must match your authenticated wallet",
-      );
-    }
-
-    const loanIdNum = parseInt(loanId, 10);
-    if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
-      throw AppError.badRequest("Invalid loan ID");
-    }
-
-    const result = await sorobanService.buildRepayTx(
-      borrowerPublicKey,
-      loanIdNum,
-      amount,
+  if (!borrowerPublicKey || !amount || amount <= 0) {
+    throw AppError.badRequest(
+      "borrowerPublicKey and a positive amount are required",
     );
+  }
 
-    logger.info("Repay transaction built", {
-      borrower: borrowerPublicKey,
-      loanId: loanIdNum,
-      amount,
-    });
+  // Ensure the borrowerPublicKey matches the authenticated wallet
+  if (borrowerPublicKey !== req.user?.publicKey) {
+    throw AppError.forbidden(
+      "borrowerPublicKey must match your authenticated wallet",
+    );
+  }
 
-    res.json({
-      success: true,
-      loanId: loanIdNum,
-      unsignedTxXdr: result.unsignedTxXdr,
-      networkPassphrase: result.networkPassphrase,
-    });
-  },
-);
+  const loanIdNum = parseInt(loanId, 10);
+  if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
+    throw AppError.badRequest("Invalid loan ID");
+  }
+
+  const result = await sorobanService.buildRepayTx(
+    borrowerPublicKey,
+    loanIdNum,
+    amount,
+  );
+
+  logger.info("Repay transaction built", {
+    borrower: borrowerPublicKey,
+    loanId: loanIdNum,
+    amount,
+  });
+
+  res.json({
+    success: true,
+    loanId: loanIdNum,
+    unsignedTxXdr: result.unsignedTxXdr,
+    networkPassphrase: result.networkPassphrase,
+  });
+});
 
 /**
  * POST /api/loans/submit

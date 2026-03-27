@@ -1,7 +1,10 @@
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
-import { createRequestId, runWithRequestContext } from "../utils/requestContext.js";
+import {
+  createRequestId,
+  runWithRequestContext,
+} from "../utils/requestContext.js";
 import {
   type IndexedLoanEvent,
   type WebhookEventType,
@@ -61,7 +64,10 @@ export class EventIndexer {
 
   constructor(config: EventIndexerConfig);
   constructor(rpcUrl: string, contractId: string);
-  constructor(configOrRpcUrl: EventIndexerConfig | string, contractId?: string) {
+  constructor(
+    configOrRpcUrl: EventIndexerConfig | string,
+    contractId?: string,
+  ) {
     if (typeof configOrRpcUrl === "string") {
       if (!contractId) {
         throw new Error("contractId is required when using rpcUrl constructor");
@@ -103,7 +109,10 @@ export class EventIndexer {
     return chunkResult.lastProcessedLedger;
   }
 
-  async reindexRange(fromLedger: number, toLedger: number): Promise<{
+  async reindexRange(
+    fromLedger: number,
+    toLedger: number,
+  ): Promise<{
     fromLedger: number;
     toLedger: number;
     fetchedEvents: number;
@@ -167,9 +176,11 @@ export class EventIndexer {
 
   private async getLatestLedgerSequence(): Promise<number> {
     try {
-      const latest = (await (this.rpc as unknown as {
-        getLatestLedger: () => Promise<Record<string, unknown>>;
-      }).getLatestLedger()) as Record<string, unknown>;
+      const latest = (await (
+        this.rpc as unknown as {
+          getLatestLedger: () => Promise<Record<string, unknown>>;
+        }
+      ).getLatestLedger()) as Record<string, unknown>;
 
       const candidate =
         latest.sequence ?? latest.sequenceNumber ?? latest.seq ?? latest.id;
@@ -324,7 +335,9 @@ export class EventIndexer {
     return result;
   }
 
-  private async storeEvents(events: SorobanRawEvent[]): Promise<StoreEventsResult> {
+  private async storeEvents(
+    events: SorobanRawEvent[],
+  ): Promise<StoreEventsResult> {
     const parsedEvents: LoanEvent[] = [];
 
     for (const event of events) {
@@ -563,7 +576,9 @@ export class EventIndexer {
     }
   }
 
-  private decodeEventType(value: xdr.ScVal | undefined): WebhookEventType | null {
+  private decodeEventType(
+    value: xdr.ScVal | undefined,
+  ): WebhookEventType | null {
     if (!value) return null;
 
     try {

@@ -20,6 +20,7 @@ import indexerRoutes from "./routes/indexerRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import notificationsRoutes from "./routes/notificationsRoutes.js";
+import externalNotificationsRoutes from "./routes/externalNotificationRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
@@ -127,6 +128,7 @@ app.use("/api/indexer", indexerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/notifications", notificationsRoutes);
+app.use("/api/external-notifications", externalNotificationsRoutes);
 app.use("/api/events", eventRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────

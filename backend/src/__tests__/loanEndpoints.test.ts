@@ -20,24 +20,27 @@ jest.unstable_mockModule("../db/connection.js", () => ({
 }));
 
 // Mock sorobanService to avoid real Stellar RPC calls
-const mockBuildRequestLoanTx = jest.fn<
-  (
-    borrowerPublicKey: string,
-    amount: number,
-  ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
->();
-const mockBuildRepayTx = jest.fn<
-  (
-    borrowerPublicKey: string,
-    loanId: number,
-    amount: number,
-  ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
->();
-const mockSubmitSignedTx = jest.fn<
-  (
-    signedTxXdr: string,
-  ) => Promise<{ txHash: string; status: string; resultXdr?: string }>
->();
+const mockBuildRequestLoanTx =
+  jest.fn<
+    (
+      borrowerPublicKey: string,
+      amount: number,
+    ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
+  >();
+const mockBuildRepayTx =
+  jest.fn<
+    (
+      borrowerPublicKey: string,
+      loanId: number,
+      amount: number,
+    ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
+  >();
+const mockSubmitSignedTx =
+  jest.fn<
+    (
+      signedTxXdr: string,
+    ) => Promise<{ txHash: string; status: string; resultXdr?: string }>
+  >();
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
   sorobanService: {
     buildRequestLoanTx: mockBuildRequestLoanTx,

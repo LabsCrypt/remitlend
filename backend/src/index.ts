@@ -12,8 +12,12 @@ import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
+import { NotificationSchedulerService } from "./services/notificationSchedulerService.js";
 
 const port = process.env.PORT || 3001;
+
+// Initialize notification scheduler
+const notificationScheduler = NotificationSchedulerService.getInstance();
 
 app.listen(port, () => {
   logger.info(`Server is running on port ${port}`);
@@ -23,6 +27,9 @@ app.listen(port, () => {
 
   // Start periodic on-chain default checks (if configured)
   startDefaultCheckerScheduler();
+
+  // Start notification scheduler
+  notificationScheduler.start();
 });
 
 // Graceful shutdown
@@ -30,6 +37,7 @@ process.on("SIGTERM", () => {
   logger.info("SIGTERM signal received: closing HTTP server");
   stopIndexer();
   stopDefaultCheckerScheduler();
+  notificationScheduler.stop();
   process.exit(0);
 });
 
@@ -37,5 +45,6 @@ process.on("SIGINT", () => {
   logger.info("SIGINT signal received: closing HTTP server");
   stopIndexer();
   stopDefaultCheckerScheduler();
+  notificationScheduler.stop();
   process.exit(0);
 });
