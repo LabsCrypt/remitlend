@@ -7,6 +7,7 @@ import cors from "cors";
 import compression from "compression";
 import helmet from "helmet";
 import dotenv from "dotenv";
+import { Sentry } from "./config/sentry.js";
 
 dotenv.config();
 import pool from "./db/connection.js";
@@ -162,6 +163,11 @@ app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use((req: Request, _res: Response, next: NextFunction) => {
   next(AppError.notFound(`Cannot ${req.method} ${req.path}`));
 });
+
+// ── Sentry Error Handler ──────────────────────────────────────────
+// Must be registered after all routes so it captures errors forwarded
+// via next(err), but before the custom errorHandler so Sentry sees them.
+Sentry.setupExpressErrorHandler(app);
 
 // ── Global Error Handler ─────────────────────────────────────────
 // Must be the LAST middleware registered so it catches every error

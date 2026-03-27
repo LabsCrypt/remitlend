@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { AppError } from "../errors/AppError.js";
 import logger from "../utils/logger.js";
+import { Sentry } from "../config/sentry.js";
 
 /**
  * Global error handling middleware.
@@ -40,6 +41,9 @@ export const errorHandler = (
         method: req.method,
         stack: err.stack,
       });
+      Sentry.captureException(err, {
+        extra: { path: req.path, method: req.method },
+      });
     }
 
     res.status(err.statusCode).json({
@@ -56,6 +60,8 @@ export const errorHandler = (
     name: err.name,
     ...(err.stack && { stack: err.stack }),
   });
+
+  Sentry.captureException(err);
 
   const isDevelopment = process.env.NODE_ENV !== "production";
 

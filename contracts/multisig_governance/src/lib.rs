@@ -19,6 +19,9 @@ const MAX_SIGNERS: u32 = 20;
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
 const KEY_PENDING: Symbol = symbol_short!("PENDING");
 const KEY_TARGET: Symbol = symbol_short!("TARGET");
+const KEY_LAST_CANCELLED_AT: Symbol = symbol_short!("CANCEL_AT");
+
+const REPROPOSAL_COOLDOWN_SECONDS: u64 = 3600; // 1 hour
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,6 +123,20 @@ impl GovernanceContract {
 
         if env.storage().instance().has(&KEY_PENDING) {
             panic!("transfer already pending — cancel first (4005)");
+        }
+
+        if let Some(last_cancelled_at) = env
+            .storage()
+            .instance()
+            .get::<Symbol, u64>(&KEY_LAST_CANCELLED_AT)
+        {
+            let now = env.ledger().timestamp();
+            if now < last_cancelled_at.saturating_add(REPROPOSAL_COOLDOWN_SECONDS) {
+                panic!(
+                    "must wait at least {} seconds after cancellation before re-proposing (4015)",
+                    REPROPOSAL_COOLDOWN_SECONDS
+                );
+            }
         }
         if signers.is_empty() {
             panic!("signer list must not be empty (4013)");
@@ -280,6 +297,9 @@ impl GovernanceContract {
         }
 
         env.storage().instance().remove(&KEY_PENDING);
+        env.storage()
+            .instance()
+            .set(&KEY_LAST_CANCELLED_AT, &env.ledger().timestamp());
 
         env.events().publish(
             (symbol_short!("GovCncl"), admin.clone()),

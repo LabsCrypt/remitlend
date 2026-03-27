@@ -18,20 +18,6 @@ function getCreditBand(score: number): CreditBand {
   return "Poor";
 }
 
-/**
- * Derive a deterministic base score from a userId so that every call to
- * getScore for the same user returns consistent data without a database.
- * Range: 500–850 (typical credit score window).
- * Deprecated - 24/03/2026
- */
-function baseScore(userId: string): number {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
-  }
-  return 500 + (hash % 351); // [500, 850]
-}
-
 // ---------------------------------------------------------------------------
 // Score delta constants (tunable)
 // ---------------------------------------------------------------------------

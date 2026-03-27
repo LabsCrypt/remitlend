@@ -250,6 +250,55 @@ fn cancel_clears_pending() {
 }
 
 #[test]
+#[should_panic(expected = "must wait at least 3600 seconds after cancellation before re-proposing")]
+fn cancel_enforces_reproposal_cooldown() {
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, &[s]);
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    client.cancel_admin_transfer();
+
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+}
+
+#[test]
+fn cancel_allows_reproposal_after_cooldown() {
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, &[s]);
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    client.cancel_admin_transfer();
+
+    set_ts(&env, 1000 + REPROPOSAL_COOLDOWN_SECONDS + 1);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    assert!(client.has_pending_transfer());
+}
+
+#[test]
 #[should_panic(expected = "no pending transfer to cancel")]
 fn cancel_with_no_pending_panics() {
     let (_env, client, _, _) = setup();

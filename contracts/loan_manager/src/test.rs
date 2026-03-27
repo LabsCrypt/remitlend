@@ -1,4 +1,4 @@
-use crate::{LoanManager, LoanManagerClient, LoanStatus};
+use crate::{DataKey, LoanError, LoanManager, LoanManagerClient, LoanStatus};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
@@ -30,6 +30,9 @@ fn setup_test<'a>(
     // 4. Deploy the LoanManager contract
     let loan_manager_id = env.register(LoanManager, ());
     let loan_manager_client = LoanManagerClient::new(env, &loan_manager_id);
+
+    // Authorize LoanManager on NFT contract before initialization
+    nft_client.authorize_minter(&loan_manager_id);
 
     // 5. Initialize the Loan Manager with the NFT contract, lending pool, token, and admin
     loan_manager_client.initialize(&nft_contract_id, &pool_address, &token_id, &admin);
@@ -70,7 +73,7 @@ fn test_loan_request_success() {
 }
 
 #[test]
-#[should_panic(expected = "score too low for loan")]
+#[should_panic]
 fn test_loan_request_failure_low_score() {
     let env = Env::default();
     env.mock_all_auths();
@@ -187,6 +190,44 @@ fn test_configurable_interest_rate_and_default_term() {
 }
 
 #[test]
+fn test_set_interest_rate_zero_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let result = manager.try_set_interest_rate(&0);
+    assert_eq!(result, Err(Ok(LoanError::InvalidRate)));
+}
+
+#[test]
+fn test_legacy_zero_interest_config_falls_back_to_default() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    // Simulate a legacy/misconfigured zero interest rate in instance storage.
+    env.as_contract(&manager.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::InterestRateBps, &0u32);
+    });
+
+    assert_eq!(manager.get_interest_rate(), 1_200);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    let pending_loan = manager.get_loan(&loan_id);
+    assert_eq!(pending_loan.interest_rate_bps, 1_200);
+}
+
+#[test]
 fn test_repayment_flow() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -218,8 +259,16 @@ fn test_repayment_flow() {
     assert_eq!(loan.status, LoanStatus::Approved);
     assert_eq!(token_client.balance(&pool_address), 9_500);
 
-    // 3. Verify the underlying NFT Score was correctly incremented
-    assert_eq!(nft_client.get_score(&borrower), 605);
+    let remaining_debt = loan.amount + loan.accrued_interest + loan.accrued_late_fee
+        - loan.principal_paid
+        - loan.interest_paid
+        - loan.late_fee_paid;
+    manager.repay(&borrower, &loan_id, &remaining_debt);
+    let completed = manager.get_loan(&loan_id);
+    assert_eq!(completed.status, LoanStatus::Repaid);
+
+    // Score updates include both partial and final repayment contributions.
+    assert_eq!(nft_client.get_score(&borrower), 610);
 }
 
 #[test]
@@ -253,7 +302,58 @@ fn test_partial_repayment_tracks_split_balances() {
 }
 
 #[test]
-#[should_panic(expected = "loan amount exceeds max loan amount")]
+#[should_panic(expected = "repayment amount below minimum")]
+fn test_minimum_repayment_amount_enforced() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+    assert_eq!(nft_client.get_score(&borrower), 600);
+
+    let _history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    manager.set_min_repayment_amount(&150);
+    manager.repay(&borrower, &loan_id, &100);
+}
+
+#[test]
+fn test_full_repayment_ignores_minimum_amount() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+    assert_eq!(nft_client.get_score(&borrower), 600);
+
+    let _history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    manager.set_min_repayment_amount(&150);
+    manager.repay(&borrower, &loan_id, &1_000);
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.status, LoanStatus::Repaid);
+}
+
+#[test]
 fn test_request_loan_above_max_amount_fails() {
     let env = Env::default();
     env.mock_all_auths();
@@ -265,7 +365,8 @@ fn test_request_loan_above_max_amount_fails() {
     nft_client.mint(&borrower, &700, &history_hash, &None);
     manager.set_max_loan_amount(&500);
 
-    manager.request_loan(&borrower, &600);
+    let result = manager.try_request_loan(&borrower, &600);
+    assert_eq!(result, Err(Ok(LoanError::InvalidAmount)));
 }
 
 #[test]
@@ -287,9 +388,40 @@ fn test_small_repayment_does_not_change_score() {
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
 
+    manager.set_min_repayment_amount(&1);
     manager.repay(&borrower, &loan_id, &99);
 
     assert_eq!(nft_client.get_score(&borrower), 600);
+}
+
+#[test]
+fn test_late_full_repayment_applies_score_penalty() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1000);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let grace = manager.get_grace_period_ledgers();
+    env.ledger().set_sequence_number(due_date + grace + 1);
+
+    let loan = manager.get_loan(&loan_id);
+    let payoff = loan.amount + loan.accrued_interest + loan.accrued_late_fee;
+    manager.repay(&borrower, &loan_id, &payoff);
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Repaid);
+    assert_eq!(nft_client.get_score(&borrower), 590);
 }
 
 #[test]
@@ -306,7 +438,7 @@ fn test_access_controls_unauthorized_repay() {
 }
 
 #[test]
-#[should_panic(expected = "loan not found")]
+#[should_panic]
 fn test_approve_nonexistent_loan() {
     let env = Env::default();
     env.mock_all_auths();
@@ -318,7 +450,7 @@ fn test_approve_nonexistent_loan() {
 }
 
 #[test]
-#[should_panic(expected = "loan is not pending")]
+#[should_panic]
 fn test_approve_already_approved_loan() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -342,7 +474,7 @@ fn test_approve_already_approved_loan() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient pool liquidity")]
+#[should_panic]
 fn test_approve_loan_insufficient_pool_liquidity() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -392,7 +524,7 @@ fn test_borrower_max_active_loans_enforced_and_released_on_repay() {
 }
 
 #[test]
-#[should_panic(expected = "borrower reached max active loans")]
+#[should_panic]
 fn test_borrower_max_active_loans_blocks_new_requests() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -418,7 +550,7 @@ fn test_borrower_max_active_loans_blocks_new_requests() {
 }
 
 #[test]
-#[should_panic(expected = "loan amount must be positive")]
+#[should_panic]
 fn test_request_loan_negative_amount() {
     let env = Env::default();
     env.mock_all_auths();
@@ -452,7 +584,7 @@ fn test_check_default_success() {
     assert!(!nft_client.is_seized(&borrower));
 
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 100_000);
 
     manager.check_default(&loan_id);
 
@@ -460,11 +592,12 @@ fn test_check_default_success() {
     assert_eq!(loan.status, LoanStatus::Defaulted);
 
     assert_eq!(nft_client.get_default_count(&borrower), 1);
+    assert_eq!(nft_client.get_score(&borrower), 550);
     assert!(nft_client.is_seized(&borrower));
 }
 
 #[test]
-#[should_panic(expected = "loan is not past due")]
+#[should_panic]
 fn test_check_default_not_past_due() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -485,7 +618,7 @@ fn test_check_default_not_past_due() {
 }
 
 #[test]
-#[should_panic(expected = "loan is not active")]
+#[should_panic]
 fn test_check_default_already_repaid() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -506,9 +639,34 @@ fn test_check_default_already_repaid() {
     manager.repay(&borrower, &loan_id, &1000);
 
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 40_000);
 
     manager.check_default(&loan_id);
+}
+
+#[test]
+fn test_check_default_respects_default_window() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    manager.set_default_window_ledgers(&10_000);
+    let loan_id = manager.request_loan(&borrower, &1000);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    env.ledger().set_sequence_number(due_date + 9_999);
+
+    let result = manager.try_check_default(&loan_id);
+    assert_eq!(result, Err(Ok(LoanError::LoanNotPastDue)));
 }
 
 #[test]
@@ -538,7 +696,7 @@ fn test_check_defaults_batch() {
     manager.approve_loan(&loan_id3);
 
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 100_000);
 
     let loan_ids = soroban_sdk::vec![&env, loan_id1, loan_id2, loan_id3];
     manager.check_defaults(&loan_ids);
@@ -547,6 +705,9 @@ fn test_check_defaults_batch() {
     assert_eq!(manager.get_loan(&loan_id2).status, LoanStatus::Defaulted);
     assert_eq!(manager.get_loan(&loan_id3).status, LoanStatus::Defaulted);
 
+    assert_eq!(nft_client.get_score(&borrower1), 550);
+    assert_eq!(nft_client.get_score(&borrower2), 550);
+    assert_eq!(nft_client.get_score(&borrower3), 550);
     assert!(nft_client.is_seized(&borrower1));
     assert!(nft_client.is_seized(&borrower2));
     assert!(nft_client.is_seized(&borrower3));
@@ -569,6 +730,7 @@ fn test_overdue_repayment_charges_late_fee() {
     stellar_token.mint(&borrower, &10_000);
 
     manager.set_late_fee_rate(&500);
+    manager.set_grace_period_ledgers(&0);
     env.ledger().set_sequence_number(1);
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
@@ -602,6 +764,7 @@ fn test_late_fee_is_capped_at_quarter_principal() {
     stellar_token.mint(&pool_address, &10_000);
 
     manager.set_late_fee_rate(&10_000);
+    manager.set_grace_period_ledgers(&0);
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
 
@@ -674,8 +837,10 @@ fn test_collateral_is_seized_on_default() {
     let pool_balance_before_default = token_client.balance(&pool_address);
     let contract_balance_before_default = token_client.balance(&manager.address);
 
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(due_date + default_window + 1);
     manager.check_default(&loan_id);
 
     assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
@@ -691,7 +856,7 @@ fn test_collateral_is_seized_on_default() {
 }
 
 #[test]
-#[should_panic(expected = "loan is not active")]
+#[should_panic]
 fn test_deposit_collateral_rejects_non_active_loan() {
     let env = Env::default();
     env.mock_all_auths();

@@ -1,7 +1,25 @@
 #![cfg_attr(not(test), no_std)]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+    Symbol, Vec,
 };
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum NftError {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    UnauthorizedMinter = 3,
+    NftAlreadyExists = 4,
+    BurnedRequiresApproval = 5,
+    NftNotFound = 6,
+    InvalidRepaymentAmount = 7,
+    CollateralAlreadySeized = 8,
+    SelfTransfer = 9,
+    DestinationOccupied = 10,
+    TransferCooldownActive = 11,
+    InvalidThreshold = 12,
+}
 
 #[contracttype]
 #[derive(Clone)]
@@ -47,6 +65,9 @@ impl RemittanceNFT {
     const DEFAULT_BURN_THRESHOLD: u32 = 3;
     const MAX_SCORE_HISTORY: u32 = 10;
     const TRANSFER_COOLDOWN_LEDGERS: u32 = 17280;
+    const MIN_CREDIT_SCORE: u32 = 300;
+    const MAX_CREDIT_SCORE: u32 = 850;
+    pub const MAX_SCORE: u32 = 850;
 
     fn admin_key() -> soroban_sdk::Symbol {
         symbol_short!("ADMIN")
@@ -78,7 +99,10 @@ impl RemittanceNFT {
             .expect("not initialized")
     }
 
-    fn require_admin_or_authorized_minter(env: &Env, minter: Option<Address>) {
+    fn require_admin_or_authorized_minter(
+        env: &Env,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
         if let Some(minter_addr) = minter {
             minter_addr.require_auth();
             let key = DataKey::AuthorizedMinter(minter_addr);
@@ -87,11 +111,12 @@ impl RemittanceNFT {
                 Self::bump_persistent_ttl(env, &key);
             }
             if !is_authorized {
-                panic!("minter is not authorized");
+                return Err(NftError::UnauthorizedMinter);
             }
         } else {
             Self::admin(env).require_auth();
         }
+        Ok(())
     }
 
     fn default_history_hash(env: &Env) -> BytesN<32> {
@@ -247,10 +272,10 @@ impl RemittanceNFT {
             .publish((symbol_short!("NftBurned"), user.clone()), ());
     }
 
-    pub fn initialize(env: Env, admin: Address) {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), NftError> {
         let admin_key = Self::admin_key();
         if env.storage().instance().has(&admin_key) {
-            panic!("already initialized");
+            return Err(NftError::AlreadyInitialized);
         }
         env.storage().instance().set(&admin_key, &admin);
         env.storage()
@@ -264,6 +289,7 @@ impl RemittanceNFT {
         let key = DataKey::AuthorizedMinter(admin.clone());
         env.storage().persistent().set(&key, &true);
         Self::bump_persistent_ttl(&env, &key);
+        Ok(())
     }
 
     pub fn version(env: Env) -> u32 {
@@ -294,9 +320,11 @@ impl RemittanceNFT {
     pub fn authorize_minter(env: Env, minter: Address) {
         Self::admin(&env).require_auth();
 
-        let key = DataKey::AuthorizedMinter(minter);
+        let key = DataKey::AuthorizedMinter(minter.clone());
         env.storage().persistent().set(&key, &true);
         Self::bump_persistent_ttl(&env, &key);
+
+        env.events().publish((symbol_short!("MntAuth"), minter), ());
     }
 
     /// Revoke authorization for a contract or account to mint NFTs
@@ -305,7 +333,9 @@ impl RemittanceNFT {
 
         env.storage()
             .persistent()
-            .remove(&DataKey::AuthorizedMinter(minter));
+            .remove(&DataKey::AuthorizedMinter(minter.clone()));
+
+        env.events().publish((symbol_short!("MntRev"), minter), ());
     }
 
     /// Check if an address is authorized to mint
@@ -318,29 +348,27 @@ impl RemittanceNFT {
         is_authorized
     }
 
-    /// Mint an NFT representing a user's remittance history and reputation score
-    /// Only authorized contracts/accounts can call this function
-    /// If minter is provided, it must be authorized and must authorize the call
-    /// If minter is None, admin must authorize the call
+    /// Mint an NFT representing a user's remittance history and reputation score.
+    /// If minter is provided, it must be authorized and must sign the call.
+    /// If minter is None, admin must sign the call.
     pub fn mint(
         env: Env,
         user: Address,
         initial_score: u32,
         history_hash: BytesN<32>,
         minter: Option<Address>,
-    ) {
+    ) -> Result<(), NftError> {
         let admin_direct_mint = minter.is_none();
-        Self::require_admin_or_authorized_minter(&env, minter);
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
         let score_key = DataKey::Score(user.clone());
         let burned_key = DataKey::Burned(user.clone());
 
-        // Check if user already has an NFT (either new format or legacy)
         if env.storage().persistent().has(&metadata_key)
             || env.storage().persistent().has(&score_key)
         {
-            panic!("user already has an NFT");
+            return Err(NftError::NftAlreadyExists);
         }
 
         if env.storage().persistent().has(&burned_key) {
@@ -348,7 +376,7 @@ impl RemittanceNFT {
             let has_approval = env.storage().persistent().has(&remint_approval_key);
 
             if !admin_direct_mint && !has_approval {
-                panic!("burned user requires admin approval to remint");
+                return Err(NftError::BurnedRequiresApproval);
             }
 
             env.storage().persistent().remove(&burned_key);
@@ -359,7 +387,7 @@ impl RemittanceNFT {
         }
 
         let metadata = RemittanceMetadata {
-            score: initial_score,
+            score: initial_score.min(Self::MAX_SCORE),
             history_hash,
         };
 
@@ -367,6 +395,8 @@ impl RemittanceNFT {
         Self::bump_persistent_ttl(&env, &metadata_key);
         env.events()
             .publish((symbol_short!("Mint"), user), initial_score);
+
+        Ok(())
     }
 
     /// Get the metadata (score and history hash) for a user's NFT
@@ -374,35 +404,42 @@ impl RemittanceNFT {
         Self::get_or_migrate_metadata(&env, &user)
     }
 
-    /// Get the score for a user
-    /// Handles backward compatibility by checking Metadata first, then legacy Score data
+    /// Get the score for a user.
+    /// Returns 0 if the user has no NFT.
     pub fn get_score(env: Env, user: Address) -> u32 {
         Self::get_or_migrate_metadata(&env, &user)
             .map(|metadata| metadata.score)
             .unwrap_or(0)
     }
 
-    /// Update the score for a user's NFT
-    /// Only authorized contracts/accounts can call this function
-    /// If minter is provided, it must be authorized and must authorize the call
-    /// If minter is None, admin must authorize the call
-    pub fn update_score(env: Env, user: Address, repayment_amount: i128, minter: Option<Address>) {
+    /// Update the score for a user's NFT based on a repayment amount.
+    pub fn update_score(
+        env: Env,
+        user: Address,
+        repayment_amount: i128,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
         if repayment_amount <= 0 {
-            panic!("repayment amount must be positive");
+            return Err(NftError::InvalidRepaymentAmount);
         }
-        Self::require_admin_or_authorized_minter(&env, minter);
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
-            .unwrap_or_else(|| panic!("user does not have an NFT"));
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         // Simple logic: 1 point per 100 units of repayment
-        let points = (repayment_amount / 100) as u32;
-        if points == 0 {
-            return;
+        let points_i128 = repayment_amount / 100;
+        if points_i128 == 0 {
+            return Ok(());
         }
+        let points = if points_i128 > (Self::MAX_SCORE as i128) {
+            Self::MAX_SCORE
+        } else {
+            points_i128 as u32
+        };
         let old_score = metadata.score;
-        metadata.score = metadata.score.checked_add(points).expect("score overflow");
+        metadata.score = old_score.saturating_add(points).min(Self::MAX_SCORE);
 
         env.storage().persistent().set(&metadata_key, &metadata);
         Self::bump_persistent_ttl(&env, &metadata_key);
@@ -415,26 +452,85 @@ impl RemittanceNFT {
         );
         env.events()
             .publish((symbol_short!("ScoreUpd"), user), metadata.score);
+
+        Ok(())
     }
 
-    /// Update the history hash for a user's NFT
-    /// Only authorized contracts/accounts can call this function
-    /// If minter is provided, it must be authorized and must authorize the call
-    /// If minter is None, admin must authorize the call
-    pub fn update_history_hash(
-        env: Env,
-        user: Address,
-        new_history_hash: BytesN<32>,
-        minter: Option<Address>,
-    ) {
-        Self::require_admin_or_authorized_minter(&env, minter);
+    pub fn decrease_score(env: Env, user: Address, penalty_points: u32, minter: Option<Address>) {
+        Self::require_admin_or_authorized_minter(&env, minter)
+            .unwrap_or_else(|_| panic!("unauthorized minter"));
 
         let metadata_key = DataKey::Metadata(user.clone());
         let mut metadata = Self::get_or_migrate_metadata(&env, &user)
             .unwrap_or_else(|| panic!("user does not have an NFT"));
 
-        if metadata.history_hash == new_history_hash {
+        let old_score = metadata.score;
+        let decreased = old_score.saturating_sub(penalty_points);
+        let new_score = decreased.max(Self::MIN_CREDIT_SCORE);
+        if new_score == old_score {
             return;
+        }
+
+        metadata.score = new_score;
+        env.storage().persistent().set(&metadata_key, &metadata);
+        Self::bump_persistent_ttl(&env, &metadata_key);
+        Self::append_score_history(&env, &user, old_score, new_score, symbol_short!("DEC"));
+        env.events().publish(
+            (symbol_short!("ScoreDecr"), user),
+            (old_score, new_score, symbol_short!("PEN")),
+        );
+    }
+
+    pub fn apply_score_delta(env: Env, user: Address, delta: i32, minter: Option<Address>) {
+        Self::require_admin_or_authorized_minter(&env, minter)
+            .unwrap_or_else(|_| panic!("unauthorized minter"));
+
+        let metadata_key = DataKey::Metadata(user.clone());
+        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
+            .unwrap_or_else(|| panic!("user does not have an NFT"));
+
+        let old_score = metadata.score as i64;
+        let next_score = old_score + delta as i64;
+        let min_score = Self::MIN_CREDIT_SCORE as i64;
+        let max_score = Self::MAX_CREDIT_SCORE as i64;
+        let bounded_score = next_score.clamp(min_score, max_score);
+        let next_score_u32 = u32::try_from(bounded_score).expect("score overflow");
+
+        if next_score_u32 == metadata.score {
+            return;
+        }
+
+        let previous_score = metadata.score;
+        metadata.score = next_score_u32;
+
+        env.storage().persistent().set(&metadata_key, &metadata);
+        Self::bump_persistent_ttl(&env, &metadata_key);
+        Self::append_score_history(
+            &env,
+            &user,
+            previous_score,
+            metadata.score,
+            symbol_short!("ADJ"),
+        );
+        env.events()
+            .publish((symbol_short!("ScoreUpd"), user), metadata.score);
+    }
+
+    /// Update the history hash for a user's NFT.
+    pub fn update_history_hash(
+        env: Env,
+        user: Address,
+        new_history_hash: BytesN<32>,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
+
+        let metadata_key = DataKey::Metadata(user.clone());
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
+
+        if metadata.history_hash == new_history_hash {
+            return Ok(());
         }
         metadata.history_hash = new_history_hash;
 
@@ -444,34 +540,46 @@ impl RemittanceNFT {
             (symbol_short!("HashUpd"), user),
             metadata.history_hash.clone(),
         );
+
+        Ok(())
     }
 
-    pub fn seize_collateral(env: Env, user: Address, minter: Option<Address>) {
-        Self::require_admin_or_authorized_minter(&env, minter);
+    pub fn seize_collateral(
+        env: Env,
+        user: Address,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
         if !env.storage().persistent().has(&metadata_key) {
             let score_key = DataKey::Score(user.clone());
             if !env.storage().persistent().has(&score_key) {
-                panic!("user does not have an NFT");
+                return Err(NftError::NftNotFound);
             }
         }
 
         let seized_key = DataKey::Seized(user.clone());
         if env.storage().persistent().has(&seized_key) {
-            panic!("collateral already seized");
+            return Err(NftError::CollateralAlreadySeized);
         }
 
         env.storage().persistent().set(&seized_key, &true);
         Self::bump_persistent_ttl(&env, &seized_key);
         env.events().publish((symbol_short!("Seized"), user), ());
+
+        Ok(())
     }
 
-    pub fn record_default(env: Env, user: Address, minter: Option<Address>) {
-        Self::require_admin_or_authorized_minter(&env, minter);
+    pub fn record_default(
+        env: Env,
+        user: Address,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
-            panic!("user does not have an NFT");
+            return Err(NftError::NftNotFound);
         }
 
         let default_key = DataKey::DefaultCount(user.clone());
@@ -496,25 +604,34 @@ impl RemittanceNFT {
         if updated_count >= Self::default_burn_threshold(&env) {
             Self::burn_internal(&env, &user);
         }
+
+        Ok(())
     }
 
-    pub fn burn(env: Env, user: Address, minter: Option<Address>) {
-        Self::require_admin_or_authorized_minter(&env, minter);
+    pub fn burn(env: Env, user: Address, minter: Option<Address>) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
-            panic!("user does not have an NFT");
+            return Err(NftError::NftNotFound);
         }
 
         Self::burn_internal(&env, &user);
+
+        Ok(())
     }
 
-    pub fn transfer(env: Env, from: Address, to: Address, minter: Option<Address>) {
+    pub fn transfer(
+        env: Env,
+        from: Address,
+        to: Address,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
         if from == to {
-            panic!("source and destination must differ");
+            return Err(NftError::SelfTransfer);
         }
 
         from.require_auth();
-        Self::require_admin_or_authorized_minter(&env, minter);
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let transfer_cooldown_key = DataKey::TransferCooldown(from.clone());
         if let Some(next_allowed_ledger) = env
@@ -524,15 +641,14 @@ impl RemittanceNFT {
         {
             Self::bump_persistent_ttl(&env, &transfer_cooldown_key);
             if env.ledger().sequence() < next_allowed_ledger {
-                panic!("transfer cooldown active");
+                return Err(NftError::TransferCooldownActive);
             }
         }
 
-        let metadata = Self::get_or_migrate_metadata(&env, &from)
-            .unwrap_or_else(|| panic!("user does not have an NFT"));
+        let metadata = Self::get_or_migrate_metadata(&env, &from).ok_or(NftError::NftNotFound)?;
 
         if Self::has_any_remittance_state(&env, &to) {
-            panic!("destination address has existing remittance state");
+            return Err(NftError::DestinationOccupied);
         }
 
         let from_metadata_key = DataKey::Metadata(from.clone());
@@ -595,6 +711,8 @@ impl RemittanceNFT {
 
         env.events()
             .publish((symbol_short!("Transfer"), from, to), ());
+
+        Ok(())
     }
 
     pub fn is_seized(env: Env, user: Address) -> bool {
@@ -623,9 +741,9 @@ impl RemittanceNFT {
         Self::bump_persistent_ttl(&env, &approval_key);
     }
 
-    pub fn set_default_burn_threshold(env: Env, threshold: u32) {
+    pub fn set_default_burn_threshold(env: Env, threshold: u32) -> Result<(), NftError> {
         if threshold == 0 {
-            panic!("default burn threshold must be positive");
+            return Err(NftError::InvalidThreshold);
         }
         Self::admin(&env).require_auth();
 
@@ -633,6 +751,8 @@ impl RemittanceNFT {
             .instance()
             .set(&Self::burn_threshold_key(), &threshold);
         Self::bump_instance_ttl(&env);
+
+        Ok(())
     }
 
     pub fn get_default_burn_threshold(env: Env) -> u32 {

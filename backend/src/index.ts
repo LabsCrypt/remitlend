@@ -1,4 +1,10 @@
 import dotenv from "dotenv";
+dotenv.config();
+
+// Sentry must be initialized before any other imports so it can instrument them
+import { initSentry } from "./config/sentry.js";
+initSentry();
+
 import app from "./app.js";
 import logger from "./utils/logger.js";
 import { startIndexer, stopIndexer } from "./services/indexerManager.js";
@@ -6,8 +12,6 @@ import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
-
-dotenv.config();
 
 const port = process.env.PORT || 3001;
 
