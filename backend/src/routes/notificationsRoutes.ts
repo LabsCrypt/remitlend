@@ -16,7 +16,7 @@ const router = Router();
  *     summary: Get notifications for the authenticated user
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     parameters:
  *       - in: query
  *         name: limit
@@ -30,19 +30,14 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     notifications:
- *                       type: array
- *                     unreadCount:
- *                       type: integer
+ *               $ref: '#/components/schemas/NotificationsResponse'
  */
-router.get("/", requireJwtAuth, requireScopes("read:notifications"), getNotifications);
+router.get(
+  "/",
+  requireJwtAuth,
+  requireScopes("read:notifications"),
+  getNotifications,
+);
 
 /**
  * @swagger
@@ -51,10 +46,14 @@ router.get("/", requireJwtAuth, requireScopes("read:notifications"), getNotifica
  *     summary: SSE stream for real-time notification push
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     responses:
  *       200:
  *         description: Server-Sent Events stream (text/event-stream)
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               $ref: '#/components/schemas/ServerSentEventStream'
  */
 router.get(
   "/stream",
@@ -70,7 +69,7 @@ router.get(
  *     summary: Mark specific notifications as read
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -85,6 +84,10 @@ router.get(
  *     responses:
  *       200:
  *         description: Notifications marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SimpleSuccessResponse'
  */
 router.post(
   "/mark-read",
@@ -100,10 +103,14 @@ router.post(
  *     summary: Mark all notifications as read
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     responses:
  *       200:
  *         description: All notifications marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SimpleSuccessResponse'
  */
 router.post(
   "/mark-all-read",

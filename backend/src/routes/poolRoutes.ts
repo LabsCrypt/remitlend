@@ -31,27 +31,17 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     totalDeposits:
- *                       type: number
- *                     totalOutstanding:
- *                       type: number
- *                     utilizationRate:
- *                       type: number
- *                     apy:
- *                       type: number
- *                     activeLoansCount:
- *                       type: integer
+ *               $ref: '#/components/schemas/PoolStatsResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.get("/stats", requireJwtAuth, requireLender, requireScopes("read:pool"), getPoolStats);
+router.get(
+  "/stats",
+  requireJwtAuth,
+  requireLender,
+  requireScopes("read:pool"),
+  getPoolStats,
+);
 
 /**
  * @swagger
@@ -74,6 +64,10 @@ router.get("/stats", requireJwtAuth, requireLender, requireScopes("read:pool"), 
  *     responses:
  *       200:
  *         description: Depositor portfolio retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DepositorPortfolioResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  *       403:

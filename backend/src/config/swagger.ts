@@ -2,6 +2,7 @@ import swaggerJSDoc from "swagger-jsdoc";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { swaggerSchemas } from "./swaggerSchemas.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -36,58 +37,7 @@ const swaggerDefinition = {
           "JWT issued by POST /api/auth/login after POST /api/auth/challenge + signed message; use on GET /api/auth/verify and protected routes. Payload includes Stellar `publicKey`.",
       },
     },
-    schemas: {
-      ErrorResponse: {
-        type: "object",
-        properties: {
-          success: { type: "boolean", example: false },
-          message: { type: "string" },
-          error: {
-            type: "object",
-            properties: {
-              code: { type: "string" },
-              details: { type: "object" },
-            },
-          },
-        },
-      },
-      UserScore: {
-        type: "object",
-        properties: {
-          success: { type: "boolean", example: true },
-          userId: { type: "string" },
-          score: { type: "integer", example: 700 },
-          band: { type: "string", example: "Good" },
-          factors: {
-            type: "object",
-            properties: {
-              repaymentHistory: { type: "string" },
-              creditMix: { type: "string" },
-            },
-          },
-        },
-      },
-      RemittanceHistory: {
-        type: "object",
-        properties: {
-          userId: { type: "string" },
-          score: { type: "integer" },
-          streak: { type: "integer" },
-          history: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                paymentId: { type: "string" },
-                amount: { type: "number" },
-                status: { type: "string" },
-                timestamp: { type: "string", format: "date-time" },
-              },
-            },
-          },
-        },
-      },
-    },
+    schemas: swaggerSchemas,
   },
 };
 

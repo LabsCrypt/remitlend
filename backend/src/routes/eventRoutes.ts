@@ -42,6 +42,10 @@ const router = Router();
  *     responses:
  *       200:
  *         description: Server-Sent Events stream (text/event-stream)
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               $ref: '#/components/schemas/ServerSentEventStream'
  *       401:
  *         description: Missing or invalid authentication
  */
@@ -63,19 +67,7 @@ router.get("/stream", requireJwtAuth, streamEvents);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     borrower:
- *                       type: integer
- *                     admin:
- *                       type: integer
- *                     total:
- *                       type: integer
+ *               $ref: '#/components/schemas/EventStreamStatusResponse'
  *       401:
  *         description: Missing or invalid API key
  */

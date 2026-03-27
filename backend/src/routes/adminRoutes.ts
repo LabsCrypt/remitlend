@@ -45,6 +45,10 @@ const checkDefaultsBodySchema = z.object({
  *     responses:
  *       200:
  *         description: Default check run completed (see batch errors in payload)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DefaultCheckResponse'
  */
 router.post(
   "/check-defaults",
@@ -84,6 +88,10 @@ router.post(
  *     responses:
  *       200:
  *         description: Reindex completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReindexResponse'
  */
 router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
 
@@ -114,6 +122,10 @@ router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
  *     responses:
  *       201:
  *         description: Subscription created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookSubscriptionResponse'
  *   get:
  *     summary: List webhook subscriptions
  *     tags: [Admin]
@@ -122,8 +134,17 @@ router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
  *     responses:
  *       200:
  *         description: List of subscriptions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookSubscriptionListResponse'
  */
-router.post("/webhooks", requireApiKey, strictRateLimiter, createWebhookSubscription);
+router.post(
+  "/webhooks",
+  requireApiKey,
+  strictRateLimiter,
+  createWebhookSubscription,
+);
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
 
 /**
@@ -143,8 +164,17 @@ router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
  *     responses:
  *       200:
  *         description: Subscription deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessMessageResponse'
  */
-router.delete("/webhooks/:id", requireApiKey, strictRateLimiter, deleteWebhookSubscription);
+router.delete(
+  "/webhooks/:id",
+  requireApiKey,
+  strictRateLimiter,
+  deleteWebhookSubscription,
+);
 
 /**
  * @swagger
@@ -169,6 +199,10 @@ router.delete("/webhooks/:id", requireApiKey, strictRateLimiter, deleteWebhookSu
  *     responses:
  *       200:
  *         description: Delivery history returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get("/webhooks/:id/deliveries", requireApiKey, getWebhookDeliveries);
 
