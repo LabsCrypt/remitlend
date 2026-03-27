@@ -471,7 +471,7 @@ impl LoanManager {
         let interest_payment = payments[1];
         let late_fee_payment = payments[2];
 
-        (interest_payment, late_fee_payment, principal_payment)
+        (principal_payment, interest_payment, late_fee_payment)
     }
 
     fn collateral_amount(env: &Env, loan_id: u32) -> i128 {
@@ -799,7 +799,7 @@ impl LoanManager {
         let token_client = TokenClient::new(&env, &token);
         token_client.transfer(&borrower, &lending_pool, &amount);
 
-        let (interest_payment, late_fee_payment, principal_payment) =
+        let (principal_payment, interest_payment, late_fee_payment) =
             Self::proportional_repayment_split(&loan, amount);
 
         loan.interest_paid = loan
