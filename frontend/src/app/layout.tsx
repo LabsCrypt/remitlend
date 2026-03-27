@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "./components/providers/QueryProvider";
+import { WalletProvider } from "./components/providers/WalletProvider";
 import { DashboardShell } from "./components/global_ui/DashboardShell";
 import { Toaster } from "./components/ui/Toast";
 import { LevelUpModal } from "./components/gamification/LevelUpModal";
@@ -75,14 +76,16 @@ export default function RootLayout({
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <QueryProvider>
-          <DashboardShell>
-            <ErrorBoundary scope="active page" variant="section">
-              {children}
-            </ErrorBoundary>
-          </DashboardShell>
-          <Toaster />
-          <LevelUpModal />
-          <GlobalXPGain />
+          <WalletProvider>
+            <DashboardShell>
+              <ErrorBoundary scope="active page" variant="section">
+                {children}
+              </ErrorBoundary>
+            </DashboardShell>
+            <Toaster />
+            <LevelUpModal />
+            <GlobalXPGain />
+          </WalletProvider>
         </QueryProvider>
       </body>
     </html>

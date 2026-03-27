@@ -16,9 +16,11 @@ import { NotificationDropdown } from "./NotificationDropdown";
 import { useWalletStore } from "../../stores/useWalletStore";
 import { useGamificationStore } from "../../stores/useGamificationStore";
 import { useLoans, useRemittances } from "../../hooks/useApi";
+import { useWallet } from "../providers/WalletProvider";
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+function truncateAddress(address: string | null | undefined): string {
+  if (!address || address.length < 10) return address || "";
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
 interface HeaderProps {
@@ -29,8 +31,8 @@ interface HeaderProps {
 export function Header({ onMenuClick, className }: HeaderProps) {
   const router = useRouter();
   const isConnected = useWalletStore((state) => state.status === "connected");
-  const setConnected = useWalletStore((state) => state.setConnected);
-  const disconnect = useWalletStore((state) => state.disconnect);
+  const address = useWalletStore((state) => state.address);
+  const { connect, disconnect: disconnectWallet, isConnecting } = useWallet();
   const gamificationStore = useGamificationStore();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -200,11 +202,11 @@ export function Header({ onMenuClick, className }: HeaderProps) {
     }
   };
 
-  const handleWalletToggle = () => {
+  const handleWalletToggle = async () => {
     if (isConnected) {
-      disconnect();
+      disconnectWallet();
     } else {
-      setConnected("0x123...abc", { chainId: 1, name: "Stellar", isSupported: true });
+      await connect();
       gamificationStore.addXP(10, "Wallet connection");
     }
   };
@@ -305,15 +307,17 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       <div className="flex items-center gap-2 sm:gap-4">
         <button
           onClick={handleWalletToggle}
-          className="hidden sm:flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-500/20"
+          disabled={isConnecting}
+          className="hidden sm:flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Wallet className="h-4 w-4" />
-          {isConnected ? "Disconnect" : "Connect Wallet"}
+          {isConnecting ? "Connecting..." : isConnected ? truncateAddress(address || "") : "Connect Wallet"}
         </button>
 
         <button
           onClick={handleWalletToggle}
-          className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          disabled={isConnecting}
+          className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 disabled:opacity-50"
         >
           <Wallet className="h-5 w-5 text-indigo-600" />
         </button>
@@ -329,7 +333,7 @@ export function Header({ onMenuClick, className }: HeaderProps) {
             <User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           </div>
           <div className="hidden md:block pr-2">
-            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">John Doe</p>
+            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">{isConnected && address ? truncateAddress(address) : "Guest"}</p>
           </div>
         </button>
       </div>
