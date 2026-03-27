@@ -37,15 +37,13 @@ function formatDate(iso: string): string {
 
 function getHorizonUrl(networkName: string | null | undefined): string {
   const isMainnet =
-    networkName?.toLowerCase().includes("mainnet") ||
-    networkName?.toLowerCase().includes("public");
+    networkName?.toLowerCase().includes("mainnet") || networkName?.toLowerCase().includes("public");
   return isMainnet ? "https://horizon.stellar.org" : "https://horizon-testnet.stellar.org";
 }
 
 function getExplorerBase(networkName: string | null | undefined): string {
   const isMainnet =
-    networkName?.toLowerCase().includes("mainnet") ||
-    networkName?.toLowerCase().includes("public");
+    networkName?.toLowerCase().includes("mainnet") || networkName?.toLowerCase().includes("public");
   return isMainnet
     ? "https://stellar.expert/explorer/public"
     : "https://stellar.expert/explorer/testnet";
@@ -178,10 +176,13 @@ function ConnectWalletPrompt() {
 // ─── Balances card ─────────────────────────────────────────────────────────────
 
 function BalancesCard({ address, horizonUrl }: { address: string; horizonUrl: string }) {
-  const { data: balances, isLoading, isError, refetch, isFetching } = useHorizonBalances(
-    address,
-    horizonUrl,
-  );
+  const {
+    data: balances,
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+  } = useHorizonBalances(address, horizonUrl);
 
   function assetLabel(b: HorizonBalance): string {
     return b.asset_type === "native" ? "XLM" : (b.asset_code ?? "Unknown");
@@ -212,7 +213,7 @@ function BalancesCard({ address, horizonUrl }: { address: string; horizonUrl: st
       <CardContent>
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <Spinner size="md" />
+            <Spinner type="spin" size={32} />
           </div>
         ) : isError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
@@ -311,7 +312,7 @@ function TransactionHistoryCard({
       <CardContent>
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <Spinner size="md" />
+            <Spinner type="spin" size={32} />
           </div>
         ) : isError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
@@ -330,7 +331,9 @@ function TransactionHistoryCard({
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      isInflow(p) ? "bg-green-50 dark:bg-green-500/10" : "bg-zinc-50 dark:bg-zinc-900"
+                      isInflow(p)
+                        ? "bg-green-50 dark:bg-green-500/10"
+                        : "bg-zinc-50 dark:bg-zinc-900"
                     }`}
                   >
                     {isInflow(p) ? (
@@ -398,9 +401,7 @@ export default function WalletPage() {
   return (
     <main className="space-y-8 min-h-screen p-8 lg:p-12 max-w-5xl mx-auto">
       <header>
-        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">
-          My Wallet
-        </p>
+        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">My Wallet</p>
         <h1 className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Wallet</h1>
       </header>
 
@@ -490,7 +491,9 @@ export default function WalletPage() {
                 className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 p-4 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors group"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`h-9 w-9 rounded-full ${action.bg} flex items-center justify-center`}>
+                  <div
+                    className={`h-9 w-9 rounded-full ${action.bg} flex items-center justify-center`}
+                  >
                     <action.icon className={`h-4 w-4 ${action.iconClass}`} />
                   </div>
                   <div>

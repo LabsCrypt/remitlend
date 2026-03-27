@@ -13,7 +13,11 @@ import {
   Calendar,
   DollarSign,
 } from "lucide-react";
-import { useWalletStore, selectIsWalletConnected, selectWalletAddress } from "../stores/useWalletStore";
+import {
+  useWalletStore,
+  selectIsWalletConnected,
+  selectWalletAddress,
+} from "../stores/useWalletStore";
 import { useRemittances, type Remittance } from "../hooks/useApi";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
@@ -150,16 +154,17 @@ export default function RemittancesPage() {
     const completed = remittances.filter((r) => r.status === "completed");
     const totalRemitted = completed.reduce((sum, r) => sum + r.amount, 0);
     const avgAmount = completed.length > 0 ? totalRemitted / completed.length : 0;
-    const months = completed.length > 0
-      ? Math.max(
-          1,
-          Math.ceil(
-            (new Date().getTime() -
-              new Date(completed[completed.length - 1]?.createdAt ?? Date.now()).getTime()) /
-              (1000 * 60 * 60 * 24 * 30),
-          ),
-        )
-      : 1;
+    const months =
+      completed.length > 0
+        ? Math.max(
+            1,
+            Math.ceil(
+              (new Date().getTime() -
+                new Date(completed[completed.length - 1]?.createdAt ?? Date.now()).getTime()) /
+                (1000 * 60 * 60 * 24 * 30),
+            ),
+          )
+        : 1;
     const frequency = completed.length / months;
     return { totalRemitted, avgAmount, count: completed.length, frequency };
   }, [remittances]);
@@ -352,7 +357,7 @@ export default function RemittancesPage() {
         <section aria-label="Remittance history">
           {isLoading ? (
             <div className="flex justify-center py-20">
-              <Spinner size="lg" />
+              <Spinner type="spin" size={48} />
             </div>
           ) : isError ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-900/50 dark:bg-red-950/20">
