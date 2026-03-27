@@ -17,6 +17,8 @@ import { useWalletStore } from "../../stores/useWalletStore";
 import { useUserStore } from "../../stores/useUserStore";
 import { useGamificationStore } from "../../stores/useGamificationStore";
 import { useLoans, useRemittances } from "../../hooks/useApi";
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { useTranslations, useLocale } from "next-intl";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -37,6 +39,8 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, className }: HeaderProps) {
   const router = useRouter();
+  const locale = useLocale();
+  const t = useTranslations("Navigation");
   const isConnected = useWalletStore((state) => state.status === "connected");
   const walletAddress = useWalletStore((state) => state.address);
   const setConnected = useWalletStore((state) => state.setConnected);
@@ -55,15 +59,15 @@ export function Header({ onMenuClick, className }: HeaderProps) {
 
   const pages = useMemo(
     () => [
-      { name: "Dashboard", href: "/" },
-      { name: "Loans", href: "/loans" },
-      { name: "Remittances", href: "/remittances" },
-      { name: "Lend", href: "/lend" },
-      { name: "Analytics", href: "/analytics" },
-      { name: "Wallet", href: "/wallet" },
-      { name: "Settings", href: "/settings" },
+      { name: t("dashboard"), href: `/${locale}` },
+      { name: t("loans"), href: `/${locale}/loans` },
+      { name: "Remittances", href: `/${locale}/remittances` },
+      { name: "Lend", href: `/${locale}/lend` },
+      { name: "Analytics", href: `/${locale}/analytics` },
+      { name: "Wallet", href: `/${locale}/wallet` },
+      { name: "Settings", href: `/${locale}/settings` },
     ],
-    [],
+    [locale, t],
   );
 
   const searchResults = useMemo(() => {
@@ -81,7 +85,8 @@ export function Header({ onMenuClick, className }: HeaderProps) {
     const loanResults = loans
       .filter(
         (loan) =>
-          loan.id.toLowerCase().includes(term) || loan.borrowerId.toLowerCase().includes(term),
+          loan.id.toString().toLowerCase().includes(term) ||
+          loan.borrowerId.toLowerCase().includes(term),
       )
       .slice(0, 5)
       .map((loan) => ({
@@ -89,7 +94,7 @@ export function Header({ onMenuClick, className }: HeaderProps) {
         title: `Loan #${loan.id}`,
         subtitle: loan.borrowerId,
         category: "Loans" as const,
-        href: `/loans/${loan.id}`,
+        href: `/${locale}/loans/${loan.id}`,
       }));
 
     const pageResults = pages
@@ -113,11 +118,11 @@ export function Header({ onMenuClick, className }: HeaderProps) {
         title: `Tx ${remittance.id.slice(0, 10)}...`,
         subtitle: `${remittance.amount} ${remittance.fromCurrency} to ${remittance.toCurrency}`,
         category: "Transactions" as const,
-        href: "/remittances",
+        href: `/${locale}/remittances`,
       }));
 
     return [...loanResults, ...pageResults, ...transactionResults];
-  }, [debouncedQuery, loans, pages, remittances]);
+  }, [debouncedQuery, loans, pages, remittances, locale]);
 
   const groupedResults = useMemo(() => {
     const categories: Array<"Loans" | "Pages" | "Transactions"> = [
@@ -322,8 +327,13 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
+        <div className="hidden sm:block">
+          <LanguageSwitcher />
+        </div>
+
         <button
           onClick={handleWalletToggle}
+          aria-label="Connect Wallet"
           className="hidden sm:flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-500/20"
         >
           <Wallet className="h-4 w-4" />
@@ -332,6 +342,7 @@ export function Header({ onMenuClick, className }: HeaderProps) {
 
         <button
           onClick={handleWalletToggle}
+          aria-label="Connect Wallet"
           className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
         >
           <Wallet className="h-5 w-5 text-indigo-600" />

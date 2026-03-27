@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/Input";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
 import {
   Card,
   CardHeader,
@@ -10,8 +10,8 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "../components/ui/Card";
-import { Modal } from "../components/ui/Modal";
+} from "../../components/ui/Card";
+import { Modal } from "../../components/ui/Modal";
 import { Search, Mail, Lock, User, Terminal, ChevronRight } from "lucide-react";
 
 export default function UIDemoPage() {

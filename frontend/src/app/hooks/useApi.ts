@@ -535,3 +535,232 @@ export function useMarkAllNotificationsRead() {
     },
   });
 }
+
+// ─── Optimistic mutations ─────────────────────────────────────────────────────
+
+/**
+ * Repays a loan with optimistic UI update.
+ * Instantly updates the cached loan detail and borrower loans, then rolls back
+ * on failure and refetches on settle to confirm server state.
+ */
+export function useRepayLoan() {
+  const queryClient = useQueryClient();
+
+  type RepayContext = {
+    previousLoanDetail: unknown;
+    previousBorrowerLoans: unknown;
+    previousPoolStats: unknown;
+  };
+
+  return useMutation<
+    { txHash: string },
+    Error,
+    { loanId: number; amount: number; borrowerAddress: string },
+    RepayContext
+  >({
+    mutationFn: ({ loanId, amount }) =>
+      apiFetch<{ txHash: string }>(`/loans/${loanId}/repay`, {
+        method: "POST",
+        body: JSON.stringify({ amount }),
+      }),
+
+    onMutate: async ({ loanId, amount, borrowerAddress }) => {
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.loans.detail(String(loanId)),
+      });
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress),
+      });
+      await queryClient.cancelQueries({ queryKey: queryKeys.pool.stats() });
+
+      const previousLoanDetail = queryClient.getQueryData(queryKeys.loans.detail(String(loanId)));
+      const previousBorrowerLoans = queryClient.getQueryData(
+        queryKeys.borrowerLoans.byAddress(borrowerAddress),
+      );
+      const previousPoolStats = queryClient.getQueryData(queryKeys.pool.stats());
+
+      // Optimistically update the loan detail
+      queryClient.setQueryData(
+        queryKeys.loans.detail(String(loanId)),
+        (old: LoanDetails | undefined) => {
+          if (!old) return old;
+          const newOwed = Math.max(0, old.totalOwed - amount);
+          return {
+            ...old,
+            totalOwed: newOwed,
+            totalRepaid: old.totalRepaid + amount,
+            status: newOwed <= 0 ? ("repaid" as const) : old.status,
+          };
+        },
+      );
+
+      return { previousLoanDetail, previousBorrowerLoans, previousPoolStats };
+    },
+
+    onError: (_error, { loanId, borrowerAddress }, context) => {
+      if (context?.previousLoanDetail !== undefined) {
+        queryClient.setQueryData(
+          queryKeys.loans.detail(String(loanId)),
+          context.previousLoanDetail,
+        );
+      }
+      if (context?.previousBorrowerLoans !== undefined) {
+        queryClient.setQueryData(
+          queryKeys.borrowerLoans.byAddress(borrowerAddress),
+          context.previousBorrowerLoans,
+        );
+      }
+      if (context?.previousPoolStats !== undefined) {
+        queryClient.setQueryData(queryKeys.pool.stats(), context.previousPoolStats);
+      }
+    },
+
+    onSettled: (_data, _error, { loanId, borrowerAddress }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(String(loanId)) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
+    },
+  });
+}
+
+/**
+ * Deposits to the lending pool with optimistic UI update.
+ * Instantly reflects the deposit in pool stats and depositor portfolio,
+ * then rolls back on failure.
+ */
+export function useDepositToPool() {
+  const queryClient = useQueryClient();
+
+  type DepositContext = { previousPoolStats: unknown; previousDepositor: unknown };
+
+  return useMutation<
+    { txHash: string },
+    Error,
+    { amount: number; depositorAddress: string },
+    DepositContext
+  >({
+    mutationFn: ({ amount, depositorAddress }) =>
+      apiFetch<{ txHash: string }>("/pool/deposit", {
+        method: "POST",
+        body: JSON.stringify({ amount, depositorAddress }),
+      }),
+
+    onMutate: async ({ amount, depositorAddress }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.pool.stats() });
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.pool.depositor(depositorAddress),
+      });
+
+      const previousPoolStats = queryClient.getQueryData(queryKeys.pool.stats());
+      const previousDepositor = queryClient.getQueryData(
+        queryKeys.pool.depositor(depositorAddress),
+      );
+
+      // Optimistically update pool stats
+      queryClient.setQueryData(queryKeys.pool.stats(), (old: PoolStats | undefined) => {
+        if (!old) return old;
+        return { ...old, totalDeposits: old.totalDeposits + amount };
+      });
+
+      // Optimistically update depositor portfolio
+      queryClient.setQueryData(
+        queryKeys.pool.depositor(depositorAddress),
+        (old: DepositorPortfolio | undefined) => {
+          if (!old) return old;
+          return { ...old, depositAmount: old.depositAmount + amount };
+        },
+      );
+
+      return { previousPoolStats, previousDepositor };
+    },
+
+    onError: (_error, { depositorAddress }, context) => {
+      if (context?.previousPoolStats !== undefined) {
+        queryClient.setQueryData(queryKeys.pool.stats(), context.previousPoolStats);
+      }
+      if (context?.previousDepositor !== undefined) {
+        queryClient.setQueryData(
+          queryKeys.pool.depositor(depositorAddress),
+          context.previousDepositor,
+        );
+      }
+    },
+
+    onSettled: (_data, _error, { depositorAddress }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pool.depositor(depositorAddress) });
+    },
+  });
+}
+
+/**
+ * Withdraws from the lending pool with optimistic UI update.
+ * Instantly reflects the withdrawal in pool stats and depositor portfolio,
+ * then rolls back on failure.
+ */
+export function useWithdrawFromPool() {
+  const queryClient = useQueryClient();
+
+  type WithdrawContext = { previousPoolStats: unknown; previousDepositor: unknown };
+
+  return useMutation<
+    { txHash: string },
+    Error,
+    { amount: number; depositorAddress: string },
+    WithdrawContext
+  >({
+    mutationFn: ({ amount, depositorAddress }) =>
+      apiFetch<{ txHash: string }>("/pool/withdraw", {
+        method: "POST",
+        body: JSON.stringify({ amount, depositorAddress }),
+      }),
+
+    onMutate: async ({ amount, depositorAddress }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.pool.stats() });
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.pool.depositor(depositorAddress),
+      });
+
+      const previousPoolStats = queryClient.getQueryData(queryKeys.pool.stats());
+      const previousDepositor = queryClient.getQueryData(
+        queryKeys.pool.depositor(depositorAddress),
+      );
+
+      // Optimistically update pool stats
+      queryClient.setQueryData(queryKeys.pool.stats(), (old: PoolStats | undefined) => {
+        if (!old) return old;
+        return { ...old, totalDeposits: Math.max(0, old.totalDeposits - amount) };
+      });
+
+      // Optimistically update depositor portfolio
+      queryClient.setQueryData(
+        queryKeys.pool.depositor(depositorAddress),
+        (old: DepositorPortfolio | undefined) => {
+          if (!old) return old;
+          return { ...old, depositAmount: Math.max(0, old.depositAmount - amount) };
+        },
+      );
+
+      return { previousPoolStats, previousDepositor };
+    },
+
+    onError: (_error, { depositorAddress }, context) => {
+      if (context?.previousPoolStats !== undefined) {
+        queryClient.setQueryData(queryKeys.pool.stats(), context.previousPoolStats);
+      }
+      if (context?.previousDepositor !== undefined) {
+        queryClient.setQueryData(
+          queryKeys.pool.depositor(depositorAddress),
+          context.previousDepositor,
+        );
+      }
+    },
+
+    onSettled: (_data, _error, { depositorAddress }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pool.depositor(depositorAddress) });
+    },
+  });
+}

@@ -13,6 +13,9 @@
       },
       "loan_manager": {
         "wasm": "../contracts/target/wasm32-unknown-unknown/release/loan_manager.wasm"
+      },
+      "multisig_governance": {
+        "wasm": "../contracts/target/wasm32-unknown-unknown/release/multisig_governance.wasm"
       }
     }
   }

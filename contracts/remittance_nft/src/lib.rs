@@ -264,6 +264,9 @@ impl RemittanceNFT {
         env.storage()
             .persistent()
             .remove(&DataKey::RemintApproval(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::TransferCooldown(user.clone()));
 
         let burned_key = DataKey::Burned(user.clone());
         env.storage().persistent().set(&burned_key, &true);

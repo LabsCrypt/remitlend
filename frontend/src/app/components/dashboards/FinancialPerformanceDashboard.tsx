@@ -6,6 +6,7 @@ import { YieldEarningsChart, type YieldDataPoint } from "../charts/YieldEarnings
 import { useCreditScoreHistory, useYieldHistory } from "@/app/hooks/useApi";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { AnalyticsSkeleton } from "../skeletons/AnalyticsSkeleton";
 import { RefreshCw } from "lucide-react";
 
 interface FinancialPerformanceDashboardProps {
@@ -160,11 +161,7 @@ export function FinancialPerformanceDashboard({
         {showCreditScore && (
           <div className="lg:col-span-2">
             {isLoadingScore && !useMockData ? (
-              <Card className="p-8">
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                </div>
-              </Card>
+              <AnalyticsSkeleton />
             ) : scoreError && !useMockData ? (
               <Card className="p-8">
                 <div className="text-center">
@@ -182,11 +179,7 @@ export function FinancialPerformanceDashboard({
         {showYield && (
           <div className="lg:col-span-2">
             {isLoadingYield && !useMockData ? (
-              <Card className="p-8">
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-                </div>
-              </Card>
+              <AnalyticsSkeleton />
             ) : yieldError && !useMockData ? (
               <Card className="p-8">
                 <div className="text-center">

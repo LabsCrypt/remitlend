@@ -3,11 +3,12 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarRange, CircleDollarSign, ShieldCheck } from "lucide-react";
-import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
-import { LoansListSkeleton } from "../components/skeletons/LoansListSkeleton";
-import { useBorrowerLoans } from "../hooks/useApi";
-import { LoanStatusBadge } from "../components/ui/LoanStatusBadge";
-import { useWalletStore, selectWalletAddress } from "../stores/useWalletStore";
+import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
+import { LoansListSkeleton } from "../../components/skeletons/LoansListSkeleton";
+import { useBorrowerLoans } from "../../hooks/useApi";
+import { LoanStatusBadge } from "../../components/ui/LoanStatusBadge";
+import { useWalletStore, selectWalletAddress } from "../../stores/useWalletStore";
+import { useTranslations, useLocale } from "next-intl";
 
 const PAGE_SIZE = 6;
 
@@ -23,6 +24,8 @@ function getLoanDisplayStatus(status: string, nextPaymentDeadline: string, now: 
 }
 
 export default function LoansPage() {
+  const t = useTranslations("Loans");
+  const locale = useLocale();
   const [activeTab, setActiveTab] = useState<"all" | "active" | "repaid" | "defaulted">("all");
   const [page, setPage] = useState(1);
   const [now] = useState(() => Date.now());
@@ -30,7 +33,7 @@ export default function LoansPage() {
   const { loans, stats, isLoading, isError } = useBorrowerLoans(address ?? undefined);
 
   const filteredLoans = useMemo(() => {
-    const enriched = loans.map((loan) => ({
+    const enriched = (loans || []).map((loan) => ({
       ...loan,
       displayStatus: getLoanDisplayStatus(loan.status, loan.nextPaymentDeadline, now),
     }));
@@ -48,14 +51,17 @@ export default function LoansPage() {
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  const dueThisWeek = loans.filter((loan) => {
+  const dueThisWeek = (loans || []).filter((loan) => {
     const dueAt = new Date(loan.nextPaymentDeadline).getTime();
     const sevenDays = 7 * 24 * 60 * 60 * 1000;
     return dueAt >= now && dueAt <= now + sevenDays;
   }).length;
 
-  const portfolioHealth =
-    stats.overdueCount === 0 ? "Strong" : stats.overdueCount <= 2 ? "Watch" : "At Risk";
+  const portfolioHealth = useMemo(() => {
+    if (!stats || stats.overdueCount === 0) return t("health.strong");
+    if (stats.overdueCount <= 2) return t("health.watch");
+    return t("health.atRisk");
+  }, [stats, t]);
 
   if (isLoading) {
     return <LoansListSkeleton />;
@@ -74,36 +80,29 @@ export default function LoansPage() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
-            Borrower Portal
+            {t("borrowerPortal")}
           </p>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Loans</h1>
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">{t("title")}</h1>
           <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-            Review active facilities, due dates, and repayment windows from one place.
+            {t("description")}
           </p>
         </div>
-        <Link
-          href="/request-loan"
-          className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-        >
-          Request Loan
-          <ArrowRight className="h-4 w-4" />
-        </Link>
       </header>
 
       <ErrorBoundary scope="loan summary cards" variant="section">
         <div className="grid gap-4 md:grid-cols-3">
           {[
             {
-              label: "Outstanding",
-              value: formatCurrency(stats.totalOwed),
+              label: t("outstanding"),
+              value: formatCurrency(stats?.totalOwed || 0),
               icon: CircleDollarSign,
             },
             {
-              label: "Due This Week",
+              label: t("dueThisWeek"),
               value: `${dueThisWeek} loan${dueThisWeek === 1 ? "" : "s"}`,
               icon: CalendarRange,
             },
-            { label: "Portfolio Health", value: portfolioHealth, icon: ShieldCheck },
+            { label: t("portfolioHealth"), value: portfolioHealth, icon: ShieldCheck },
           ].map((item) => (
             <article
               key={item.label}
@@ -129,10 +128,10 @@ export default function LoansPage() {
         <div className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
           <div className="flex flex-wrap gap-2">
             {[
-              { key: "all", label: "All" },
-              { key: "active", label: "Active" },
-              { key: "repaid", label: "Repaid" },
-              { key: "defaulted", label: "Defaulted" },
+              { key: "all", label: t("tabs.all") },
+              { key: "active", label: t("tabs.active") },
+              { key: "repaid", label: t("tabs.repaid") },
+              { key: "defaulted", label: t("tabs.defaulted") },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -154,16 +153,16 @@ export default function LoansPage() {
           {paginatedLoans.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-zinc-300 px-6 py-10 text-center dark:border-zinc-700">
               <p className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-                No loans found
+                {t("empty.title")}
               </p>
               <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                You do not have loans in this category yet.
+                {t("empty.description")}
               </p>
               <Link
-                href="/request-loan"
+                href={`/${locale}`}
                 className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
               >
-                Request a loan
+                {t("empty.action")}
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
@@ -176,7 +175,7 @@ export default function LoansPage() {
                 >
                   <div>
                     <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                      Loan #{loan.id}
+                      {t("loanNumber", { id: loan.id })}
                     </p>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">{loan.borrower}</p>
                   </div>
@@ -186,14 +185,14 @@ export default function LoansPage() {
                       {formatCurrency(loan.totalOwed)}
                     </span>
                     <span className="text-zinc-600 dark:text-zinc-400">
-                      Due {new Date(loan.nextPaymentDeadline).toLocaleDateString()}
+                      {t("due", { date: new Date(loan.nextPaymentDeadline).toLocaleDateString() })}
                     </span>
                   </div>
                   <Link
-                    href={`/loans/${loan.id}`}
+                    href={`/${locale}/loans/${loan.id}`}
                     className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                   >
-                    View details
+                    {t("viewDetails")}
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </article>
@@ -208,17 +207,17 @@ export default function LoansPage() {
                 disabled={currentPage === 1}
                 className="rounded-full border border-zinc-300 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
               >
-                Prev
+                {t("pagination.prev")}
               </button>
               <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                Page {currentPage} of {totalPages}
+                {t("pagination.pageOf", { current: currentPage, total: totalPages })}
               </span>
               <button
                 onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
                 className="rounded-full border border-zinc-300 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
               >
-                Next
+                {t("pagination.next")}
               </button>
             </div>
           )}

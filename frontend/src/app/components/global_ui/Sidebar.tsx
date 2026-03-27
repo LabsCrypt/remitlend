@@ -10,11 +10,10 @@ import {
   Settings,
   X,
   CreditCard,
-  BarChart3,
-  Crown,
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { useTranslations, useLocale } from "next-intl";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -25,19 +24,19 @@ interface SidebarProps {
   className?: string;
 }
 
-const navItems = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Loans", href: "/loans", icon: HandCoins },
-  { name: "Lend", href: "/lend", icon: PiggyBank },
-  { name: "Remittances", href: "/remittances", icon: SendHorizontal },
-  { name: "Analytics", href: "/analytics", icon: BarChart3 },
-  { name: "Kingdom", href: "/kingdom", icon: Crown },
-  { name: "Wallet", href: "/wallet", icon: CreditCard },
-  { name: "Settings", href: "/settings", icon: Settings },
-];
-
 export function Sidebar({ onClose, className }: SidebarProps) {
   const pathname = usePathname();
+  const t = useTranslations("Navigation");
+  const locale = useLocale();
+
+  const navItems = [
+    { name: t("dashboard"), href: `/${locale}`, icon: LayoutDashboard },
+    { name: t("loans"), href: `/${locale}/loans`, icon: HandCoins },
+    { name: "Lend", href: `/${locale}/lend`, icon: PiggyBank },
+    { name: "Remittances", href: `/${locale}/remittances`, icon: SendHorizontal },
+    { name: "Wallet", href: `/${locale}/wallet`, icon: CreditCard },
+    { name: "Settings", href: `/${locale}/settings`, icon: Settings },
+  ];
 
   return (
     <aside
@@ -47,7 +46,7 @@ export function Sidebar({ onClose, className }: SidebarProps) {
       )}
     >
       <div className="flex h-16 items-center justify-between px-6 border-b border-zinc-200 dark:border-zinc-800">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href={`/${locale}`} className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
             <SendHorizontal className="h-5 w-5 text-white" />
           </div>
