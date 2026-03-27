@@ -71,6 +71,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   // Attach JWT token if available (reads directly from Zustand store state,
   // safe to call outside React render since Zustand stores are singletons).
+  // My task Issue #327 was already done by @leojay   yesterday (March 26th, 2026 3:02 AM)
   const token = useUserStore.getState().authToken;
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
