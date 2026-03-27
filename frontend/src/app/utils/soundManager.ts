@@ -32,28 +32,28 @@ class SoundManager {
 
     const soundEffects: Record<SoundEffect, string> = {
       // Level up - triumphant sound
-      levelUp: this.generateTone([523.25, 659.25, 783.99], 0.3, "sine"),
+      levelUp: this.generateTone([523.25, 659.25, 783.99], 0.3),
 
       // Achievement unlocked - success chime
-      achievement: this.generateTone([659.25, 783.99, 987.77], 0.2, "sine"),
+      achievement: this.generateTone([659.25, 783.99, 987.77], 0.2),
 
       // Success - positive feedback
-      success: this.generateTone([523.25, 659.25], 0.15, "sine"),
+      success: this.generateTone([523.25, 659.25], 0.15),
 
       // Signature - confirmation sound
-      signature: this.generateTone([440, 554.37], 0.1, "sine"),
+      signature: this.generateTone([440, 554.37], 0.1),
 
       // Loan approved - celebration
-      loanApproved: this.generateTone([523.25, 659.25, 783.99, 1046.5], 0.25, "sine"),
+      loanApproved: this.generateTone([523.25, 659.25, 783.99, 1046.5], 0.25),
 
       // XP gain - quick positive feedback
-      xpGain: this.generateTone([659.25, 783.99], 0.08, "sine"),
+      xpGain: this.generateTone([659.25, 783.99], 0.08),
 
       // Click - subtle interaction
-      click: this.generateTone([440], 0.05, "sine"),
+      click: this.generateTone([440], 0.05),
 
       // Error - negative feedback
-      error: this.generateTone([329.63, 293.66], 0.15, "sawtooth"),
+      error: this.generateTone([329.63, 293.66], 0.15),
     };
 
     // Create audio elements
@@ -68,11 +68,7 @@ class SoundManager {
    * Generate a simple tone using Web Audio API
    * This creates a data URI that can be used as an audio source
    */
-  private generateTone(
-    frequencies: number[],
-    duration: number,
-    waveType: OscillatorType = "sine",
-  ): string {
+  private generateTone(_frequencies: number[], _duration: number): string {
     // For now, return empty data URI
     // In a real implementation, you would generate actual audio data
     // or use external audio files

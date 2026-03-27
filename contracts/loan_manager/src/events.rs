@@ -75,3 +75,8 @@ pub fn term_limits_updated(env: &Env, min_term: u32, max_term: u32) {
     let topics = (Symbol::new(env, "TermLimitsUpdated"),);
     env.events().publish(topics, (min_term, max_term));
 }
+
+pub fn rate_oracle_updated(env: &Env, old_oracle: Option<Address>, new_oracle: Address) {
+    let topics = (Symbol::new(env, "RateOracleUpdated"),);
+    env.events().publish(topics, (old_oracle, new_oracle));
+}
