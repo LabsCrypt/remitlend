@@ -21,9 +21,8 @@ jest.unstable_mockModule("../db/connection.js", () => ({
 
 await import("../db/connection.js");
 const { default: app } = await import("../app.js");
-const { eventStreamService } = await import(
-  "../services/eventStreamService.js"
-);
+const { eventStreamService } =
+  await import("../services/eventStreamService.js");
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,
@@ -87,7 +86,10 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeBorrower("testUser", mockRes);
+    const unsubscribe = eventStreamService.subscribeBorrower(
+      "testUser",
+      mockRes,
+    );
     const counts = eventStreamService.getConnectionCount();
     expect(counts.borrower).toBeGreaterThanOrEqual(1);
 
@@ -113,7 +115,10 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeBorrower("BORROWER1", mockRes);
+    const unsubscribe = eventStreamService.subscribeBorrower(
+      "BORROWER1",
+      mockRes,
+    );
 
     eventStreamService.broadcast({
       eventId: "evt-1",
@@ -125,7 +130,8 @@ describe("EventStreamService", () => {
     });
 
     expect(mockRes.write).toHaveBeenCalledTimes(1);
-    const writtenData = (mockRes.write as jest.Mock).mock.calls[0][0] as string;
+    const writtenData = (mockRes.write as jest.Mock).mock
+      .calls[0]?.[0] as string;
     expect(writtenData).toContain("LoanRepaid");
 
     unsubscribe();
@@ -157,7 +163,10 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeBorrower("BORROWER_A", mockRes);
+    const unsubscribe = eventStreamService.subscribeBorrower(
+      "BORROWER_A",
+      mockRes,
+    );
 
     eventStreamService.broadcast({
       eventId: "evt-3",

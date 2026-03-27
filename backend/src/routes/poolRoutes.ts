@@ -51,7 +51,13 @@ const router = Router();
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.get("/stats", requireJwtAuth, requireLender, requireScopes("read:pool"), getPoolStats);
+router.get(
+  "/stats",
+  requireJwtAuth,
+  requireLender,
+  requireScopes("read:pool"),
+  getPoolStats,
+);
 
 /**
  * @swagger

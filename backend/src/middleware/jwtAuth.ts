@@ -117,7 +117,8 @@ export const requireBorrower = (
   _res: Response,
   next: NextFunction,
 ): void => {
-  if (!req.user?.publicKey) throw AppError.unauthorized("Authentication required");
+  if (!req.user?.publicKey)
+    throw AppError.unauthorized("Authentication required");
   if (req.user.role !== "borrower" && req.user.role !== "admin") {
     throw AppError.forbidden("Borrower role required");
   }
@@ -130,7 +131,8 @@ export const requireLender = (
   _res: Response,
   next: NextFunction,
 ): void => {
-  if (!req.user?.publicKey) throw AppError.unauthorized("Authentication required");
+  if (!req.user?.publicKey)
+    throw AppError.unauthorized("Authentication required");
   if (req.user.role !== "lender" && req.user.role !== "admin") {
     throw AppError.forbidden("Lender role required");
   }

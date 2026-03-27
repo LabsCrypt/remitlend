@@ -123,7 +123,12 @@ router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
  *       200:
  *         description: List of subscriptions
  */
-router.post("/webhooks", requireApiKey, strictRateLimiter, createWebhookSubscription);
+router.post(
+  "/webhooks",
+  requireApiKey,
+  strictRateLimiter,
+  createWebhookSubscription,
+);
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
 
 /**
@@ -144,7 +149,12 @@ router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
  *       200:
  *         description: Subscription deleted
  */
-router.delete("/webhooks/:id", requireApiKey, strictRateLimiter, deleteWebhookSubscription);
+router.delete(
+  "/webhooks/:id",
+  requireApiKey,
+  strictRateLimiter,
+  deleteWebhookSubscription,
+);
 
 /**
  * @swagger

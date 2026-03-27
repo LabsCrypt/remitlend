@@ -42,7 +42,12 @@ const router = Router();
  *                     unreadCount:
  *                       type: integer
  */
-router.get("/", requireJwtAuth, requireScopes("read:notifications"), getNotifications);
+router.get(
+  "/",
+  requireJwtAuth,
+  requireScopes("read:notifications"),
+  getNotifications,
+);
 
 /**
  * @swagger

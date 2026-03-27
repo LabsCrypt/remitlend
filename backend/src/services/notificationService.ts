@@ -44,7 +44,9 @@ class NotificationService {
    * Persists a new notification and pushes it to any active SSE subscribers
    * for that user.
    */
-  async createNotification(params: CreateNotificationParams): Promise<Notification> {
+  async createNotification(
+    params: CreateNotificationParams,
+  ): Promise<Notification> {
     const { userId, type, title, message, loanId } = params;
 
     const result = await query(

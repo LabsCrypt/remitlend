@@ -30,9 +30,7 @@ class SorobanService {
   private getLoanManagerContractId(): string {
     const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
     if (!contractId) {
-      throw AppError.internal(
-        "LOAN_MANAGER_CONTRACT_ID is not configured",
-      );
+      throw AppError.internal("LOAN_MANAGER_CONTRACT_ID is not configured");
     }
     return contractId;
   }
@@ -51,10 +49,9 @@ class SorobanService {
 
     const account = await server.getAccount(borrowerPublicKey);
 
-    const borrowerScVal = nativeToScVal(
-      Address.fromString(borrowerPublicKey),
-      { type: "address" },
-    );
+    const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
+      type: "address",
+    });
     const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
 
     const tx = new TransactionBuilder(account, {
@@ -97,10 +94,9 @@ class SorobanService {
 
     const account = await server.getAccount(borrowerPublicKey);
 
-    const borrowerScVal = nativeToScVal(
-      Address.fromString(borrowerPublicKey),
-      { type: "address" },
-    );
+    const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
+      type: "address",
+    });
     const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
     const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
 
