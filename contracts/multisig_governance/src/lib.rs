@@ -323,6 +323,19 @@ impl GovernanceContract {
             .expect("no pending transfer (4004)")
     }
 
+    /// Alias returning the pending transfer as an Option instead of panicking
+    pub fn get_pending(env: Env) -> Option<PendingTransfer> {
+        env.storage().instance().get(&KEY_PENDING)
+    }
+
+    /// Return the configured target contract address
+    pub fn get_target(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&KEY_TARGET)
+            .expect("target contract not set")
+    }
+
     pub fn has_pending_transfer(env: Env) -> bool {
         env.storage().instance().has(&KEY_PENDING)
     }

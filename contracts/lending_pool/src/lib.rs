@@ -44,6 +44,7 @@ pub enum DataKey {
     /// token → number of active depositors
     DepositorCount(Address),
     ProposedAdmin,
+    GovernanceContract,
     Version,
 }
 
@@ -95,6 +96,14 @@ impl LendingPool {
             .instance()
             .get(&DataKey::Admin)
             .expect("not initialized")
+    }
+
+    fn governance_contract(env: &Env) -> Address {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::GovernanceContract)
+            .expect("governance contract not set")
     }
 
     fn pool_balance(env: &Env, token: &Address) -> i128 {
@@ -474,6 +483,27 @@ impl LendingPool {
         env.events()
             .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
         Ok(())
+    }
+
+    /// Set admin directly - callable only by current admin or governance contract
+    /// This enables single-step admin transfer for governance integration
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        let caller = env.current_contract_address();
+
+        // Allow either current admin or governance contract to call this
+        if caller != current_admin {
+            // Check if caller is governance contract
+            let governance_addr = Self::governance_contract(&env);
+            if caller != governance_addr {
+                panic!("unauthorized: only admin or governance contract can call set_admin");
+            }
+        }
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        Self::bump_instance_ttl(&env);
+        env.events()
+            .publish((Symbol::new(&env, "AdminSet"), current_admin), new_admin);
     }
 
     pub fn pause(env: Env) {
