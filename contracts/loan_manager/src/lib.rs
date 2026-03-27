@@ -16,6 +16,11 @@ pub trait RemittanceNftInterface {
     fn is_authorized_minter(env: Env, minter: Address) -> bool;
 }
 
+#[contractclient(name = "RateOracleClient")]
+pub trait RateOracleInterface {
+    fn get_rate(env: Env, borrower: Address, amount: i128, score: u32) -> u32;
+}
+
 mod events;
 
 #[contracterror]
@@ -92,6 +97,7 @@ pub enum DataKey {
     Collateral(u32),
     GracePeriodLedgers,
     DefaultWindowLedgers,
+    RateOracle,
 }
 
 #[contract]
@@ -158,6 +164,19 @@ impl LoanManager {
             Self::DEFAULT_INTEREST_RATE_BPS
         } else {
             configured_rate
+        }
+    }
+
+    fn compute_interest_rate(env: &Env, borrower: &Address, amount: i128, score: u32) -> u32 {
+        if let Some(oracle_addr) = env
+            .storage()
+            .instance()
+            .get::<_, Address>(&DataKey::RateOracle)
+        {
+            let client = RateOracleClient::new(env, &oracle_addr);
+            client.get_rate(borrower, &amount, &score)
+        } else {
+            Self::read_interest_rate(env)
         }
     }
 
@@ -563,7 +582,7 @@ impl LoanManager {
             accrued_interest: 0,
             late_fee_paid: 0,
             accrued_late_fee: 0,
-            interest_rate_bps: Self::read_interest_rate(&env),
+            interest_rate_bps: Self::compute_interest_rate(&env, &borrower, amount, score),
             due_date: 0,
             last_interest_ledger: 0,
             last_late_fee_ledger: 0,
@@ -1202,6 +1221,22 @@ impl LoanManager {
 
     pub fn get_interest_rate(env: Env) -> u32 {
         Self::read_interest_rate(&env)
+    }
+
+    pub fn set_rate_oracle(env: Env, rate_oracle: Address) {
+        Self::admin(&env).require_auth();
+
+        let old_oracle = env.storage().instance().get(&DataKey::RateOracle);
+        env.storage()
+            .instance()
+            .set(&DataKey::RateOracle, &rate_oracle);
+        Self::bump_instance_ttl(&env);
+        events::rate_oracle_updated(&env, old_oracle, rate_oracle);
+    }
+
+    pub fn get_rate_oracle(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::RateOracle)
     }
 
     pub fn set_default_term(env: Env, ledgers: u32) -> Result<(), LoanError> {
