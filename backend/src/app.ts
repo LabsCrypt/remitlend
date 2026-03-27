@@ -119,6 +119,18 @@ app.get(
   }),
 );
 
+// Versioned API routes (v1)
+app.use("/api/v1", simulationRoutes);
+app.use("/api/v1/score", scoreRoutes);
+app.use("/api/v1/loans", loanRoutes);
+app.use("/api/v1/pool", poolRoutes);
+app.use("/api/v1/indexer", indexerRoutes);
+app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/notifications", notificationsRoutes);
+app.use("/api/v1/events", eventRoutes);
+
+// Legacy API routes (aliases for backward compatibility)
 app.use("/api", simulationRoutes);
 app.use("/api/score", scoreRoutes);
 app.use("/api/loans", loanRoutes);
@@ -154,6 +166,7 @@ if (process.env.NODE_ENV === "test") {
 }
 
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use("/api/v1/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ── 404 Catch-All ────────────────────────────────────────────────
 // Must be placed after all route definitions so that only truly
