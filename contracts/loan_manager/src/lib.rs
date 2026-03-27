@@ -395,6 +395,85 @@ impl LoanManager {
         (total_debt, late_fee_delta)
     }
 
+    /// Split a repayment across principal, interest, and late fees based on
+    /// each component's share of the current total debt. This avoids a strict
+    /// waterfall where a borrower can repeatedly clear one bucket first while
+    /// delaying principal reduction.
+    fn proportional_repayment_split(loan: &Loan, amount: i128) -> (i128, i128, i128) {
+        let principal_due = Self::remaining_principal(loan);
+        let total_debt = principal_due
+            .checked_add(loan.accrued_interest)
+            .and_then(|value| value.checked_add(loan.accrued_late_fee))
+            .expect("debt overflow");
+
+        if total_debt == 0 {
+            return (0, 0, 0);
+        }
+
+        let dues = [principal_due, loan.accrued_interest, loan.accrued_late_fee];
+        let mut payments = [0i128; 3];
+        let mut remainders = [-1i128; 3];
+        let mut allocated = 0i128;
+
+        for idx in 0..3 {
+            let due = dues[idx];
+            if due <= 0 {
+                continue;
+            }
+
+            let scaled = amount
+                .checked_mul(due)
+                .expect("repayment allocation overflow");
+            let payment = scaled
+                .checked_div(total_debt)
+                .expect("repayment allocation underflow");
+
+            payments[idx] = payment;
+            remainders[idx] = scaled
+                .checked_rem(total_debt)
+                .expect("repayment allocation underflow");
+            allocated = allocated
+                .checked_add(payment)
+                .expect("repayment allocation overflow");
+        }
+
+        let mut unallocated = amount
+            .checked_sub(allocated)
+            .expect("repayment allocation underflow");
+
+        while unallocated > 0 {
+            let mut selected: Option<usize> = None;
+
+            for idx in 0..3 {
+                if dues[idx] <= payments[idx] || remainders[idx] < 0 {
+                    continue;
+                }
+
+                match selected {
+                    None => selected = Some(idx),
+                    Some(current) => {
+                        if remainders[idx] > remainders[current] {
+                            selected = Some(idx);
+                        }
+                    }
+                }
+            }
+
+            let idx = selected.expect("repayment allocation exhausted");
+            payments[idx] = payments[idx]
+                .checked_add(1)
+                .expect("repayment allocation overflow");
+            remainders[idx] = -1;
+            unallocated -= 1;
+        }
+
+        let principal_payment = payments[0];
+        let interest_payment = payments[1];
+        let late_fee_payment = payments[2];
+
+        (interest_payment, late_fee_payment, principal_payment)
+    }
+
     fn collateral_amount(env: &Env, loan_id: u32) -> i128 {
         let key = DataKey::Collateral(loan_id);
         let amount = env.storage().persistent().get(&key).unwrap_or(0i128);
@@ -720,14 +799,8 @@ impl LoanManager {
         let token_client = TokenClient::new(&env, &token);
         token_client.transfer(&borrower, &lending_pool, &amount);
 
-        let interest_payment = amount.min(loan.accrued_interest);
-        let after_interest_payment = amount
-            .checked_sub(interest_payment)
-            .expect("repayment underflow");
-        let late_fee_payment = after_interest_payment.min(loan.accrued_late_fee);
-        let principal_payment = after_interest_payment
-            .checked_sub(late_fee_payment)
-            .expect("repayment underflow");
+        let (interest_payment, late_fee_payment, principal_payment) =
+            Self::proportional_repayment_split(&loan, amount);
 
         loan.interest_paid = loan
             .interest_paid
