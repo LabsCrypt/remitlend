@@ -8,6 +8,7 @@ import { LevelUpModal } from "./components/gamification/LevelUpModal";
 import { GlobalXPGain } from "./components/global_ui/GlobalXPGain";
 import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";
 import { NextIntlClientProvider } from "next-intl";
+import { THEME_STORAGE_KEY } from "./lib/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,7 +38,7 @@ export default async function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("remitlend-theme");var d=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches);if(d)document.documentElement.classList.add("dark")}catch(e){}})()`,
+            __html: `(function(){try{var root=document.documentElement;var stored=localStorage.getItem("${THEME_STORAGE_KEY}");var theme=stored==="dark"||stored==="light"?stored:(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");root.dataset.theme=theme;root.classList.toggle("dark",theme==="dark")}catch(e){}})()`,
           }}
         />
       </head>

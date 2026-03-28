@@ -8,6 +8,8 @@
 import { useUserStore } from "./useUserStore";
 import { useWalletStore } from "./useWalletStore";
 import { useUIStore } from "./useUIStore";
+import { THEME_STORAGE_KEY } from "../lib/theme";
+import { useThemeStore } from "./useThemeStore";
 import type { ModalId } from "./useUIStore";
 
 // Reset store state between tests
@@ -27,6 +29,13 @@ beforeEach(() => {
     isGlobalLoading: false,
     globalLoadingMessage: null,
   }));
+  useThemeStore.setState({
+    theme: "light",
+    hydrated: false,
+  });
+  window.localStorage.clear();
+  document.documentElement.classList.remove("dark");
+  delete document.documentElement.dataset.theme;
 });
 
 // ─── useUserStore ────────────────────────────────────────────────────────────
@@ -199,5 +208,56 @@ describe("useUIStore", () => {
     useUIStore.getState().hideGlobalLoading();
     expect(useUIStore.getState().isGlobalLoading).toBe(false);
     expect(useUIStore.getState().globalLoadingMessage).toBeNull();
+  });
+});
+
+// ─── useThemeStore ───────────────────────────────────────────────────────────
+
+describe("useThemeStore", () => {
+  it("uses the system preference on first visit when nothing is stored", () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: jest.fn().mockImplementation(() => ({
+        matches: true,
+        media: "(prefers-color-scheme: dark)",
+        onchange: null,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      })),
+    });
+
+    useThemeStore.getState().initializeTheme();
+
+    const { theme, hydrated } = useThemeStore.getState();
+    expect(theme).toBe("dark");
+    expect(hydrated).toBe(true);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
+  it("persists an explicit theme selection and applies it to the document", () => {
+    useThemeStore.getState().setTheme("dark");
+
+    const { theme, hydrated } = useThemeStore.getState();
+    expect(theme).toBe("dark");
+    expect(hydrated).toBe(true);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
+  it("toggles between light and dark themes", () => {
+    useThemeStore.setState({ theme: "dark", hydrated: true });
+    document.documentElement.classList.add("dark");
+
+    useThemeStore.getState().toggleTheme();
+
+    const { theme } = useThemeStore.getState();
+    expect(theme).toBe("light");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 });
