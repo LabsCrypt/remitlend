@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { PenLine, CircleAlert, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
+import {
+  TransactionConfirmModal,
+  type TransactionConfirmData,
+} from "../ui/TransactionConfirmModal";
 import { TransactionPreviewModal } from "../transaction/TransactionPreviewModal";
 import { useTransactionPreview } from "../../hooks/useTransactionPreview";
 import { useCreateLoan } from "../../hooks/useApi";
@@ -43,6 +47,8 @@ export function StepFinalSignature({
   const [unsignedXdr, setUnsignedXdr] = useState<string>("");
   const [xdrError, setXdrError] = useState<string | null>(null);
   const [isBuildingXdr, setIsBuildingXdr] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [confirmData, setConfirmData] = useState<TransactionConfirmData | null>(null);
   const txPreview = useTransactionPreview();
   const createLoan = useCreateLoan();
 
@@ -90,12 +96,36 @@ export function StepFinalSignature({
     };
   }, [borrowerAddress, principal]);
 
-  const handleSignAndSubmit = () => {
+  const openConfirmModal = () => {
     const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
     if (!managerContractId) {
       setXdrError("Missing NEXT_PUBLIC_MANAGER_CONTRACT_ID configuration.");
       return;
     }
+
+    const network =
+      process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE?.includes("Test") ||
+      !process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE
+        ? "Testnet"
+        : "Mainnet";
+
+    setConfirmData({
+      type: "Loan Request",
+      amount: `${formatMoney(principal)} ${data.asset}`,
+      feeEstimate: "0.00001 XLM",
+      gasEstimate: "~0.00001 XLM",
+      network,
+      details: [
+        { label: "Term", value: `${data.termDays} days` },
+        { label: "APR", value: `${ANNUAL_RATE_PERCENT}%` },
+        { label: "Credit Score", value: data.creditScore.toString() },
+      ],
+    });
+    setIsConfirmOpen(true);
+  };
+
+  const handleSignAndSubmit = () => {
+    setIsConfirmOpen(false);
 
     txPreview.show(
       {
@@ -224,7 +254,7 @@ export function StepFinalSignature({
               Back
             </Button>
             <Button
-              onClick={handleSignAndSubmit}
+              onClick={openConfirmModal}
               isLoading={createLoan.isPending}
               disabled={isBuildingXdr}
               className="w-full"
@@ -235,6 +265,16 @@ export function StepFinalSignature({
           </div>
         </CardContent>
       </Card>
+
+      {confirmData && (
+        <TransactionConfirmModal
+          isOpen={isConfirmOpen}
+          data={confirmData}
+          onCancel={() => setIsConfirmOpen(false)}
+          onConfirm={handleSignAndSubmit}
+          isLoading={createLoan.isPending || txPreview.isLoading}
+        />
+      )}
 
       {txPreview.data && (
         <TransactionPreviewModal
