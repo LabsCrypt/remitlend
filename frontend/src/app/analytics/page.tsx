@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { SkeletonChart } from "../components/ui/Skeleton";
 
-const FinancialPerformanceDashboard = dynamic(
+const LazyFinancialPerformanceDashboard = dynamic(
   () =>
     import("../components/dashboards/FinancialPerformanceDashboard").then(
       (module) => module.FinancialPerformanceDashboard,
@@ -34,7 +34,7 @@ export default function AnalyticsPage() {
       </header>
 
       <ErrorBoundary scope="analytics dashboard" variant="section">
-        <FinancialPerformanceDashboard userId={userId} userType="both" />
+        <LazyFinancialPerformanceDashboard userId={userId} userType="both" />
       </ErrorBoundary>
     </main>
   );

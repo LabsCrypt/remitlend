@@ -10,7 +10,7 @@ import { Button } from "../ui/Button";
 import { SkeletonChart } from "../ui/Skeleton";
 import { RefreshCw } from "lucide-react";
 
-const CreditScoreTrendChart = dynamic(
+const LazyCreditScoreTrendChart = dynamic(
   () => import("../charts/CreditScoreTrendChart").then((module) => module.CreditScoreTrendChart),
   {
     loading: () => <SkeletonChart className="h-full" />,
@@ -18,7 +18,7 @@ const CreditScoreTrendChart = dynamic(
   },
 );
 
-const YieldEarningsChart = dynamic(
+const LazyYieldEarningsChart = dynamic(
   () => import("../charts/YieldEarningsChart").then((module) => module.YieldEarningsChart),
   {
     loading: () => <SkeletonChart className="h-full" />,
@@ -187,7 +187,7 @@ export function FinancialPerformanceDashboard({
                 </div>
               </Card>
             ) : (
-              <CreditScoreTrendChart data={displayCreditScoreData} />
+              <LazyCreditScoreTrendChart data={displayCreditScoreData} />
             )}
           </div>
         )}
@@ -205,7 +205,7 @@ export function FinancialPerformanceDashboard({
                 </div>
               </Card>
             ) : (
-              <YieldEarningsChart data={displayYieldData} />
+              <LazyYieldEarningsChart data={displayYieldData} />
             )}
           </div>
         )}

@@ -1,12 +1,11 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
-import { useCreditScoreHistory } from "../hooks/useApi";
-import { LoanApplicationWizard } from "../components/loan-wizard/LoanApplicationWizard";
 import { useCreditScore, useMinimumScore } from "../hooks/useApi";
 import { useToastStore } from "../stores/useToastStore";
 import {
@@ -15,7 +14,7 @@ import {
   selectIsWalletConnected,
 } from "../stores/useWalletStore";
 
-const LoanApplicationWizard = dynamic(
+const LazyLoanApplicationWizard = dynamic(
   () =>
     import("../components/loan-wizard/LoanApplicationWizard").then(
       (module) => module.LoanApplicationWizard,
@@ -217,7 +216,7 @@ export default function RequestLoanPage() {
             </p>
           </div>
 
-          <LoanApplicationWizard
+          <LazyLoanApplicationWizard
             borrowerAddress={borrowerAddress!}
             creditScore={resolvedCreditScore}
             maxAmount={maxAmount}

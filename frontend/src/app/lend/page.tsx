@@ -16,8 +16,6 @@ import {
 } from "lucide-react";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { Skeleton } from "../components/ui/Skeleton";
-import { useDepositorPortfolio, useLoans, usePoolStats, useYieldHistory } from "../hooks/useApi";
-import { YieldEarningsChart } from "../components/charts/YieldEarningsChart";
 import {
   useDepositorPortfolio,
   useInvalidatePoolStats,
@@ -34,7 +32,7 @@ import { useSSE } from "../hooks/useSSE";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-const YieldEarningsChart = dynamic(
+const LazyYieldEarningsChart = dynamic(
   () =>
     import("../components/charts/YieldEarningsChart").then((module) => module.YieldEarningsChart),
   {
@@ -414,7 +412,7 @@ export default function LendPage() {
               <Skeleton className="h-[300px] w-full rounded-xl" />
             </div>
           ) : (
-            <YieldEarningsChart data={chartData} />
+            <LazyYieldEarningsChart data={chartData} />
           )}
         </section>
       </ErrorBoundary>
