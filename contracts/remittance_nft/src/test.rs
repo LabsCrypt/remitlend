@@ -1,7 +1,5 @@
 use super::*;
-use soroban_sdk::{
-    testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env,
-};
+use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env};
 
 fn create_test_hash(env: &Env, value: u8) -> BytesN<32> {
     let mut hash_bytes = [0u8; 32];
