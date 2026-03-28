@@ -63,6 +63,8 @@ export function StepFinalSignature({
   const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
   const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
   const [lastErrorDetails, setLastErrorDetails] = useState<TransactionErrorDetails | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [confirmData, setConfirmData] = useState<TransactionConfirmData | null>(null);
 
   const pollingAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -138,7 +140,25 @@ export function StepFinalSignature({
     setTrackerGuidance("If needed, you can retry submission.");
   };
 
+  const openConfirmModal = () => {
+    setConfirmData({
+      type: "Loan Request",
+      amount: `${formatMoney(principal)} ${data.asset}`,
+      feeEstimate: "0.00001 XLM",
+      gasEstimate: "0.00001 XLM",
+      network: "Stellar Testnet",
+      details: [
+        { label: "Term", value: `${data.termDays} days` },
+        { label: "APR", value: `${ANNUAL_RATE_PERCENT}%` },
+        { label: "Due Date", value: dueDate.toLocaleDateString() },
+      ],
+    });
+    setIsConfirmOpen(true);
+  };
+
   const handleSignAndSubmit = () => {
+    setIsConfirmOpen(false);
+
     const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
     if (!managerContractId) {
       setXdrError("Missing NEXT_PUBLIC_MANAGER_CONTRACT_ID configuration.");
