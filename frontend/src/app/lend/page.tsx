@@ -11,15 +11,28 @@ import {
   HandCoins,
   Percent,
   PiggyBank,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useDepositorPortfolio, useLoans, usePoolStats, useYieldHistory } from "../hooks/useApi";
+import { YieldEarningsChart } from "../components/charts/YieldEarningsChart";
+import {
+  useDepositorPortfolio,
+  useInvalidatePoolStats,
+  useLoans,
+  usePoolStats,
+  useYieldHistory,
+} from "../hooks/useApi";
 import { LoanStatusBadge } from "../components/ui/LoanStatusBadge";
 import { DepositWithdrawSkeleton } from "../components/skeletons/DepositWithdrawSkeleton";
 import { OperationProgress } from "../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../stores/useWalletStore";
+import { useSSE } from "../hooks/useSSE";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 const YieldEarningsChart = dynamic(
   () =>
@@ -45,6 +58,17 @@ export default function LendPage() {
 
   const depositOp = useDepositOperation();
   const withdrawalOp = useWithdrawalOperation();
+
+  const invalidatePoolStats = useInvalidatePoolStats();
+  const sseUrl = address ? `${API_URL}/pool/events` : null;
+  const sseStatus = useSSE<{ type: string }>({
+    url: sseUrl,
+    onMessage: (data) => {
+      if (data?.type === "pool_updated") {
+        invalidatePoolStats();
+      }
+    },
+  });
 
   const handleDeposit = async () => {
     const amount = parseFloat(depositAmount);
@@ -116,14 +140,45 @@ export default function LendPage() {
 
   return (
     <main className="space-y-6">
-      <header>
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
-          Lender Portal
-        </p>
-        <h1 className="mt-2 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Lend</h1>
-        <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-          Track pool performance, manage deposits, and monitor yield growth.
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
+            Lender Portal
+          </p>
+          <h1 className="mt-2 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Lend</h1>
+          <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
+            Track pool performance, manage deposits, and monitor yield growth.
+          </p>
+        </div>
+        {address && (
+          <div
+            className={`mt-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${
+              sseStatus === "connected"
+                ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
+                : sseStatus === "connecting"
+                  ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                  : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
+            }`}
+            title={
+              sseStatus === "connected"
+                ? "Live pool updates connected"
+                : sseStatus === "connecting"
+                  ? "Connecting to live updates…"
+                  : "Live updates disconnected — retrying"
+            }
+          >
+            {sseStatus === "connected" ? (
+              <Wifi className="h-3.5 w-3.5" />
+            ) : (
+              <WifiOff className="h-3.5 w-3.5" />
+            )}
+            {sseStatus === "connected"
+              ? "Live"
+              : sseStatus === "connecting"
+                ? "Connecting…"
+                : "Offline"}
+          </div>
+        )}
       </header>
 
       <ErrorBoundary scope="lender overview" variant="section">

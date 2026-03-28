@@ -15,6 +15,9 @@ const MIN_TIMELOCK_SECONDS: u64 = 86_400;
 /// Maximum signers in a quorum — keeps storage and iteration bounded.
 const MAX_SIGNERS: u32 = 20;
 
+/// Time-to-live for proposals before they expire (7 days in seconds).
+const PROPOSAL_TTL_SECONDS: u64 = 604_800;
+
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
@@ -42,6 +45,8 @@ pub struct PendingTransfer {
     pub executable_after: u64,
     /// Map signer -> true for each signer that has approved.
     pub approvals: Map<Address, bool>,
+    /// Timestamp when the proposal was created.
+    pub proposed_at: u64,
 }
 
 /// Emitted when a transfer is proposed.
@@ -82,6 +87,15 @@ pub struct TransferApprovedEvent {
     pub approvals_so_far: u32,
     pub threshold: u32,
     pub timestamp: u64,
+}
+
+/// Emitted when a proposal expires due to TTL.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ProposalExpiredEvent {
+    pub expired_by: Address,
+    pub proposal_timestamp: u64,
+    pub expiry_timestamp: u64,
 }
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
@@ -186,6 +200,7 @@ impl GovernanceContract {
             threshold,
             executable_after,
             approvals: Map::new(&env),
+            proposed_at: now,
         };
 
         env.storage().instance().set(&KEY_PENDING, &pending);
@@ -277,6 +292,12 @@ impl GovernanceContract {
             panic!("timelock not elapsed — wait until executable_after (4010)");
         }
 
+        // INV-3: proposal must not have expired
+        let expiry_time = pending.proposed_at.saturating_add(PROPOSAL_TTL_SECONDS);
+        if now >= expiry_time {
+            panic!("proposal has expired (4016)");
+        }
+
         // INV-2: threshold must be met
         let approval_count = pending.approvals.len();
         if approval_count < pending.threshold {
@@ -331,6 +352,40 @@ impl GovernanceContract {
             AdminTransferCancelledEvent {
                 cancelled_by: admin,
                 timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    // ── Expire ─────────────────────────────────────────────────────────────────
+
+    /// Expire a pending transfer proposal that has exceeded its TTL.
+    ///
+    /// Anyone can call this function once the proposal has passed its TTL.
+    /// This cleans up stale proposals and allows new ones to be created.
+    pub fn expire_proposal(env: Env, caller: Address) {
+        caller.require_auth();
+
+        let pending: PendingTransfer = env
+            .storage()
+            .instance()
+            .get(&KEY_PENDING)
+            .expect("no pending transfer to expire (4004)");
+
+        let now = env.ledger().timestamp();
+        let expiry_time = pending.proposed_at.saturating_add(PROPOSAL_TTL_SECONDS);
+
+        if now < expiry_time {
+            panic!("proposal has not yet expired (4017)");
+        }
+
+        env.storage().instance().remove(&KEY_PENDING);
+
+        env.events().publish(
+            (symbol_short!("GovExp"), caller.clone()),
+            ProposalExpiredEvent {
+                expired_by: caller,
+                proposal_timestamp: pending.proposed_at,
+                expiry_timestamp: now,
             },
         );
     }

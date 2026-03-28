@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { PenLine, CircleAlert, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
+import {
+  TransactionConfirmModal,
+  type TransactionConfirmData,
+} from "../ui/TransactionConfirmModal";
 import { TransactionPreviewModal } from "../transaction/TransactionPreviewModal";
 import {
   TransactionStatusTracker,
@@ -11,6 +15,7 @@ import {
 } from "../ui/TransactionStatusTracker";
 import { useTransactionPreview } from "../../hooks/useTransactionPreview";
 import { useCreateLoan } from "../../hooks/useApi";
+import { useContractToast } from "../../hooks/useContractToast";
 import { buildUnsignedLoanRequestXdr } from "../../utils/soroban";
 import {
   mapTransactionError,
@@ -49,6 +54,7 @@ export function StepFinalSignature({
   onBack,
   onSuccess,
 }: StepFinalSignatureProps) {
+  const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
   const [unsignedXdr, setUnsignedXdr] = useState<string>("");
   const [xdrError, setXdrError] = useState<string | null>(null);
   const [isBuildingXdr, setIsBuildingXdr] = useState(false);
@@ -58,11 +64,14 @@ export function StepFinalSignature({
   const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
   const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
   const [lastErrorDetails, setLastErrorDetails] = useState<TransactionErrorDetails | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [confirmData, setConfirmData] = useState<TransactionConfirmData | null>(null);
 
   const pollingAbortControllerRef = useRef<AbortController | null>(null);
 
   const txPreview = useTransactionPreview();
   const createLoan = useCreateLoan();
+  const toast = useContractToast();
 
   const principal = Number(data.amount || "0");
   const estimatedInterest = (principal * ANNUAL_RATE_PERCENT * data.termDays) / (365 * 100);
@@ -133,7 +142,25 @@ export function StepFinalSignature({
     setTrackerGuidance("If needed, you can retry submission.");
   };
 
+  const openConfirmModal = () => {
+    setConfirmData({
+      type: "Loan Request",
+      amount: `${formatMoney(principal)} ${data.asset}`,
+      feeEstimate: "0.00001 XLM",
+      gasEstimate: "0.00001 XLM",
+      network: "Stellar Testnet",
+      details: [
+        { label: "Term", value: `${data.termDays} days` },
+        { label: "APR", value: `${ANNUAL_RATE_PERCENT}%` },
+        { label: "Due Date", value: dueDate.toLocaleDateString() },
+      ],
+    });
+    setIsConfirmOpen(true);
+  };
+
   const handleSignAndSubmit = () => {
+    setIsConfirmOpen(false);
+
     const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
     if (!managerContractId) {
       setXdrError("Missing NEXT_PUBLIC_MANAGER_CONTRACT_ID configuration.");
@@ -167,6 +194,8 @@ export function StepFinalSignature({
         contractAddress: managerContractId,
       },
       async () => {
+        let toastId: string | number | null = null;
+
         setTrackerState("signing");
         setTrackerTitle("Waiting for wallet signature");
         setTrackerMessage("Approve the transaction in your wallet to continue.");
@@ -175,6 +204,7 @@ export function StepFinalSignature({
           setTrackerState("submitting");
           setTrackerTitle("Submitting transaction");
           setTrackerMessage("Sending your loan request to the network.");
+          toastId = toast.showPending("Transaction submitted");
 
           const loan = await createLoan.mutateAsync({
             amount: principal,
@@ -189,6 +219,13 @@ export function StepFinalSignature({
             setTrackerTitle("Loan request submitted");
             setTrackerMessage("Your request was accepted and recorded.");
             setTrackerGuidance("You can monitor approval status from your loans dashboard.");
+            if (toastId !== null) {
+              toast.showSuccess(toastId, {
+                successMessage: "Loan request submitted successfully",
+              });
+            } else {
+              toast.success("Loan request submitted successfully");
+            }
             onSuccess(loan.id);
             return;
           }
@@ -212,6 +249,12 @@ export function StepFinalSignature({
             setTrackerTitle("Transaction confirmed");
             setTrackerMessage("Your loan request is confirmed on-chain.");
             setTrackerGuidance("You can monitor approval status from your loans dashboard.");
+            if (toastId !== null) {
+              toast.showSuccess(toastId, {
+                successMessage: "Loan request confirmed on-chain",
+                txHash: loan.txHash,
+              });
+            }
             onSuccess(loan.id);
             return;
           }
@@ -229,6 +272,16 @@ export function StepFinalSignature({
               ? "Transaction failed on-chain"
               : "Network timeout while polling status",
           );
+
+          if (toastId !== null) {
+            toast.showError(toastId, {
+              errorMessage: pollError.title,
+              retryAction: retrySubmission,
+            });
+          } else {
+            toast.error(pollError.title, pollResult.message);
+          }
+
           setLastErrorDetails(pollError);
           setTrackerState("error");
           setTrackerTitle(pollError.title);
@@ -247,6 +300,16 @@ export function StepFinalSignature({
           setTrackerTitle(mapped.title);
           setTrackerMessage(mapped.message);
           setTrackerGuidance(mapped.guidance);
+
+          if (toastId !== null) {
+            toast.showError(toastId, {
+              errorMessage: mapped.title,
+              retryAction: mapped.retryable ? retrySubmission : undefined,
+            });
+          } else {
+            toast.error(mapped.title, mapped.message);
+          }
+
           throw error;
         }
       },
@@ -371,7 +434,7 @@ export function StepFinalSignature({
               Back
             </Button>
             <Button
-              onClick={handleSignAndSubmit}
+              onClick={openConfirmModal}
               isLoading={createLoan.isPending}
               disabled={isBuildingXdr}
               className="w-full"
@@ -382,6 +445,16 @@ export function StepFinalSignature({
           </div>
         </CardContent>
       </Card>
+
+      {confirmData && (
+        <TransactionConfirmModal
+          isOpen={isConfirmOpen}
+          data={confirmData}
+          onCancel={() => setIsConfirmOpen(false)}
+          onConfirm={handleSignAndSubmit}
+          isLoading={createLoan.isPending || txPreview.isLoading}
+        />
+      )}
 
       {txPreview.data && (
         <TransactionPreviewModal

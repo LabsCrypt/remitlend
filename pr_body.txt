@@ -1,0 +1,7 @@
+This PR addresses issue #299:
+- Added `is_paused()` query to `LendingPool`.
+- Updated `LoanManager` to check `LendingPool` and `RemittanceNFT` pause state before allowing mutating operations (`assert_not_paused` cascade).
+- Added `NftPaused` and `PoolPaused` errors to `LoanManager`.
+- Added `is_paused()`, `pause()`, and `unpause()` to `RemittanceNFT` and added `assert_not_paused` to all mutating operations.
+- Fixed a version mismatch in `LendingPool` tests.
+- Added tests in `LoanManager` for the pause cascade.

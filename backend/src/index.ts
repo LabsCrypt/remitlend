@@ -7,6 +7,7 @@ initSentry();
 
 import app from "./app.js";
 import logger from "./utils/logger.js";
+import pool from "./db/connection.js";
 import { startIndexer, stopIndexer } from "./services/indexerManager.js";
 import {
   startDefaultCheckerScheduler,
@@ -26,18 +27,42 @@ const server = app.listen(port, () => {
   startDefaultCheckerScheduler();
 });
 
-const shutdown = (signal: "SIGTERM" | "SIGINT") => {
+const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
   logger.info(`${signal} signal received: closing HTTP server`);
+
+  // Timeout (30s) force-kills if shutdown stalls
+  const timeout = setTimeout(() => {
+    logger.error("Shutdown stalled for 30s, forcing exit.");
+    process.exit(1);
+  }, 30000);
+  timeout.unref();
 
   stopIndexer();
   stopDefaultCheckerScheduler();
-  eventStreamService.closeAllConnections("Server shutting down");
+  
+  if (typeof eventStreamService.closeAll === 'function') {
+    eventStreamService.closeAll("Server shutting down");
+  } else if (typeof eventStreamService.closeAllConnections === 'function') {
+    eventStreamService.closeAllConnections("Server shutting down");
+  }
 
-  server.close((err) => {
+  server.close(async (err) => {
     if (err) {
       logger.error("HTTP server shutdown failed", { signal, err });
       process.exit(1);
       return;
+    }
+
+    try {
+      if (pool && typeof (pool as any).drain === 'function') {
+        await (pool as any).drain();
+        logger.info("Database pool drained.");
+      } else if (pool && typeof (pool as any).end === 'function') {
+        await (pool as any).end();
+        logger.info("Database pool ended.");
+      }
+    } catch (e) {
+      logger.error("Failed to drain DB pool", e);
     }
 
     process.exit(0);

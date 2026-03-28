@@ -3,10 +3,11 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./[locale]/globals.css";
 import { QueryProvider } from "./components/providers/QueryProvider";
 import { DashboardShell } from "./components/global_ui/DashboardShell";
-import { Toaster } from "./components/ui/Toast";
+import { Toaster } from "./components/ui/Toaster";
 import { LevelUpModal } from "./components/gamification/LevelUpModal";
 import { GlobalXPGain } from "./components/global_ui/GlobalXPGain";
 import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";
+import { WalletSessionInitializer } from "./components/providers/WalletSessionInitializer";
 import { NextIntlClientProvider } from "next-intl";
 import { THEME_STORAGE_KEY } from "./lib/theme";
 
@@ -45,6 +46,7 @@ export default async function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <NextIntlClientProvider locale="en" messages={messages}>
           <QueryProvider>
+            <WalletSessionInitializer />
             <DashboardShell>
               <ErrorBoundary scope="active page" variant="section">
                 {children}

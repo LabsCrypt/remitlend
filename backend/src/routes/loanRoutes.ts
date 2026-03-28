@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  getLoanConfig,
   getBorrowerLoans,
   getLoanDetails,
   requestLoan,
@@ -16,6 +17,8 @@ import { validate } from "../middleware/validation.js";
 import { borrowerParamSchema } from "../schemas/stellarSchemas.js";
 
 const router = Router();
+
+router.get("/config", getLoanConfig);
 
 /**
  * @swagger

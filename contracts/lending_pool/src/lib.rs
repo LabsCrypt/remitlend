@@ -1,8 +1,11 @@
 #![no_std]
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol,
+    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, Symbol,
 };
+
+mod events;
+use events::*;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -276,9 +279,12 @@ impl LendingPool {
             .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
 
         Self::bump_instance_ttl(env);
-        env.events().publish(
-            (symbol_short!("Withdraw"), provider.clone(), token.clone()),
+        withdraw(
+            env,
+            provider.clone(),
+            token.clone(),
             assets_to_return,
+            shares,
         );
         Ok(())
     }
@@ -330,22 +336,29 @@ impl LendingPool {
         if max < 0 {
             return Err(PoolError::InvalidMaxPoolSize);
         }
+
+        let old_max = Self::get_max_pool_size(env.clone(), token.clone());
+
         env.storage()
             .instance()
             .set(&DataKey::MaxPoolSize(token.clone()), &max);
         Self::bump_instance_ttl(&env);
-        env.events().publish((symbol_short!("MaxPool"), token), max);
+
+        deposit_cap_updated(&env, token, old_max, max);
         Ok(())
     }
 
     pub fn set_withdrawal_cooldown(env: Env, ledgers: u32) {
         Self::admin(&env).require_auth();
+
+        let old_cooldown = Self::get_withdrawal_cooldown(env.clone());
+
         env.storage()
             .instance()
             .set(&DataKey::WithdrawalCooldown, &ledgers);
         Self::bump_instance_ttl(&env);
-        env.events()
-            .publish((Symbol::new(&env, "WithdrawCooldown"),), ledgers);
+
+        withdrawal_cooldown_updated(&env, old_cooldown, ledgers);
     }
 
     pub fn get_max_pool_size(env: Env, token: Address) -> i128 {
@@ -456,8 +469,13 @@ impl LendingPool {
             .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
 
         Self::bump_instance_ttl(&env);
-        env.events()
-            .publish((symbol_short!("Deposit"), provider, token), amount);
+        deposit(
+            &env,
+            provider.clone(),
+            token.clone(),
+            amount,
+            shares_to_mint,
+        );
         Ok(())
     }
 
@@ -540,10 +558,8 @@ impl LendingPool {
             .instance()
             .set(&DataKey::ProposedAdmin, &new_admin);
         Self::bump_instance_ttl(&env);
-        env.events().publish(
-            (Symbol::new(&env, "AdminProposed"), current_admin),
-            new_admin,
-        );
+
+        admin_proposed(&env, current_admin.clone(), new_admin.clone());
     }
 
     pub fn accept_admin(env: Env) -> Result<(), PoolError> {
@@ -559,8 +575,8 @@ impl LendingPool {
             .set(&DataKey::Admin, &proposed_admin);
         env.storage().instance().remove(&DataKey::ProposedAdmin);
         Self::bump_instance_ttl(&env);
-        env.events()
-            .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
+
+        admin_transferred(&env, proposed_admin.clone());
         Ok(())
     }
 
@@ -568,14 +584,24 @@ impl LendingPool {
         Self::admin(&env).require_auth();
         env.storage().instance().set(&DataKey::Paused, &true);
         Self::bump_instance_ttl(&env);
-        env.events().publish((symbol_short!("Paused"),), ());
+
+        pool_paused(&env);
     }
 
     pub fn unpause(env: Env) {
         Self::admin(&env).require_auth();
         env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
-        env.events().publish((symbol_short!("Unpaused"),), ());
+
+        pool_unpaused(&env);
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
     }
 }
 

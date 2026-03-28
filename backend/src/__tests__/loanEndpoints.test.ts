@@ -20,24 +20,27 @@ jest.unstable_mockModule("../db/connection.js", () => ({
 }));
 
 // Mock sorobanService to avoid real Stellar RPC calls
-const mockBuildRequestLoanTx = jest.fn<
-  (
-    borrowerPublicKey: string,
-    amount: number,
-  ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
->();
-const mockBuildRepayTx = jest.fn<
-  (
-    borrowerPublicKey: string,
-    loanId: number,
-    amount: number,
-  ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
->();
-const mockSubmitSignedTx = jest.fn<
-  (
-    signedTxXdr: string,
-  ) => Promise<{ txHash: string; status: string; resultXdr?: string }>
->();
+const mockBuildRequestLoanTx =
+  jest.fn<
+    (
+      borrowerPublicKey: string,
+      amount: number,
+    ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
+  >();
+const mockBuildRepayTx =
+  jest.fn<
+    (
+      borrowerPublicKey: string,
+      loanId: number,
+      amount: number,
+    ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
+  >();
+const mockSubmitSignedTx =
+  jest.fn<
+    (
+      signedTxXdr: string,
+    ) => Promise<{ txHash: string; status: string; resultXdr?: string }>
+  >();
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
   sorobanService: {
     buildRequestLoanTx: mockBuildRequestLoanTx,
@@ -63,6 +66,71 @@ afterEach(() => {
 afterAll(() => {
   delete process.env.INTERNAL_API_KEY;
   delete process.env.JWT_SECRET;
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/loans/config
+// ---------------------------------------------------------------------------
+describe("GET /api/loans/config", () => {
+  const originalMinScore = process.env.LOAN_MIN_SCORE;
+  const originalMaxAmount = process.env.LOAN_MAX_AMOUNT;
+  const originalInterest = process.env.LOAN_INTEREST_RATE_PERCENT;
+
+  afterEach(() => {
+    if (originalMinScore === undefined) {
+      delete process.env.LOAN_MIN_SCORE;
+    } else {
+      process.env.LOAN_MIN_SCORE = originalMinScore;
+    }
+
+    if (originalMaxAmount === undefined) {
+      delete process.env.LOAN_MAX_AMOUNT;
+    } else {
+      process.env.LOAN_MAX_AMOUNT = originalMaxAmount;
+    }
+
+    if (originalInterest === undefined) {
+      delete process.env.LOAN_INTEREST_RATE_PERCENT;
+    } else {
+      process.env.LOAN_INTEREST_RATE_PERCENT = originalInterest;
+    }
+  });
+
+  it("should return defaults when env values are not set", async () => {
+    delete process.env.LOAN_MIN_SCORE;
+    delete process.env.LOAN_MAX_AMOUNT;
+    delete process.env.LOAN_INTEREST_RATE_PERCENT;
+
+    const response = await request(app).get("/api/loans/config");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      data: {
+        minScore: 500,
+        maxAmount: 50000,
+        interestRatePercent: 12,
+      },
+    });
+  });
+
+  it("should return configured env values", async () => {
+    process.env.LOAN_MIN_SCORE = "620";
+    process.env.LOAN_MAX_AMOUNT = "65000";
+    process.env.LOAN_INTEREST_RATE_PERCENT = "14";
+
+    const response = await request(app).get("/api/loans/config");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      data: {
+        minScore: 620,
+        maxAmount: 65000,
+        interestRatePercent: 14,
+      },
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
