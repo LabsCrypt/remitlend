@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env, String, Symbol, symbol_short};
+use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
 
 pub fn loan_requested(env: &Env, borrower: Address, amount: i128) {
     let topics = (Symbol::new(env, "LoanRequested"), borrower);
