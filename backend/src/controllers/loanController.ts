@@ -13,6 +13,9 @@ import logger from "../utils/logger.js";
 const LEDGER_CLOSE_SECONDS = 5;
 const DEFAULT_TERM_LEDGERS = 17280; // 1 day in ledgers
 const DEFAULT_INTEREST_RATE_BPS = 1200; // 12%
+const DEFAULT_MIN_SCORE = 500;
+const DEFAULT_MAX_AMOUNT = 50_000;
+const DEFAULT_INTEREST_RATE_PERCENT = 12;
 const LOAN_SORT_FIELDS = [
   "loanId",
   "principal",
@@ -23,6 +26,22 @@ const LOAN_SORT_FIELDS = [
   "approvedAt",
   "nextPaymentDeadline",
 ] as const;
+
+const parsePositiveInteger = (
+  value: string | undefined,
+  fallback: number,
+): number => {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
 
 type BorrowerLoan = {
   loanId: number;
@@ -141,7 +160,8 @@ export const getBorrowerLoans = asyncHandler(
     if (amountRange) {
       filteredLoans = filteredLoans.filter(
         (loan) =>
-          loan.principal >= amountRange.min && loan.principal <= amountRange.max,
+          loan.principal >= amountRange.min &&
+          loan.principal <= amountRange.max,
       );
     }
 
@@ -186,6 +206,35 @@ export const getBorrowerLoans = asyncHandler(
         paginatedLoans.length,
       ),
     );
+  },
+);
+
+/**
+ * GET /api/loans/config
+ */
+export const getLoanConfig = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const minScore = parsePositiveInteger(
+      process.env.LOAN_MIN_SCORE,
+      DEFAULT_MIN_SCORE,
+    );
+    const maxAmount = parsePositiveInteger(
+      process.env.LOAN_MAX_AMOUNT,
+      DEFAULT_MAX_AMOUNT,
+    );
+    const interestRatePercent = parsePositiveInteger(
+      process.env.LOAN_INTEREST_RATE_PERCENT,
+      DEFAULT_INTEREST_RATE_PERCENT,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        minScore,
+        maxAmount,
+        interestRatePercent,
+      },
+    });
   },
 );
 
@@ -273,91 +322,87 @@ export const getLoanDetails = asyncHandler(
 /**
  * POST /api/loans/request
  */
-export const requestLoan = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { amount, borrowerPublicKey } = req.body as {
-      amount: number;
-      borrowerPublicKey: string;
-    };
+export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
+  const { amount, borrowerPublicKey } = req.body as {
+    amount: number;
+    borrowerPublicKey: string;
+  };
 
-    if (!borrowerPublicKey || !amount || amount <= 0) {
-      throw AppError.badRequest(
-        "borrowerPublicKey and a positive amount are required",
-      );
-    }
-
-    if (borrowerPublicKey !== req.user?.publicKey) {
-      throw AppError.forbidden(
-        "borrowerPublicKey must match your authenticated wallet",
-      );
-    }
-
-    const result = await sorobanService.buildRequestLoanTx(
-      borrowerPublicKey,
-      amount,
+  if (!borrowerPublicKey || !amount || amount <= 0) {
+    throw AppError.badRequest(
+      "borrowerPublicKey and a positive amount are required",
     );
+  }
 
-    logger.info("Loan request transaction built", {
-      borrower: borrowerPublicKey,
-      amount,
-    });
+  if (borrowerPublicKey !== req.user?.publicKey) {
+    throw AppError.forbidden(
+      "borrowerPublicKey must match your authenticated wallet",
+    );
+  }
 
-    res.json({
-      success: true,
-      unsignedTxXdr: result.unsignedTxXdr,
-      networkPassphrase: result.networkPassphrase,
-    });
-  },
-);
+  const result = await sorobanService.buildRequestLoanTx(
+    borrowerPublicKey,
+    amount,
+  );
+
+  logger.info("Loan request transaction built", {
+    borrower: borrowerPublicKey,
+    amount,
+  });
+
+  res.json({
+    success: true,
+    unsignedTxXdr: result.unsignedTxXdr,
+    networkPassphrase: result.networkPassphrase,
+  });
+});
 
 /**
  * POST /api/loans/:loanId/repay
  */
-export const repayLoan = asyncHandler(
-  async (req: Request, res: Response) => {
-    const loanId = req.params.loanId as string;
-    const { amount, borrowerPublicKey } = req.body as {
-      amount: number;
-      borrowerPublicKey: string;
-    };
+export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
+  const loanId = req.params.loanId as string;
+  const { amount, borrowerPublicKey } = req.body as {
+    amount: number;
+    borrowerPublicKey: string;
+  };
 
-    if (!borrowerPublicKey || !amount || amount <= 0) {
-      throw AppError.badRequest(
-        "borrowerPublicKey and a positive amount are required",
-      );
-    }
-
-    if (borrowerPublicKey !== req.user?.publicKey) {
-      throw AppError.forbidden(
-        "borrowerPublicKey must match your authenticated wallet",
-      );
-    }
-
-    const loanIdNum = Number.parseInt(loanId, 10);
-    if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
-      throw AppError.badRequest("Invalid loan ID");
-    }
-
-    const result = await sorobanService.buildRepayTx(
-      borrowerPublicKey,
-      loanIdNum,
-      amount,
+  if (!borrowerPublicKey || !amount || amount <= 0) {
+    throw AppError.badRequest(
+      "borrowerPublicKey and a positive amount are required",
     );
+  }
 
-    logger.info("Repay transaction built", {
-      borrower: borrowerPublicKey,
-      loanId: loanIdNum,
-      amount,
-    });
+  if (borrowerPublicKey !== req.user?.publicKey) {
+    throw AppError.forbidden(
+      "borrowerPublicKey must match your authenticated wallet",
+    );
+  }
 
-    res.json({
-      success: true,
-      loanId: loanIdNum,
-      unsignedTxXdr: result.unsignedTxXdr,
-      networkPassphrase: result.networkPassphrase,
-    });
-  },
-);
+  const loanIdNum = Number.parseInt(loanId, 10);
+  if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
+    throw AppError.badRequest("Invalid loan ID");
+  }
+
+  const result = await sorobanService.buildRepayTx(
+    borrowerPublicKey,
+    loanIdNum,
+    amount,
+  );
+
+  logger.info("Repay transaction built", {
+    borrower: borrowerPublicKey,
+    loanId: loanIdNum,
+    amount,
+  });
+
+  res.json({
+    success: true,
+    loanId: loanIdNum,
+    unsignedTxXdr: result.unsignedTxXdr,
+    networkPassphrase: result.networkPassphrase,
+  });
+});
 
 /**
  * POST /api/loans/submit

@@ -19,6 +19,7 @@ pub enum NftError {
     DestinationOccupied = 10,
     TransferCooldownActive = 11,
     InvalidThreshold = 12,
+    ContractPaused = 13,
 }
 
 #[contracttype]
@@ -50,6 +51,7 @@ pub enum DataKey {
     Burned(Address),
     RemintApproval(Address),
     TransferCooldown(Address),
+    Paused,
 }
 
 #[contract]
@@ -103,6 +105,7 @@ impl RemittanceNFT {
         env: &Env,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
+        Self::assert_not_paused(env)?;
         if let Some(minter_addr) = minter {
             minter_addr.require_auth();
             let key = DataKey::AuthorizedMinter(minter_addr);
@@ -222,30 +225,6 @@ impl RemittanceNFT {
                 .storage()
                 .persistent()
                 .has(&DataKey::Score(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::DefaultCount(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::Seized(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::ScoreHistory(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::RemintApproval(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::Burned(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::TransferCooldown(user.clone()))
     }
 
     fn burn_internal(env: &Env, user: &Address) {
@@ -287,11 +266,25 @@ impl RemittanceNFT {
         env.storage()
             .instance()
             .set(&DataKey::Version, &Self::CURRENT_VERSION);
+        env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
         // Admin is automatically authorized to mint
         let key = DataKey::AuthorizedMinter(admin.clone());
         env.storage().persistent().set(&key, &true);
         Self::bump_persistent_ttl(&env, &key);
+        Ok(())
+    }
+
+    fn assert_not_paused(env: &Env) -> Result<(), NftError> {
+        Self::bump_instance_ttl(env);
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            return Err(NftError::ContractPaused);
+        }
         Ok(())
     }
 
@@ -745,12 +738,14 @@ impl RemittanceNFT {
         count
     }
 
-    pub fn approve_remint(env: Env, user: Address) {
+    pub fn approve_remint(env: Env, user: Address) -> Result<(), NftError> {
         Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env)?;
 
         let approval_key = DataKey::RemintApproval(user);
         env.storage().persistent().set(&approval_key, &true);
         Self::bump_persistent_ttl(&env, &approval_key);
+        Ok(())
     }
 
     pub fn set_default_burn_threshold(env: Env, threshold: u32) -> Result<(), NftError> {
@@ -758,6 +753,7 @@ impl RemittanceNFT {
             return Err(NftError::InvalidThreshold);
         }
         Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env)?;
 
         env.storage()
             .instance()
@@ -773,6 +769,28 @@ impl RemittanceNFT {
 
     pub fn get_score_history(env: Env, user: Address) -> Vec<ScoreHistoryEntry> {
         Self::get_score_history_or_default(&env, &user)
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    pub fn pause(env: Env) {
+        Self::admin(&env).require_auth();
+        env.storage().instance().set(&DataKey::Paused, &true);
+        Self::bump_instance_ttl(&env);
+        env.events().publish((symbol_short!("Paused"),), ());
+    }
+
+    pub fn unpause(env: Env) {
+        Self::admin(&env).require_auth();
+        env.storage().instance().set(&DataKey::Paused, &false);
+        Self::bump_instance_ttl(&env);
+        env.events().publish((symbol_short!("Unpaused"),), ());
     }
 }
 

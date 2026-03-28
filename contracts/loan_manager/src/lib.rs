@@ -14,11 +14,17 @@ pub trait RemittanceNftInterface {
     fn is_seized(env: Env, user: Address) -> bool;
     fn record_default(env: Env, user: Address, minter: Option<Address>);
     fn is_authorized_minter(env: Env, minter: Address) -> bool;
+    fn is_paused(env: Env) -> bool;
 }
 
 #[contractclient(name = "RateOracleClient")]
 pub trait RateOracleInterface {
     fn get_rate(env: Env, borrower: Address, amount: i128, score: u32) -> u32;
+}
+
+#[contractclient(name = "PoolClient")]
+pub trait LendingPoolInterface {
+    fn is_paused(env: Env) -> bool;
 }
 
 mod events;
@@ -43,6 +49,8 @@ pub enum LoanError {
     InvalidRate = 15,
     InvalidTerm = 16,
     LoanPastDue = 17,
+    PoolPaused = 18,
+    NftPaused = 19,
 }
 
 #[contracttype]
@@ -199,6 +207,31 @@ impl LoanManager {
         if paused {
             return Err(LoanError::ContractPaused);
         }
+
+        // Cascade: also check whether the LendingPool is paused.
+        if let Some(pool_addr) = env
+            .storage()
+            .instance()
+            .get::<_, Address>(&DataKey::LendingPool)
+        {
+            let pool_client = PoolClient::new(env, &pool_addr);
+            if pool_client.is_paused() {
+                return Err(LoanError::PoolPaused);
+            }
+        }
+
+        // Cascade: also check whether the RemittanceNFT is paused.
+        if let Some(nft_addr) = env
+            .storage()
+            .instance()
+            .get::<_, Address>(&DataKey::NftContract)
+        {
+            let nft_client = NftClient::new(env, &nft_addr);
+            if nft_client.is_paused() {
+                return Err(LoanError::NftPaused);
+            }
+        }
+
         Ok(())
     }
 
@@ -1433,6 +1466,14 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
         events::unpaused(&env);
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
     }
 
     pub fn check_default(env: Env, loan_id: u32) -> Result<(), LoanError> {

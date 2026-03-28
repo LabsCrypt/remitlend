@@ -57,6 +57,14 @@
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                         }
+                      },
+                      {
+                        "key": {
+                          "symbol": "VERSION"
+                        },
+                        "val": {
+                          "u32": 1
+                        }
                       }
                     ]
                   }

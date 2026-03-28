@@ -16,6 +16,7 @@ import {
   selectWalletAddress,
   useWalletStore,
 } from "../../../stores/useWalletStore";
+import { useContractToast } from "../../../hooks/useContractToast";
 
 const DEMO_AVAILABLE_BALANCE = 1_000;
 
@@ -30,6 +31,7 @@ export default function RepayLoanPage() {
 
   const walletAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
+  const toast = useContractToast();
 
   const [amount, setAmount] = useState("250");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -66,6 +68,8 @@ export default function RepayLoanPage() {
     setLastError(null);
     setTrackerTxHash(null);
 
+    let toastId: string | number | null = null;
+
     try {
       if (!isWalletConnected || !walletAddress) {
         throw new Error("Wallet not connected");
@@ -89,6 +93,7 @@ export default function RepayLoanPage() {
       setTrackerState("submitting");
       setTrackerTitle("Submitting repayment");
       setTrackerMessage("Sending repayment transaction to the network.");
+      toastId = toast.showPending("Repayment transaction submitted");
 
       await new Promise((resolve) => setTimeout(resolve, 700));
 
@@ -109,6 +114,13 @@ export default function RepayLoanPage() {
       setTrackerTitle("Repayment recorded");
       setTrackerMessage("Your repayment was submitted and confirmed.");
       setTrackerGuidance("You can return to the loan page to verify updated outstanding balance.");
+
+      if (toastId !== null) {
+        toast.showSuccess(toastId, {
+          successMessage: "Repayment confirmed",
+          txHash,
+        });
+      }
     } catch (error) {
       const mapped = mapTransactionError(error);
       setLastError(mapped);
@@ -116,6 +128,15 @@ export default function RepayLoanPage() {
       setTrackerTitle(mapped.title);
       setTrackerMessage(mapped.message);
       setTrackerGuidance(mapped.guidance);
+
+      if (toastId !== null) {
+        toast.showError(toastId, {
+          errorMessage: mapped.title,
+          retryAction: mapped.retryable ? handleRetry : undefined,
+        });
+      } else {
+        toast.error(mapped.title, mapped.message);
+      }
     } finally {
       setIsSubmitting(false);
     }

@@ -161,7 +161,11 @@ export default function Home() {
           </p>
           <button
             onClick={() => {
-              setConnected("0x123...abc", { chainId: 1, name: "Stellar", isSupported: true });
+              setConnected("demo", "0x123...abc", {
+                chainId: 1,
+                name: "Stellar",
+                isSupported: true,
+              });
             }}
             className="mt-6 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20"
           >

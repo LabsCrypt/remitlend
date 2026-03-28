@@ -367,4 +367,116 @@ fn cancel_with_no_pending_panics() {
     let (_env, client, _, _) = setup();
     client.cancel_admin_transfer();
 }
+
+#[test]
+fn expire_proposal_works_after_ttl() {
+    let (env, client, _admin, _) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    // Create proposal
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    assert!(client.has_pending_transfer());
+
+    // Move past TTL
+    set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS + 1);
+
+    // Anyone can expire the proposal
+    let caller = Address::generate(&env);
+    client.expire_proposal(&caller);
+
+    // Proposal should be gone
+    assert!(!client.has_pending_transfer());
+}
+
+#[test]
+#[should_panic(expected = "proposal has not yet expired")]
+fn expire_proposal_fails_before_ttl() {
+    let (env, client, _, _) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    // Create proposal
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+
+    // Try to expire before TTL
+    set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS - 1);
+    client.expire_proposal(&Address::generate(&env));
+}
+
+#[test]
+#[should_panic(expected = "no pending transfer to expire")]
+fn expire_proposal_fails_with_no_pending() {
+    let (env, client, _, _) = setup();
+    client.expire_proposal(&Address::generate(&env));
+}
+
+#[test]
+#[should_panic(expected = "proposal has expired")]
+fn finalize_fails_after_expiry() {
+    let (env, client, admin, _) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    // Create proposal
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.approve_transfer(&s);
+
+    // Move past both timelock and TTL
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + PROPOSAL_TTL_SECONDS + 1);
+
+    // Finalization should fail due to expiry
+    client.finalize_admin_transfer(&admin);
+}
+
+#[test]
+fn finalize_works_within_ttl() {
+    let (env, client, admin, _) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    // Create proposal
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.approve_transfer(&s);
+
+    // Move past timelock but within TTL
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+
+    // Finalization should succeed
+    client.finalize_admin_transfer(&admin);
+    assert_eq!(client.get_current_admin(), proposed);
+    assert!(!client.has_pending_transfer());
+}
+
+#[test]
+fn new_proposal_allowed_after_expiry() {
+    let (env, client, _admin, _) = setup();
+    let proposed1 = Address::generate(&env);
+    let proposed2 = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    // Create first proposal
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed1, &signers, &1, &MIN_TIMELOCK_SECONDS);
+
+    // Expire it
+    set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS + 1);
+    client.expire_proposal(&Address::generate(&env));
+
+    // Should be able to create new proposal immediately (no cooldown for expiry)
+    set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS + 2);
+    client.propose_admin_transfer(&proposed2, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    assert!(client.has_pending_transfer());
+    let pending = client.get_pending_transfer();
+    assert_eq!(pending.proposed_admin, proposed2);
+}
 // }
