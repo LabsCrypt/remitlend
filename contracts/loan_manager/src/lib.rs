@@ -51,6 +51,7 @@ pub enum LoanError {
     LoanPastDue = 17,
     PoolPaused = 18,
     NftPaused = 19,
+    InvalidConfiguration = 20,
 }
 
 #[contracttype]
@@ -1224,16 +1225,17 @@ impl LoanManager {
         Self::grace_period_ledgers(&env)
     }
 
-    pub fn set_default_window_ledgers(env: Env, ledgers: u32) {
-        if ledgers == 0 {
-            panic!("default window must be positive");
+    pub fn set_default_window_ledgers(env: Env, ledgers: u32) -> Result<(), LoanError> {
+        const MIN_DEFAULT_WINDOW: u32 = 100;
+        if ledgers < MIN_DEFAULT_WINDOW {
+            return Err(LoanError::InvalidConfiguration);
         }
 
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("not initialized");
+            .ok_or(LoanError::NotInitialized)?;
         admin.require_auth();
 
         let old_ledgers = Self::default_window_ledgers(&env);
@@ -1242,6 +1244,7 @@ impl LoanManager {
             .set(&DataKey::DefaultWindowLedgers, &ledgers);
         Self::bump_instance_ttl(&env);
         events::default_window_updated(&env, admin, old_ledgers, ledgers);
+        Ok(())
     }
 
     pub fn get_default_window_ledgers(env: Env) -> u32 {

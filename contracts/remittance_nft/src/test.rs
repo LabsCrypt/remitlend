@@ -846,3 +846,124 @@ fn test_score_overflow_handling() {
     // Should be capped at 850
     assert_eq!(client.get_score(&user), 850);
 }
+
+#[test]
+fn test_get_transfer_cooldown_remaining_no_cooldown() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &500, &create_test_hash(&env, 1), &None);
+
+    assert_eq!(client.get_transfer_cooldown_remaining(&user), 0);
+}
+
+#[test]
+fn test_get_transfer_cooldown_remaining_active() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    env.ledger().set_sequence_number(100);
+    client.mint(&from, &500, &create_test_hash(&env, 30), &None);
+    client.transfer(&from, &to, &None);
+
+    // Cooldown is 17280 ledgers. At sequence 100, next allowed is 100 + 17280 = 17380.
+    assert_eq!(client.get_transfer_cooldown_remaining(&to), 17280);
+
+    // Advance partway through the cooldown
+    env.ledger().set_sequence_number(200);
+    assert_eq!(client.get_transfer_cooldown_remaining(&to), 17180);
+}
+
+#[test]
+fn test_get_transfer_cooldown_remaining_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    env.ledger().set_sequence_number(100);
+    client.mint(&from, &500, &create_test_hash(&env, 31), &None);
+    client.transfer(&from, &to, &None);
+
+    // Advance past the cooldown
+    env.ledger().set_sequence_number(100 + 17280);
+    assert_eq!(client.get_transfer_cooldown_remaining(&to), 0);
+}
+
+#[test]
+fn test_is_remint_approved_false_by_default() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    assert!(!client.is_remint_approved(&user));
+}
+
+#[test]
+fn test_is_remint_approved_true_after_approval() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &500, &create_test_hash(&env, 32), &None);
+    client.burn(&user, &None);
+    client.approve_remint(&user);
+
+    assert!(client.is_remint_approved(&user));
+}
+
+#[test]
+fn test_is_remint_approved_cleared_after_remint() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &500, &create_test_hash(&env, 33), &None);
+    client.burn(&user, &None);
+    client.approve_remint(&user);
+    assert!(client.is_remint_approved(&user));
+
+    // Remint consumes the approval
+    client.mint(&user, &600, &create_test_hash(&env, 34), &None);
+    assert!(!client.is_remint_approved(&user));
+}

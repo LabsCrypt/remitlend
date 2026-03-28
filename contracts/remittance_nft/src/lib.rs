@@ -771,6 +771,30 @@ impl RemittanceNFT {
         Self::get_score_history_or_default(&env, &user)
     }
 
+    /// Get the number of ledgers remaining in a user's transfer cooldown.
+    /// Returns 0 if no cooldown is active or the cooldown has expired.
+    pub fn get_transfer_cooldown_remaining(env: Env, user: Address) -> u32 {
+        let key = DataKey::TransferCooldown(user);
+        if let Some(next_allowed_ledger) = env.storage().persistent().get::<DataKey, u32>(&key) {
+            Self::bump_persistent_ttl(&env, &key);
+            let current = env.ledger().sequence();
+            if current < next_allowed_ledger {
+                return next_allowed_ledger - current;
+            }
+        }
+        0
+    }
+
+    /// Check if a remint approval exists for a user.
+    pub fn is_remint_approved(env: Env, user: Address) -> bool {
+        let key = DataKey::RemintApproval(user);
+        let approved = env.storage().persistent().has(&key);
+        if approved {
+            Self::bump_persistent_ttl(&env, &key);
+        }
+        approved
+    }
+
     pub fn is_paused(env: Env) -> bool {
         Self::bump_instance_ttl(&env);
         env.storage()

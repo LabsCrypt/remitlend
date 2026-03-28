@@ -16,17 +16,11 @@ import {
   selectWalletAddress,
   type WalletStore,
 } from "../stores/useWalletStore";
-import {
-  useLoans,
-  useRemittances,
-  useUserBalance,
-  useUserProfile,
-  useCreditScoreHistory,
-} from "../hooks/useApi";
+import { useLoans, useRemittances, useUserBalance, useCreditScore } from "../hooks/useApi";
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { CreditScoreGauge } from "../components/ui/CreditScoreGauge";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -45,22 +39,16 @@ export default function Home() {
   const { data: balance, isLoading: balanceLoading } = useUserBalance({
     enabled: isConnected,
   });
-  const { data: userProfile } = useUserProfile({ enabled: isConnected });
-  const { data: creditHistory } = useCreditScoreHistory(userProfile?.id, {
-    enabled: isConnected && !!userProfile?.id,
+  const {
+    data: creditScore,
+    previousScore,
+    isLoading: creditScoreLoading,
+    error: creditScoreError,
+  } = useCreditScore(address ?? undefined, {
+    enabled: isConnected && !!address,
   });
 
   const isLoading = (loansLoading || remittancesLoading || balanceLoading) && isConnected;
-
-  const currentCreditScore = useMemo(() => {
-    if (!creditHistory || creditHistory.length === 0) return null;
-    return creditHistory[creditHistory.length - 1].score;
-  }, [creditHistory]);
-
-  const previousCreditScore = useMemo(() => {
-    if (!creditHistory || creditHistory.length < 2) return null;
-    return creditHistory[creditHistory.length - 2].score;
-  }, [creditHistory]);
 
   const stats = useMemo(() => {
     if (!isConnected) {
@@ -373,14 +361,11 @@ export default function Home() {
               aria-label="Credit Score"
             >
               <CreditScoreGauge
-                score={currentCreditScore ?? 300}
-                previousScore={previousCreditScore ?? undefined}
+                score={creditScore?.score}
+                previousScore={previousScore}
+                isLoading={creditScoreLoading}
+                error={creditScoreError instanceof Error ? creditScoreError.message : null}
               />
-              {!currentCreditScore && (
-                <p className="mt-2 text-center text-[10px] text-zinc-400">
-                  Join the ecosystem to build your on-chain credit history.
-                </p>
-              )}
             </section>
 
             <section
