@@ -87,7 +87,7 @@ export default function RequestLoanPage() {
   }, [configError, addToast]);
 
   const minimumScore = minScoreConfig?.minScore ?? 500;
-  const resolvedCreditScore = creditScore ?? 0;
+  const resolvedCreditScore = creditScore?.score ?? 0;
   const maxAmount = Math.min(
     getScoreBandMax(resolvedCreditScore),
     minScoreConfig?.maxAmount ?? Number.POSITIVE_INFINITY,

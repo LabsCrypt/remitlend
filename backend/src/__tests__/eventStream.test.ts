@@ -47,6 +47,21 @@ describe("GET /api/events/stream", () => {
     const response = await request(app).get("/api/events/stream");
     expect(response.status).toBe(401);
   });
+
+  it("should reject token passed in query string", async () => {
+    const token = generateJwtToken("GQUERYTOKENUSER");
+    const response = await request(app).get(`/api/events/stream?token=${token}`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it("should reject borrower stream access for a different wallet", async () => {
+    const response = await request(app)
+      .get("/api/events/stream?borrower=GOTHERWALLET")
+      .set(bearer("GOWNERWALLET"));
+
+    expect(response.status).toBe(403);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -138,6 +153,8 @@ describe("EventStreamService", () => {
       | string
       | undefined;
     expect(writtenData).toBeDefined();
+    expect(writtenData).toContain("id: evt-1");
+    expect(writtenData).toContain("event: loan-event");
     expect(writtenData).toContain("LoanRepaid");
 
     unsubscribe();
@@ -160,6 +177,13 @@ describe("EventStreamService", () => {
     });
 
     expect(mockRes.write).toHaveBeenCalledTimes(1);
+
+    const writtenData = (mockRes.write as jest.Mock).mock.calls[0]?.[0] as
+      | string
+      | undefined;
+    expect(writtenData).toBeDefined();
+    expect(writtenData).toContain("id: evt-2");
+    expect(writtenData).toContain("event: loan-event");
 
     unsubscribe();
   });
@@ -245,5 +269,31 @@ describe("EventStreamService", () => {
     expect(borrowerRes.end).toHaveBeenCalledTimes(1);
     expect(adminRes.end).toHaveBeenCalledTimes(1);
     expect(eventStreamService.getConnectionCount().total).toBe(0);
+  });
+
+  it("should emit replay-compatible SSE event payload from sendEvent", () => {
+    const mockRes = {
+      write: jest.fn(),
+    } as unknown as import("express").Response;
+
+    eventStreamService.sendEvent(mockRes, {
+      eventId: "evt-99",
+      eventType: "LoanRequested",
+      borrower: "GBORROWER",
+      ledger: 999,
+      ledgerClosedAt: "2026-03-09T00:00:00Z",
+      txHash: "xyz999",
+    });
+
+    expect(mockRes.write).toHaveBeenCalledTimes(1);
+    expect(mockRes.write).toHaveBeenCalledWith(
+      expect.stringContaining("id: evt-99"),
+    );
+    expect(mockRes.write).toHaveBeenCalledWith(
+      expect.stringContaining("event: loan-event"),
+    );
+    expect(mockRes.write).toHaveBeenCalledWith(
+      expect.stringContaining("LoanRequested"),
+    );
   });
 });

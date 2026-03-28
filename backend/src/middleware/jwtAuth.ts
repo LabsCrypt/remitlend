@@ -7,6 +7,38 @@ import {
   type JwtPayload,
 } from "../services/authService.js";
 
+const DEFAULT_JWT_COOKIE_NAME = "remitlend_jwt";
+
+function extractCookieToken(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookieName = process.env.JWT_COOKIE_NAME ?? DEFAULT_JWT_COOKIE_NAME;
+  const cookiePairs = cookieHeader.split(";");
+
+  for (const pair of cookiePairs) {
+    const [rawKey, ...rawValueParts] = pair.split("=");
+    const key = rawKey?.trim();
+    if (key !== cookieName) {
+      continue;
+    }
+
+    const rawValue = rawValueParts.join("=").trim();
+    if (!rawValue) {
+      return null;
+    }
+
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+
+  return null;
+}
+
 declare module "express" {
   interface Request {
     user?: JwtPayload;
@@ -19,14 +51,11 @@ export const requireJwtAuth = (
   next: NextFunction,
 ): void => {
   const authHeader = req.headers.authorization;
+  const cookieToken = extractCookieToken(req.headers.cookie);
 
-  // For SSE connections the browser's EventSource API cannot set custom
-  // headers, so we also accept the token as a `?token=` query parameter.
-  // We prioritise the Authorization header when both are present.
-  const rawQueryToken =
-    typeof req.query.token === "string" ? req.query.token : undefined;
-
-  const token = extractBearerToken(authHeader) ?? rawQueryToken ?? null;
+  // Token must come from Authorization header or authenticated cookie.
+  // Query-string tokens are intentionally rejected to avoid URL token leaks.
+  const token = extractBearerToken(authHeader) ?? cookieToken ?? null;
   if (!token) {
     throw AppError.unauthorized("Missing or invalid Authorization header");
   }
