@@ -69,6 +69,10 @@ export default function RequestLoanPage() {
           Complete each step to configure your loan, preview repayment terms, confirm collateral,
           and sign your Soroban transaction.
         </p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          If a transaction fails, you will now see clear guidance, retry actions for temporary
+          issues, and status tracking for submitted transactions.
+        </p>
       </header>
 
       {!isWalletConnected ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PenLine, CircleAlert, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
@@ -9,9 +9,18 @@ import {
   type TransactionConfirmData,
 } from "../ui/TransactionConfirmModal";
 import { TransactionPreviewModal } from "../transaction/TransactionPreviewModal";
+import {
+  TransactionStatusTracker,
+  type TransactionStatusState,
+} from "../ui/TransactionStatusTracker";
 import { useTransactionPreview } from "../../hooks/useTransactionPreview";
 import { useCreateLoan } from "../../hooks/useApi";
 import { buildUnsignedLoanRequestXdr } from "../../utils/soroban";
+import {
+  mapTransactionError,
+  pollTransactionStatus,
+  type TransactionErrorDetails,
+} from "../../utils/transactionErrors";
 import type { LoanWizardData } from "./LoanApplicationWizard";
 
 const ANNUAL_RATE_PERCENT = 12;
@@ -48,8 +57,15 @@ export function StepFinalSignature({
   const [unsignedXdr, setUnsignedXdr] = useState<string>("");
   const [xdrError, setXdrError] = useState<string | null>(null);
   const [isBuildingXdr, setIsBuildingXdr] = useState(false);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [confirmData, setConfirmData] = useState<TransactionConfirmData | null>(null);
+  const [trackerState, setTrackerState] = useState<TransactionStatusState>("idle");
+  const [trackerTitle, setTrackerTitle] = useState("Ready to submit");
+  const [trackerMessage, setTrackerMessage] = useState("");
+  const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
+  const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
+  const [lastErrorDetails, setLastErrorDetails] = useState<TransactionErrorDetails | null>(null);
+
+  const pollingAbortControllerRef = useRef<AbortController | null>(null);
+
   const txPreview = useTransactionPreview();
   const createLoan = useCreateLoan();
 
@@ -97,35 +113,39 @@ export function StepFinalSignature({
     };
   }, [borrowerAddress, principal]);
 
-  const openConfirmModal = () => {
+  useEffect(() => {
+    return () => {
+      pollingAbortControllerRef.current?.abort();
+      pollingAbortControllerRef.current = null;
+    };
+  }, []);
+
+  const resetTracker = () => {
+    setTrackerState("idle");
+    setTrackerTitle("Ready to submit");
+    setTrackerMessage("");
+    setTrackerGuidance(undefined);
+    setTrackerTxHash(null);
+    setLastErrorDetails(null);
+  };
+
+  const cancelTracking = () => {
+    pollingAbortControllerRef.current?.abort();
+    pollingAbortControllerRef.current = null;
+    setTrackerState("cancelled");
+    setTrackerTitle("Status tracking cancelled");
+    setTrackerMessage("You cancelled this transaction flow.");
+    setTrackerGuidance("If needed, you can retry submission.");
+  };
+
+  const handleSignAndSubmit = () => {
+    const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
     if (!managerContractId) {
       setXdrError("Missing NEXT_PUBLIC_MANAGER_CONTRACT_ID configuration.");
       return;
     }
 
-    const network =
-      process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE?.includes("Test") ||
-      !process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE
-        ? "Testnet"
-        : "Mainnet";
-
-    setConfirmData({
-      type: "Loan Request",
-      amount: `${formatMoney(principal)} ${data.asset}`,
-      feeEstimate: "0.00001 XLM",
-      gasEstimate: "~0.00001 XLM",
-      network,
-      details: [
-        { label: "Term", value: `${data.termDays} days` },
-        { label: "APR", value: `${ANNUAL_RATE_PERCENT}%` },
-        { label: "Credit Score", value: data.creditScore.toString() },
-      ],
-    });
-    setIsConfirmOpen(true);
-  };
-
-  const handleSignAndSubmit = () => {
-    setIsConfirmOpen(false);
+    resetTracker();
 
     txPreview.show(
       {
@@ -152,16 +172,95 @@ export function StepFinalSignature({
         contractAddress: managerContractId,
       },
       async () => {
-        const loan = await createLoan.mutateAsync({
-          amount: principal,
-          currency: data.asset,
-          interestRate: ANNUAL_RATE_PERCENT,
-          termDays: data.termDays,
-          borrowerId: borrowerAddress,
-        });
-        onSuccess(loan.id);
+        setTrackerState("signing");
+        setTrackerTitle("Waiting for wallet signature");
+        setTrackerMessage("Approve the transaction in your wallet to continue.");
+
+        try {
+          setTrackerState("submitting");
+          setTrackerTitle("Submitting transaction");
+          setTrackerMessage("Sending your loan request to the network.");
+
+          const loan = await createLoan.mutateAsync({
+            amount: principal,
+            currency: data.asset,
+            interestRate: ANNUAL_RATE_PERCENT,
+            termDays: data.termDays,
+            borrowerId: borrowerAddress,
+          });
+
+          if (!loan.txHash) {
+            setTrackerState("success");
+            setTrackerTitle("Loan request submitted");
+            setTrackerMessage("Your request was accepted and recorded.");
+            setTrackerGuidance("You can monitor approval status from your loans dashboard.");
+            onSuccess(loan.id);
+            return;
+          }
+
+          setTrackerTxHash(loan.txHash);
+          setTrackerState("polling");
+          setTrackerTitle("Waiting for on-chain confirmation");
+          setTrackerMessage("Tracking transaction status on Stellar testnet.");
+
+          const controller = new AbortController();
+          pollingAbortControllerRef.current = controller;
+
+          const pollResult = await pollTransactionStatus(loan.txHash, {
+            signal: controller.signal,
+          });
+
+          pollingAbortControllerRef.current = null;
+
+          if (pollResult.status === "success") {
+            setTrackerState("success");
+            setTrackerTitle("Transaction confirmed");
+            setTrackerMessage("Your loan request is confirmed on-chain.");
+            setTrackerGuidance("You can monitor approval status from your loans dashboard.");
+            onSuccess(loan.id);
+            return;
+          }
+
+          if (pollResult.status === "cancelled") {
+            setTrackerState("cancelled");
+            setTrackerTitle("Status tracking cancelled");
+            setTrackerMessage(pollResult.message);
+            setTrackerGuidance("You can retry tracking or submit again.");
+            return;
+          }
+
+          const pollError = mapTransactionError(
+            pollResult.status === "failed"
+              ? "Transaction failed on-chain"
+              : "Network timeout while polling status",
+          );
+          setLastErrorDetails(pollError);
+          setTrackerState("error");
+          setTrackerTitle(pollError.title);
+          setTrackerMessage(pollResult.message);
+          setTrackerGuidance(pollError.guidance);
+        } catch (error) {
+          const mapped = mapTransactionError(error);
+          setLastErrorDetails(mapped);
+
+          if (mapped.cancelledByUser) {
+            setTrackerState("cancelled");
+          } else {
+            setTrackerState("error");
+          }
+
+          setTrackerTitle(mapped.title);
+          setTrackerMessage(mapped.message);
+          setTrackerGuidance(mapped.guidance);
+          throw error;
+        }
       },
     );
+  };
+
+  const retrySubmission = () => {
+    txPreview.close();
+    handleSignAndSubmit();
   };
 
   return (
@@ -248,6 +347,29 @@ export function StepFinalSignature({
               </p>
             )}
           </div>
+
+          <TransactionStatusTracker
+            state={trackerState}
+            title={trackerTitle}
+            message={trackerMessage}
+            guidance={trackerGuidance}
+            txHash={trackerTxHash}
+            onCancel={
+              trackerState === "signing" ||
+              trackerState === "submitting" ||
+              trackerState === "polling"
+                ? cancelTracking
+                : undefined
+            }
+            onRetry={
+              trackerState === "error" || trackerState === "cancelled"
+                ? lastErrorDetails?.retryable === false
+                  ? undefined
+                  : retrySubmission
+                : undefined
+            }
+            disabled={createLoan.isPending || txPreview.isLoading}
+          />
 
           <div className="flex gap-3">
             <Button variant="outline" onClick={onBack} className="w-full">

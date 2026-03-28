@@ -8,6 +8,22 @@ fn create_test_hash(env: &Env, value: u8) -> BytesN<32> {
 }
 
 #[test]
+#[should_panic]
+fn test_upgrade_requires_admin_auth() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    env.mock_auths(&[]);
+    client.upgrade(&create_test_hash(&env, 42));
+}
+
+#[test]
 fn test_score_lifecycle() {
     let env = Env::default();
     env.mock_all_auths();

@@ -6,6 +6,7 @@ interface SpinnerProps {
   size?: number | "sm" | "md" | "lg";
   duration?: number;
   delayStep?: number;
+  label?: string;
 }
 
 const SIZE_MAP = {
@@ -20,26 +21,31 @@ export const Spinner: FC<SpinnerProps> = ({
   size = "md",
   duration = 1,
   delayStep = 0.2,
+  label = "Loading…",
 }) => {
   const numericSize = typeof size === "string" ? SIZE_MAP[size] : size;
   if (type === "spin") {
     return (
-      <div
-        style={{
-          width: numericSize + "px",
-          height: numericSize + "px",
-          borderColor: color || "white",
-          borderTopColor: "transparent",
-          borderStyle: "solid",
-          borderWidth: "4px",
-          animationDuration: `${duration}s`,
-        }}
-        className="animate-spin rounded-full inline-block box-border"
-      />
+      <div role="status" aria-label={label} className="inline-flex">
+        <div
+          style={{
+            width: numericSize + "px",
+            height: numericSize + "px",
+            borderColor: color || "white",
+            borderTopColor: "transparent",
+            borderStyle: "solid",
+            borderWidth: "4px",
+            animationDuration: `${duration}s`,
+          }}
+          aria-hidden="true"
+          className="animate-spin rounded-full inline-block box-border"
+        />
+        <span className="sr-only">{label}</span>
+      </div>
     );
   } else if (type === "double-spinner") {
     return (
-      <div className="relative inline-block">
+      <div role="status" aria-label={label} className="relative inline-block">
         {/* Outer Spinner */}
         <div
           style={{
@@ -51,6 +57,7 @@ export const Spinner: FC<SpinnerProps> = ({
             borderWidth: "3px",
             animationDuration: `${duration}s`,
           }}
+          aria-hidden="true"
           className="animate-spin rounded-full box-border"
         />
 
@@ -65,8 +72,10 @@ export const Spinner: FC<SpinnerProps> = ({
             borderWidth: "3px",
             animationDuration: `${duration}s`,
           }}
+          aria-hidden="true"
           className="animate-reverse-spin rounded-full box-border absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
         />
+        <span className="sr-only">{label}</span>
       </div>
     );
   }
@@ -74,7 +83,7 @@ export const Spinner: FC<SpinnerProps> = ({
   // Bounce Loader
   else {
     return (
-      <div className="flex gap-2">
+      <div role="status" aria-label={label} className="flex gap-2">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -85,9 +94,11 @@ export const Spinner: FC<SpinnerProps> = ({
               animationDuration: `${duration}s`,
               animationDelay: `${i * delayStep}s`,
             }}
+            aria-hidden="true"
             className="animate-dot-bounce rounded-full"
           />
         ))}
+        <span className="sr-only">{label}</span>
       </div>
     );
   }

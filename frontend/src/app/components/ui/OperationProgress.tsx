@@ -17,11 +17,11 @@ export function OperationProgress({ transaction, type = "generic" }: OperationPr
   const getIcon = () => {
     switch (status) {
       case "pending":
-        return <Loader className="h-5 w-5 animate-spin text-blue-500" />;
+        return <Loader aria-hidden="true" className="h-5 w-5 animate-spin text-blue-500" />;
       case "success":
-        return <CheckCircle2 className="h-5 w-5 text-green-500" />;
+        return <CheckCircle2 aria-hidden="true" className="h-5 w-5 text-green-500" />;
       case "error":
-        return <AlertCircle className="h-5 w-5 text-red-500" />;
+        return <AlertCircle aria-hidden="true" className="h-5 w-5 text-red-500" />;
       default:
         return null;
     }
@@ -30,9 +30,9 @@ export function OperationProgress({ transaction, type = "generic" }: OperationPr
   const getTypeIcon = () => {
     switch (type) {
       case "deposit":
-        return <ArrowUpRight className="h-4 w-4" />;
+        return <ArrowUpRight aria-hidden="true" className="h-4 w-4" />;
       case "withdrawal":
-        return <ArrowDownLeft className="h-4 w-4" />;
+        return <ArrowDownLeft aria-hidden="true" className="h-4 w-4" />;
       default:
         return null;
     }
@@ -40,6 +40,9 @@ export function OperationProgress({ transaction, type = "generic" }: OperationPr
 
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
       className={clsx(
         "rounded-lg border p-4 space-y-2",
         status === "pending" &&
@@ -72,6 +75,7 @@ export function OperationProgress({ transaction, type = "generic" }: OperationPr
             href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label={`View transaction ${txHash.slice(0, 8)}… on Stellar Explorer (opens in new tab)`}
             className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline"
           >
             View TX
@@ -80,7 +84,14 @@ export function OperationProgress({ transaction, type = "generic" }: OperationPr
       </div>
 
       {status === "pending" && progress !== undefined && progress > 0 && (
-        <div className="overflow-hidden rounded-full bg-gray-200 h-1.5 dark:bg-gray-700">
+        <div
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Operation progress: ${Math.round(progress)}%`}
+          className="overflow-hidden rounded-full bg-gray-200 h-1.5 dark:bg-gray-700"
+        >
           <div
             className="bg-blue-500 h-full transition-all duration-300 ease-out"
             style={{ width: `${progress}%` }}

@@ -2,7 +2,7 @@ use crate::{LendingPool, LendingPoolClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{Address, BytesN, Env};
 
 fn create_token_contract<'a>(
     env: &Env,
@@ -12,6 +12,38 @@ fn create_token_contract<'a>(
     let stellar_asset_client = StellarAssetClient::new(env, &contract_id.address());
     let token_client = TokenClient::new(env, &contract_id.address());
     (contract_id.address(), stellar_asset_client, token_client)
+}
+
+fn create_upgrade_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[7u8; 32])
+}
+
+#[test]
+fn test_version_is_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+
+    pool_client.initialize(&admin);
+    assert_eq!(pool_client.version(), 2);
+}
+
+#[test]
+#[should_panic]
+fn test_upgrade_requires_admin_auth() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+
+    env.mock_all_auths();
+    pool_client.initialize(&admin);
+
+    env.mock_auths(&[]);
+    pool_client.upgrade(&create_upgrade_hash(&env));
 }
 
 // ── Deposit ───────────────────────────────────────────────────────────────────

@@ -3,7 +3,8 @@
 #[cfg(test)]
 mod test;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Env, IntoVal, Map, Symbol, Vec,
+    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, IntoVal, Map, Symbol,
+    Vec,
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -17,11 +18,13 @@ const MAX_SIGNERS: u32 = 20;
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
+const KEY_VERSION: Symbol = symbol_short!("VERSION");
 const KEY_PENDING: Symbol = symbol_short!("PENDING");
 const KEY_TARGET: Symbol = symbol_short!("TARGET");
 const KEY_LAST_CANCELLED_AT: Symbol = symbol_short!("CANCEL_AT");
 
 const REPROPOSAL_COOLDOWN_SECONDS: u64 = 3600; // 1 hour
+const CURRENT_VERSION: u32 = 1;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,6 +103,26 @@ impl GovernanceContract {
         }
         env.storage().instance().set(&KEY_ADMIN, &admin);
         env.storage().instance().set(&KEY_TARGET, &target_contract);
+        env.storage().instance().set(&KEY_VERSION, &CURRENT_VERSION);
+    }
+
+    pub fn version(env: Env) -> u32 {
+        env.storage().instance().get(&KEY_VERSION).unwrap_or(0)
+    }
+
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin = Self::get_admin(&env);
+        admin.require_auth();
+
+        let old_version = Self::version(env.clone());
+        let new_version = old_version.saturating_add(1);
+        env.storage().instance().set(&KEY_VERSION, &new_version);
+        env.events().publish(
+            (Symbol::new(&env, "ContractUpgraded"),),
+            (old_version, new_version),
+        );
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     // ── Propose ───────────────────────────────────────────────────────────────
