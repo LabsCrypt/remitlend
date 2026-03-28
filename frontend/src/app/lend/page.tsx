@@ -23,9 +23,7 @@ import { selectWalletAddress, useWalletStore } from "../stores/useWalletStore";
 
 const YieldEarningsChart = dynamic(
   () =>
-    import("../components/charts/YieldEarningsChart").then(
-      (module) => module.YieldEarningsChart,
-    ),
+    import("../components/charts/YieldEarningsChart").then((module) => module.YieldEarningsChart),
   {
     loading: () => <Skeleton className="h-80 w-full rounded-lg" />,
     ssr: false,

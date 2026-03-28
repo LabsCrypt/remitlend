@@ -11,10 +11,7 @@ import { SkeletonChart } from "../ui/Skeleton";
 import { RefreshCw } from "lucide-react";
 
 const CreditScoreTrendChart = dynamic(
-  () =>
-    import("../charts/CreditScoreTrendChart").then(
-      (module) => module.CreditScoreTrendChart,
-    ),
+  () => import("../charts/CreditScoreTrendChart").then((module) => module.CreditScoreTrendChart),
   {
     loading: () => <SkeletonChart className="h-full" />,
     ssr: false,
@@ -22,10 +19,7 @@ const CreditScoreTrendChart = dynamic(
 );
 
 const YieldEarningsChart = dynamic(
-  () =>
-    import("../charts/YieldEarningsChart").then(
-      (module) => module.YieldEarningsChart,
-    ),
+  () => import("../charts/YieldEarningsChart").then((module) => module.YieldEarningsChart),
   {
     loading: () => <SkeletonChart className="h-full" />,
     ssr: false,
