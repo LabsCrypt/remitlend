@@ -488,7 +488,6 @@ fn test_approve_already_approved_loan() {
 }
 
 #[test]
-#[should_panic]
 fn test_approve_loan_insufficient_pool_liquidity() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -499,11 +498,13 @@ fn test_approve_loan_insufficient_pool_liquidity() {
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &650, &history_hash, &None);
 
+    // Mint only 100 tokens into pool, but loan requests 1000
     let stellar_token = StellarAssetClient::new(&env, &token_id);
     stellar_token.mint(&pool_address, &100);
 
     let loan_id = manager.request_loan(&borrower, &1000);
-    manager.approve_loan(&loan_id);
+    let result = manager.try_approve_loan(&loan_id);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientPoolLiquidity)));
 }
 
 #[test]
