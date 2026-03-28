@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronRight, ExternalLink, Wallet } from "lucide-react";
+import { ChevronRight, Wallet } from "lucide-react";
 import { LoanDetailSkeleton } from "../../../components/skeletons/LoanDetailSkeleton";
 import { useLoan } from "../../../hooks/useApi";
 import { LoanStatusBadge } from "../../../components/ui/LoanStatusBadge";
+import { TxHashLink } from "../../../components/ui/TxHashLink";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -122,6 +123,11 @@ export default function LoanDetailsPage() {
                     <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                       Amount: {formatCurrency(Number(event.amount) || 0)}
                     </p>
+                    {event.txHash && (
+                      <div className="mt-1">
+                        <TxHashLink txHash={event.txHash} />
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -147,15 +153,12 @@ export default function LoanDetailsPage() {
             </Link>
 
             {latestTxHash && (
-              <a
-                href={`https://stellar.expert/explorer/testnet/tx/${latestTxHash}`}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex items-center gap-2 rounded-full border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
-              >
-                View on Explorer
-                <ExternalLink className="h-4 w-4" />
-              </a>
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-medium text-indigo-700/70 dark:text-indigo-300/70">
+                  Latest transaction
+                </p>
+                <TxHashLink txHash={latestTxHash} />
+              </div>
             )}
           </div>
         </aside>
