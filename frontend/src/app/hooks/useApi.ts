@@ -444,6 +444,17 @@ export function usePoolStats(options?: Omit<UseQueryOptions<PoolStats>, "queryKe
   });
 }
 
+/**
+ * Returns a callback that invalidates the pool stats cache, forcing a refetch.
+ * Useful for SSE handlers that receive a pool-update event.
+ */
+export function useInvalidatePoolStats() {
+  const queryClient = useQueryClient();
+  return () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
+  };
+}
+
 export function useDepositorPortfolio(
   address: string | undefined,
   options?: Omit<UseQueryOptions<DepositorPortfolio>, "queryKey" | "queryFn">,
