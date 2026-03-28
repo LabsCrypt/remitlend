@@ -93,15 +93,16 @@ describe("Centralized Error Handling", () => {
 
     it("should include field information when available", async () => {
       // Test with auth endpoint that validates public key
+      // Note: Zod validation runs first and returns VALIDATION_ERROR
       const response = await request(app)
         .post("/api/auth/challenge")
         .send({});
 
       expect(response.status).toBe(400);
-      // Check both legacy and new format
-      expect(response.body.error.code).toBe("MISSING_FIELD");
-      expect(response.body.error.field).toBe("publicKey");
-      expect(response.body.field).toBe("publicKey"); // Legacy format
+      // Zod validation returns VALIDATION_ERROR with field info
+      expect(response.body.error.code).toBe("VALIDATION_ERROR");
+      expect(response.body.error.details).toBeDefined();
+      expect(response.body.error.details[0]?.field).toBe("publicKey");
     });
   });
 
@@ -160,17 +161,19 @@ describe("Centralized Error Handling", () => {
   /* ── Authentication Error Codes ───────────────────────────── */
 
   describe("Authentication error codes", () => {
-    it("should return MISSING_FIELD error code for missing public key", async () => {
+    it("should return VALIDATION_ERROR error code for missing public key (Zod validation)", async () => {
+      // Zod validation runs before controller logic
       const response = await request(app)
         .post("/api/auth/challenge")
         .send({});
 
       expect(response.status).toBe(400);
-      expect(response.body.error.code).toBe("MISSING_FIELD");
-      expect(response.body.error.field).toBe("publicKey");
+      expect(response.body.error.code).toBe("VALIDATION_ERROR");
+      expect(response.body.error.details[0]?.field).toBe("publicKey");
     });
 
     it("should return INVALID_PUBLIC_KEY error code for invalid key format", async () => {
+      // Controller logic runs after Zod validation passes
       const response = await request(app)
         .post("/api/auth/challenge")
         .send({ publicKey: "invalid" });
@@ -180,14 +183,15 @@ describe("Centralized Error Handling", () => {
       expect(response.body.error.field).toBe("publicKey");
     });
 
-    it("should return MISSING_FIELD error code for missing signature in login", async () => {
+    it("should return VALIDATION_ERROR error code for missing signature in login (Zod validation)", async () => {
+      // Zod validation runs before controller logic
       const response = await request(app)
         .post("/api/auth/login")
         .send({ publicKey: "GXXX", message: "test" });
 
       expect(response.status).toBe(400);
-      expect(response.body.error.code).toBe("MISSING_FIELD");
-      expect(response.body.error.field).toBe("signature");
+      expect(response.body.error.code).toBe("VALIDATION_ERROR");
+      expect(response.body.error.details[0]?.field).toBe("signature");
     });
   });
 });
