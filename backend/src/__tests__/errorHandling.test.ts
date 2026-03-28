@@ -10,6 +10,9 @@ describe("Centralized Error Handling", () => {
 
       expect(response.status).toBe(404);
       expect(response.body.success).toBe(false);
+      // Legacy format
+      expect(response.body.message).toMatch(/Cannot GET \/nonexistent-route/);
+      // New structured format
       expect(response.body.error).toBeDefined();
       expect(response.body.error.code).toBe("NOT_FOUND");
       expect(response.body.error.message).toMatch(/Cannot GET \/nonexistent-route/);
@@ -34,6 +37,10 @@ describe("Centralized Error Handling", () => {
 
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
+      // Legacy format
+      expect(response.body.message).toBe("Validation failed");
+      expect(response.body.errors).toBeDefined();
+      // New structured format
       expect(response.body.error).toBeDefined();
       expect(response.body.error.code).toBe("VALIDATION_ERROR");
       expect(response.body.error.message).toBe("Validation failed");
@@ -47,6 +54,11 @@ describe("Centralized Error Handling", () => {
         .send({ userId: "user1" });
 
       expect(response.status).toBe(400);
+      // Legacy format
+      expect(response.body.errors.length).toBeGreaterThan(0);
+      expect(response.body.errors[0]).toHaveProperty("path");
+      expect(response.body.errors[0]).toHaveProperty("message");
+      // New structured format
       expect(response.body.error.details.length).toBeGreaterThan(0);
       expect(response.body.error.details[0]).toHaveProperty("field");
       expect(response.body.error.details[0]).toHaveProperty("message");
@@ -60,6 +72,9 @@ describe("Centralized Error Handling", () => {
       const response = await request(app).get("/does-not-exist");
 
       expect(response.body).toHaveProperty("success", false);
+      // Legacy format
+      expect(response.body).toHaveProperty("message");
+      // New structured format
       expect(response.body).toHaveProperty("error");
       expect(response.body.error).toHaveProperty("code");
       expect(response.body.error).toHaveProperty("message");
@@ -83,8 +98,10 @@ describe("Centralized Error Handling", () => {
         .send({});
 
       expect(response.status).toBe(400);
+      // Check both legacy and new format
       expect(response.body.error.code).toBe("MISSING_FIELD");
       expect(response.body.error.field).toBe("publicKey");
+      expect(response.body.field).toBe("publicKey"); // Legacy format
     });
   });
 
@@ -96,6 +113,9 @@ describe("Centralized Error Handling", () => {
 
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
+      // Legacy format
+      expect(response.body.message).toBe("Diagnostic operational error");
+      // New structured format
       expect(response.body.error.message).toBe("Diagnostic operational error");
       expect(response.body.error.code).toBeDefined();
     });
@@ -105,6 +125,9 @@ describe("Centralized Error Handling", () => {
 
       expect(response.status).toBe(500);
       expect(response.body.success).toBe(false);
+      // Legacy format
+      expect(response.body.message).toBe("Internal server error");
+      // New structured format
       expect(response.body.error.message).toBe("Internal server error");
       expect(response.body.error.code).toBe("INTERNAL_ERROR");
     });
@@ -114,6 +137,9 @@ describe("Centralized Error Handling", () => {
 
       expect(response.status).toBe(500);
       expect(response.body.success).toBe(false);
+      // Legacy format
+      expect(response.body.message).toBe("Internal server error");
+      // New structured format
       expect(response.body.error.message).toBe("Internal server error");
       expect(response.body.error.code).toBe("INTERNAL_ERROR");
     });
@@ -123,6 +149,9 @@ describe("Centralized Error Handling", () => {
 
       expect(response.status).toBe(500);
       expect(response.body.success).toBe(false);
+      // Legacy format
+      expect(response.body.message).toBe("Internal server error");
+      // New structured format
       expect(response.body.error.message).toBe("Internal server error");
       expect(response.body.error.code).toBe("INTERNAL_ERROR");
     });
