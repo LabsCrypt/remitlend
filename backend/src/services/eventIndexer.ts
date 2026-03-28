@@ -452,6 +452,7 @@ export class EventIndexer {
       if (!event.topic[1]) return null;
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
+      borrower = this.decodeAddress(event.value);
       interestRateBps = 1200;
       termLedgers = 17280;
     } else if (type === "LoanRepaid") {
