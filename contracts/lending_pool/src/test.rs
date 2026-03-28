@@ -28,7 +28,7 @@ fn test_version_is_initialized() {
     let pool_client = LendingPoolClient::new(&env, &pool_id);
 
     pool_client.initialize(&admin);
-    assert_eq!(pool_client.version(), 2);
+    assert_eq!(pool_client.version(), 3);
 }
 
 #[test]
