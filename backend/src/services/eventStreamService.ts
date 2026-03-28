@@ -32,6 +32,15 @@ const userClients = new Map<string, Set<SseClient>>();
 // ─── Event Stream Service ─────────────────────────────────────────────────────
 
 class EventStreamService {
+  sendEvent(res: SseClient, event: LoanEventPayload): void {
+    const payload =
+      `id: ${event.eventId}\n` +
+      `event: loan-event\n` +
+      `data: ${JSON.stringify(event)}\n\n`;
+
+    res.write(payload);
+  }
+
   private registerUserClient(userKey: string, res: SseClient): void {
     if (!userClients.has(userKey)) {
       userClients.set(userKey, new Set());
@@ -127,15 +136,13 @@ class EventStreamService {
    * - All admin clients
    */
   broadcast(event: LoanEventPayload): void {
-    const data = `data: ${JSON.stringify(event)}\n\n`;
-
     // Push to borrower-specific clients
     if (event.borrower) {
       const clients = borrowerClients.get(event.borrower);
       if (clients?.size) {
         for (const res of clients) {
           try {
-            res.write(data);
+            this.sendEvent(res, event);
           } catch (err) {
             logger.error("SSE write error (borrower)", {
               borrower: event.borrower,
@@ -150,7 +157,7 @@ class EventStreamService {
     // Push to admin clients
     for (const res of adminClients) {
       try {
-        res.write(data);
+        this.sendEvent(res, event);
       } catch (err) {
         logger.error("SSE write error (admin)", { err });
         adminClients.delete(res);
