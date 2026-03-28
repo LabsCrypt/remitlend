@@ -44,6 +44,7 @@ export function StepFinalSignature({
   onBack,
   onSuccess,
 }: StepFinalSignatureProps) {
+  const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
   const [unsignedXdr, setUnsignedXdr] = useState<string>("");
   const [xdrError, setXdrError] = useState<string | null>(null);
   const [isBuildingXdr, setIsBuildingXdr] = useState(false);
@@ -97,7 +98,6 @@ export function StepFinalSignature({
   }, [borrowerAddress, principal]);
 
   const openConfirmModal = () => {
-    const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
     if (!managerContractId) {
       setXdrError("Missing NEXT_PUBLIC_MANAGER_CONTRACT_ID configuration.");
       return;
