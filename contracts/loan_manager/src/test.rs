@@ -1005,3 +1005,23 @@ fn test_nft_paused_blocks_loan_approval() {
     let result = manager.try_approve_loan(&loan_id);
     assert_eq!(result, Err(Ok(LoanError::NftPaused)));
 }
+
+#[test]
+fn test_set_default_window_zero_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let result = manager.try_set_default_window_ledgers(&0);
+    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+}
+
+#[test]
+fn test_set_default_window_below_minimum_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let result = manager.try_set_default_window_ledgers(&99);
+    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+}
