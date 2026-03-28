@@ -1,5 +1,8 @@
 import { Request, Response } from "express";
 import { query } from "../db/connection.js";
+import { AppError } from "../errors/AppError.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
+import { sorobanService } from "../services/sorobanService.js";
 import logger from "../utils/logger.js";
 
 const ANNUAL_APY = 0.08; // 8% annual yield paid to depositors
@@ -134,3 +137,113 @@ export const getDepositorPortfolio = async (req: Request, res: Response) => {
     });
   }
 };
+
+/**
+ * POST /api/pool/deposit
+ * Build an unsigned LendingPool deposit transaction.
+ */
+export const depositToPool = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { depositorPublicKey, amount } = req.body as {
+      depositorPublicKey: string;
+      amount: number;
+    };
+
+    if (!depositorPublicKey || !amount || amount <= 0) {
+      throw AppError.badRequest(
+        "depositorPublicKey and a positive amount are required",
+      );
+    }
+
+    if (depositorPublicKey !== req.user?.publicKey) {
+      throw AppError.forbidden(
+        "depositorPublicKey must match your authenticated wallet",
+      );
+    }
+
+    const result = await sorobanService.buildDepositTx(
+      depositorPublicKey,
+      amount,
+    );
+
+    logger.info("Deposit transaction built", {
+      depositor: depositorPublicKey,
+      amount,
+    });
+
+    res.json({
+      success: true,
+      unsignedTxXdr: result.unsignedTxXdr,
+      networkPassphrase: result.networkPassphrase,
+    });
+  },
+);
+
+/**
+ * POST /api/pool/withdraw
+ * Build an unsigned LendingPool withdraw transaction.
+ */
+export const withdrawFromPool = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { depositorPublicKey, amount } = req.body as {
+      depositorPublicKey: string;
+      amount: number;
+    };
+
+    if (!depositorPublicKey || !amount || amount <= 0) {
+      throw AppError.badRequest(
+        "depositorPublicKey and a positive amount are required",
+      );
+    }
+
+    if (depositorPublicKey !== req.user?.publicKey) {
+      throw AppError.forbidden(
+        "depositorPublicKey must match your authenticated wallet",
+      );
+    }
+
+    const result = await sorobanService.buildWithdrawTx(
+      depositorPublicKey,
+      amount,
+    );
+
+    logger.info("Withdraw transaction built", {
+      depositor: depositorPublicKey,
+      amount,
+    });
+
+    res.json({
+      success: true,
+      unsignedTxXdr: result.unsignedTxXdr,
+      networkPassphrase: result.networkPassphrase,
+    });
+  },
+);
+
+/**
+ * POST /api/pool/submit
+ * Submit a signed pool transaction to the Stellar network.
+ */
+export const submitPoolTransaction = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { signedTxXdr } = req.body as { signedTxXdr: string };
+
+    if (!signedTxXdr) {
+      throw AppError.badRequest("signedTxXdr is required");
+    }
+
+    const result = await sorobanService.submitSignedTx(signedTxXdr);
+
+    logger.info("Pool transaction submitted", {
+      txHash: result.txHash,
+      status: result.status,
+    });
+
+    res.json({
+      success: true,
+      txHash: result.txHash,
+      status: result.status,
+      ...(result.resultXdr ? { resultXdr: result.resultXdr } : {}),
+    });
+  },
+);

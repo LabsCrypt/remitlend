@@ -37,6 +37,26 @@ class SorobanService {
     return contractId;
   }
 
+  private getLendingPoolContractId(): string {
+    const contractId = process.env.LENDING_POOL_CONTRACT_ID;
+    if (!contractId) {
+      throw AppError.internal(
+        "LENDING_POOL_CONTRACT_ID is not configured",
+      );
+    }
+    return contractId;
+  }
+
+  private getPoolTokenAddress(): string {
+    const address = process.env.POOL_TOKEN_ADDRESS;
+    if (!address) {
+      throw AppError.internal(
+        "POOL_TOKEN_ADDRESS is not configured",
+      );
+    }
+    return address;
+  }
+
   /**
    * Builds an unsigned Soroban `request_loan(borrower, amount)` transaction.
    * Returns base64 XDR for the frontend to sign with the user's wallet.
@@ -125,6 +145,148 @@ class SorobanService {
       borrower: borrowerPublicKey,
       loanId,
       amount,
+    });
+
+    return { unsignedTxXdr, networkPassphrase: passphrase };
+  }
+
+  /**
+   * Builds an unsigned Soroban `deposit(provider, token, amount)` transaction
+   * against the LendingPool contract.
+   * Returns base64 XDR for the frontend to sign with the user's wallet.
+   */
+  async buildDepositTx(
+    depositorPublicKey: string,
+    amount: number,
+  ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
+    const server = this.getRpcServer();
+    const contractId = this.getLendingPoolContractId();
+    const passphrase = this.getNetworkPassphrase();
+
+    const account = await server.getAccount(depositorPublicKey);
+
+    const providerScVal = nativeToScVal(
+      Address.fromString(depositorPublicKey),
+      { type: "address" },
+    );
+    const tokenScVal = nativeToScVal(
+      Address.fromString(this.getPoolTokenAddress()),
+      { type: "address" },
+    );
+    const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "deposit",
+          args: [providerScVal, tokenScVal, amountScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await server.prepareTransaction(tx);
+    const unsignedTxXdr = prepared.toXDR();
+
+    logger.info("Built deposit transaction", {
+      depositor: depositorPublicKey,
+      amount,
+    });
+
+    return { unsignedTxXdr, networkPassphrase: passphrase };
+  }
+
+  /**
+   * Builds an unsigned Soroban `withdraw(provider, token, shares)` transaction
+   * against the LendingPool contract.
+   * Returns base64 XDR for the frontend to sign with the user's wallet.
+   */
+  async buildWithdrawTx(
+    depositorPublicKey: string,
+    shares: number,
+  ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
+    const server = this.getRpcServer();
+    const contractId = this.getLendingPoolContractId();
+    const passphrase = this.getNetworkPassphrase();
+
+    const account = await server.getAccount(depositorPublicKey);
+
+    const providerScVal = nativeToScVal(
+      Address.fromString(depositorPublicKey),
+      { type: "address" },
+    );
+    const tokenScVal = nativeToScVal(
+      Address.fromString(this.getPoolTokenAddress()),
+      { type: "address" },
+    );
+    const sharesScVal = nativeToScVal(BigInt(shares), { type: "i128" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "withdraw",
+          args: [providerScVal, tokenScVal, sharesScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await server.prepareTransaction(tx);
+    const unsignedTxXdr = prepared.toXDR();
+
+    logger.info("Built withdraw transaction", {
+      depositor: depositorPublicKey,
+      shares,
+    });
+
+    return { unsignedTxXdr, networkPassphrase: passphrase };
+  }
+
+  /**
+   * Builds an unsigned Soroban `approve_loan(loan_id)` transaction
+   * against the LoanManager contract.
+   * Returns base64 XDR for the admin to sign with their wallet.
+   */
+  async buildApproveLoanTx(
+    adminPublicKey: string,
+    loanId: number,
+  ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
+    const server = this.getRpcServer();
+    const contractId = this.getLoanManagerContractId();
+    const passphrase = this.getNetworkPassphrase();
+
+    const account = await server.getAccount(adminPublicKey);
+
+    const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "approve_loan",
+          args: [loanIdScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await server.prepareTransaction(tx);
+    const unsignedTxXdr = prepared.toXDR();
+
+    logger.info("Built approve_loan transaction", {
+      admin: adminPublicKey,
+      loanId,
     });
 
     return { unsignedTxXdr, networkPassphrase: passphrase };
