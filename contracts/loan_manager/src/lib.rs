@@ -741,7 +741,8 @@ impl LoanManager {
     pub fn approve_loan(env: Env, loan_id: u32) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
-        Self::admin(&env).require_auth();
+        let admin = Self::admin(&env);
+        admin.require_auth();
         Self::assert_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
@@ -788,8 +789,7 @@ impl LoanManager {
         token_client.transfer(&lending_pool, &loan.borrower, &loan.amount);
 
         events::loan_approved(&env, loan_id, loan.borrower.clone());
-        env.events()
-            .publish((symbol_short!("LoanAppr"), loan.borrower.clone()), loan_id);
+        events::loan_approved_by_admin(&env, admin, loan_id, loan.borrower.clone());
 
         Ok(())
     }
@@ -1188,12 +1188,15 @@ impl LoanManager {
         if rate_bps > 10_000 {
             return Err(LoanError::InvalidRate);
         }
-        Self::admin(&env).require_auth();
+        let admin = Self::admin(&env);
+        admin.require_auth();
 
+        let old_rate = Self::late_fee_rate_bps(&env);
         env.storage()
             .instance()
             .set(&DataKey::LateFeeRateBps, &rate_bps);
         Self::bump_instance_ttl(&env);
+        events::late_fee_rate_updated(&env, admin, old_rate, rate_bps);
 
         Ok(())
     }
@@ -1210,10 +1213,12 @@ impl LoanManager {
             .expect("not initialized");
         admin.require_auth();
 
+        let old_ledgers = Self::grace_period_ledgers(&env);
         env.storage()
             .instance()
             .set(&DataKey::GracePeriodLedgers, &ledgers);
         Self::bump_instance_ttl(&env);
+        events::grace_period_updated(&env, admin, old_ledgers, ledgers);
     }
 
     pub fn get_grace_period_ledgers(env: Env) -> u32 {
@@ -1233,10 +1238,12 @@ impl LoanManager {
             .ok_or(LoanError::NotInitialized)?;
         admin.require_auth();
 
+        let old_ledgers = Self::default_window_ledgers(&env);
         env.storage()
             .instance()
             .set(&DataKey::DefaultWindowLedgers, &ledgers);
         Self::bump_instance_ttl(&env);
+        events::default_window_updated(&env, admin, old_ledgers, ledgers);
         Ok(())
     }
 
@@ -1269,10 +1276,12 @@ impl LoanManager {
             .ok_or(LoanError::NotInitialized)?;
         admin.require_auth();
 
+        let old_amount = Self::max_loan_amount(&env);
         env.storage()
             .instance()
             .set(&DataKey::MaxLoanAmount, &amount);
         Self::bump_instance_ttl(&env);
+        events::max_loan_amount_updated(&env, admin, old_amount, amount);
 
         Ok(())
     }
@@ -1293,10 +1302,12 @@ impl LoanManager {
             .expect("not initialized");
         admin.require_auth();
 
+        let old_amount = Self::min_repayment_amount(&env);
         env.storage()
             .instance()
             .set(&DataKey::MinRepaymentAmount, &amount);
         Self::bump_instance_ttl(&env);
+        events::min_repayment_updated(&env, admin, old_amount, amount);
     }
 
     pub fn get_min_repayment_amount(env: Env) -> i128 {
@@ -1315,10 +1326,12 @@ impl LoanManager {
             .ok_or(LoanError::NotInitialized)?;
         admin.require_auth();
 
+        let old_max = Self::max_loans_per_borrower(&env);
         env.storage()
             .instance()
             .set(&DataKey::MaxLoansPerBorrower, &max_loans);
         Self::bump_instance_ttl(&env);
+        events::max_loans_per_borrower_updated(&env, admin, old_max, max_loans);
 
         Ok(())
     }
