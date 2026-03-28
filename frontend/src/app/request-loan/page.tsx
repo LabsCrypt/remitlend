@@ -1,17 +1,36 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
-import { LoanApplicationWizard } from "../components/loan-wizard/LoanApplicationWizard";
 import { useCreditScoreHistory } from "../hooks/useApi";
 import {
   useWalletStore,
   selectWalletAddress,
   selectIsWalletConnected,
 } from "../stores/useWalletStore";
+
+const LoanApplicationWizard = dynamic(
+  () =>
+    import("../components/loan-wizard/LoanApplicationWizard").then(
+      (module) => module.LoanApplicationWizard,
+    ),
+  {
+    loading: () => (
+      <Card>
+        <CardContent className="space-y-4 py-10">
+          <div className="h-4 w-40 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+          <div className="h-24 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-900" />
+          <div className="h-24 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-900" />
+        </CardContent>
+      </Card>
+    ),
+    ssr: false,
+  },
+);
 
 function getScoreBandMax(score: number): number {
   if (score >= 750) return 50_000;

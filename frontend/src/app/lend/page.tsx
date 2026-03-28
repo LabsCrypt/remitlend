@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -13,13 +14,23 @@ import {
 } from "lucide-react";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { Skeleton } from "../components/ui/Skeleton";
-import { YieldEarningsChart } from "../components/charts/YieldEarningsChart";
 import { useDepositorPortfolio, useLoans, usePoolStats, useYieldHistory } from "../hooks/useApi";
 import { LoanStatusBadge } from "../components/ui/LoanStatusBadge";
 import { DepositWithdrawSkeleton } from "../components/skeletons/DepositWithdrawSkeleton";
 import { OperationProgress } from "../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../stores/useWalletStore";
+
+const YieldEarningsChart = dynamic(
+  () =>
+    import("../components/charts/YieldEarningsChart").then(
+      (module) => module.YieldEarningsChart,
+    ),
+  {
+    loading: () => <Skeleton className="h-80 w-full rounded-lg" />,
+    ssr: false,
+  },
+);
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
