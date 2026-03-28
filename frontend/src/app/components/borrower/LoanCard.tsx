@@ -84,7 +84,14 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
             <span className="text-gray-600">Repayment Progress</span>
             <span className="font-medium">{progress.toFixed(1)}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div
+            className="w-full bg-gray-200 rounded-full h-2"
+            role="progressbar"
+            aria-valuenow={Math.round(progress)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Repayment progress: ${progress.toFixed(1)}%`}
+          >
             <div
               className="bg-blue-600 h-2 rounded-full"
               style={{ width: `${Math.min(progress, 100)}%` }}

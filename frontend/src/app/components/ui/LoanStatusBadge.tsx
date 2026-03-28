@@ -18,6 +18,8 @@ export function LoanStatusBadge({ status, className = "" }: LoanStatusBadgeProps
     "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
   return (
     <span
+      role="status"
+      aria-label={`Loan status: ${status}`}
       className={`inline-block rounded-full px-3 py-1 text-xs font-medium capitalize ${styles} ${className}`}
     >
       {status}

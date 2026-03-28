@@ -1,6 +1,6 @@
 use super::*;
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
-use soroban_sdk::{Address, Env, Vec};
+use soroban_sdk::{Address, BytesN, Env, Vec};
 #[allow(deprecated)]
 #[contract]
 pub struct MockTarget;
@@ -45,6 +45,24 @@ fn set_ts(env: &Env, ts: u64) {
         min_persistent_entry_ttl: 1_000_000,
         max_entry_ttl: 10_000_000,
     });
+}
+
+fn create_upgrade_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[11u8; 32])
+}
+
+#[test]
+fn version_is_initialized() {
+    let (_env, client, _admin, _) = setup();
+    assert_eq!(client.version(), 1);
+}
+
+#[test]
+#[should_panic]
+fn upgrade_requires_admin_auth() {
+    let (env, client, _admin, _) = setup();
+    env.mock_auths(&[]);
+    client.upgrade(&create_upgrade_hash(&env));
 }
 
 #[test]

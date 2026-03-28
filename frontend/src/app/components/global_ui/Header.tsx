@@ -242,15 +242,18 @@ export function Header({ onMenuClick, className }: HeaderProps) {
     >
       <div className="flex items-center gap-4 lg:gap-0">
         <button
+          type="button"
           onClick={onMenuClick}
-          className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden"
+          aria-label="Open navigation menu"
+          aria-haspopup="true"
+          className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden rounded-lg"
         >
-          <Menu className="h-6 w-6" />
+          <Menu className="h-6 w-6" aria-hidden="true" />
         </button>
 
         <div ref={wrapperRef} className="relative hidden lg:flex w-full max-w-xl">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-            <Search className="h-4 w-4 text-zinc-400" />
+            <Search className="h-4 w-4 text-zinc-400" aria-hidden="true" />
           </div>
           <input
             ref={inputRef}
@@ -263,12 +266,18 @@ export function Header({ onMenuClick, className }: HeaderProps) {
             }}
             onFocus={() => setIsOpen(true)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Search loans, pages, transactions..."
+            placeholder="Search loans, pages, transactions…"
+            aria-label="Search loans, pages, and transactions"
             role="combobox"
             aria-expanded={isOpen}
             aria-haspopup="listbox"
             aria-autocomplete="list"
             aria-controls="header-search-results"
+            aria-activedescendant={
+              isOpen && searchResults[activeIndex]
+                ? `search-result-${searchResults[activeIndex].id}`
+                : undefined
+            }
             className="block w-full rounded-full border border-zinc-200 bg-zinc-50 py-2 pl-10 pr-3 text-sm placeholder-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
           />
           <span className="pointer-events-none absolute inset-y-0 right-3 hidden items-center text-xs text-zinc-400 xl:flex">
@@ -303,6 +312,9 @@ export function Header({ onMenuClick, className }: HeaderProps) {
                       return (
                         <button
                           key={item.id}
+                          id={`search-result-${item.id}`}
+                          role="option"
+                          aria-selected={isActive}
                           onClick={() => handleSelect(item.href)}
                           className={cn(
                             "flex w-full items-start justify-between rounded-xl px-3 py-2 text-left transition",
@@ -332,20 +344,22 @@ export function Header({ onMenuClick, className }: HeaderProps) {
         </div>
 
         <button
+          type="button"
           onClick={handleWalletToggle}
-          aria-label="Connect Wallet"
+          aria-label={isConnected ? "Disconnect wallet" : "Connect wallet"}
           className="hidden sm:flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-500/20"
         >
-          <Wallet className="h-4 w-4" />
+          <Wallet className="h-4 w-4" aria-hidden="true" />
           {isConnected ? "Disconnect" : "Connect Wallet"}
         </button>
 
         <button
+          type="button"
           onClick={handleWalletToggle}
-          aria-label="Connect Wallet"
-          className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          aria-label={isConnected ? "Disconnect wallet" : "Connect wallet"}
+          className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 rounded-lg"
         >
-          <Wallet className="h-5 w-5 text-indigo-600" />
+          <Wallet className="h-5 w-5 text-indigo-600" aria-hidden="true" />
         </button>
 
         <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
@@ -354,12 +368,18 @@ export function Header({ onMenuClick, className }: HeaderProps) {
 
         <NotificationDropdown />
 
-        <button className="flex items-center gap-2 rounded-full p-1 border border-zinc-200 hover:border-zinc-300 transition-colors dark:border-zinc-800 dark:hover:border-zinc-700">
+        <button
+          type="button"
+          aria-label={`Profile: ${profileLabel}`}
+          className="flex items-center gap-2 rounded-full p-1 border border-zinc-200 hover:border-zinc-300 transition-colors dark:border-zinc-800 dark:hover:border-zinc-700"
+        >
           <div className="h-7 w-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-            <User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+            <User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
           </div>
           <div className="hidden md:block pr-2">
-            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">{profileLabel}</p>
+            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50" aria-hidden="true">
+              {profileLabel}
+            </p>
           </div>
         </button>
       </div>

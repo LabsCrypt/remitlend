@@ -2,7 +2,7 @@ use crate::{DataKey, LoanError, LoanManager, LoanManagerClient, LoanStatus};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String};
 
 fn setup_test<'a>(
     env: &Env,
@@ -44,6 +44,20 @@ fn setup_test<'a>(
         token_id,
         token_admin,
     )
+}
+
+fn create_upgrade_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[9u8; 32])
+}
+
+#[test]
+#[should_panic]
+fn test_upgrade_requires_admin_auth() {
+    let env = Env::default();
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    env.mock_auths(&[]);
+    manager.upgrade(&create_upgrade_hash(&env));
 }
 
 #[test]
