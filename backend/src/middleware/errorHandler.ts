@@ -63,11 +63,13 @@ export const errorHandler = (
 
   Sentry.captureException(err);
 
-  const isDevelopment = process.env.NODE_ENV !== "production";
+  const shouldExposeStackTrace =
+    process.env.NODE_ENV === "development" &&
+    process.env.EXPOSE_STACK_TRACES === "true";
 
   res.status(500).json({
     success: false,
     message: "Internal server error",
-    ...(isDevelopment && { stack: err.stack }),
+    ...(shouldExposeStackTrace && { stack: err.stack }),
   });
 };

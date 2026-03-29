@@ -68,6 +68,44 @@ describe("Centralized Error Handling", () => {
 
       process.env.NODE_ENV = originalEnv;
     });
+
+    it("should expose stack traces only with explicit development opt-in", async () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalExposeStackTraces = process.env.EXPOSE_STACK_TRACES;
+
+      process.env.NODE_ENV = "development";
+      process.env.EXPOSE_STACK_TRACES = "true";
+      const developmentResponse = await request(app).get("/test/error/unexpected");
+
+      expect(developmentResponse.status).toBe(500);
+      expect(developmentResponse.body).toHaveProperty("stack");
+
+      process.env.NODE_ENV = "development";
+      process.env.EXPOSE_STACK_TRACES = "false";
+      const noOptInResponse = await request(app).get("/test/error/unexpected");
+
+      expect(noOptInResponse.status).toBe(500);
+      expect(noOptInResponse.body).not.toHaveProperty("stack");
+
+      process.env.NODE_ENV = "staging";
+      process.env.EXPOSE_STACK_TRACES = "true";
+      const stagingResponse = await request(app).get("/test/error/unexpected");
+
+      expect(stagingResponse.status).toBe(500);
+      expect(stagingResponse.body).not.toHaveProperty("stack");
+
+      if (originalEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalEnv;
+      }
+
+      if (originalExposeStackTraces === undefined) {
+        delete process.env.EXPOSE_STACK_TRACES;
+      } else {
+        process.env.EXPOSE_STACK_TRACES = originalExposeStackTraces;
+      }
+    });
   });
 
   /* ── Diagnostic Routes (Integration) ───────────────────────── */
