@@ -489,7 +489,11 @@ impl LendingPool {
         if cur_total_shares == 0 {
             return 0;
         }
-        Self::calc_assets_to_redeem(shares, Self::read_pool_balance(&env, &token), cur_total_shares)
+        Self::calc_assets_to_redeem(
+            shares,
+            Self::read_pool_balance(&env, &token),
+            cur_total_shares,
+        )
     }
 
     /// Raw LP share balance for `provider` in the `token` pool.
