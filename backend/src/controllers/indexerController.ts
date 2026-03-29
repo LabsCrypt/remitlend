@@ -231,7 +231,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = buildEventsCacheKey("loan", loanId, req);
+    const cacheKey = buildEventsCacheKey("loan", loanId as string, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
