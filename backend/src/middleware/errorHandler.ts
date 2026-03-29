@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { AppError } from "../errors/AppError.js";
+import { ErrorCode } from "../errors/errorCodes.js";
 import logger from "../utils/logger.js";
 import { Sentry } from "../config/sentry.js";
 
@@ -9,7 +10,11 @@ import { Sentry } from "../config/sentry.js";
  *
  * Must be registered LAST in the Express middleware chain (after all
  * routes). Catches all errors forwarded via `next(err)` and returns
- * a consistent JSON error response.
+ * a consistent JSON error response with structured error codes.
+ *
+ * Response format for backward compatibility:
+ * - Includes both new structured format (error.code, error.message)
+ * - And legacy format (message, errors) for existing tests/clients
  */
 export const errorHandler = (
   err: Error,
@@ -18,22 +23,39 @@ export const errorHandler = (
   _next: NextFunction,
 ): void => {
   // ── Zod Validation Errors ────────────────────────────────────
-  // Preserves the existing response format from validation.ts so
-  // that current tests and clients remain backward-compatible.
   if (err instanceof z.ZodError) {
+    const details = err.issues.map((issue: z.ZodIssue) => ({
+      field: issue.path.join("."),
+      message: issue.message,
+      code: issue.code,
+    }));
+
+    // Get the first failing field for quick reference
+    const firstField = details.length > 0 ? details[0]?.field : undefined;
+
     res.status(400).json({
       success: false,
+      // Legacy format for backward compatibility
       message: "Validation failed",
       errors: err.issues.map((issue: z.ZodIssue) => ({
         path: issue.path.join("."),
         message: issue.message,
       })),
+      // New structured format
+      error: {
+        code: ErrorCode.VALIDATION_ERROR,
+        message: "Validation failed",
+        field: firstField,
+        details,
+      },
     });
     return;
   }
 
   // ── Known Operational Errors ─────────────────────────────────
   if (err instanceof AppError) {
+    const message = err.isOperational ? err.message : "Internal server error";
+
     if (!err.isOperational) {
       logger.error(`Internal AppError: ${err.message}`, {
         requestId: req.requestId,
@@ -46,10 +68,29 @@ export const errorHandler = (
       });
     }
 
-    res.status(err.statusCode).json({
+    const errorResponse: any = {
       success: false,
+      // Legacy format for backward compatibility
       message: err.isOperational ? err.message : "Internal server error",
-    });
+      // New structured format
+      error: {
+        code: err.errorCode,
+        message: err.isOperational ? err.message : "Internal server error",
+      },
+    };
+
+    // Include field information if present
+    if (err.field) {
+      errorResponse.error.field = err.field;
+      errorResponse.field = err.field; // Legacy format
+    }
+
+    // Include additional details if present
+    if (err.details) {
+      errorResponse.error.details = err.details;
+    }
+
+    res.status(err.statusCode).json(errorResponse);
     return;
   }
 
@@ -63,11 +104,18 @@ export const errorHandler = (
 
   Sentry.captureException(err);
 
-  const isDevelopment = process.env.NODE_ENV !== "production";
+  const shouldExposeStackTrace =
+    process.env.NODE_ENV === "development" &&
+    process.env.EXPOSE_STACK_TRACES === "true";
 
   res.status(500).json({
     success: false,
+    // Legacy format
     message: "Internal server error",
-    ...(isDevelopment && { stack: err.stack }),
+    error: {
+      code: ErrorCode.INTERNAL_ERROR,
+      message: "Internal server error",
+    },
+    ...(shouldExposeStackTrace && { stack: err.stack }),
   });
 };
