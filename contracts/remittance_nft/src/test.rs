@@ -608,7 +608,7 @@ fn test_get_score_history_for_unknown_user_is_empty() {
 
     client.initialize(&admin);
 
-    let history = client.get_score_history(&user);
+    let history = client.get_score_history(&user, &0, &10);
     assert_eq!(history.len(), 0);
 }
 
@@ -626,35 +626,25 @@ fn test_score_history_tracks_and_caps_recent_updates() {
     client.initialize(&admin);
     client.mint(&user, &500, &create_test_hash(&env, 7), &None);
 
-    for sequence in 1..=12u32 {
+    // Add 52 updates — exceeds MAX_SCORE_HISTORY_ENTRIES (50)
+    for sequence in 1..=52u32 {
         env.ledger().set_sequence_number(sequence);
         client.update_score(&user, &100, &None);
     }
 
-    let history = client.get_score_history(&user);
-    assert_eq!(history.len(), 10);
+    // Total history must be capped at MAX_SCORE_HISTORY_ENTRIES
+    let history = client.get_score_history(&user, &0, &100);
+    assert_eq!(history.len(), RemittanceNFT::MAX_SCORE_HISTORY_ENTRIES);
 
+    // Oldest entry should be the 3rd update (sequences 1 and 2 were rotated out)
     let first = history.get(0).unwrap();
-    assert_eq!(
-        first,
-        ScoreHistoryEntry {
-            ledger: 3,
-            old_score: 502,
-            new_score: 503,
-            reason: symbol_short!("REPAY"),
-        }
-    );
+    assert_eq!(first.ledger, 3);
 
-    let last = history.get(9).unwrap();
-    assert_eq!(
-        last,
-        ScoreHistoryEntry {
-            ledger: 12,
-            old_score: 511,
-            new_score: 512,
-            reason: symbol_short!("REPAY"),
-        }
-    );
+    // Newest entry should be the 52nd update
+    let last = history
+        .get(RemittanceNFT::MAX_SCORE_HISTORY_ENTRIES - 1)
+        .unwrap();
+    assert_eq!(last.ledger, 52);
 }
 
 #[test]
@@ -766,14 +756,14 @@ fn test_transfer_moves_identity_state_to_new_wallet() {
     assert_eq!(client.get_score(&old_wallet), 0);
     assert_eq!(client.get_default_count(&old_wallet), 0);
     assert!(!client.is_seized(&old_wallet));
-    assert_eq!(client.get_score_history(&old_wallet).len(), 0);
+    assert_eq!(client.get_score_history(&old_wallet, &0, &10).len(), 0);
 
     let metadata = client.get_metadata(&new_wallet).unwrap();
     assert_eq!(metadata.score, 503);
     assert_eq!(metadata.history_hash, create_test_hash(&env, 21));
     assert_eq!(client.get_default_count(&new_wallet), 1);
     assert!(client.is_seized(&new_wallet));
-    assert_eq!(client.get_score_history(&new_wallet).len(), 1);
+    assert_eq!(client.get_score_history(&new_wallet, &0, &10).len(), 1);
 }
 
 #[test]

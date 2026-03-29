@@ -6,9 +6,9 @@ import logger from "../utils/logger.js";
 export interface LoanEventPayload {
   eventId: string;
   eventType: string;
-  loanId?: number;
+  loanId?: number | undefined;
   borrower: string;
-  amount?: string;
+  amount?: string | undefined;
   ledger: number;
   ledgerClosedAt: string;
   txHash: string;

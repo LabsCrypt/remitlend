@@ -4,12 +4,17 @@
 import { jest } from "@jest/globals";
 
 // ── mockGetScoreConfig reads env vars just like the real implementation ───
-const mockGetScoreConfig = jest.fn().mockImplementation(() => ({
+interface ScoreConfig {
+  repaymentDelta: number;
+  defaultPenalty: number;
+}
+
+const mockGetScoreConfig = jest.fn<() => ScoreConfig>().mockImplementation(() => ({
   repaymentDelta: parseInt(process.env.SCORE_REPAYMENT_DELTA ?? "15", 10),
   defaultPenalty: parseInt(process.env.SCORE_DEFAULT_PENALTY ?? "50", 10),
 }));
 
-const mockQuery = jest.fn<() => Promise<{ rows: unknown[]; rowCount: number }>>()
+const mockQuery = jest.fn<() => Promise<{ rows: any[]; rowCount: number }>>()
   .mockResolvedValue({ rows: [], rowCount: 0 });
 
 // All ESM mocks must be declared before any dynamic import
@@ -25,7 +30,7 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
-  webhookService: { dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(void 0) },
+  webhookService: { dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(undefined) },
   WebhookEventType: {},
 }));
 

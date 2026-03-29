@@ -8,6 +8,7 @@ import {
   webhookService,
 } from "./webhookService.js";
 import { eventStreamService } from "./eventStreamService.js";
+import { notificationService, type NotificationType } from "./notificationService.js";
 import { sorobanService } from "./sorobanService.js";
 
 interface SorobanRawEvent {
@@ -545,11 +546,13 @@ export class EventIndexer {
         return;
     }
 
-    await query(
-      `INSERT INTO notifications (user_id, type, title, message, loan_id)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [event.borrower, type, title, message, event.loanId ?? null],
-    );
+    await notificationService.createNotification({
+      userId: event.borrower,
+      type: type as NotificationType,
+      title,
+      message,
+      loanId: event.loanId,
+    });
   }
 
   private decodeAddress(value: xdr.ScVal): string {

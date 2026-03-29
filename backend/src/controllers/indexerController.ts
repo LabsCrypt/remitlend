@@ -152,7 +152,6 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
         message: "Borrower is required",
       });
     }
-
     const { limit, offset, sort } = parseQueryParams(req);
     const cacheKey = buildEventsCacheKey("borrower", borrower as string, req);
     const cachedData = await cacheService.get(cacheKey);
@@ -217,7 +216,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
     const loanIdParam = req.params.loanId;
     const loanId = Array.isArray(loanIdParam) ? loanIdParam[0] : loanIdParam;
     const { limit, offset, sort } = parseQueryParams(req);
-
+    
     if (!loanId) {
       return res.status(400).json({
         success: false,
