@@ -593,25 +593,39 @@ fn test_check_default_success() {
     let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
+    // Mint score high enough to pass
     let history_hash = BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
+    // Mint tokens to pool
     let stellar_token = StellarAssetClient::new(&env, &token_id);
     stellar_token.mint(&pool_client.address, &10_000);
 
+    // Request and approve loan
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
 
+    // Sanity check before default
     assert!(!nft_client.is_seized(&borrower));
 
-    env.ledger().set_sequence_number(env.ledger().sequence() + 100_000);
+    // Advance ledger to just past due date + grace period
+    let loan = manager.get_loan(&loan_id);
+    let due = loan.due_date;
+    let grace = manager.get_grace_period_ledgers();
+    env.ledger().set_sequence_number(due + grace + 1);
 
+    // Optional: debug prints to check state
+    println!("Loan before default: {:?}", manager.get_loan(&loan_id));
+    println!("Ledger sequence: {}", env.ledger().sequence());
+
+    // Check default logic
     manager.check_default(&loan_id);
 
+    // Verify loan status updated and NFT penalties applied
     let loan = manager.get_loan(&loan_id);
     assert_eq!(loan.status, LoanStatus::Defaulted);
     assert_eq!(nft_client.get_default_count(&borrower), 1);
-    assert_eq!(nft_client.get_score(&borrower), 550);
+    assert_eq!(nft_client.get_score(&borrower), 550); // assuming 50 point penalty
     assert!(nft_client.is_seized(&borrower));
 }
 
