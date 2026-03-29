@@ -16,6 +16,10 @@ import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
+import {
+  startWebhookRetryProcessor,
+  stopWebhookRetryProcessor,
+} from "./services/webhookRetryProcessor.js";
 import { eventStreamService } from "./services/eventStreamService.js";
 import {
   startNotificationCleanupScheduler,
@@ -50,6 +54,9 @@ const server = app.listen(port, () => {
 
   // Start periodic on-chain default checks (if configured)
   startDefaultCheckerScheduler();
+
+  // Start webhook retry processor
+  startWebhookRetryProcessor();
   
   // Start periodic notification cleanup
   startNotificationCleanupScheduler();

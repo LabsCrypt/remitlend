@@ -81,6 +81,11 @@ pub fn rate_oracle_updated(env: &Env, old_oracle: Option<Address>, new_oracle: A
     env.events().publish(topics, (old_oracle, new_oracle));
 }
 
+pub fn collateral_returned(env: &Env, borrower: Address, loan_id: u32, amount: i128) {
+    let topics = (Symbol::new(env, "CollateralReturned"), borrower, loan_id);
+    env.events().publish(topics, amount);
+}
+
 pub fn late_fee_rate_updated(env: &Env, admin: Address, old_rate: u32, new_rate: u32) {
     let topics = (Symbol::new(env, "LateFeeRateUpdated"), admin);
     env.events().publish(topics, (old_rate, new_rate));
