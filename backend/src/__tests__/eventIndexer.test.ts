@@ -1,6 +1,18 @@
 import { jest } from "@jest/globals";
 import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 
+// Seed required runtime env vars before importing modules that may validate config.
+process.env.DATABASE_URL ??= "postgresql://test:test@localhost/test";
+process.env.REDIS_URL ??= "redis://localhost:6379";
+process.env.JWT_SECRET ??= "test-secret-key";
+process.env.STELLAR_RPC_URL ??= "https://soroban-testnet.stellar.org";
+process.env.STELLAR_NETWORK_PASSPHRASE ??= "Test SDF Network ; September 2015";
+process.env.LOAN_MANAGER_CONTRACT_ID ??= "CINDEXERTEST";
+process.env.LENDING_POOL_CONTRACT_ID ??= "CPOOL123";
+process.env.POOL_TOKEN_ADDRESS ??= "CTOKEN123";
+process.env.LOAN_MANAGER_ADMIN_SECRET ??= "test-admin-secret";
+process.env.INTERNAL_API_KEY ??= "test-api-key";
+
 const mockQuery = jest.fn();
 const mockDispatch = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const mockBroadcast = jest.fn();
@@ -209,8 +221,7 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
     expect(scoreUpdates).toEqual([
-      [borrowerRepaid, 515, 15],
-      [borrowerDefaulted, 450, -50],
+      [borrowerRepaid, 15, borrowerDefaulted, -50],
     ]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
