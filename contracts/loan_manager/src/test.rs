@@ -1000,7 +1000,7 @@ fn test_small_loan_interest_accrual_precision() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_address.address, &10_000);
 
     // Request a small loan of 50 units
     let loan_id = manager.request_loan(&borrower, &50);
@@ -1050,7 +1050,7 @@ fn test_query_functions() {
     assert_eq!(manager.get_admin(), token_admin);
 
     // Test get_lending_pool
-    assert_eq!(manager.get_lending_pool(), pool_address);
+    assert_eq!(manager.get_lending_pool(), pool_address.address);
 
     // Test get_nft_contract - get the contract address from the nft_client
     assert_eq!(manager.get_nft_contract(), nft_client.address);
@@ -1063,7 +1063,7 @@ fn test_query_functions() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_address.address, &10_000);
 
     let _loan_id = manager.request_loan(&borrower, &1000);
     assert_eq!(manager.get_total_loans(), 1);
