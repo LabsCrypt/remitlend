@@ -409,14 +409,15 @@ export function useCreditScore(
   options?: Omit<UseQueryOptions<number>, "queryKey" | "queryFn">,
 ) {
   const queryClient = useQueryClient();
-  const walletAddress = useUserStore((s) => s.walletAddress);
+  const userData = useUserStore((s) => s.user);
+  const walletAddress = userData?.walletAddress;
   const authToken = useUserStore((s) => s.authToken);
 
   const [previousScoreState, setPreviousScoreState] = useState<{
-    walletAddress: string | null;
+    walletAddress: string | undefined;
     previousScore: number | undefined;
   }>({
-    walletAddress: null,
+    walletAddress: undefined,
     previousScore: undefined,
   });
 
@@ -431,7 +432,7 @@ export function useCreditScore(
   });
 
   useEffect(() => {
-    if (!walletAddress || !authToken) {
+    if (!walletAddress || !authToken || !userId) {
       return;
     }
 
@@ -469,7 +470,7 @@ export function useCreditScore(
             payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
 
           if (payload.borrower === walletAddress && scoreChangingEvent) {
-            const currentScore = queryClient.getQueryData<number>(["creditScore", walletAddress]);
+            const currentScore = queryClient.getQueryData<number>(["creditScore", userId]);
 
             setPreviousScoreState({
               walletAddress,
@@ -477,7 +478,7 @@ export function useCreditScore(
             });
 
             queryClient.invalidateQueries({
-              queryKey: ["creditScore", walletAddress],
+              queryKey: ["creditScore", userId],
             });
           }
         } catch {
@@ -506,7 +507,7 @@ export function useCreditScore(
         clearTimeout(retryTimeout);
       }
     };
-  }, [authToken, queryClient, walletAddress]);
+  }, [authToken, queryClient, walletAddress, userId]);
 
   return {
     ...query,
