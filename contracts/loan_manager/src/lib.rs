@@ -1715,9 +1715,7 @@ impl LoanManager {
             .checked_mul(bonus_bps as i128)
             .and_then(|v| v.checked_div(10_000))
             .unwrap_or(0);
-        let borrower_remainder = collateral
-            .checked_sub(liquidator_bonus)
-            .unwrap_or(0);
+        let borrower_remainder = collateral.checked_sub(liquidator_bonus).unwrap_or(0);
 
         // Transfer collateral.
         let token: Address = env

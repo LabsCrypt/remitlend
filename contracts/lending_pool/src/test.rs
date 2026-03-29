@@ -899,6 +899,6 @@ fn test_pool_stats_evolution() {
 
     let stats = pool_client.get_pool_stats(&token_id);
     assert_eq!(stats.total_deposits, 1_000); // Tracked principal
-    assert_eq!(stats.total_assets, 1_500);    // Actual balance
+    assert_eq!(stats.total_assets, 1_500); // Actual balance
     assert_eq!(stats.share_price, 15_000_000);
 }
