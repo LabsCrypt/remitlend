@@ -9,6 +9,8 @@ import {
 } from "./webhookService.js";
 import { eventStreamService } from "./eventStreamService.js";
 import { sorobanService } from "./sorobanService.js";
+import { subscribeToContractEvents } from './chainListener';
+import db from '../db';
 
 interface SorobanRawEvent {
   id: string;
@@ -78,6 +80,125 @@ export class EventIndexer {
     this.contractId = configOrRpcUrl.contractId;
     this.pollIntervalMs = configOrRpcUrl.pollIntervalMs ?? 30_000;
     this.batchSize = configOrRpcUrl.batchSize ?? 100;
+  }
+
+init() {
+    // Existing LoanManager subscription...
+    subscribeToContractEvents('LoanManager', this.handleLoanManagerEvent.bind(this));
+
+    // NEW: LendingPool events
+    subscribeToContractEvents('LendingPool', this.handleLendingPoolEvent.bind(this));
+
+    // NEW: RemittanceNFT events
+    subscribeToContractEvents('RemittanceNFT', this.handleRemittanceNFTEvent.bind(this));
+
+    // NEW: MultisigGovernance events
+    subscribeToContractEvents('MultisigGovernance', this.handleGovernanceEvent.bind(this));
+  }
+
+  async handleLendingPoolEvent(event: any) {
+    switch (event.type) {
+      case 'Deposit':
+        await db('lending_pool_deposits').insert({
+          userId: event.user,
+          amount: event.amount,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+      case 'Withdraw':
+        await db('lending_pool_withdrawals').insert({
+          userId: event.user,
+          amount: event.amount,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+      case 'EmergencyWithdraw':
+        await db('lending_pool_emergency').insert({
+          userId: event.user,
+          amount: event.amount,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+    }
+  }
+
+  async handleRemittanceNFTEvent(event: any) {
+    switch (event.type) {
+      case 'ScoreUpdated':
+        await db('nft_scores').insert({
+          nftId: event.nftId,
+          newScore: event.score,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+      case 'NFTSeized':
+        await db('nft_seizures').insert({
+          nftId: event.nftId,
+          reason: event.reason,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+      case 'NFTBurned':
+        await db('nft_burns').insert({
+          nftId: event.nftId,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+      case 'NFTMinted':
+        await db('nft_mints').insert({
+          nftId: event.nftId,
+          owner: event.owner,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+    }
+  }
+
+  async handleGovernanceEvent(event: any) {
+    switch (event.type) {
+      case 'ProposalCreated':
+        await db('governance_proposals').insert({
+          proposalId: event.proposalId,
+          creator: event.creator,
+          expiresAt: event.expiresAt,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+      case 'ProposalApproved':
+        await db('governance_approvals').insert({
+          proposalId: event.proposalId,
+          approver: event.approver,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+      case 'ProposalFinalized':
+        await db('governance_finalized').insert({
+          proposalId: event.proposalId,
+          executor: event.executor,
+          txHash: event.txHash,
+          blockNumber: event.blockNumber,
+          timestamp: new Date(),
+        });
+        break;
+    }
   }
 
   async start(): Promise<void> {
