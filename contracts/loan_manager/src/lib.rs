@@ -81,6 +81,9 @@ pub struct Loan {
     pub last_interest_ledger: u32,
     pub last_late_fee_ledger: u32,
     pub status: LoanStatus,
+    // How many extensions have been granted for this loan.
+    // Capped at MaxExtensions to prevent indefinite deferral.
+    pub extension_count: u32,
 }
 
 #[contracttype]
@@ -102,6 +105,9 @@ pub enum DataKey {
     DefaultTermLedgers,
     Version,
     LateFeeRateBps,
+
+    ProtocolFeeRateBps,
+    TreasuryAddress,
     MinTermLedgers,
     MaxTermLedgers,
     Collateral(u32),
@@ -124,6 +130,7 @@ impl LoanManager {
     const CURRENT_VERSION: u32 = 2;
     const DEFAULT_LATE_FEE_RATE_BPS: u32 = 500;
     const MAX_LATE_FEE_CAP_BPS: u32 = 2500;
+    const DEFAULT_PROTOCOL_FEE_RATE_BPS: u32 = 10;
     const DEFAULT_MAX_LOAN_AMOUNT: i128 = 50_000;
     const DEFAULT_MAX_LOANS_PER_BORROWER: u32 = 3;
     const DEFAULT_GRACE_PERIOD_LEDGERS: u32 = 4_320;
@@ -145,6 +152,15 @@ impl LoanManager {
             Self::PERSISTENT_TTL_BUMP,
         );
     }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    // fn get_admin(env: &Env) -> Address {
+    //     env.storage()
+    //         .instance()
+    //         .get(&DataKey::Admin)
+    //         .expect("not initialized")
+    // }
 
     fn nft_contract(env: &Env) -> Address {
         Self::bump_instance_ttl(env);
@@ -281,6 +297,20 @@ impl LoanManager {
             .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS)
     }
 
+    fn protocol_fee_rate_bps(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::ProtocolFeeRateBps)
+            .unwrap_or(Self::DEFAULT_PROTOCOL_FEE_RATE_BPS)
+    }
+
+    fn treasury_address(env: &Env) -> Address {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::TreasuryAddress)
+            .expect("treasury address not set")
     fn grace_period_ledgers(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -586,6 +616,9 @@ impl LoanManager {
         lending_pool: Address,
         token: Address,
         admin: Address,
+
+        treasury_address: Address,
+    ) {
     ) -> Result<(), LoanError> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(LoanError::AlreadyInitialized);
@@ -618,6 +651,15 @@ impl LoanManager {
         env.storage()
             .instance()
             .set(&DataKey::LateFeeRateBps, &Self::DEFAULT_LATE_FEE_RATE_BPS);
+
+        env.storage().instance().set(
+            &DataKey::ProtocolFeeRateBps,
+            &Self::DEFAULT_PROTOCOL_FEE_RATE_BPS,
+        );
+        env.storage()
+            .instance()
+            .set(&DataKey::TreasuryAddress, &treasury_address);
+
         env.storage().instance().set(
             &DataKey::GracePeriodLedgers,
             &Self::DEFAULT_GRACE_PERIOD_LEDGERS,
@@ -720,6 +762,7 @@ impl LoanManager {
             last_interest_ledger: 0,
             last_late_fee_ledger: 0,
             status: LoanStatus::Pending,
+            extension_count: 0,
         };
 
         env.storage()
@@ -831,6 +874,27 @@ impl LoanManager {
         }
 
         let (total_debt, late_fee_delta) = Self::current_total_debt(&env, &mut loan);
+
+        let protocol_fee_rate = Self::protocol_fee_rate_bps(&env);
+        let protocol_fee = amount
+            .checked_mul(protocol_fee_rate as i128)
+            .and_then(|value| value.checked_div(10_000))
+            .expect("protocol fee calculation overflow");
+
+        // The actual amount going to the lending pool, after fee deduction
+        let amount_to_pool = amount
+            .checked_sub(protocol_fee)
+            .expect("repayment underflow after fee deduction");
+
+        // Panic if the amount to pool is negative or repayment too low after fees
+        if amount_to_pool <= 0 && amount > 0 {
+            panic!("repayment too low to cover protocol fee or negative amount to pool");
+        }
+
+        // The check below should use the amount going to the pool, not the total amount
+        if amount_to_pool > total_debt {
+            // Compare amount_to_pool against total_debt
+            panic!("repayment exceeds current total debt after fee deduction");
         if amount > total_debt {
             return Err(LoanError::RepaymentExceedsDebt);
         }
@@ -856,6 +920,13 @@ impl LoanManager {
             .get(&DataKey::LendingPool)
             .expect("lending pool not set");
         let token_client = TokenClient::new(&env, &token);
+
+        if protocol_fee > 0 {
+            let treasury_address = Self::treasury_address(&env);
+            token_client.transfer(&borrower, &treasury_address, &protocol_fee);
+            events::fee_collected(&env, loan_id, protocol_fee, treasury_address);
+        }
+
         token_client.transfer(&borrower, &lending_pool, &amount);
 
         let (principal_payment, interest_payment, late_fee_payment) =
@@ -948,6 +1019,34 @@ impl LoanManager {
 
         loan.borrower.require_auth();
 
+    pub fn set_protocol_fee_rate(env: Env, rate_bps: u32) {
+        if rate_bps > 10_000 {
+            panic!("protocol fee rate exceeds 100%");
+        }
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::ProtocolFeeRateBps, &rate_bps);
+        Self::bump_instance_ttl(&env);
+    }
+
+    pub fn get_protocol_fee_rate(env: Env) -> u32 {
+        Self::protocol_fee_rate_bps(&env)
+    }
+
+    pub fn get_treasury_address(env: Env) -> Address {
+        Self::treasury_address(&env)
+    }
+
+    pub fn set_min_score(env: Env, min_score: u32) {
+        let admin: Address = env
         let token: Address = env
             .storage()
             .instance()
