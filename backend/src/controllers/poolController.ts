@@ -23,9 +23,9 @@ export const getPoolStats = asyncHandler(async (_req: Request, res: Response) =>
     `),
     query(`
       SELECT
-        COUNT(DISTINCT loan_id) FILTER (
+        COALESCE(COUNT(DISTINCT loan_id) FILTER (
           WHERE event_type = 'LoanApproved'
-        ) AS active_loans_count,
+        ), 0) AS active_loans_count,
         COALESCE(SUM(CASE WHEN event_type = 'LoanApproved' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
           - COALESCE(SUM(CASE WHEN event_type = 'LoanRepaid' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
         AS total_outstanding

@@ -106,7 +106,7 @@ export const getBorrowerLoans = asyncHandler(
         MAX(CASE WHEN event_type = 'LoanApproved' THEN ledger END) as approved_ledger,
         MAX(CASE WHEN event_type = 'LoanApproved' THEN interest_rate_bps END) as rate_bps,
         MAX(CASE WHEN event_type = 'LoanApproved' THEN term_ledgers END) as term_ledgers,
-        SUM(CASE WHEN event_type = 'LoanRepaid' THEN CAST(amount AS NUMERIC) ELSE 0 END) as total_repaid,
+        COALESCE(SUM(CASE WHEN event_type = 'LoanRepaid' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) as total_repaid,
         MAX(CASE WHEN event_type = 'LoanDefaulted' THEN 1 ELSE 0 END) as is_defaulted
       FROM loan_events
       WHERE borrower = $1 AND loan_id IS NOT NULL
