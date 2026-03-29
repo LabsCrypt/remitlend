@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -17,6 +18,7 @@ interface RemittanceFormProps {
 }
 
 export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
+  const t = useTranslations("RemittanceForm");
   const [recipientAddress, setRecipientAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [token, setToken] = useState("USDC");
@@ -30,23 +32,22 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
     const newErrors: Record<string, string> = {};
 
     if (!recipientAddress.trim()) {
-      newErrors.recipientAddress = "Recipient address is required";
+      newErrors.recipientAddress = t("recipientRequired");
     } else if (!isValidStellarAddress(recipientAddress)) {
-      newErrors.recipientAddress =
-        "Invalid Stellar address format (must be 56 characters starting with G)";
+      newErrors.recipientAddress = t("recipientInvalid");
     }
 
     if (!amount) {
-      newErrors.amount = "Amount is required";
+      newErrors.amount = t("amountRequired");
     } else {
       const numAmount = parseFloat(amount);
       if (isNaN(numAmount) || numAmount <= 0) {
-        newErrors.amount = "Amount must be greater than 0";
+        newErrors.amount = t("amountInvalid");
       }
     }
 
     if (memo && memo.length > 28) {
-      newErrors.memo = "Memo must be 28 characters or less";
+      newErrors.memo = t("memoHelper");
     }
 
     setErrors(newErrors);
@@ -76,8 +77,8 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
 
   const handleReviewTransaction = async () => {
     if (!validateForm()) {
-      toast.error("Validation Error", {
-        description: "Please fix the errors in the form",
+      toast.error(t("validationError"), {
+        description: t("validationErrorDesc"),
       });
       return;
     }
@@ -105,8 +106,8 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
         memo: memo || undefined,
       });
 
-      toast.success("Success!", {
-        description: "Remittance sent successfully",
+      toast.success(t("successTitle"), {
+        description: t("successDesc"),
       });
 
       // Reset form
@@ -117,8 +118,8 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
 
       onSuccess?.();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to send remittance";
-      toast.error("Error", {
+      const errorMessage = error instanceof Error ? error.message : t("errorTitle");
+      toast.error(t("errorTitle"), {
         description: errorMessage,
       });
     }
@@ -131,17 +132,17 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Send className="h-5 w-5" />
-              Send Remittance
+              {t("title")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Recipient Address */}
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Recipient Address <span className="text-red-600">*</span>
+                {t("recipientAddress")} <span className="text-red-600">*</span>
               </label>
               <Input
-                placeholder="G... (Stellar public key)"
+                placeholder={t("recipientAddressPlaceholder")}
                 value={recipientAddress}
                 onChange={(e) => handleAddressChange(e.target.value)}
                 disabled={mutation.isPending}
@@ -154,14 +155,14 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
                 </div>
               )}
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Enter the recipient&apos;s Stellar public key (56 characters starting with G)
+                {t("recipientAddressHelper")}
               </p>
             </div>
 
             {/* Token Selection */}
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Token <span className="text-red-600">*</span>
+                {t("token")} <span className="text-red-600">*</span>
               </label>
               <select
                 value={token}
@@ -173,19 +174,17 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
                 <option value="EURC">EURC</option>
                 <option value="PHP">PHP</option>
               </select>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Select the currency for remittance
-              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{t("tokenHelper")}</p>
             </div>
 
             {/* Amount */}
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Amount <span className="text-red-600">*</span>
+                {t("amount")} <span className="text-red-600">*</span>
               </label>
               <Input
                 type="number"
-                placeholder="0.00"
+                placeholder={t("amountPlaceholder")}
                 value={amount}
                 onChange={(e) => handleAmountChange(e.target.value)}
                 disabled={mutation.isPending}
@@ -204,10 +203,11 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
             {/* Memo (Optional) */}
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Memo <span className="text-zinc-400">(optional)</span>
+                {t("memo")}{" "}
+                <span className="text-zinc-400">({t("optional", { ns: "Common" })})</span>
               </label>
               <textarea
-                placeholder="Add a note for the recipient (max 28 characters)"
+                placeholder={t("memoPlaceholder")}
                 value={memo}
                 onChange={(e) => handleMemoChange(e.target.value)}
                 disabled={mutation.isPending}
@@ -253,12 +253,12 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
                 {mutation.isPending ? (
                   <>
                     <Loader className="h-4 w-4 mr-2 animate-spin" />
-                    Processing...
+                    {t("sendingButton")}
                   </>
                 ) : (
                   <>
                     <Send className="h-4 w-4 mr-2" />
-                    Review & Send
+                    {t("reviewButton")}
                   </>
                 )}
               </Button>

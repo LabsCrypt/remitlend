@@ -70,7 +70,7 @@ export default function LoansPage() {
   if (isError) {
     return (
       <section className="rounded-3xl border border-red-200 bg-red-50 p-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-        Failed to load loans. Please reconnect your wallet and try again.
+        {t("errorMessage")}
       </section>
     );
   }

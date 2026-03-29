@@ -1,6 +1,9 @@
 "use client";
 
+"use client";
+
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import {
   Activity,
@@ -41,6 +44,7 @@ function formatPercent(value: number) {
 }
 
 export default function LendPage() {
+  const t = useTranslations("LendPage");
   const [depositAmount, setDepositAmount] = useState("100");
   const [withdrawAmount, setWithdrawAmount] = useState("50");
   const address = useWalletStore(selectWalletAddress);
@@ -109,10 +113,8 @@ export default function LendPage() {
   if (!address) {
     return (
       <section className="rounded-3xl border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-950">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Lender Dashboard</h1>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          Connect your wallet to view your lending pool portfolio.
-        </p>
+        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{t("title")}</h1>
+        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{t("walletNotConnected")}</p>
       </section>
     );
   }
@@ -120,7 +122,7 @@ export default function LendPage() {
   if (poolError || depositorError || loansError || historyError) {
     return (
       <section className="rounded-3xl border border-red-200 bg-red-50 p-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-        Failed to load lender dashboard data. Please try again.
+        {t("errorMessage")}
       </section>
     );
   }
@@ -132,11 +134,11 @@ export default function LendPage() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
-            Lender Portal
+            {t("lenderPortal")}
           </p>
-          <h1 className="mt-2 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Lend</h1>
+          <h1 className="mt-2 text-3xl font-bold text-zinc-900 dark:text-zinc-50">{t("title")}</h1>
           <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-            Track pool performance, manage deposits, and monitor yield growth.
+            {t("description")}
           </p>
         </div>
         {address && (
