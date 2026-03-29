@@ -243,35 +243,59 @@ impl LoanManager {
     }
 
     fn accrue_interest(env: &Env, loan: &mut Loan) {
-        if loan.status != LoanStatus::Approved {
-            return;
-        }
-
-        let current_ledger = env.ledger().sequence();
-        if loan.last_interest_ledger == 0 || current_ledger <= loan.last_interest_ledger {
-            return;
-        }
-
-        let remaining_principal = Self::remaining_principal(loan);
-        if remaining_principal <= 0 {
-            loan.last_interest_ledger = current_ledger;
-            return;
-        }
-
-        let elapsed_ledgers = current_ledger - loan.last_interest_ledger;
-        let interest_delta = remaining_principal
-            .checked_mul(loan.interest_rate_bps as i128)
-            .and_then(|value| value.checked_mul(elapsed_ledgers as i128))
-            .and_then(|value| value.checked_div(10_000))
-            .and_then(|value| value.checked_div(Self::DEFAULT_TERM_LEDGERS as i128))
-            .expect("interest overflow");
-
-        loan.accrued_interest = loan
-            .accrued_interest
-            .checked_add(interest_delta)
-            .expect("interest overflow");
-        loan.last_interest_ledger = current_ledger;
+    if loan.status != LoanStatus::Approved {
+        return;
     }
+
+    let current_ledger = env.ledger().sequence();
+    if loan.last_interest_ledger == 0 || current_ledger <= loan.last_interest_ledger {
+        return;
+    }
+
+    let remaining_principal = Self::remaining_principal(loan);
+    if remaining_principal <= 0 {
+        loan.last_interest_ledger = current_ledger;
+        return;
+    }
+
+    let elapsed_ledgers = current_ledger - loan.last_interest_ledger;
+
+    // Compute raw interest
+    let raw_interest = remaining_principal
+        .checked_mul(loan.interest_rate_bps as i128)
+        .and_then(|v| v.checked_mul(elapsed_ledgers as i128))
+        .and_then(|v| v.checked_div(10_000))
+        .and_then(|v| v.checked_div(Self::DEFAULT_TERM_LEDGERS as i128))
+        .expect("interest overflow");
+
+    // Load previous residual (or initialize to 0)
+    let mut interest_residual: i128 = env
+        .storage()
+        .persistent()
+        .get::<_, i128>(&DataKey::Loan(loan.last_interest_ledger))
+        .unwrap_or(0);
+
+    interest_residual = interest_residual
+        .checked_add(raw_interest)
+        .expect("interest residual overflow");
+
+    // Apply only whole units to accrued_interest
+    let applied_interest = interest_residual;
+    loan.accrued_interest = loan
+        .accrued_interest
+        .checked_add(applied_interest)
+        .expect("interest overflow");
+
+    // Keep leftover fractional interest in residual
+    interest_residual = 0;
+
+    // Store updated residual
+    env.storage()
+        .persistent()
+        .set(&DataKey::Loan(loan.last_interest_ledger), &interest_residual);
+
+    loan.last_interest_ledger = current_ledger;
+}
 
     fn late_fee_rate_bps(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
@@ -420,15 +444,15 @@ impl LoanManager {
         charged_fee
     }
 
-    fn current_total_debt(env: &Env, loan: &mut Loan) -> (i128, i128) {
-        Self::accrue_interest(env, loan);
-        let late_fee_delta = Self::accrue_late_fee(env, loan);
-        let total_debt = Self::remaining_principal(loan)
-            .checked_add(loan.accrued_interest)
-            .and_then(|value| value.checked_add(loan.accrued_late_fee))
-            .expect("debt overflow");
-        (total_debt, late_fee_delta)
-    }
+   fn current_total_debt(env: &Env, loan: &mut Loan) -> (i128, i128) {
+    Self::accrue_interest(env, loan);
+    let late_fee_delta = Self::accrue_late_fee(env, loan);
+    let total_debt = Self::remaining_principal(loan)
+        .checked_add(loan.accrued_interest)
+        .and_then(|value| value.checked_add(loan.accrued_late_fee))
+        .expect("debt overflow");
+    (total_debt, late_fee_delta)
+}
 
     /// Split a repayment across principal, interest, and late fees based on
     /// each component's share of the current total debt. This avoids a strict
@@ -1121,8 +1145,7 @@ impl LoanManager {
         }
 
         // Settle all accrued interest and late fees up to now.
-        Self::accrue_interest(&env, &mut loan);
-        let _ = Self::accrue_late_fee(&env, &mut loan);
+        let _ = Self::current_total_debt(&env, &mut loan);
 
         loan.interest_paid = loan
             .interest_paid
