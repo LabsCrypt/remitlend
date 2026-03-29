@@ -108,13 +108,7 @@ pub enum DataKey {
     GracePeriodLedgers,
     DefaultWindowLedgers,
     RateOracle,
-}
 
-#[derive(Clone)]
-#[soroban_sdk::contracttype]
-pub enum DataKey {
-    Admin,
-    Paused,
 
 #[contractimpl]
 impl LoanManager {
