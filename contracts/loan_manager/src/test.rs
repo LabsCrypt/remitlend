@@ -49,6 +49,13 @@ fn setup_test<'a>(
     )
 }
 
+fn reset_borrower_count(env: &Env, manager_address: &Address, borrower: &Address) {
+    env.as_contract(manager_address, || {
+        let key = DataKey::BorrowerLoanCount(borrower.clone());
+        env.storage().persistent().remove(&key);
+    });
+}
+
 fn create_upgrade_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[9u8; 32])
 }
@@ -1327,6 +1334,10 @@ fn test_liquidate_decrements_borrower_loan_count() {
     stellar_token.mint(&pool_client.address, &20_000);
     stellar_token.mint(&borrower, &20_000);
 
+    // Ensure a clean start for this borrower (in case of state leakage)
+    reset_borrower_count(&env, &manager.address, &borrower);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
     let loan_id = manager.request_loan(&borrower, &1_000);
     manager.approve_loan(&loan_id);
     assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
@@ -1335,5 +1346,39 @@ fn test_liquidate_decrements_borrower_loan_count() {
     manager.liquidate(&loan_id, &liquidator);
 
     assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+}
+
+#[test]
+fn test_refinance_from_defaulted_increments_count() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+
+    // Force default
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let window = manager.get_default_window_ledgers();
+    env.ledger().set_sequence_number(due_date + window + 1);
+    manager.check_default(&loan_id);
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    // Refinance (move back to Approved)
+    manager.refinance_loan(&loan_id, &1_000, &10_000);
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
 }
 

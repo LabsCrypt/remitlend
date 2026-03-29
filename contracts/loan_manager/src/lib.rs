@@ -1096,13 +1096,14 @@ impl LoanManager {
         // Borrower must also sign.
         loan.borrower.require_auth();
 
-        if loan.status != LoanStatus::Approved {
+        let old_status = loan.status.clone();
+        if old_status != LoanStatus::Approved && old_status != LoanStatus::Defaulted {
             return Err(LoanError::LoanNotActive);
         }
 
-        // Good-standing check: must not be past due.
+        // Good-standing check: must not be past due (unless defaulted, but we handle status transition).
         let current_ledger = env.ledger().sequence();
-        if current_ledger > loan.due_date {
+        if old_status == LoanStatus::Approved && current_ledger > loan.due_date {
             return Err(LoanError::LoanPastDue);
         }
 
@@ -1142,6 +1143,13 @@ impl LoanManager {
             .checked_add(loan.accrued_late_fee)
             .expect("overflow");
         loan.accrued_late_fee = 0;
+
+        loan.status = LoanStatus::Approved;
+
+        // If transitioning from Defaulted back to Approved, re-increment the active loan count.
+        if old_status == LoanStatus::Defaulted {
+            Self::increment_borrower_loan_count(&env, &loan.borrower);
+        }
 
         // Adjust principal to new_amount.
         let remaining_principal = Self::remaining_principal(&loan);
