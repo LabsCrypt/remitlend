@@ -389,6 +389,9 @@ impl RemittanceNFT {
             env.storage()
                 .persistent()
                 .remove(&DataKey::Seized(user.clone()));
+            env.storage()
+                .persistent()
+                .remove(&DataKey::TransferCooldown(user.clone()));
         }
 
         let metadata = RemittanceMetadata {
