@@ -55,8 +55,14 @@ Stellar Blockchain
 Add these to your `.env` file:
 
 ```env
-# Stellar RPC endpoint (testnet or mainnet)
+# Stellar network selection
+STELLAR_NETWORK=testnet
+
+# Optional override (defaults from STELLAR_NETWORK; must match selected network)
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+
+# Optional override (must match selected network exactly)
+STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
 
 # Loan Manager contract address
 LOAN_MANAGER_CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

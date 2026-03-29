@@ -89,6 +89,13 @@ PORT=3001
 # CORS Configuration
 CORS_ALLOWED_ORIGINS=http://localhost:3000
 
+# Stellar Configuration
+STELLAR_NETWORK=testnet
+STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+LOAN_MANAGER_CONTRACT_ID=
+LOAN_MANAGER_ADMIN_SECRET=
+
 # Future: Add API keys for remittance services
 # WISE_API_KEY=your_key_here
 # WESTERN_UNION_API_KEY=your_key_here
