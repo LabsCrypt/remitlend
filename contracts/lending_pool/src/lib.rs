@@ -57,7 +57,9 @@ pub enum DataKey {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PoolStats {
     pub total_deposits: i128,
+    pub total_assets: i128,
     pub total_shares: i128,
+    pub share_price: i128,
     pub pool_token_balance: i128,
     pub depositor_count: u32,
     /// Fraction of tracked principal currently out on loan, in basis points.
@@ -77,6 +79,7 @@ impl LendingPool {
     const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 3;
     const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
+    const SHARE_PRICE_SCALER: i128 = 10_000_000;
 
     // ── TTL helpers ───────────────────────────────────────────────────────
 
@@ -541,11 +544,39 @@ impl LendingPool {
 
         PoolStats {
             total_deposits,
+            total_assets: pool_token_balance,
             total_shares,
+            share_price: Self::get_share_price(env, token.clone()),
             pool_token_balance,
             depositor_count: Self::read_depositor_count(&env, &token),
             utilization_bps,
         }
+    }
+
+    pub fn get_share_price(env: Env, token: Address) -> i128 {
+        let total_assets = Self::pool_balance(&env, &token);
+        let total_shares = Self::total_shares(&env, &token);
+
+        if total_shares == 0 || total_assets == 0 {
+            return Self::SHARE_PRICE_SCALER;
+        }
+
+        total_assets
+            .checked_mul(Self::SHARE_PRICE_SCALER)
+            .and_then(|v| v.checked_div(total_shares))
+            .expect("share price overflow")
+    }
+
+    pub fn convert_to_assets(env: Env, token: Address, shares: i128) -> i128 {
+        let total_assets = Self::pool_balance(&env, &token);
+        let total_shares = Self::total_shares(&env, &token);
+        Self::calc_assets_to_redeem(shares, total_assets, total_shares)
+    }
+
+    pub fn convert_to_shares(env: Env, token: Address, assets: i128) -> i128 {
+        let total_assets = Self::pool_balance(&env, &token);
+        let total_shares = Self::total_shares(&env, &token);
+        Self::calc_shares_to_mint(assets, total_assets, total_shares)
     }
 
     // ── Admin governance ──────────────────────────────────────────────────

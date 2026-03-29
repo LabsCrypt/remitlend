@@ -815,3 +815,90 @@ fn test_get_admin_returns_initialized_admin() {
 
     assert_eq!(pool_client.get_admin(), admin);
 }
+
+// ── Share price and conversion ────────────────────────────────────────────────
+
+#[test]
+fn test_share_price_evolution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    // Initial price should be 1.0 (scaled)
+    assert_eq!(pool_client.get_share_price(&token_id), 10_000_000);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &token_id, &1_000);
+
+    // After deposit, price remains 1.0
+    assert_eq!(pool_client.get_share_price(&token_id), 10_000_000);
+
+    // Add 200 tokens of "yield" (simulated repayment)
+    stellar_asset_client.mint(&pool_id, &200);
+
+    // New price: 1200 / 1000 * 10^7 = 1.2 * 10^7 = 12,000,000
+    assert_eq!(pool_client.get_share_price(&token_id), 12_000_000);
+}
+
+#[test]
+fn test_conversion_helpers() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &token_id, &1_000);
+
+    // 1:1 conversion initially
+    assert_eq!(pool_client.convert_to_assets(&token_id, &500), 500);
+    assert_eq!(pool_client.convert_to_shares(&token_id, &500), 500);
+
+    // Add yield
+    stellar_asset_client.mint(&pool_id, &1_000); // 200% price
+
+    // 500 shares should be worth 1000 assets
+    assert_eq!(pool_client.convert_to_assets(&token_id, &500), 1_000);
+    // 1000 assets should mint only 500 shares
+    assert_eq!(pool_client.convert_to_shares(&token_id, &1_000), 500);
+}
+
+#[test]
+fn test_pool_stats_evolution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &token_id, &1_000);
+
+    stellar_asset_client.mint(&pool_id, &500); // yield
+
+    let stats = pool_client.get_pool_stats(&token_id);
+    assert_eq!(stats.total_deposits, 1_000); // Tracked principal
+    assert_eq!(stats.total_assets, 1_500);    // Actual balance
+    assert_eq!(stats.share_price, 15_000_000);
+}
