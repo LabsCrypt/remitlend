@@ -68,7 +68,7 @@ impl RemittanceNFT {
     const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 2;
     const DEFAULT_BURN_THRESHOLD: u32 = 3;
-    const MAX_SCORE_HISTORY: u32 = 10;
+    pub const MAX_SCORE_HISTORY_ENTRIES: u32 = 50;
     const TRANSFER_COOLDOWN_LEDGERS: u32 = 17280;
     const MIN_CREDIT_SCORE: u32 = 300;
     const MAX_CREDIT_SCORE: u32 = 850;
@@ -155,8 +155,25 @@ impl RemittanceNFT {
 
     fn get_score_history_or_default(env: &Env, user: &Address) -> Vec<ScoreHistoryEntry> {
         let key = DataKey::ScoreHistory(user.clone());
-        if let Some(history) = env.storage().persistent().get(&key) {
+        if let Some(history) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Vec<ScoreHistoryEntry>>(&key)
+        {
             Self::bump_persistent_ttl(env, &key);
+            // Migration: truncate to the most recent MAX_SCORE_HISTORY_ENTRIES if over limit
+            let len = history.len();
+            if len > Self::MAX_SCORE_HISTORY_ENTRIES {
+                let keep_from = len - Self::MAX_SCORE_HISTORY_ENTRIES;
+                let mut truncated = Vec::new(env);
+                for (idx, entry) in history.iter().enumerate() {
+                    if (idx as u32) >= keep_from {
+                        truncated.push_back(entry);
+                    }
+                }
+                Self::write_score_history(env, user, truncated.clone());
+                return truncated;
+            }
             history
         } else {
             Vec::new(env)
@@ -179,7 +196,7 @@ impl RemittanceNFT {
         let current_history = Self::get_score_history_or_default(env, user);
         let mut next_history = Vec::new(env);
         let current_len = current_history.len();
-        let keep_from = current_len.saturating_sub(Self::MAX_SCORE_HISTORY - 1);
+        let keep_from = current_len.saturating_sub(Self::MAX_SCORE_HISTORY_ENTRIES - 1);
 
         for (idx, entry) in current_history.iter().enumerate() {
             if (idx as u32) >= keep_from {
@@ -777,8 +794,23 @@ impl RemittanceNFT {
         Self::default_burn_threshold(&env)
     }
 
-    pub fn get_score_history(env: Env, user: Address) -> Vec<ScoreHistoryEntry> {
-        Self::get_score_history_or_default(&env, &user)
+    pub fn get_score_history(
+        env: Env,
+        user: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<ScoreHistoryEntry> {
+        let history = Self::get_score_history_or_default(&env, &user);
+        let len = history.len();
+        if offset >= len {
+            return Vec::new(&env);
+        }
+        let mut page = Vec::new(&env);
+        let end = (offset + limit).min(len);
+        for idx in offset..end {
+            page.push_back(history.get(idx).unwrap());
+        }
+        page
     }
 
     /// Get the number of ledgers remaining in a user's transfer cooldown.
