@@ -14,11 +14,15 @@ import {
   getStellarNetworkPassphrase,
 } from "../config/stellar.js";
 
+import { cacheService } from "./cacheService.js";
+
 /**
  * Mirrors `LoanManager::DEFAULT_TERM_LEDGERS` in `contracts/loan_manager/src/lib.rs`.
  * Used to estimate on-chain due ledgers from indexed `LoanApproved` events.
  */
 const DEFAULT_TERM_LEDGERS = 17_280;
+const LOCK_KEY = "default_checker:running";
+const LOCK_TTL_SECONDS = 600; // 10 minutes - prevents stuck locks from crashed runs
 
 export interface DefaultCheckBatchResult {
   loanIds: number[];
@@ -33,6 +37,9 @@ export interface DefaultCheckRunResult {
   currentLedger: number;
   termLedgers: number;
   overdueCount: number;
+  loansChecked: number;
+  successfulSubmissions: number;
+  failedSubmissions: number;
   oldestDueLedger?: number;
   ledgersPastOldestDue?: number;
   batches: DefaultCheckBatchResult[];
@@ -299,13 +306,71 @@ export class DefaultChecker {
   }
 
   /**
+   * Acquires a distributed lock using Redis SET NX with TTL.
+   * Returns true if lock acquired, false if another instance is running.
+   */
+  private async acquireLock(): Promise<boolean> {
+    try {
+      const lockValue = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const acquired = await cacheService.setNotExists(LOCK_KEY, lockValue, LOCK_TTL_SECONDS);
+      return acquired;
+    } catch (error) {
+      logger.error("Failed to acquire default checker lock", { error });
+      return false;
+    }
+  }
+
+  /**
+   * Releases the distributed lock.
+   */
+  private async releaseLock(): Promise<void> {
+    try {
+      await cacheService.delete(LOCK_KEY);
+    } catch (error) {
+      logger.error("Failed to release default checker lock", { error });
+    }
+  }
+
+  /**
+   * Processes a single batch of loans for default checking.
+   */
+  private async processBatch(
+    server: rpc.Server,
+    signer: Keypair,
+    passphrase: string,
+    batch: number[],
+    runId: string,
+  ): Promise<DefaultCheckBatchResult> {
+    const result = await this.submitCheckDefaults(server, signer, passphrase, batch);
+
+    logger.info("default_check.batch", {
+      runId,
+      loanIds: result.loanIds,
+      txHash: result.txHash,
+      submitStatus: result.submitStatus,
+      txStatus: result.txStatus,
+      error: result.error,
+    });
+
+    return result;
+  }
+
+  /**
    * Runs default checks for either:
    * - explicit `loanIds` (validated + de-duped), or
    * - all overdue loans discovered from `loan_events` (bounded by env limits).
    */
-  async checkOverdueLoans(loanIds?: number[]): Promise<DefaultCheckRunResult> {
-    const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const { signer, server, passphrase } = this.assertConfigured();
+  async checkOverdueLoans(loanIds?: number[]): Promise<DefaultCheckRunResult | null> {
+    // Try to acquire distributed lock to prevent overlapping runs
+    const lockAcquired = await this.acquireLock();
+    if (!lockAcquired) {
+      logger.warn("Default checker run skipped - another instance is already running");
+      return null;
+    }
+
+    try {
+      const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const { signer, server, passphrase } = this.assertConfigured();
 
     const latest = await server.getLatestLedger();
     const currentLedger = latest.sequence;
@@ -336,30 +401,26 @@ export class DefaultChecker {
       targetLoanCount: targetIds.length,
     });
 
-    const batches: DefaultCheckBatchResult[] = [];
-    for (const batch of chunk(targetIds, this.batchSize)) {
-      if (!batch.length) continue;
-      const result = await this.submitCheckDefaults(
-        server,
-        signer,
-        passphrase,
-        batch,
-      );
-      batches.push(result);
+    const batches = chunk(targetIds, this.batchSize).filter((b) => b.length > 0);
 
-      logger.info("default_check.batch", {
-        runId,
-        loanIds: result.loanIds,
-        txHash: result.txHash,
-        submitStatus: result.submitStatus,
-        txStatus: result.txStatus,
-        error: result.error,
-      });
-    }
+    // Process batches in parallel for better performance
+    const batchPromises = batches.map((batch: number[]) =>
+      this.processBatch(server, signer, passphrase, batch, runId),
+    );
+
+    const batchResults = await Promise.all(batchPromises);
+
+    // Count results
+    const loansChecked = targetIds.length;
+    const successfulSubmissions = batchResults.filter((r: DefaultCheckBatchResult) => r.txHash && !r.error).length;
+    const failedSubmissions = batchResults.filter((r: DefaultCheckBatchResult) => r.error).length;
 
     logger.info("default_check.run.complete", {
       runId,
-      batches: batches.length,
+      batches: batchResults.length,
+      loansChecked,
+      successfulSubmissions,
+      failedSubmissions,
       currentLedger,
       overdueCount: stats.overdueCount,
       oldestDueLedger: stats.oldestDueLedger,
@@ -371,14 +432,21 @@ export class DefaultChecker {
       currentLedger,
       termLedgers: this.termLedgers,
       overdueCount: stats.overdueCount,
+      loansChecked: targetIds.length,
+      successfulSubmissions,
+      failedSubmissions,
       ...(stats.oldestDueLedger !== undefined
         ? { oldestDueLedger: stats.oldestDueLedger }
         : {}),
       ...(stats.ledgersPastOldestDue !== undefined
         ? { ledgersPastOldestDue: stats.ledgersPastOldestDue }
         : {}),
-      batches,
+      batches: batchResults,
     };
+    } finally {
+      // Always release the lock, even if the run failed
+      await this.releaseLock();
+    }
   }
 }
 

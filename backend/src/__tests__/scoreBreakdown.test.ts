@@ -4,6 +4,7 @@ import request from "supertest";
 // Mock the database connection module before any other imports
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: jest.fn(),
+  getClient: jest.fn(),
   default: {
     query: jest.fn(),
   },

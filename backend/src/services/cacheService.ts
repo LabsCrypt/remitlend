@@ -4,7 +4,7 @@ import logger from "../utils/logger.js";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 class CacheService {
-  private client: RedisClientType;
+  private client: RedisClientType | undefined;
   private isConnected: boolean = false;
 
   constructor() {
@@ -64,7 +64,7 @@ class CacheService {
     try {
       await this.ensureConnected();
       const stringValue = JSON.stringify(value);
-      await this.client.setEx(key, ttlSeconds, stringValue);
+      await client.setEx(key, ttlSeconds, stringValue);
     } catch (error) {
       if (process.env.NODE_ENV !== "test") {
         logger.error(`Error setting cache for key ${key}`, { error });
@@ -93,6 +93,37 @@ class CacheService {
   }
 
   /**
+   * Set a value only if the key does not exist (SET NX - Set if Not Exists).
+   * Used for distributed locking.
+   * @param key The cache key
+   * @param value The value to cache
+   * @param ttlSeconds The TTL in seconds
+   * @returns true if the key was set, false if the key already existed
+   */
+  async setNotExists(
+    key: string,
+    value: unknown,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    try {
+      await this.connect();
+      if (!this.isConnected) return false;
+
+      const client = this.getClient();
+      const stringValue = JSON.stringify(value);
+      // SET key value NX EX ttlSeconds
+      const result = await client.set(key, stringValue, {
+        NX: true,
+        EX: ttlSeconds,
+      });
+      return result === "OK";
+    } catch (error) {
+      logger.error(`Error setting NX cache for key ${key}`, { error });
+      return false;
+    }
+  }
+
+  /**
    * Delete a value from the cache.
    * @param key The cache key
    */
@@ -116,7 +147,7 @@ class CacheService {
       await this.ensureConnected();
       const keys = await this.client.keys(pattern);
       if (keys.length > 0) {
-        await this.client.del(keys);
+        await client.del(keys);
       }
     } catch (error) {
       if (process.env.NODE_ENV !== "test") {
@@ -140,7 +171,7 @@ class CacheService {
   }
 
   async close(): Promise<void> {
-    if (this.isConnected) {
+    if (this.isConnected && this.client) {
       await this.client.quit();
       this.isConnected = false;
     }
