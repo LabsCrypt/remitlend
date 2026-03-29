@@ -1,7 +1,6 @@
 import {
   BASE_FEE,
   Keypair,
-  Networks,
   Operation,
   TransactionBuilder,
   nativeToScVal,
@@ -10,6 +9,10 @@ import {
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
+import {
+  createSorobanRpcServer,
+  getStellarNetworkPassphrase,
+} from "../config/stellar.js";
 
 import { cacheService } from "./cacheService.js";
 
@@ -63,7 +66,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 export class DefaultChecker {
-  private rpcUrl: string;
   private contractId: string;
   private termLedgers: number;
   private batchSize: number;
@@ -72,8 +74,6 @@ export class DefaultChecker {
   private pollSleepMs: number;
 
   constructor() {
-    this.rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
     this.contractId = process.env.LOAN_MANAGER_CONTRACT_ID || "";
     this.termLedgers = parsePositiveInt(
       process.env.LOAN_TERM_LEDGERS,
@@ -121,11 +121,8 @@ export class DefaultChecker {
       );
     }
 
-    const allowHttp = this.rpcUrl.startsWith("http://");
-    const server = new rpc.Server(this.rpcUrl, { allowHttp });
-
-    const passphrase =
-      process.env.STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
+    const server = createSorobanRpcServer();
+    const passphrase = getStellarNetworkPassphrase();
 
     return { signer, server, passphrase };
   }

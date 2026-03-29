@@ -28,11 +28,38 @@
       "explore": "Galugarin ang mga pagkakataon"
     }
   },
+  "ActivityPage": {
+    "title": "Kasaysayan ng Aktibidad",
+    "description": "Tingnan ang lahat ng iyong mga kahilingan pang-pautang, remesa, at transaksyon sa isang lugar.",
+    "notConnected": "Wallet na hindi konektado",
+    "connectWalletToViewActivity": "Ikonekta ang iyong wallet upang makita ang iyong kasaysayan ng aktibidad.",
+    "emptyState": "Walang aktibidad pa. Ang iyong mga transaksyon ay lalitaw dito.",
+    "filters": {
+      "all": "Lahat ng Aktibidad",
+      "loan": "Mga Pautang",
+      "remittance": "Mga Remesa"
+    },
+    "status": {
+      "pending": "Naghihintay",
+      "processing": "Pinoproseso",
+      "active": "Aktibo",
+      "completed": "Nakumpleto",
+      "repaid": "Binayaran",
+      "failed": "Nabigo",
+      "defaulted": "Di-nakamit"
+    },
+    "pagination": {
+      "showing": "Ipinapakita {start}–{end} ng {total} na mga transaksyon",
+      "previous": "Nakaraang",
+      "next": "Susunod"
+    }
+  },
   "Navigation": {
     "home": "Home",
     "loans": "Mga Loan",
     "repay": "Bayaran",
-    "dashboard": "Dashboard"
+    "dashboard": "Dashboard",
+    "activity": "Aktibidad"
   },
   "Loans": {
     "title": "Mga Loan",

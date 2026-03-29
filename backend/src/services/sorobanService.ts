@@ -1,30 +1,30 @@
 import {
   BASE_FEE,
-  Networks,
   Operation,
   TransactionBuilder,
   nativeToScVal,
   Address,
-  rpc,
   xdr,
+  StrKey,
 } from "@stellar/stellar-sdk";
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
+import {
+  createSorobanRpcServer,
+  getStellarNetworkPassphrase,
+} from "../config/stellar.js";
 
 /**
  * Service for building and submitting Soroban contract transactions.
  * Handles the transaction lifecycle: build → (frontend signs) → submit.
  */
 class SorobanService {
-  private getRpcServer(): rpc.Server {
-    const rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
-    const allowHttp = rpcUrl.startsWith("http://");
-    return new rpc.Server(rpcUrl, { allowHttp });
+  private getRpcServer() {
+    return createSorobanRpcServer();
   }
 
   private getNetworkPassphrase(): string {
-    return process.env.STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
+    return getStellarNetworkPassphrase();
   }
 
   private getLoanManagerContractId(): string {
@@ -293,6 +293,47 @@ class SorobanService {
   }
 
   /**
+   * Validates all required Soroban configuration on startup.
+   * Checks that each contract ID is present and is a valid Stellar contract
+   * address, then confirms RPC connectivity with a lightweight health call.
+   * Throws AppError.internal() with a clear message on any failure so the
+   * caller (index.ts) can log and exit before the server accepts traffic.
+   */
+  async validateConfig(): Promise<void> {
+    const contractChecks: Array<[string, string]> = [
+      ["LOAN_MANAGER_CONTRACT_ID", process.env.LOAN_MANAGER_CONTRACT_ID ?? ""],
+      ["LENDING_POOL_CONTRACT_ID", process.env.LENDING_POOL_CONTRACT_ID ?? ""],
+      ["POOL_TOKEN_ADDRESS",       process.env.POOL_TOKEN_ADDRESS       ?? ""],
+    ];
+
+    for (const [name, value] of contractChecks) {
+      if (!value) {
+        throw AppError.internal(`${name} is not configured`);
+      }
+      if (!StrKey.isValidContract(value)) {
+        throw AppError.internal(
+          `${name} is not a valid Stellar contract address: "${value}"`,
+        );
+      }
+    }
+
+    try {
+      await this.getRpcServer().getHealth();
+    } catch (err) {
+      throw AppError.internal(
+        `Stellar RPC is unreachable at ${process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org"}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    logger.info("Soroban configuration validated", {
+      loanManagerContractId: process.env.LOAN_MANAGER_CONTRACT_ID,
+      lendingPoolContractId: process.env.LENDING_POOL_CONTRACT_ID,
+      rpcUrl:
+        process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org",
+    });
+  }
+
+  /**
    * Submits a signed transaction XDR to the Stellar network and polls
    * for the result.
    */
@@ -337,6 +378,38 @@ class SorobanService {
       ...(resultXdr !== undefined ? { resultXdr } : {}),
     };
   }
+  /**
+   * Ping the Stellar RPC server to verify connectivity.
+   * Returns "ok" on success or "error" if unreachable.
+   */
+  async ping(): Promise<"ok" | "error"> {
+    try {
+      const server = this.getRpcServer();
+      await server.getHealth();
+      return "ok";
+    } catch {
+      return "error";
+    }
+  }
+
+  /**
+   * Returns score adjustment constants for indexing.
+   * Values are sourced from environment variables so they stay in sync
+   * with the deployed RemittanceNFT contract constants without requiring
+   * a hardcoded value in application logic.
+   */
+  getScoreConfig(): { repaymentDelta: number; defaultPenalty: number } {
+    const repaymentDelta = parseInt(
+      process.env.SCORE_REPAYMENT_DELTA ?? "15",
+      10,
+    );
+    const defaultPenalty = parseInt(
+      process.env.SCORE_DEFAULT_PENALTY ?? "50",
+      10,
+    );
+    return { repaymentDelta, defaultPenalty };
+  }
+  
 }
 
 export const sorobanService = new SorobanService();

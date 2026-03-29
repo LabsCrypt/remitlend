@@ -96,10 +96,11 @@ describe("GET /api/loans/config", () => {
     }
   });
 
-  it("should return defaults when env values are not set", async () => {
-    delete process.env.LOAN_MIN_SCORE;
-    delete process.env.LOAN_MAX_AMOUNT;
-    delete process.env.LOAN_INTEREST_RATE_PERCENT;
+  it("should return configured env values when all required vars are set", async () => {
+    process.env.LOAN_MIN_SCORE = "500";
+    process.env.LOAN_MAX_AMOUNT = "50000";
+    process.env.LOAN_INTEREST_RATE_PERCENT = "12";
+    process.env.CREDIT_SCORE_THRESHOLD = "600";
 
     const response = await request(app).get("/api/loans/config");
 
@@ -110,6 +111,7 @@ describe("GET /api/loans/config", () => {
         minScore: 500,
         maxAmount: 50000,
         interestRatePercent: 12,
+        creditScoreThreshold: 600,
       },
     });
   });
@@ -118,6 +120,7 @@ describe("GET /api/loans/config", () => {
     process.env.LOAN_MIN_SCORE = "620";
     process.env.LOAN_MAX_AMOUNT = "65000";
     process.env.LOAN_INTEREST_RATE_PERCENT = "14";
+    process.env.CREDIT_SCORE_THRESHOLD = "640";
 
     const response = await request(app).get("/api/loans/config");
 
@@ -128,6 +131,7 @@ describe("GET /api/loans/config", () => {
         minScore: 620,
         maxAmount: 65000,
         interestRatePercent: 14,
+        creditScoreThreshold: 640,
       },
     });
   });
@@ -212,6 +216,63 @@ describe("POST /api/loans/submit", () => {
       .set(bearer("GABC123"))
       .send({});
     expect(response.status).toBe(400);
+  });
+});
+
+describe("GET /api/loans/:loanId/amortization-schedule", () => {
+  it("should return amortization schedule for an approved loan", async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [{ borrower: "GABC123" }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            event_type: "LoanRequested",
+            amount: "1000",
+            ledger_closed_at: "2025-01-01T00:00:00.000Z",
+          },
+          {
+            event_type: "LoanApproved",
+            amount: null,
+            ledger_closed_at: "2025-01-01T00:00:00.000Z",
+            interest_rate_bps: 1200,
+            term_ledgers: 518400,
+          },
+        ],
+      });
+
+    const response = await request(app)
+      .get("/api/loans/123/amortization-schedule")
+      .set(bearer("GABC123"));
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.amortization).toMatchObject({
+      principal: 1000,
+      interestRateBps: 1200,
+      termLedgers: 518400,
+    });
+    expect(Array.isArray(response.body.amortization.schedule)).toBe(true);
+    expect(response.body.amortization.schedule.length).toBeGreaterThan(0);
+  });
+
+  it("should return 404 when loan is not fully approved", async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [{ borrower: "GABC123" }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            event_type: "LoanRequested",
+            amount: "1000",
+            ledger_closed_at: "2025-01-01T00:00:00.000Z",
+          },
+        ],
+      });
+
+    const response = await request(app)
+      .get("/api/loans/123/amortization-schedule")
+      .set(bearer("GABC123"));
+
+    expect(response.status).toBe(404);
   });
 });
 
