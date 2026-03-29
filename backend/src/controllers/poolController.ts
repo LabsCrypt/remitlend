@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { query } from "../db/connection.js";
+import { withStellarAndDbTransaction } from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
@@ -217,18 +218,45 @@ export const submitPoolTransaction = asyncHandler(
       throw AppError.badRequest("signedTxXdr is required");
     }
 
-    const result = await sorobanService.submitSignedTx(signedTxXdr);
+    // Use transaction wrapper for consistency with multi-step operations
+    const result = await withStellarAndDbTransaction(
+      // Stellar operation
+      async () => {
+        return await sorobanService.submitSignedTx(signedTxXdr);
+      },
+      // Database operations (currently none, but structured for future use)
+      async (stellarResult, client) => {
+        // Log the pool transaction submission for audit and reconciliation
+        await client.query(
+          `INSERT INTO transaction_submissions (tx_hash, status, submitted_at, submitted_by, transaction_type)
+           VALUES ($1, $2, NOW(), $3, $4)
+           ON CONFLICT (tx_hash) DO UPDATE SET
+             status = EXCLUDED.status,
+             submitted_at = EXCLUDED.submitted_at`,
+          [stellarResult.txHash, stellarResult.status, req.user?.publicKey || null, 'pool']
+        );
 
-    logger.info("Pool transaction submitted", {
-      txHash: result.txHash,
-      status: result.status,
+        logger.info("Pool transaction submission recorded", {
+          txHash: stellarResult.txHash,
+          status: stellarResult.status,
+          submittedBy: req.user?.publicKey,
+          transactionType: 'pool',
+        });
+
+        return { recorded: true };
+      }
+    );
+
+    logger.info("Pool transaction submitted successfully", {
+      txHash: result.stellarResult.txHash,
+      status: result.stellarResult.status,
     });
 
     res.json({
       success: true,
-      txHash: result.txHash,
-      status: result.status,
-      ...(result.resultXdr ? { resultXdr: result.resultXdr } : {}),
+      txHash: result.stellarResult.txHash,
+      status: result.stellarResult.status,
+      ...(result.stellarResult.resultXdr ? { resultXdr: result.stellarResult.resultXdr } : {}),
     });
   },
 );
