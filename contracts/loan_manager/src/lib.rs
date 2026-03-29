@@ -1120,6 +1120,29 @@ impl LoanManager {
             return Err(LoanError::InvalidTerm);
         }
 
+        // Re-validate credit score (treat refinance like new loan application)
+        let nft_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::NftContract)
+            .ok_or(LoanError::NotInitialized)?;
+        let nft_client = NftClient::new(&env, &nft_contract);
+
+        let current_score = nft_client.get_score(&loan.borrower);
+        let min_score: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinScore)
+            .unwrap_or(500);
+        if current_score < min_score {
+            return Err(LoanError::InsufficientScore);
+        }
+
+        // Validate collateral covers new amount (collateral must be >= loan amount)
+        if loan.collateral_amount < new_amount {
+            return Err(LoanError::InsufficientScore);
+        }
+
         // Settle all accrued interest and late fees up to now.
         Self::accrue_interest(&env, &mut loan);
         let _ = Self::accrue_late_fee(&env, &mut loan);
@@ -1164,18 +1187,41 @@ impl LoanManager {
                 token_client.transfer(&lending_pool, &loan.borrower, &additional);
             }
             core::cmp::Ordering::Less => {
-                // Borrower returns the excess to the pool.
-                let excess = remaining_principal
+                // Borrower returns the excess principal to the pool.
+                let excess_principal = remaining_principal
                     .checked_sub(new_amount)
                     .expect("underflow");
-                token_client.transfer(&loan.borrower, &lending_pool, &excess);
+                token_client.transfer(&loan.borrower, &lending_pool, &excess_principal);
+
+                // Return excess collateral proportionally if new amount is smaller
+                if new_amount < remaining_principal {
+                    let collateral_to_return = loan
+                        .collateral_amount
+                        .checked_mul(excess_principal)
+                        .expect("multiplication overflow")
+                        .checked_div(remaining_principal)
+                        .expect("division by zero");
+                    if collateral_to_return > 0 {
+                        token_client.transfer(
+                            &env.current_contract_address(),
+                            &loan.borrower,
+                            &collateral_to_return,
+                        );
+                        loan.collateral_amount = loan
+                            .collateral_amount
+                            .checked_sub(collateral_to_return)
+                            .expect("underflow");
+                    }
+                }
             }
             core::cmp::Ordering::Equal => {}
         }
 
-        // Reset loan terms.
+        // Reset loan terms with new amount and rate.
         loan.amount = new_amount;
         loan.principal_paid = 0;
+        loan.interest_rate_bps =
+            Self::compute_interest_rate(&env, &loan.borrower, new_amount, current_score);
         loan.last_interest_ledger = current_ledger;
         loan.due_date = current_ledger + new_term;
         loan.last_late_fee_ledger = loan.due_date;
