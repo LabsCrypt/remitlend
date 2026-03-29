@@ -1,8 +1,16 @@
 import { jest } from "@jest/globals";
 
-jest.mock("../db/connection.js");
-import { query } from "../db/connection.js";
-import { notificationService } from "../services/notificationService.js";
+// Use unstable_mockModule for robust ESM mocking of the connection module
+jest.unstable_mockModule("../db/connection.js", () => ({
+  query: jest.fn(),
+  default: {
+    query: jest.fn(),
+  },
+}));
+
+// Use dynamic imports TO ENSURE mocks are applied BEFORE the module is loaded
+const { query } = await import("../db/connection.js");
+const { notificationService } = await import("../services/notificationService.js");
 
 const mockedQuery = query as jest.MockedFunction<typeof query>;
 
@@ -19,7 +27,7 @@ describe("Notification Cleanup Strategy", () => {
 
     const deletedCount = await notificationService.deleteOldNotifications(retentionDays);
 
-    expect(query).toHaveBeenCalledWith(
+    expect(mockedQuery).toHaveBeenCalledWith(
       expect.stringContaining("DELETE FROM notifications"),
       [retentionDays]
     );

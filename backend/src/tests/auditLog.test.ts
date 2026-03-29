@@ -1,8 +1,16 @@
 import { jest } from "@jest/globals";
 
-jest.mock("../db/connection.js");
-import { query } from "../db/connection.js";
-import { auditLog } from "../middleware/auditLog.js";
+// Use unstable_mockModule for robust ESM mocking of the connection module.
+jest.unstable_mockModule("../db/connection.js", () => ({
+  query: jest.fn(),
+  default: {
+    query: jest.fn(),
+  },
+}));
+
+// Use dynamic imports to ensure mocks are applied BEFORE the app as well as the test
+const { query } = await import("../db/connection.js");
+const { auditLog } = await import("../middleware/auditLog.js");
 import type { Request, Response, NextFunction } from "express";
 
 const mockedQuery = query as jest.MockedFunction<typeof query>;
@@ -92,7 +100,7 @@ describe("Audit Log Middleware", () => {
     await auditLog(req as Request, res as Response, next);
     await new Promise(resolve => setTimeout(resolve, 10));
 
-    expect(query).toHaveBeenCalledWith(
+    expect(mockedQuery).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO audit_logs"),
       expect.arrayContaining([
         "G-STUDENT-WALLET-ADDR",

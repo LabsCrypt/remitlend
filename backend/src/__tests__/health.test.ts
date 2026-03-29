@@ -1,5 +1,22 @@
+import { jest } from "@jest/globals";
 import request from "supertest";
-import app from "../app.js";
+
+// Use unstable_mockModule for robust ESM mocking
+jest.unstable_mockModule("../db/connection.js", () => ({
+  default: {
+    query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+  },
+  query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+}));
+
+jest.unstable_mockModule("../services/cacheService.js", () => ({
+  cacheService: {
+    ping: jest.fn().mockResolvedValue("ok"),
+  },
+}));
+
+// Use dynamic import for app to ensure mocks are applied
+const { default: app } = await import("../app.js");
 
 describe("GET /health", () => {
   it("should return 200 or 503 with a status field", async () => {
