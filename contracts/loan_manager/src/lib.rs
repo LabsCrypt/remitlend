@@ -1561,8 +1561,10 @@ impl LoanManager {
             .instance()
             .set(&DataKey::ProposedAdmin, &new_admin);
         Self::bump_instance_ttl(&env);
-        env.events()
-            .publish((Symbol::new(&env, "AdminProposed"), current_admin), new_admin);
+        env.events().publish(
+            (Symbol::new(&env, "AdminProposed"), current_admin),
+            new_admin,
+        );
     }
 
     pub fn accept_admin(env: Env) -> Result<(), LoanError> {

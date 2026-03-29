@@ -272,18 +272,27 @@ fn test_admin_transfer_via_propose_accept() {
     env.mock_all_auths_allowing_non_root_auth();
 
     let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
-    let current_admin: Address = env.as_contract(&manager.address, || env.storage().instance().get(&DataKey::Admin).unwrap());
+    let current_admin: Address = env.as_contract(&manager.address, || {
+        env.storage().instance().get(&DataKey::Admin).unwrap()
+    });
 
     let proposed_admin = Address::generate(&env);
 
     manager.propose_admin(&proposed_admin);
 
-    let pending_admin: Address = env.as_contract(&manager.address, || env.storage().instance().get(&DataKey::ProposedAdmin).unwrap());
+    let pending_admin: Address = env.as_contract(&manager.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::ProposedAdmin)
+            .unwrap()
+    });
     assert_eq!(pending_admin, proposed_admin);
 
     manager.accept_admin();
 
-    let accepted_admin: Address = env.as_contract(&manager.address, || env.storage().instance().get(&DataKey::Admin).unwrap());
+    let accepted_admin: Address = env.as_contract(&manager.address, || {
+        env.storage().instance().get(&DataKey::Admin).unwrap()
+    });
     assert_eq!(accepted_admin, proposed_admin);
     assert_ne!(accepted_admin, current_admin);
 }
