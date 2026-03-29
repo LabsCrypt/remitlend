@@ -75,7 +75,7 @@ router.get(
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/UserScore'
+ *               $ref: '#/components/schemas/SimulatePaymentResponse'
  *       400:
  *         description: Invalid input data.
  *         content:

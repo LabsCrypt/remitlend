@@ -2,9 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, HandCoins, SendHorizontal, Settings, X, CreditCard } from "lucide-react";
+import {
+  LayoutDashboard,
+  HandCoins,
+  PiggyBank,
+  SendHorizontal,
+  Settings,
+  X,
+  CreditCard,
+} from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { useTranslations, useLocale } from "next-intl";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -15,26 +24,30 @@ interface SidebarProps {
   className?: string;
 }
 
-const navItems = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Loans", href: "/loans", icon: HandCoins },
-  { name: "Remittances", href: "/remittances", icon: SendHorizontal },
-  { name: "Wallet", href: "/wallet", icon: CreditCard },
-  { name: "Settings", href: "/settings", icon: Settings },
-];
-
 export function Sidebar({ onClose, className }: SidebarProps) {
   const pathname = usePathname();
+  const t = useTranslations("Navigation");
+  const locale = useLocale();
+
+  const navItems = [
+    { name: t("dashboard"), href: `/${locale}`, icon: LayoutDashboard },
+    { name: t("loans"), href: `/${locale}/loans`, icon: HandCoins },
+    { name: "Lend", href: `/${locale}/lend`, icon: PiggyBank },
+    { name: "Remittances", href: `/${locale}/remittances`, icon: SendHorizontal },
+    { name: "Wallet", href: `/${locale}/wallet`, icon: CreditCard },
+    { name: "Settings", href: `/${locale}/settings`, icon: Settings },
+  ];
 
   return (
     <aside
+      aria-label="Main navigation"
       className={cn(
         "flex h-full w-64 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950",
         className,
       )}
     >
       <div className="flex h-16 items-center justify-between px-6 border-b border-zinc-200 dark:border-zinc-800">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href={`/${locale}`} className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
             <SendHorizontal className="h-5 w-5 text-white" />
           </div>
@@ -44,21 +57,24 @@ export function Sidebar({ onClose, className }: SidebarProps) {
         </Link>
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden"
+            aria-label="Close navigation"
+            className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden rounded-lg"
           >
-            <X className="h-5 w-5" />
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
+      <nav className="flex-1 space-y-1 p-4 overflow-y-auto" aria-label="Site navigation">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
@@ -67,6 +83,7 @@ export function Sidebar({ onClose, className }: SidebarProps) {
               )}
             >
               <item.icon
+                aria-hidden="true"
                 className={cn(
                   "h-5 w-5",
                   isActive

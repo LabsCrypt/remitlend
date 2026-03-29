@@ -9,6 +9,7 @@ RUN npm ci
 
 # Copy source and compile
 COPY tsconfig.json ./
+COPY migrations ./migrations
 COPY src ./src
 RUN npm run build
 
@@ -23,6 +24,7 @@ RUN npm ci --omit=dev
 
 # Copy compiled output from builder
 COPY --from=builder /app/dist ./dist
+COPY migrations ./migrations
 
 # Non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup

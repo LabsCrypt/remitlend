@@ -178,7 +178,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -240,7 +240,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -273,6 +273,38 @@
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
+                      },
+                      {
+                        "key": {
+                          "symbol": "BURNTHR"
+                        },
+                        "val": {
+                          "u32": 3
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Paused"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Version"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 2
+                        }
                       }
                     ]
                   }
@@ -281,7 +313,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -302,7 +334,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ]
     ]

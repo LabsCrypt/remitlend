@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* WCAG AA Compliant: #171717 on #ffffff (15.9:1) */
+  --background: #ffffff;
+  --foreground: #171717;
+  --focus-ring: #2563eb;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-focus-ring: var(--focus-ring);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* WCAG AA Compliant: #ededed on #0a0a0a (15.5:1) */
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+/* Class-based dark mode for manual toggle */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  @apply antialiased transition-colors duration-200;
+}
+
+/* ── Focus Management ────────────────────────────────────────── */
+/* Ensure keyboard users have high visibility, mouse users stay clean */
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Hide fallback outlines for mouse users while maintaining accessibility */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@keyframes reverse-spin {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+.animate-reverse-spin {
+  animation: reverse-spin 1s linear infinite;
+}
+
+@keyframes dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+
+  40% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-dot-bounce {
+  animation: dot-bounce 1.4s infinite ease-in-out both;
+}

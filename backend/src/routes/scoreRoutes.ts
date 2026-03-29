@@ -1,9 +1,18 @@
 import { Router } from "express";
-import { getScore, updateScore } from "../controllers/scoreController.js";
+import {
+  getScore,
+  updateScore,
+  getScoreBreakdown,
+} from "../controllers/scoreController.js";
 import { validate } from "../middleware/validation.js";
 import { getScoreSchema, updateScoreSchema } from "../schemas/scoreSchemas.js";
 import { requireApiKey } from "../middleware/auth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
+import {
+  requireJwtAuth,
+  requireScopes,
+  requireWalletParamMatchesJwt,
+} from "../middleware/jwtAuth.js";
 
 const router = Router();
 
@@ -13,16 +22,18 @@ const router = Router();
  *   get:
  *     summary: Retrieve a user's credit score
  *     description: >
- *       Returns the current credit score, credit band, and key scoring factors
- *       for the specified user. Used by LoanManager and other contracts to
- *       make lending decisions.
+ *       Returns the current credit score for the authenticated wallet only:
+ *       `userId` must match the Stellar public key in the JWT.
  *     tags: [Score]
+ *     security:
+ *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: userId
  *         required: true
  *         schema:
  *           type: string
+ *         description: Must equal the JWT wallet (`publicKey`)
  *     responses:
  *       200:
  *         description: Score retrieved successfully.
@@ -36,8 +47,59 @@ const router = Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Missing or invalid Bearer token.
+ *       403:
+ *         description: userId does not match the authenticated wallet.
  */
-router.get("/:userId", validate(getScoreSchema), getScore);
+router.get(
+  "/:userId",
+  requireJwtAuth,
+  requireScopes("read:score"),
+  requireWalletParamMatchesJwt("userId"),
+  validate(getScoreSchema),
+  getScore,
+);
+
+/**
+ * @swagger
+ * /score/{userId}/breakdown:
+ *   get:
+ *     summary: Get a detailed credit score breakdown
+ *     description: >
+ *       Returns the user's credit score along with a detailed breakdown of
+ *       contributing factors (repayment history, streaks, defaults) and a
+ *       score history timeline. Derived from loan_events and scores tables.
+ *       `userId` must match the Stellar public key in the JWT.
+ *     tags: [Score]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Must equal the JWT wallet (`publicKey`)
+ *     responses:
+ *       200:
+ *         description: Score breakdown retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ScoreBreakdownResponse'
+ *       401:
+ *         description: Missing or invalid Bearer token.
+ *       403:
+ *         description: userId does not match the authenticated wallet.
+ */
+router.get(
+  "/:userId/breakdown",
+  requireJwtAuth,
+  requireWalletParamMatchesJwt("userId"),
+  validate(getScoreSchema),
+  getScoreBreakdown,
+);
 
 /**
  * @swagger
@@ -76,7 +138,7 @@ router.get("/:userId", validate(getScoreSchema), getScore);
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/UserScore'
+ *               $ref: '#/components/schemas/ScoreUpdateResponse'
  *       400:
  *         description: Validation error.
  *         content:

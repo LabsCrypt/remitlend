@@ -1,13 +1,65 @@
 services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: remitlend
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d remitlend"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6380:6379"
+
+
   backend:
     build:
       context: ./backend
-      target: builder       
-    command: npm run dev
+      target: builder
+    command: sh -c "npm run migrate:up && npm run dev"
     ports:
       - "3001:3001"
     env_file:
       - ./backend/.env
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/remitlend
+      - REDIS_URL=redis://redis:6379
     volumes:
-      - ./backend/src:/app/src  
+      - ./backend/src:/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001 # Client-side URL
+      - API_URL=http://backend:3001 # Server-side URL
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+

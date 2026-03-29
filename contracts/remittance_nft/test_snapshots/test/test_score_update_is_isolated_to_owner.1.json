@@ -240,7 +240,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -302,7 +302,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -364,7 +364,89 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ScoreHistory"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ScoreHistory"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "map": [
+                        {
+                          "key": {
+                            "symbol": "ledger"
+                          },
+                          "val": {
+                            "u32": 0
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "new_score"
+                          },
+                          "val": {
+                            "u32": 109
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "old_score"
+                          },
+                          "val": {
+                            "u32": 100
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "reason"
+                          },
+                          "val": {
+                            "symbol": "REPAY"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518400
         ]
       ],
       [
@@ -397,6 +479,38 @@
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                         }
+                      },
+                      {
+                        "key": {
+                          "symbol": "BURNTHR"
+                        },
+                        "val": {
+                          "u32": 3
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Paused"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Version"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 2
+                        }
                       }
                     ]
                   }
@@ -405,7 +519,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -426,7 +540,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ]
     ]

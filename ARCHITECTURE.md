@@ -9,6 +9,10 @@ RemitLend is a decentralized lending platform built on the Stellar network using
 - [System Components](#system-components)
 - [Data Flow](#data-flow)
 - [Smart Contract Architecture](#smart-contract-architecture)
+- [Technical Deep-Dives (Wiki)](#technical-deep-dives-wiki)
+    - [Soroban Contract State Machine](docs/wiki/contract-state-machine.md)
+    - [Indexer <-> Database Sync Flow](docs/wiki/indexer-sync-flow.md)
+    - [Frontend Standard Library & Patterns](docs/wiki/frontend-patterns.md)
 - [Security Model](#security-model)
 - [Technology Stack](#technology-stack)
 

@@ -54,7 +54,8 @@ fuzz_target!(|data: FuzzAction| {
     let pool_client = LendingPoolClient::new(&env, &pool_id);
 
     // 3. Initialize LendingPool with Token
-    pool_client.initialize(&token_id);
+    let pool_admin = Address::generate(&env);
+    pool_client.initialize(&token_id, &pool_admin);
 
     match data {
         FuzzAction::Deposit { user_id, amount } => {

@@ -8,6 +8,8 @@
 import { useUserStore } from "./useUserStore";
 import { useWalletStore } from "./useWalletStore";
 import { useUIStore } from "./useUIStore";
+import { THEME_STORAGE_KEY } from "../lib/theme";
+import { useThemeStore } from "./useThemeStore";
 import type { ModalId } from "./useUIStore";
 
 // Reset store state between tests
@@ -15,11 +17,13 @@ beforeEach(() => {
   useUserStore.setState({ user: null, isLoading: false, error: null, isAuthenticated: false });
   useWalletStore.setState({
     status: "disconnected",
+    walletType: null,
     address: null,
     network: null,
     balances: [],
     isLoadingBalances: false,
     error: null,
+    hydrated: false,
   });
   useUIStore.setState((state) => ({
     ...state,
@@ -27,6 +31,13 @@ beforeEach(() => {
     isGlobalLoading: false,
     globalLoadingMessage: null,
   }));
+  useThemeStore.setState({
+    theme: "light",
+    hydrated: false,
+  });
+  window.localStorage.clear();
+  document.documentElement.classList.remove("dark");
+  delete document.documentElement.dataset.theme;
 });
 
 // ─── useUserStore ────────────────────────────────────────────────────────────
@@ -88,28 +99,69 @@ describe("useWalletStore", () => {
   const mockNetwork = { chainId: 1, name: "Ethereum", isSupported: true };
 
   it("starts disconnected", () => {
-    const { status, address } = useWalletStore.getState();
+    const { status, address, walletType } = useWalletStore.getState();
     expect(status).toBe("disconnected");
     expect(address).toBeNull();
+    expect(walletType).toBeNull();
   });
 
-  it("setConnected stores address and network", () => {
-    useWalletStore.getState().setConnected("0x123", mockNetwork);
+  it("setConnected stores wallet type, address, and network", () => {
+    useWalletStore.getState().setConnected("demo", "0x123", mockNetwork);
 
-    const { status, address, network } = useWalletStore.getState();
+    const { status, walletType, address, network, hydrated } = useWalletStore.getState();
     expect(status).toBe("connected");
+    expect(walletType).toBe("demo");
     expect(address).toBe("0x123");
     expect(network?.chainId).toBe(1);
+    expect(hydrated).toBe(true);
+    expect(window.localStorage.getItem("remitlend.wallet-session")).toContain(
+      '"walletType":"demo"',
+    );
   });
 
   it("disconnect resets to initial state", () => {
-    useWalletStore.getState().setConnected("0x123", mockNetwork);
+    useWalletStore.getState().setConnected("demo", "0x123", mockNetwork);
     useWalletStore.getState().disconnect();
 
-    const { status, address, balances } = useWalletStore.getState();
+    const { status, walletType, address, balances, hydrated } = useWalletStore.getState();
     expect(status).toBe("disconnected");
+    expect(walletType).toBeNull();
     expect(address).toBeNull();
     expect(balances).toHaveLength(0);
+    expect(hydrated).toBe(true);
+    expect(window.localStorage.getItem("remitlend.wallet-session")).toBeNull();
+  });
+
+  it("initializeSession silently restores a persisted wallet session", () => {
+    window.localStorage.setItem(
+      "remitlend.wallet-session",
+      JSON.stringify({
+        walletType: "freighter",
+        address: "GABC123",
+        network: mockNetwork,
+      }),
+    );
+
+    useWalletStore.getState().initializeSession();
+
+    const { status, walletType, address, network, hydrated } = useWalletStore.getState();
+    expect(status).toBe("connected");
+    expect(walletType).toBe("freighter");
+    expect(address).toBe("GABC123");
+    expect(network).toEqual(mockNetwork);
+    expect(hydrated).toBe(true);
+  });
+
+  it("initializeSession clears malformed persisted wallet data", () => {
+    window.localStorage.setItem("remitlend.wallet-session", JSON.stringify({ address: "bad" }));
+
+    useWalletStore.getState().initializeSession();
+
+    const { status, address, hydrated } = useWalletStore.getState();
+    expect(status).toBe("disconnected");
+    expect(address).toBeNull();
+    expect(hydrated).toBe(true);
+    expect(window.localStorage.getItem("remitlend.wallet-session")).toBeNull();
   });
 
   it("setBalances stores balances and clears loading flag", () => {
@@ -199,5 +251,56 @@ describe("useUIStore", () => {
     useUIStore.getState().hideGlobalLoading();
     expect(useUIStore.getState().isGlobalLoading).toBe(false);
     expect(useUIStore.getState().globalLoadingMessage).toBeNull();
+  });
+});
+
+// ─── useThemeStore ───────────────────────────────────────────────────────────
+
+describe("useThemeStore", () => {
+  it("uses the system preference on first visit when nothing is stored", () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: jest.fn().mockImplementation(() => ({
+        matches: true,
+        media: "(prefers-color-scheme: dark)",
+        onchange: null,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      })),
+    });
+
+    useThemeStore.getState().initializeTheme();
+
+    const { theme, hydrated } = useThemeStore.getState();
+    expect(theme).toBe("dark");
+    expect(hydrated).toBe(true);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
+  it("persists an explicit theme selection and applies it to the document", () => {
+    useThemeStore.getState().setTheme("dark");
+
+    const { theme, hydrated } = useThemeStore.getState();
+    expect(theme).toBe("dark");
+    expect(hydrated).toBe(true);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
+  it("toggles between light and dark themes", () => {
+    useThemeStore.setState({ theme: "dark", hydrated: true });
+    document.documentElement.classList.add("dark");
+
+    useThemeStore.getState().toggleTheme();
+
+    const { theme } = useThemeStore.getState();
+    expect(theme).toBe("light");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 });

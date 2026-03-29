@@ -70,6 +70,7 @@ The repository is organized as a monorepo containing three core packages:
    ```bash
    docker compose up --build
    ```
+   The backend waits for PostgreSQL to be ready, runs `npm run migrate:up` to apply SQL migrations, then starts the API.
 
 4. **Access the application:**
    - Frontend: [http://localhost:3000](http://localhost:3000)
@@ -94,44 +95,26 @@ The repository is organized as a monorepo containing three core packages:
    ```bash
    cp .env.example .env
    ```
-   Update `.env` with your configuration:
+   Update `.env` with your configuration (at minimum `DATABASE_URL` for PostgreSQL):
    ```env
    CORS_ALLOWED_ORIGINS=http://localhost:3000
    PORT=3001
    NODE_ENV=development
+   DATABASE_URL=postgres://postgres:postgres@localhost:5432/remitlend
    ```
 
-### Manual Setup
-
-#### Backend Setup
-
-1. **Navigate to backend directory:**
+4. **Apply database migrations** (creates `scores`, `loan_events`, `indexer_state`, and other tables):
    ```bash
-   cd backend
+   npm run migrate:up
    ```
+   Migration scripts use the colon form (`migrate:up` / `migrate:down`), which is the standard npm convention.
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   ```
-   Update `.env` with your configuration:
-   ```env
-   CORS_ALLOWED_ORIGINS=http://localhost:3000
-   PORT=3001
-   NODE_ENV=development
-   ```
-
-4. **Run development server:**
+5. **Run development server:**
    ```bash
    npm run dev
    ```
 
-5. **Available scripts:**
+6. **Available scripts:**
    - `npm run dev` - Start development server with hot reload
    - `npm run build` - Build for production
    - `npm start` - Run production build
@@ -212,8 +195,6 @@ We welcome contributions from developers of all skill levels! Please see our [CO
 3. Make your changes and commit (`git commit -m 'Add amazing feature'`)
 4. Push to your branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
-### Quick Contribution Guide
 
 ## 📄 License
 
