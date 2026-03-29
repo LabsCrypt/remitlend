@@ -1355,6 +1355,26 @@ impl LoanManager {
         Self::borrower_loan_count(&env, &borrower)
     }
 
+    pub fn get_admin(env: Env) -> Address {
+        Self::admin(&env)
+    }
+
+    pub fn get_nft_contract(env: Env) -> Address {
+        Self::nft_contract(&env)
+    }
+
+    pub fn get_pool_address(env: Env) -> Address {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("not initialized")
+    }
+
+    pub fn get_default_window(env: Env) -> u32 {
+        Self::default_window_ledgers(&env)
+    }
+
     pub fn get_min_score(env: Env) -> u32 {
         Self::bump_instance_ttl(&env);
         env.storage()

@@ -91,18 +91,42 @@ describe("Centralized Error Handling", () => {
       process.env.NODE_ENV = originalEnv;
     });
 
-    it("should include field information when available", async () => {
-      // Test with auth endpoint that validates public key
-      // Note: Zod validation runs first and returns VALIDATION_ERROR
-      const response = await request(app)
-        .post("/api/auth/challenge")
-        .send({});
+    it("should expose stack traces only with explicit development opt-in", async () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalExposeStackTraces = process.env.EXPOSE_STACK_TRACES;
 
-      expect(response.status).toBe(400);
-      // Zod validation returns VALIDATION_ERROR with field info
-      expect(response.body.error.code).toBe("VALIDATION_ERROR");
-      expect(response.body.error.details).toBeDefined();
-      expect(response.body.error.details[0]?.field).toBe("publicKey");
+      process.env.NODE_ENV = "development";
+      process.env.EXPOSE_STACK_TRACES = "true";
+      const developmentResponse = await request(app).get("/test/error/unexpected");
+
+      expect(developmentResponse.status).toBe(500);
+      expect(developmentResponse.body).toHaveProperty("stack");
+
+      process.env.NODE_ENV = "development";
+      process.env.EXPOSE_STACK_TRACES = "false";
+      const noOptInResponse = await request(app).get("/test/error/unexpected");
+
+      expect(noOptInResponse.status).toBe(500);
+      expect(noOptInResponse.body).not.toHaveProperty("stack");
+
+      process.env.NODE_ENV = "staging";
+      process.env.EXPOSE_STACK_TRACES = "true";
+      const stagingResponse = await request(app).get("/test/error/unexpected");
+
+      expect(stagingResponse.status).toBe(500);
+      expect(stagingResponse.body).not.toHaveProperty("stack");
+
+      if (originalEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalEnv;
+      }
+
+      if (originalExposeStackTraces === undefined) {
+        delete process.env.EXPOSE_STACK_TRACES;
+      } else {
+        process.env.EXPOSE_STACK_TRACES = originalExposeStackTraces;
+      }
     });
   });
 

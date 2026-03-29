@@ -8,6 +8,7 @@
  * Base URL is read from NEXT_PUBLIC_API_URL environment variable.
  */
 
+import { useEffect, useState } from "react";
 import {
   useQuery,
   useMutation,
@@ -407,7 +408,20 @@ export function useCreditScore(
   userId: string | undefined,
   options?: Omit<UseQueryOptions<number>, "queryKey" | "queryFn">,
 ) {
-  return useQuery<number>({
+  const queryClient = useQueryClient();
+  const userData = useUserStore((s) => s.user);
+  const walletAddress = userData?.walletAddress;
+  const authToken = useUserStore((s) => s.authToken);
+
+  const [previousScoreState, setPreviousScoreState] = useState<{
+    walletAddress: string | undefined;
+    previousScore: number | undefined;
+  }>({
+    walletAddress: undefined,
+    previousScore: undefined,
+  });
+
+  const query = useQuery<number>({
     queryKey: ["creditScore", userId],
     queryFn: async () => {
       const response = await apiFetch<CreditScoreResponse>(`/score/${userId}`);
@@ -416,6 +430,92 @@ export function useCreditScore(
     enabled: !!userId,
     ...options,
   });
+
+  useEffect(() => {
+    if (!walletAddress || !authToken || !userId) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryDelay = 1_000;
+    let eventSource: EventSource | null = null;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const url = `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
+      const es = new EventSource(url, { withCredentials: true });
+      eventSource = es;
+
+      es.onopen = () => {
+        retryDelay = 1_000;
+      };
+
+      es.onmessage = (event: MessageEvent<string>) => {
+        try {
+          const payload = JSON.parse(event.data) as {
+            type?: string;
+            borrower?: string;
+            eventType?: string;
+          };
+
+          if (payload.type === "init") {
+            return;
+          }
+
+          const scoreChangingEvent =
+            payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
+
+          if (payload.borrower === walletAddress && scoreChangingEvent) {
+            const currentScore = queryClient.getQueryData<number>(["creditScore", userId]);
+
+            setPreviousScoreState({
+              walletAddress,
+              previousScore: currentScore,
+            });
+
+            queryClient.invalidateQueries({
+              queryKey: ["creditScore", userId],
+            });
+          }
+        } catch {
+          // Ignore malformed SSE payloads.
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        eventSource = null;
+
+        if (!cancelled) {
+          const delay = Math.min(retryDelay, 30_000);
+          retryDelay = Math.min(retryDelay * 2, 30_000);
+          retryTimeout = setTimeout(connect, delay);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      eventSource?.close();
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
+  }, [authToken, queryClient, walletAddress, userId]);
+
+  return {
+    ...query,
+    previousScore:
+      previousScoreState.walletAddress === walletAddress
+        ? previousScoreState.previousScore
+        : undefined,
+  };
 }
 
 /**

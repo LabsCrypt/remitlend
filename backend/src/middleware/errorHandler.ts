@@ -54,6 +54,8 @@ export const errorHandler = (
 
   // ── Known Operational Errors ─────────────────────────────────
   if (err instanceof AppError) {
+    const message = err.isOperational ? err.message : "Internal server error";
+
     if (!err.isOperational) {
       logger.error(`Internal AppError: ${err.message}`, {
         requestId: req.requestId,
@@ -102,17 +104,18 @@ export const errorHandler = (
 
   Sentry.captureException(err);
 
-  const isDevelopment = process.env.NODE_ENV !== "production";
+  const shouldExposeStackTrace =
+    process.env.NODE_ENV === "development" &&
+    process.env.EXPOSE_STACK_TRACES === "true";
 
   res.status(500).json({
     success: false,
     // Legacy format
     message: "Internal server error",
-    // New structured format
     error: {
       code: ErrorCode.INTERNAL_ERROR,
       message: "Internal server error",
     },
-    ...(isDevelopment && { stack: err.stack }),
+    ...(shouldExposeStackTrace && { stack: err.stack }),
   });
 };
