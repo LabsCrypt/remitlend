@@ -55,8 +55,14 @@ Stellar Blockchain
 Add these to your `.env` file:
 
 ```env
-# Stellar RPC endpoint (testnet or mainnet)
+# Stellar network selection
+STELLAR_NETWORK=testnet
+
+# Optional override (defaults from STELLAR_NETWORK; must match selected network)
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+
+# Optional override (must match selected network exactly)
+STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
 
 # Loan Manager contract address
 LOAN_MANAGER_CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -106,6 +112,12 @@ CREATE TABLE loan_events (
   value TEXT,                              -- Raw event value (XDR)
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Prevent duplicate non-repeatable status events for a single loan.
+CREATE UNIQUE INDEX loan_events_unique_status_event_per_loan
+ON loan_events (loan_id, event_type)
+WHERE loan_id IS NOT NULL
+  AND event_type IN ('LoanApproved', 'LoanDefaulted');
 ```
 
 ### indexer_state Table

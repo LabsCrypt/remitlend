@@ -14,6 +14,7 @@ const mockQuery: jest.MockedFunction<
 > = jest.fn();
 const mockCacheGet = jest.fn<() => Promise<unknown | null>>().mockResolvedValue(null);
 const mockCacheSet = jest.fn<() => Promise<void>>().mockResolvedValue();
+const mockCachePing = jest.fn<() => Promise<string>>().mockResolvedValue("ok");
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
@@ -28,7 +29,7 @@ jest.unstable_mockModule("../services/cacheService.js", () => ({
     set: mockCacheSet,
     delete: jest.fn(),
     invalidatePattern: jest.fn(),
-    ping: jest.fn<() => Promise<"ok" | "error">>().mockResolvedValue("ok"),
+    ping: mockCachePing,
     close: jest.fn(),
   },
 }));
@@ -56,31 +57,12 @@ afterAll(() => {
 
 describe("pagination and filtering", () => {
   it("paginates and filters borrower loans with a consistent response envelope", async () => {
-    mockQuery
-      .mockResolvedValueOnce({
+    mockQuery.mockImplementation(async (text: string) => {
+      if (text.includes("last_indexed_ledger")) {
+        return { rows: [{ last_indexed_ledger: 100 }] };
+      }
+      return {
         rows: [
-          {
-            loan_id: 1,
-            borrower,
-            principal: "100",
-            approved_at: "2024-02-01T00:00:00.000Z",
-            approved_ledger: 80,
-            rate_bps: 1200,
-            term_ledgers: 17280,
-            total_repaid: "0",
-            is_defaulted: "0",
-          },
-          {
-            loan_id: 2,
-            borrower,
-            principal: "200",
-            approved_at: "2024-02-10T00:00:00.000Z",
-            approved_ledger: 90,
-            rate_bps: 1200,
-            term_ledgers: 17280,
-            total_repaid: "0",
-            is_defaulted: "0",
-          },
           {
             loan_id: 3,
             borrower,
@@ -91,12 +73,15 @@ describe("pagination and filtering", () => {
             term_ledgers: 17280,
             total_repaid: "0",
             is_defaulted: "0",
-          },
-        ],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ last_indexed_ledger: 100 }],
-      });
+            accrued_interest: "0",
+            total_owed: "250",
+            next_payment_deadline: "2024-02-21T00:00:00.000Z",
+            status: "active",
+            full_count: 2,
+          }
+        ]
+      };
+    });
 
     const response = await request(app)
       .get(

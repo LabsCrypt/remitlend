@@ -74,6 +74,7 @@ Core tables are created by these migrations (run in filename order):
 | `1773000000002_loan-history.js`          | `loan_history`                             |
 | `1773000000003_indexed-events.js`        | `indexed_events`                           |
 | `1774000000004_scores-add-created-at.js` | adds `created_at` to `scores` (idempotent) |
+| `1777000000007_unique-loan-status-events.js` | dedupes and enforces unique status events per loan |
 
 With Docker Compose from the repo root, the `backend` service runs `migrate:up` before `npm run dev` so the schema is applied automatically when the database is healthy.
 
@@ -87,6 +88,13 @@ PORT=3001
 
 # CORS Configuration
 CORS_ALLOWED_ORIGINS=http://localhost:3000
+
+# Stellar Configuration
+STELLAR_NETWORK=testnet
+STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+LOAN_MANAGER_CONTRACT_ID=
+LOAN_MANAGER_ADMIN_SECRET=
 
 # Future: Add API keys for remittance services
 # WISE_API_KEY=your_key_here

@@ -13,6 +13,7 @@ import {
   parseQueryParams,
 } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
+import { getStellarRpcUrl } from "../config/stellar.js";
 
 const EVENT_SORT_FIELDS = [
   "event_type",
@@ -141,7 +142,17 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
  */
 export const getBorrowerEvents = async (req: Request, res: Response) => {
   try {
-    const { borrower } = req.params;
+    const borrowerParam = req.params.borrower;
+    const borrower = Array.isArray(borrowerParam)
+      ? borrowerParam[0]
+      : borrowerParam;
+    if (!borrower) {
+      return res.status(400).json({
+        success: false,
+        message: "Borrower is required",
+      });
+    }
+
     const { limit, offset, sort } = parseQueryParams(req);
     const cacheKey = buildEventsCacheKey("borrower", borrower as string, req);
     const cachedData = await cacheService.get(cacheKey);
@@ -203,7 +214,8 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
  */
 export const getLoanEvents = async (req: Request, res: Response) => {
   try {
-    const { loanId } = req.params;
+    const loanIdParam = req.params.loanId;
+    const loanId = Array.isArray(loanIdParam) ? loanIdParam[0] : loanIdParam;
     const { limit, offset, sort } = parseQueryParams(req);
 
     if (!loanId) {
@@ -525,8 +537,6 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
       });
     }
 
-    const rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
     const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
 
     if (!contractId) {
@@ -536,6 +546,7 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
       });
     }
 
+    const rpcUrl = getStellarRpcUrl();
     const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
     const indexer = new EventIndexer({
       rpcUrl,
