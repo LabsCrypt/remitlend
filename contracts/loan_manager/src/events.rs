@@ -133,6 +133,11 @@ pub fn loan_liquidated(
     let topics = (Symbol::new(env, "LoanLiquidated"), loan_id, borrower);
     env.events().publish(
         topics,
-        (liquidator, total_collateral, liquidator_bonus, borrower_remainder),
+        (
+            liquidator,
+            total_collateral,
+            liquidator_bonus,
+            borrower_remainder,
+        ),
     );
 }

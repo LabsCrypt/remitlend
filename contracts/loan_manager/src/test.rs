@@ -1381,4 +1381,3 @@ fn test_refinance_from_defaulted_increments_count() {
     assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
     assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
 }
-
