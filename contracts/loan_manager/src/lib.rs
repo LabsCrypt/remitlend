@@ -201,7 +201,7 @@ impl LoanManager {
             .unwrap_or(Self::DEFAULT_TERM_LEDGERS)
     }
 
-    fn assert_not_paused(env: &Env) -> Result<(), LoanError> {
+    fn require_not_paused(env: &Env) -> Result<(), LoanError> {
         Self::bump_instance_ttl(env);
         let paused: bool = env
             .storage()
@@ -211,7 +211,6 @@ impl LoanManager {
         if paused {
             return Err(LoanError::ContractPaused);
         }
-
         // Cascade: also check whether the LendingPool is paused.
         if let Some(pool_addr) = env
             .storage()
@@ -223,7 +222,6 @@ impl LoanManager {
                 return Err(LoanError::PoolPaused);
             }
         }
-
         // Cascade: also check whether the RemittanceNFT is paused.
         if let Some(nft_addr) = env
             .storage()
@@ -235,7 +233,6 @@ impl LoanManager {
                 return Err(LoanError::NftPaused);
             }
         }
-
         Ok(())
     }
 
@@ -673,7 +670,7 @@ impl LoanManager {
 
     pub fn request_loan(env: Env, borrower: Address, amount: i128) -> Result<u32, LoanError> {
         borrower.require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         if amount <= 0 {
             return Err(LoanError::InvalidAmount);
@@ -751,7 +748,7 @@ impl LoanManager {
 
         let admin = Self::admin(&env);
         admin.require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -819,7 +816,7 @@ impl LoanManager {
         use soroban_sdk::token::TokenClient;
 
         borrower.require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         if amount <= 0 {
             return Err(LoanError::InvalidAmount);
@@ -938,7 +935,7 @@ impl LoanManager {
     pub fn deposit_collateral(env: Env, loan_id: u32, amount: i128) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         if amount <= 0 {
             return Err(LoanError::InvalidAmount);
@@ -990,7 +987,7 @@ impl LoanManager {
     }
 
     pub fn release_collateral(env: Env, loan_id: u32) -> Result<(), LoanError> {
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
         let loan: Loan = env
@@ -1017,7 +1014,7 @@ impl LoanManager {
 
     pub fn cancel_loan(env: Env, borrower: Address, loan_id: u32) -> Result<(), LoanError> {
         borrower.require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -1048,7 +1045,7 @@ impl LoanManager {
 
     pub fn reject_loan(env: Env, loan_id: u32, reason: String) -> Result<(), LoanError> {
         Self::admin(&env).require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -1087,7 +1084,7 @@ impl LoanManager {
     ) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         // Both borrower and admin must authorise.
         let admin = Self::admin(&env);
@@ -1413,6 +1410,14 @@ impl LoanManager {
         Self::admin(&env)
     }
 
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        Self::bump_instance_ttl(&env);
+    }
+
     pub fn get_nft_contract(env: Env) -> Address {
         Self::nft_contract(&env)
     }
@@ -1587,18 +1592,20 @@ impl LoanManager {
 
     pub fn pause(env: Env) {
         Self::admin(&env).require_auth();
-
         env.storage().instance().set(&DataKey::Paused, &true);
         Self::bump_instance_ttl(&env);
         events::paused(&env);
+        env.events()
+            .publish((Symbol::new(&env, "ContractPaused"),), ());
     }
 
     pub fn unpause(env: Env) {
         Self::admin(&env).require_auth();
-
         env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
         events::unpaused(&env);
+        env.events()
+            .publish((Symbol::new(&env, "ContractUnpaused"),), ());
     }
 
     pub fn is_paused(env: Env) -> bool {
@@ -1611,7 +1618,7 @@ impl LoanManager {
 
     pub fn check_default(env: Env, loan_id: u32) -> Result<(), LoanError> {
         Self::admin(&env).require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -1656,7 +1663,7 @@ impl LoanManager {
 
     pub fn check_defaults(env: Env, loan_ids: Vec<u32>) -> Result<(), LoanError> {
         Self::admin(&env).require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::require_not_paused(&env)?;
 
         for loan_id in loan_ids.iter() {
             let loan_key = DataKey::Loan(loan_id);

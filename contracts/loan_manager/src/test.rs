@@ -64,6 +64,19 @@ fn test_upgrade_requires_admin_auth() {
 }
 
 #[test]
+fn test_set_admin_updates_admin_immediately() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let new_admin = Address::generate(&env);
+
+    manager.set_admin(&new_admin);
+
+    assert_eq!(manager.get_admin(), new_admin);
+}
+
+#[test]
 fn test_loan_request_success() {
     let env = Env::default();
     env.mock_all_auths();

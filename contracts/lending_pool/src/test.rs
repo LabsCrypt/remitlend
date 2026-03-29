@@ -506,6 +506,22 @@ fn test_admin_transfer_flow() {
     assert_eq!(pool_client.get_admin(), new_admin);
 }
 
+#[test]
+fn test_set_admin_updates_admin_immediately() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    let new_admin = Address::generate(&env);
+    pool_client.set_admin(&new_admin);
+
+    assert_eq!(pool_client.get_admin(), new_admin);
+}
+
 // ── MaxPoolSize ───────────────────────────────────────────────────────────────
 
 #[test]

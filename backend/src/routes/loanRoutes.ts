@@ -1,8 +1,9 @@
 import { Router } from "express";
 import {
-  getLoanConfig,
+  getLoanConfigEndpoint,
   getBorrowerLoans,
   getLoanDetails,
+  getLoanAmortizationSchedule,
   requestLoan,
   repayLoan,
   submitTransaction,
@@ -19,7 +20,7 @@ import { borrowerParamSchema } from "../schemas/stellarSchemas.js";
 
 const router = Router();
 
-router.get("/config", getLoanConfig);
+router.get("/config", getLoanConfigEndpoint);
 
 /**
  * @swagger
@@ -102,6 +103,14 @@ router.get(
   requireScopes("read:loans"),
   requireLoanBorrowerAccess,
   getLoanDetails,
+);
+
+router.get(
+  "/:loanId/amortization-schedule",
+  requireJwtAuth,
+  requireScopes("read:loans"),
+  requireLoanBorrowerAccess,
+  getLoanAmortizationSchedule,
 );
 
 /**
