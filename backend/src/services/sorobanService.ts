@@ -7,6 +7,7 @@ import {
   Address,
   rpc,
   xdr,
+  StrKey,
 } from "@stellar/stellar-sdk";
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
@@ -293,6 +294,47 @@ class SorobanService {
   }
 
   /**
+   * Validates all required Soroban configuration on startup.
+   * Checks that each contract ID is present and is a valid Stellar contract
+   * address, then confirms RPC connectivity with a lightweight health call.
+   * Throws AppError.internal() with a clear message on any failure so the
+   * caller (index.ts) can log and exit before the server accepts traffic.
+   */
+  async validateConfig(): Promise<void> {
+    const contractChecks: Array<[string, string]> = [
+      ["LOAN_MANAGER_CONTRACT_ID", process.env.LOAN_MANAGER_CONTRACT_ID ?? ""],
+      ["LENDING_POOL_CONTRACT_ID", process.env.LENDING_POOL_CONTRACT_ID ?? ""],
+      ["POOL_TOKEN_ADDRESS",       process.env.POOL_TOKEN_ADDRESS       ?? ""],
+    ];
+
+    for (const [name, value] of contractChecks) {
+      if (!value) {
+        throw AppError.internal(`${name} is not configured`);
+      }
+      if (!StrKey.isValidContract(value)) {
+        throw AppError.internal(
+          `${name} is not a valid Stellar contract address: "${value}"`,
+        );
+      }
+    }
+
+    try {
+      await this.getRpcServer().getHealth();
+    } catch (err) {
+      throw AppError.internal(
+        `Stellar RPC is unreachable at ${process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org"}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    logger.info("Soroban configuration validated", {
+      loanManagerContractId: process.env.LOAN_MANAGER_CONTRACT_ID,
+      lendingPoolContractId: process.env.LENDING_POOL_CONTRACT_ID,
+      rpcUrl:
+        process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org",
+    });
+  }
+
+  /**
    * Submits a signed transaction XDR to the Stellar network and polls
    * for the result.
    */
@@ -337,6 +379,25 @@ class SorobanService {
       ...(resultXdr !== undefined ? { resultXdr } : {}),
     };
   }
+
+  /**
+   * Returns score adjustment constants for indexing.
+   * Values are sourced from environment variables so they stay in sync
+   * with the deployed RemittanceNFT contract constants without requiring
+   * a hardcoded value in application logic.
+   */
+  getScoreConfig(): { repaymentDelta: number; defaultPenalty: number } {
+    const repaymentDelta = parseInt(
+      process.env.SCORE_REPAYMENT_DELTA ?? "15",
+      10,
+    );
+    const defaultPenalty = parseInt(
+      process.env.SCORE_DEFAULT_PENALTY ?? "50",
+      10,
+    );
+    return { repaymentDelta, defaultPenalty };
+  }
+
 }
 
 export const sorobanService = new SorobanService();

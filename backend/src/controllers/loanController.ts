@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { ErrorCode } from "../errors/errorCodes.js";
 import { sorobanService } from "../services/sorobanService.js";
 import {
   createPaginatedResponse,
@@ -96,6 +97,7 @@ export const getBorrowerLoans = asyncHandler(
     const { borrower } = req.params;
     const { limit, offset, sort, status, dateRange, amountRange } =
       parseQueryParams(req);
+
 
     const sortConfig = getSortConfig(
       sort,
@@ -269,8 +271,7 @@ export const getLoanDetails = asyncHandler(
     );
 
     if (eventsResult.rows.length === 0) {
-      res.status(404).json({ success: false, message: "Loan not found" });
-      return;
+      throw AppError.notFound("Loan not found", ErrorCode.LOAN_NOT_FOUND, "loanId");
     }
 
     const events = eventsResult.rows;
@@ -344,12 +345,14 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
   if (!borrowerPublicKey || !amount || amount <= 0) {
     throw AppError.badRequest(
       "borrowerPublicKey and a positive amount are required",
+      ErrorCode.MISSING_FIELD,
     );
   }
 
   if (borrowerPublicKey !== req.user?.publicKey) {
     throw AppError.forbidden(
       "borrowerPublicKey must match your authenticated wallet",
+      ErrorCode.BORROWER_MISMATCH,
     );
   }
 
@@ -383,18 +386,20 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
   if (!borrowerPublicKey || !amount || amount <= 0) {
     throw AppError.badRequest(
       "borrowerPublicKey and a positive amount are required",
+      ErrorCode.MISSING_FIELD,
     );
   }
 
   if (borrowerPublicKey !== req.user?.publicKey) {
     throw AppError.forbidden(
       "borrowerPublicKey must match your authenticated wallet",
+      ErrorCode.BORROWER_MISMATCH,
     );
   }
 
   const loanIdNum = Number.parseInt(loanId, 10);
   if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
-    throw AppError.badRequest("Invalid loan ID");
+    throw AppError.badRequest("Invalid loan ID", ErrorCode.INVALID_LOAN_ID, "loanId");
   }
 
   const result = await sorobanService.buildRepayTx(
@@ -426,7 +431,7 @@ export const submitTransaction = asyncHandler(
     const { signedTxXdr } = req.body as { signedTxXdr: string };
 
     if (!signedTxXdr) {
-      throw AppError.badRequest("signedTxXdr is required");
+      throw AppError.badRequest("signedTxXdr is required", ErrorCode.MISSING_FIELD, "signedTxXdr");
     }
 
     const result = await sorobanService.submitSignedTx(signedTxXdr);

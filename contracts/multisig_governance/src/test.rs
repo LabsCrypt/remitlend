@@ -541,3 +541,30 @@ fn cannot_finalize_cancelled_proposal() {
     set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
     client.finalize_admin_transfer(&admin);
 }
+
+// ── Additional coverage tests ─────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "signer list must not be empty")]
+fn propose_rejects_empty_signers() {
+    let (env, client, _, _) = setup();
+    let signers: Vec<Address> = Vec::new(&env);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+}
+
+#[test]
+#[should_panic(expected = "signer list exceeds MAX_SIGNERS")]
+fn propose_rejects_too_many_signers() {
+    let (env, client, _, _) = setup();
+    let mut addrs = soroban_sdk::vec![&env];
+    for _ in 0..21 {
+        addrs.push_back(Address::generate(&env));
+    }
+    client.propose_admin_transfer(&Address::generate(&env), &addrs, &1, &MIN_TIMELOCK_SECONDS);
+}
+

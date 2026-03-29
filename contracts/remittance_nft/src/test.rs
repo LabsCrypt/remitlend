@@ -99,6 +99,47 @@ fn test_history_hash_update() {
 }
 
 #[test]
+#[should_panic]
+fn test_update_history_hash_rejects_zero_hash() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let initial_hash = create_test_hash(&env, 1);
+    client.mint(&user, &500, &initial_hash, &None);
+
+    // Passing an all-zero hash must panic (Err(InvalidHistoryHash))
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    client.update_history_hash(&user, &zero_hash, &None);
+}
+
+#[test]
+#[should_panic]
+fn test_update_history_hash_rejects_same_hash() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let initial_hash = create_test_hash(&env, 1);
+    client.mint(&user, &500, &initial_hash, &None);
+
+    // Passing the same hash that is already stored must panic (Err(InvalidHistoryHash))
+    client.update_history_hash(&user, &initial_hash, &None);
+}
+
+#[test]
 fn test_authorized_minter() {
     let env = Env::default();
     env.mock_all_auths();
