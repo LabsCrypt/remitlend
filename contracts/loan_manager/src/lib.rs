@@ -377,13 +377,14 @@ impl LoanManager {
         }
 
         let remaining_principal = Self::remaining_principal(loan);
-        let remaining_debt = remaining_principal
-            .checked_add(loan.accrued_interest)
-            .expect("debt overflow");
-        if remaining_debt <= 0 {
+        if remaining_principal <= 0 {
             loan.last_late_fee_ledger = current_ledger;
             return 0;
         }
+
+        let remaining_debt = remaining_principal
+            .checked_add(loan.accrued_interest)
+            .expect("debt overflow");
 
         let overdue_ledgers = current_ledger - late_fee_start;
         let incremental_fee = remaining_debt
