@@ -139,7 +139,10 @@ describe("EventIndexer", () => {
       }
 
       if (sql.includes("INSERT INTO scores")) {
-        scoreUpdates.push(params);
+        // Handle batched updates - params come as [user1, delta1, user2, delta2, ...]
+        for (let i = 0; i < params.length; i += 2) {
+          scoreUpdates.push([params[i], params[i + 1]]);
+        }
         return { rows: [], rowCount: 1 };
       }
 
@@ -209,8 +212,8 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
     expect(scoreUpdates).toEqual([
-      [borrowerRepaid, 515, 15],
-      [borrowerDefaulted, 450, -50],
+      [borrowerRepaid, 15],
+      [borrowerDefaulted, -50],
     ]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
