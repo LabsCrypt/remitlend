@@ -25,6 +25,7 @@ pub trait RateOracleInterface {
 #[contractclient(name = "PoolClient")]
 pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
+    fn pool_balance(env: Env, token: Address) -> i128;
 }
 
 mod events;
@@ -578,6 +579,8 @@ impl LoanManager {
             .expect("lending pool not set");
         let token_client = TokenClient::new(env, &token);
         token_client.transfer(&env.current_contract_address(), &lending_pool, &collateral);
+
+        events::collateral_liquidated(env, loan_id, collateral);
     }
 
     pub fn initialize(
@@ -756,6 +759,22 @@ impl LoanManager {
             return Err(LoanError::LoanNotPending);
         }
 
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let pool_client = PoolClient::new(&env, &lending_pool);
+        let pool_balance = pool_client.pool_balance(&token);
+        if pool_balance < loan.amount {
+            return Err(LoanError::InsufficientPoolLiquidity);
+        }
+
         let term_ledgers = Self::read_default_term(&env);
 
         loan.status = LoanStatus::Approved;
@@ -767,22 +786,7 @@ impl LoanManager {
             .expect("grace period overflow");
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
-
-        let lending_pool: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::LendingPool)
-            .expect("lending pool not set");
-        let token: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .expect("token not set");
         let token_client = TokenClient::new(&env, &token);
-        let pool_balance = token_client.balance(&lending_pool);
-        if pool_balance < loan.amount {
-            return Err(LoanError::InsufficientPoolLiquidity);
-        }
 
         Self::increment_borrower_loan_count(&env, &loan.borrower);
         token_client.transfer(&lending_pool, &loan.borrower, &loan.amount);
@@ -821,6 +825,7 @@ impl LoanManager {
             .persistent()
             .get(&loan_key)
             .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
 
         if loan.borrower != borrower {
             return Err(LoanError::BorrowerMismatch);
@@ -1080,6 +1085,7 @@ impl LoanManager {
             .persistent()
             .get(&loan_key)
             .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
 
         // Borrower must also sign.
         loan.borrower.require_auth();
@@ -1113,6 +1119,29 @@ impl LoanManager {
             .unwrap_or(u32::MAX);
         if new_term < min_term || new_term > max_term {
             return Err(LoanError::InvalidTerm);
+        }
+
+        // Re-validate credit score (treat refinance like new loan application)
+        let nft_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::NftContract)
+            .ok_or(LoanError::NotInitialized)?;
+        let nft_client = NftClient::new(&env, &nft_contract);
+
+        let current_score = nft_client.get_score(&loan.borrower);
+        let min_score: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinScore)
+            .unwrap_or(500);
+        if current_score < min_score {
+            return Err(LoanError::InsufficientScore);
+        }
+
+        // Validate collateral covers new amount (collateral must be >= loan amount)
+        if loan.collateral_amount < new_amount {
+            return Err(LoanError::InsufficientScore);
         }
 
         // Settle all accrued interest and late fees up to now.
@@ -1159,18 +1188,41 @@ impl LoanManager {
                 token_client.transfer(&lending_pool, &loan.borrower, &additional);
             }
             core::cmp::Ordering::Less => {
-                // Borrower returns the excess to the pool.
-                let excess = remaining_principal
+                // Borrower returns the excess principal to the pool.
+                let excess_principal = remaining_principal
                     .checked_sub(new_amount)
                     .expect("underflow");
-                token_client.transfer(&loan.borrower, &lending_pool, &excess);
+                token_client.transfer(&loan.borrower, &lending_pool, &excess_principal);
+
+                // Return excess collateral proportionally if new amount is smaller
+                if new_amount < remaining_principal {
+                    let collateral_to_return = loan
+                        .collateral_amount
+                        .checked_mul(excess_principal)
+                        .expect("multiplication overflow")
+                        .checked_div(remaining_principal)
+                        .expect("division by zero");
+                    if collateral_to_return > 0 {
+                        token_client.transfer(
+                            &env.current_contract_address(),
+                            &loan.borrower,
+                            &collateral_to_return,
+                        );
+                        loan.collateral_amount = loan
+                            .collateral_amount
+                            .checked_sub(collateral_to_return)
+                            .expect("underflow");
+                    }
+                }
             }
             core::cmp::Ordering::Equal => {}
         }
 
-        // Reset loan terms.
+        // Reset loan terms with new amount and rate.
         loan.amount = new_amount;
         loan.principal_paid = 0;
+        loan.interest_rate_bps =
+            Self::compute_interest_rate(&env, &loan.borrower, new_amount, current_score);
         loan.last_interest_ledger = current_ledger;
         loan.due_date = current_ledger + new_term;
         loan.last_late_fee_ledger = loan.due_date;
@@ -1341,6 +1393,26 @@ impl LoanManager {
 
     pub fn get_borrower_loan_count(env: Env, borrower: Address) -> u32 {
         Self::borrower_loan_count(&env, &borrower)
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        Self::admin(&env)
+    }
+
+    pub fn get_nft_contract(env: Env) -> Address {
+        Self::nft_contract(&env)
+    }
+
+    pub fn get_pool_address(env: Env) -> Address {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("not initialized")
+    }
+
+    pub fn get_default_window(env: Env) -> u32 {
+        Self::default_window_ledgers(&env)
     }
 
     pub fn get_min_score(env: Env) -> u32 {
@@ -1562,7 +1634,6 @@ impl LoanManager {
             }
 
             loan.status = LoanStatus::Defaulted;
-            loan.collateral_amount = 0;
             env.storage().persistent().set(&loan_key, &loan);
             Self::bump_persistent_ttl(&env, &loan_key);
             Self::decrement_borrower_loan_count(&env, &loan.borrower);

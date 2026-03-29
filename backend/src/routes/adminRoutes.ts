@@ -4,6 +4,7 @@ import { requireApiKey } from "../middleware/auth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
 import { validateBody } from "../middleware/validation.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { auditLog } from "../middleware/auditLog.js";
 import { defaultChecker } from "../services/defaultChecker.js";
 import {
   createWebhookSubscription,
@@ -54,6 +55,7 @@ router.post(
   "/check-defaults",
   requireApiKey,
   strictRateLimiter,
+  auditLog,
   validateBody(checkDefaultsBodySchema),
   asyncHandler(async (req, res) => {
     const { loanIds } = req.body as z.infer<typeof checkDefaultsBodySchema>;
@@ -93,7 +95,13 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/ReindexResponse'
  */
-router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
+router.post(
+  "/reindex",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  reindexLedgerRange,
+);
 
 /**
  * @swagger
@@ -143,6 +151,7 @@ router.post(
   "/webhooks",
   requireApiKey,
   strictRateLimiter,
+  auditLog,
   createWebhookSubscription,
 );
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
@@ -173,6 +182,7 @@ router.delete(
   "/webhooks/:id",
   requireApiKey,
   strictRateLimiter,
+  auditLog,
   deleteWebhookSubscription,
 );
 

@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Menu, Search, User, Wallet } from "lucide-react";
+import { Menu, Search, User, Wallet } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { ThemeToggle } from "../ui/ThemeToggle";
@@ -55,8 +55,6 @@ export function Header({ onMenuClick, className }: HeaderProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   const { data: loans = [] } = useLoans({ enabled: isConnected });
   const { data: remittances = [] } = useRemittances({ enabled: isConnected });
@@ -155,10 +153,6 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       if (!wrapperRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
       }
-
-      if (!profileMenuRef.current?.contains(event.target as Node)) {
-        setIsProfileMenuOpen(false);
-      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -229,19 +223,10 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       disconnect();
       toast.info("Wallet disconnected", "Reconnect anytime to continue borrowing and lending.");
     } else {
-      setConnected("demo", "0x123...abc", {
-        chainId: 1,
-        name: "Stellar",
-        isSupported: true,
-      });
+      setConnected("0x123...abc", { chainId: 1, name: "Stellar", isSupported: true });
       gamificationStore.addXP(10, "Wallet connection");
       toast.success("Wallet connected");
     }
-  };
-
-  const handleDisconnect = () => {
-    disconnect();
-    setIsProfileMenuOpen(false);
   };
 
   const profileLabel = user?.email
@@ -387,88 +372,20 @@ export function Header({ onMenuClick, className }: HeaderProps) {
 
         <NotificationDropdown />
 
-        <div ref={profileMenuRef} className="relative">
-          <button
-            type="button"
-            aria-label={`Profile: ${profileLabel}`}
-            aria-expanded={isProfileMenuOpen}
-            aria-haspopup="menu"
-            onClick={() => setIsProfileMenuOpen((open) => !open)}
-            className="flex items-center gap-2 rounded-full border border-zinc-200 p-1 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-              <User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
-            </div>
-            <div className="hidden pr-2 md:block">
-              <p
-                className="text-xs font-semibold text-zinc-900 dark:text-zinc-50"
-                aria-hidden="true"
-              >
-                {profileLabel}
-              </p>
-            </div>
-            <ChevronDown
-              className="mr-2 hidden h-4 w-4 text-zinc-400 md:block"
-              aria-hidden="true"
-            />
-          </button>
-
-          {isProfileMenuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 top-12 z-40 w-64 rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none"
-            >
-              <div className="border-b border-zinc-100 px-3 py-3 dark:border-zinc-800">
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  {profileLabel}
-                </p>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  {isConnected && walletAddress
-                    ? `Connected wallet: ${truncateWalletAddress(walletAddress)}`
-                    : "No wallet connected"}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setIsProfileMenuOpen(false);
-                  router.push(`/${locale}/settings`);
-                }}
-                className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
-              >
-                <User className="h-4 w-4" aria-hidden="true" />
-                Profile Settings
-              </button>
-
-              {isConnected ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleDisconnect}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20"
-                >
-                  <LogOut className="h-4 w-4" aria-hidden="true" />
-                  Disconnect Wallet
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    handleWalletToggle();
-                    setIsProfileMenuOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                >
-                  <Wallet className="h-4 w-4" aria-hidden="true" />
-                  Connect Wallet
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          aria-label={`Profile: ${profileLabel}`}
+          className="flex items-center gap-2 rounded-full p-1 border border-zinc-200 hover:border-zinc-300 transition-colors dark:border-zinc-800 dark:hover:border-zinc-700"
+        >
+          <div className="h-7 w-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+            <User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
+          </div>
+          <div className="hidden md:block pr-2">
+            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50" aria-hidden="true">
+              {profileLabel}
+            </p>
+          </div>
+        </button>
       </div>
     </header>
   );

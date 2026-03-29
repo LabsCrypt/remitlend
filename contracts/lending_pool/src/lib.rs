@@ -104,7 +104,7 @@ impl LendingPool {
             .expect("not initialized")
     }
 
-    fn pool_balance(env: &Env, token: &Address) -> i128 {
+    fn read_pool_balance(env: &Env, token: &Address) -> i128 {
         TokenClient::new(env, token).balance(&env.current_contract_address())
     }
 
@@ -236,7 +236,7 @@ impl LendingPool {
         }
 
         let cur_total_shares = Self::total_shares(env, token);
-        let total_assets = Self::pool_balance(env, token);
+        let total_assets = Self::read_pool_balance(env, token);
         let assets_to_return = Self::calc_assets_to_redeem(shares, total_assets, cur_total_shares);
 
         if assets_to_return <= 0 {
@@ -417,7 +417,7 @@ impl LendingPool {
 
         // Snapshot pool state *before* the transfer so the share price
         // reflects the pre-deposit pool composition.
-        let total_assets_before = Self::pool_balance(&env, &token);
+        let total_assets_before = Self::read_pool_balance(&env, &token);
         let cur_total_shares = Self::total_shares(&env, &token);
 
         let shares_to_mint =
@@ -489,7 +489,11 @@ impl LendingPool {
         if cur_total_shares == 0 {
             return 0;
         }
-        Self::calc_assets_to_redeem(shares, Self::pool_balance(&env, &token), cur_total_shares)
+        Self::calc_assets_to_redeem(
+            shares,
+            Self::read_pool_balance(&env, &token),
+            cur_total_shares,
+        )
     }
 
     /// Raw LP share balance for `provider` in the `token` pool.
@@ -529,7 +533,7 @@ impl LendingPool {
     pub fn get_pool_stats(env: Env, token: Address) -> PoolStats {
         let total_deposits = Self::total_deposits(&env, &token);
         let total_shares = Self::total_shares(&env, &token);
-        let pool_token_balance = Self::pool_balance(&env, &token);
+        let pool_token_balance = Self::read_pool_balance(&env, &token);
 
         // Utilisation: portion of tracked principal currently out on loan.
         let utilization_bps = if total_deposits > 0 && pool_token_balance < total_deposits {
@@ -604,11 +608,8 @@ impl LendingPool {
             .unwrap_or(false)
     }
 
-    pub fn get_admin(env: Env) -> Address {
-        env.storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .expect("not initialized")
+    pub fn pool_balance(env: Env, token: Address) -> i128 {
+        Self::read_pool_balance(&env, &token)
     }
 }
 

@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { Skeleton } from "../components/ui/Skeleton";
+import { YieldEarningsChart } from "../components/charts/YieldEarningsChart";
 import {
   useDepositorPortfolio,
   useInvalidatePoolStats,
@@ -31,15 +31,6 @@ import { selectWalletAddress, useWalletStore } from "../stores/useWalletStore";
 import { useSSE } from "../hooks/useSSE";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-const LazyYieldEarningsChart = dynamic(
-  () =>
-    import("../components/charts/YieldEarningsChart").then((module) => module.YieldEarningsChart),
-  {
-    loading: () => <Skeleton className="h-80 w-full rounded-lg" />,
-    ssr: false,
-  },
-);
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -412,7 +403,7 @@ export default function LendPage() {
               <Skeleton className="h-[300px] w-full rounded-xl" />
             </div>
           ) : (
-            <LazyYieldEarningsChart data={chartData} />
+            <YieldEarningsChart data={chartData} />
           )}
         </section>
       </ErrorBoundary>

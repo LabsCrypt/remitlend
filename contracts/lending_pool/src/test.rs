@@ -728,3 +728,93 @@ fn test_pool_stats() {
     assert_eq!(stats.total_shares, 0);
     assert_eq!(stats.depositor_count, 0);
 }
+
+// ── Additional coverage tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_double_initialize_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+
+    pool_client.initialize(&admin);
+    let result = pool_client.try_initialize(&admin);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_accept_admin_with_no_proposed_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    let result = pool_client.try_accept_admin();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_deposit_blocked_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+
+    pool_client.pause();
+    assert!(pool_client.is_paused());
+
+    let result = pool_client.try_deposit(&provider, &token_id, &500);
+    assert!(result.is_err());
+
+    pool_client.unpause();
+    assert!(!pool_client.is_paused());
+}
+
+#[test]
+fn test_withdraw_blocked_when_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &token_id, &1_000);
+
+    pool_client.pause();
+    let result = pool_client.try_withdraw(&provider, &token_id, &500);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_get_admin_returns_initialized_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    assert_eq!(pool_client.get_admin(), admin);
+}

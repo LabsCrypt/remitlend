@@ -7,6 +7,8 @@ import {
 } from "../controllers/authController.js";
 import {
   challengeRateLimiter,
+  loginRateLimiter,
+  ipLoginRateLimiter,
   verifyRateLimiter,
 } from "../middleware/rateLimiter.js";
 import { requireJwtAuth } from "../middleware/jwtAuth.js";
@@ -87,7 +89,7 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/AuthLoginResponse'
  */
-router.post("/login", verifyRateLimiter, validateBody(loginSchema), login);
+router.post("/login", ipLoginRateLimiter, loginRateLimiter, validateBody(loginSchema), login);
 
 /**
  * @swagger
