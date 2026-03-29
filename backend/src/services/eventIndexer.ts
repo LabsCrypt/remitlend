@@ -11,7 +11,10 @@ import {
   webhookService,
 } from "./webhookService.js";
 import { eventStreamService } from "./eventStreamService.js";
-import { notificationService, type NotificationType } from "./notificationService.js";
+import {
+  notificationService,
+  type NotificationType,
+} from "./notificationService.js";
 import { sorobanService } from "./sorobanService.js";
 import { updateUserScoresBulk } from "./scoresService.js";
 

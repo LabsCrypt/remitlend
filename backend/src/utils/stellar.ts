@@ -41,7 +41,7 @@ export function isValidStellarAddress(address: unknown): address is string {
  */
 export function assertValidStellarAddress(
   address: unknown,
-  message: string = "Invalid Stellar address"
+  message: string = "Invalid Stellar address",
 ): asserts address is string {
   if (!isValidStellarAddress(address)) {
     throw new Error(message);

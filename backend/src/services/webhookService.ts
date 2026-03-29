@@ -72,7 +72,11 @@ export class WebhookService {
       `INSERT INTO webhook_subscriptions (callback_url, event_types, secret, is_active)
        VALUES ($1, $2::jsonb, $3, true)
        RETURNING id, callback_url, event_types, secret, is_active, created_at, updated_at`,
-      [input.callbackUrl, JSON.stringify(input.eventTypes), input.secret ?? null],
+      [
+        input.callbackUrl,
+        JSON.stringify(input.eventTypes),
+        input.secret ?? null,
+      ],
     );
 
     return this.mapSubscriptionRow(result.rows[0] as Record<string, unknown>);
@@ -237,7 +241,9 @@ export class WebhookService {
     }
   }
 
-  private mapSubscriptionRow(row: Record<string, unknown>): WebhookSubscription {
+  private mapSubscriptionRow(
+    row: Record<string, unknown>,
+  ): WebhookSubscription {
     const secret =
       typeof row.secret === "string" && row.secret.length > 0
         ? row.secret

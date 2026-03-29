@@ -408,9 +408,9 @@ export default function LendPage() {
               <Skeleton className="h-[300px] w-full rounded-xl" />
             </div>
           ) : (
-          <Suspense fallback={<SkeletonChart />}>
-            <YieldEarningsChart data={chartData} />
-          </Suspense>
+            <Suspense fallback={<SkeletonChart />}>
+              <YieldEarningsChart data={chartData} />
+            </Suspense>
           )}
         </section>
       </ErrorBoundary>

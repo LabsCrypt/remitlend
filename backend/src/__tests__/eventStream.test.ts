@@ -21,9 +21,8 @@ jest.unstable_mockModule("../db/connection.js", () => ({
 
 await import("../db/connection.js");
 const { default: app } = await import("../app.js");
-const { eventStreamService } = await import(
-  "../services/eventStreamService.js"
-);
+const { eventStreamService } =
+  await import("../services/eventStreamService.js");
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,
@@ -50,7 +49,9 @@ describe("GET /api/events/stream", () => {
 
   it("should reject token passed in query string", async () => {
     const token = generateJwtToken("GQUERYTOKENUSER");
-    const response = await request(app).get(`/api/events/stream?token=${token}`);
+    const response = await request(app).get(
+      `/api/events/stream?token=${token}`,
+    );
 
     expect(response.status).toBe(401);
   });

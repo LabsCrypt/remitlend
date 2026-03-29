@@ -30,9 +30,7 @@ class SorobanService {
   private getLoanManagerContractId(): string {
     const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
     if (!contractId) {
-      throw AppError.internal(
-        "LOAN_MANAGER_CONTRACT_ID is not configured",
-      );
+      throw AppError.internal("LOAN_MANAGER_CONTRACT_ID is not configured");
     }
     return contractId;
   }
@@ -40,9 +38,7 @@ class SorobanService {
   private getLendingPoolContractId(): string {
     const contractId = process.env.LENDING_POOL_CONTRACT_ID;
     if (!contractId) {
-      throw AppError.internal(
-        "LENDING_POOL_CONTRACT_ID is not configured",
-      );
+      throw AppError.internal("LENDING_POOL_CONTRACT_ID is not configured");
     }
     return contractId;
   }
@@ -50,9 +46,7 @@ class SorobanService {
   private getPoolTokenAddress(): string {
     const address = process.env.POOL_TOKEN_ADDRESS;
     if (!address) {
-      throw AppError.internal(
-        "POOL_TOKEN_ADDRESS is not configured",
-      );
+      throw AppError.internal("POOL_TOKEN_ADDRESS is not configured");
     }
     return address;
   }
@@ -71,10 +65,9 @@ class SorobanService {
 
     const account = await server.getAccount(borrowerPublicKey);
 
-    const borrowerScVal = nativeToScVal(
-      Address.fromString(borrowerPublicKey),
-      { type: "address" },
-    );
+    const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
+      type: "address",
+    });
     const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
 
     const tx = new TransactionBuilder(account, {
@@ -117,10 +110,9 @@ class SorobanService {
 
     const account = await server.getAccount(borrowerPublicKey);
 
-    const borrowerScVal = nativeToScVal(
-      Address.fromString(borrowerPublicKey),
-      { type: "address" },
-    );
+    const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
+      type: "address",
+    });
     const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
     const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
 
@@ -303,7 +295,7 @@ class SorobanService {
     const contractChecks: Array<[string, string]> = [
       ["LOAN_MANAGER_CONTRACT_ID", process.env.LOAN_MANAGER_CONTRACT_ID ?? ""],
       ["LENDING_POOL_CONTRACT_ID", process.env.LENDING_POOL_CONTRACT_ID ?? ""],
-      ["POOL_TOKEN_ADDRESS",       process.env.POOL_TOKEN_ADDRESS       ?? ""],
+      ["POOL_TOKEN_ADDRESS", process.env.POOL_TOKEN_ADDRESS ?? ""],
     ];
 
     for (const [name, value] of contractChecks) {
@@ -409,7 +401,6 @@ class SorobanService {
     );
     return { repaymentDelta, defaultPenalty };
   }
-  
 }
 
 export const sorobanService = new SorobanService();

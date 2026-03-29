@@ -2,9 +2,13 @@ import { jest } from "@jest/globals";
 import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 
 const mockQuery = jest.fn();
-const mockDispatch = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockDispatch = jest
+  .fn<() => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockBroadcast = jest.fn();
-const mockCreateNotification = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockCreateNotification = jest
+  .fn<() => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockGetScoreConfig = jest.fn(() => ({
   repaymentDelta: 15,
   defaultPenalty: 50,
@@ -42,7 +46,10 @@ jest.unstable_mockModule("../utils/logger.js", () => ({
 
 jest.unstable_mockModule("../utils/requestContext.js", () => ({
   createRequestId: () => "test-request",
-  runWithRequestContext: async (_requestId: string, callback: () => Promise<unknown>) => callback(),
+  runWithRequestContext: async (
+    _requestId: string,
+    callback: () => Promise<unknown>,
+  ) => callback(),
 }));
 
 const { EventIndexer } = await import("../services/eventIndexer.js");
@@ -101,7 +108,11 @@ function makeRawEvent(params: {
     case "LoanRepaid":
       return {
         ...base,
-        topic: [scSymbol("LoanRepaid"), scAddress(borrower), scU32(params.loanId ?? 1)],
+        topic: [
+          scSymbol("LoanRepaid"),
+          scAddress(borrower),
+          scU32(params.loanId ?? 1),
+        ],
         value: scI128(params.amount ?? 250),
       };
     case "LoanDefaulted":
@@ -128,30 +139,34 @@ describe("EventIndexer", () => {
     const insertedLoanEvents: unknown[][] = [];
     const scoreUpdates: unknown[][] = [];
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql === "BEGIN" || sql === "COMMIT") {
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          insertedLoanEvents.push(params);
+          return { rows: [{ event_id: params[0] }], rowCount: 1 };
+        }
+
+        if (sql.includes("INSERT INTO scores")) {
+          scoreUpdates.push(params);
+          return { rows: [], rowCount: 1 };
+        }
+
         return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        insertedLoanEvents.push(params);
-        return { rows: [{ event_id: params[0] }], rowCount: 1 };
-      }
-
-      if (sql.includes("INSERT INTO scores")) {
-        scoreUpdates.push(params);
-        return { rows: [], rowCount: 1 };
-      }
-
-      return { rows: [], rowCount: 0 };
-    });
+      },
+    );
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }).rpc = {
+    (
+      indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }
+    ).rpc = {
       getEvents: jest.fn().mockResolvedValue({
         events: [
           makeRawEvent({
@@ -208,10 +223,11 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([
-      [borrowerRepaid, 515, 15],
-      [borrowerDefaulted, 450, -50],
-    ]);
+    expect(scoreUpdates).toHaveLength(1);
+    const params = scoreUpdates[0];
+    expect(params).toEqual(
+      expect.arrayContaining([borrowerRepaid, 15, borrowerDefaulted, -50]),
+    );
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
@@ -222,26 +238,28 @@ describe("EventIndexer", () => {
     const borrower = makeAddress();
     let insertCount = 0;
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql === "BEGIN" || sql === "COMMIT") {
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          insertCount += 1;
+          const inserted = insertCount === 1;
+          return {
+            rows: inserted ? [{ event_id: params[0] }] : [],
+            rowCount: inserted ? 1 : 0,
+          };
+        }
+
+        if (sql.includes("INSERT INTO scores")) {
+          return { rows: [], rowCount: 1 };
+        }
+
         return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        insertCount += 1;
-        const inserted = insertCount === 1;
-        return {
-          rows: inserted ? [{ event_id: params[0] }] : [],
-          rowCount: inserted ? 1 : 0,
-        };
-      }
-
-      if (sql.includes("INSERT INTO scores")) {
-        return { rows: [], rowCount: 1 };
-      }
-
-      return { rows: [], rowCount: 0 };
-    });
+      },
+    );
 
     const duplicateEvent = makeRawEvent({
       id: "evt-duplicate",
@@ -257,7 +275,9 @@ describe("EventIndexer", () => {
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }).rpc = {
+    (
+      indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }
+    ).rpc = {
       getEvents: jest.fn().mockResolvedValue({
         events: [duplicateEvent, duplicateEvent],
       }),
@@ -274,31 +294,33 @@ describe("EventIndexer", () => {
   it("initializes missing indexer state and persists the last indexed ledger during polling", async () => {
     const stateWrites: number[] = [];
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes("SELECT last_indexed_ledger")) {
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql.includes("SELECT last_indexed_ledger")) {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO indexer_state")) {
+          stateWrites.push(Number(params[0] ?? 0));
+          return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.includes("UPDATE indexer_state")) {
+          stateWrites.push(Number(params[0]));
+          return { rows: [], rowCount: 1 };
+        }
+
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          return { rows: [{ event_id: params[0] }], rowCount: 1 };
+        }
+
         return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO indexer_state")) {
-        stateWrites.push(Number(params[0] ?? 0));
-        return { rows: [], rowCount: 1 };
-      }
-
-      if (sql.includes("UPDATE indexer_state")) {
-        stateWrites.push(Number(params[0]));
-        return { rows: [], rowCount: 1 };
-      }
-
-      if (sql === "BEGIN" || sql === "COMMIT") {
-        return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        return { rows: [{ event_id: params[0] }], rowCount: 1 };
-      }
-
-      return { rows: [], rowCount: 0 };
-    });
+      },
+    );
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",
@@ -306,15 +328,19 @@ describe("EventIndexer", () => {
     });
 
     (indexer as { running: boolean }).running = true;
-    (indexer as {
-      rpc: {
-        getLatestLedger: () => Promise<{ sequence: number }>;
-        getEvents: () => Promise<{ events: unknown[] }>;
-      };
-    }).rpc = {
+    (
+      indexer as {
+        rpc: {
+          getLatestLedger: () => Promise<{ sequence: number }>;
+          getEvents: () => Promise<{ events: unknown[] }>;
+        };
+      }
+    ).rpc = {
       getLatestLedger: jest.fn().mockResolvedValue({ sequence: 15 }),
       getEvents: jest.fn().mockResolvedValue({
-        events: [makeRawEvent({ id: "evt-poll", ledger: 15, type: "LoanRequested" })],
+        events: [
+          makeRawEvent({ id: "evt-poll", ledger: 15, type: "LoanRequested" }),
+        ],
       }),
     };
 

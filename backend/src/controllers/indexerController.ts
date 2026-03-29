@@ -15,7 +15,6 @@ import {
 import logger from "../utils/logger.js";
 import { getStellarRpcUrl } from "../config/stellar.js";
 
-
 const buildEventFilters = (
   req: Request,
   baseParams: unknown[],
@@ -157,8 +156,15 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
       return;
     }
 
-    const { params, whereClause } = buildEventFilters(req, [borrower], "WHERE borrower = $1");
-    console.log("DEBUG getBorrowerEvents after filters", { params, whereClause });
+    const { params, whereClause } = buildEventFilters(
+      req,
+      [borrower],
+      "WHERE borrower = $1",
+    );
+    console.log("DEBUG getBorrowerEvents after filters", {
+      params,
+      whereClause,
+    });
     const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
     const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
@@ -170,14 +176,14 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
       ORDER BY id ASC
       LIMIT $${params.length + 2}
     `;
-    console.log("DEBUG getBorrowerEvents query", { queryText, queryParams: [...params, cursorValue, limit + 1] });
+    console.log("DEBUG getBorrowerEvents query", {
+      queryText,
+      queryParams: [...params, cursorValue, limit + 1],
+    });
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(
-        `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
-        params,
-      ),
+      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
     ]);
 
     console.log("DEBUG getBorrowerEvents after query", { result, totalCount });
@@ -233,7 +239,11 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       return;
     }
 
-    const { params, whereClause } = buildEventFilters(req, [loanId], "WHERE loan_id = $1");
+    const { params, whereClause } = buildEventFilters(
+      req,
+      [loanId],
+      "WHERE loan_id = $1",
+    );
     const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
     const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
@@ -248,10 +258,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(
-        `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
-        params,
-      ),
+      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
     ]);
 
     const hasNext = result.rows.length > limit;
@@ -311,13 +318,13 @@ export const getRecentEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(
-        `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
-        params,
-      ),
+      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
     ]);
 
-    console.log("DEBUG getRecentEvents", { queryResult: result.rows, countResult: totalCount.rows });
+    console.log("DEBUG getRecentEvents", {
+      queryResult: result.rows,
+      countResult: totalCount.rows,
+    });
     const hasNext = result.rows.length > limit;
     const events = hasNext ? result.rows.slice(0, limit) : result.rows;
     const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;

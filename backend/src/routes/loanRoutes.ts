@@ -189,7 +189,12 @@ router.post("/request", requireJwtAuth, idempotencyMiddleware, requestLoan);
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/submit", requireJwtAuth, idempotencyMiddleware, submitTransaction);
+router.post(
+  "/submit",
+  requireJwtAuth,
+  idempotencyMiddleware,
+  submitTransaction,
+);
 
 /**
  * @swagger

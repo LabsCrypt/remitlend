@@ -120,7 +120,6 @@ export const getBorrowerLoans = asyncHandler(
     const { limit, cursor, sort, status, dateRange, amountRange } =
       parseCursorQueryParams(req);
 
-
     const currentLedger = await getLatestLedger();
 
     const loansQuery = `
@@ -196,7 +195,9 @@ export const getBorrowerLoans = asyncHandler(
     const result = await query(loansQuery, queryParams);
 
     const totalCount =
-      result.rows.length > 0 ? Number.parseInt(result.rows[0].full_count, 10) : 0;
+      result.rows.length > 0
+        ? Number.parseInt(result.rows[0].full_count, 10)
+        : 0;
 
     const hasNext = result.rows.length > limit;
     const trimmedRows = hasNext ? result.rows.slice(0, limit) : result.rows;
@@ -237,19 +238,21 @@ export const getBorrowerLoans = asyncHandler(
 /**
  * GET /api/loans/config
  */
-export const getLoanConfigEndpoint = asyncHandler(async (_req: Request, res: Response) => {
-  const loanConfig = getLoanConfig();
+export const getLoanConfigEndpoint = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const loanConfig = getLoanConfig();
 
-  res.json({
-    success: true,
-    data: {
-      minScore: loanConfig.minScore,
-      maxAmount: loanConfig.maxAmount,
-      interestRatePercent: loanConfig.interestRatePercent,
-      creditScoreThreshold: loanConfig.creditScoreThreshold,
-    },
-  });
-});
+    res.json({
+      success: true,
+      data: {
+        minScore: loanConfig.minScore,
+        maxAmount: loanConfig.maxAmount,
+        interestRatePercent: loanConfig.interestRatePercent,
+        creditScoreThreshold: loanConfig.creditScoreThreshold,
+      },
+    });
+  },
+);
 
 /**
  * Get detailed loan history and current stats
@@ -269,7 +272,11 @@ export const getLoanDetails = asyncHandler(
     );
 
     if (eventsResult.rows.length === 0) {
-      throw AppError.notFound("Loan not found", ErrorCode.LOAN_NOT_FOUND, "loanId");
+      throw AppError.notFound(
+        "Loan not found",
+        ErrorCode.LOAN_NOT_FOUND,
+        "loanId",
+      );
     }
 
     const events = eventsResult.rows;
@@ -344,20 +351,38 @@ export const getLoanAmortizationSchedule = asyncHandler(
     );
 
     if (eventsResult.rows.length === 0) {
-      throw AppError.notFound("Loan not found", ErrorCode.LOAN_NOT_FOUND, "loanId");
+      throw AppError.notFound(
+        "Loan not found",
+        ErrorCode.LOAN_NOT_FOUND,
+        "loanId",
+      );
     }
 
     const events = eventsResult.rows;
-    const requestEvent = events.find((event: any) => event.event_type === "LoanRequested");
-    const approvalEvent = events.find((event: any) => event.event_type === "LoanApproved");
+    const requestEvent = events.find(
+      (event: any) => event.event_type === "LoanRequested",
+    );
+    const approvalEvent = events.find(
+      (event: any) => event.event_type === "LoanApproved",
+    );
 
     if (!requestEvent || !approvalEvent || !requestEvent.amount) {
-      throw AppError.notFound("Loan not fully approved", ErrorCode.LOAN_NOT_FOUND, "loanId");
+      throw AppError.notFound(
+        "Loan not fully approved",
+        ErrorCode.LOAN_NOT_FOUND,
+        "loanId",
+      );
     }
 
     const principal = Number.parseFloat(String(requestEvent.amount));
-    const interestRateBps = Number.parseInt(String(approvalEvent.interest_rate_bps ?? DEFAULT_INTEREST_RATE_BPS), 10);
-    const termLedgers = Number.parseInt(String(approvalEvent.term_ledgers ?? DEFAULT_TERM_LEDGERS), 10);
+    const interestRateBps = Number.parseInt(
+      String(approvalEvent.interest_rate_bps ?? DEFAULT_INTEREST_RATE_BPS),
+      10,
+    );
+    const termLedgers = Number.parseInt(
+      String(approvalEvent.term_ledgers ?? DEFAULT_TERM_LEDGERS),
+      10,
+    );
 
     const approvedAt = approvalEvent.ledger_closed_at
       ? new Date(approvalEvent.ledger_closed_at)
@@ -444,7 +469,11 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
 
   const loanIdNum = Number.parseInt(loanId, 10);
   if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
-    throw AppError.badRequest("Invalid loan ID", ErrorCode.INVALID_LOAN_ID, "loanId");
+    throw AppError.badRequest(
+      "Invalid loan ID",
+      ErrorCode.INVALID_LOAN_ID,
+      "loanId",
+    );
   }
 
   const result = await sorobanService.buildRepayTx(
@@ -476,7 +505,11 @@ export const submitTransaction = asyncHandler(
     const { signedTxXdr } = req.body as { signedTxXdr: string };
 
     if (!signedTxXdr) {
-      throw AppError.badRequest("signedTxXdr is required", ErrorCode.MISSING_FIELD, "signedTxXdr");
+      throw AppError.badRequest(
+        "signedTxXdr is required",
+        ErrorCode.MISSING_FIELD,
+        "signedTxXdr",
+      );
     }
 
     const result = await sorobanService.submitSignedTx(signedTxXdr);
