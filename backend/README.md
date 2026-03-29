@@ -61,6 +61,8 @@ Rollback last batch (when needed):
 npm run migrate:down
 ```
 
+Scripts use `migrate:up` and `migrate:down` (colon-separated names), which work reliably across shells and CI.
+
 Core tables are created by these migrations (run in filename order):
 
 | Migration                                | Tables                                     |

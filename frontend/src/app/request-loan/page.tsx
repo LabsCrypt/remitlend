@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { LoanApplicationWizard } from "../components/loan-wizard/LoanApplicationWizard";
-import { useCreditScoreHistory } from "../hooks/useApi";
+import { useCreditScore, useMinimumScore } from "../hooks/useApi";
+import { useToastStore } from "../stores/useToastStore";
 import {
   useWalletStore,
   selectWalletAddress,
@@ -25,13 +26,60 @@ export default function RequestLoanPage() {
   const borrowerAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const [successLoanId, setSuccessLoanId] = useState<string | null>(null);
+  const addToast = useToastStore((state) => state.addToast);
+  const scoreErrorToastRef = useRef<string | null>(null);
+  const configErrorToastRef = useRef<string | null>(null);
 
-  const { data: scoreHistory } = useCreditScoreHistory(borrowerAddress ?? undefined, {
-    enabled: !!borrowerAddress,
+  const {
+    data: minScoreConfig,
+    isLoading: isLoadingConfig,
+    error: configError,
+  } = useMinimumScore({
+    enabled: isWalletConnected,
+  });
+  const {
+    data: creditScore,
+    isLoading: isLoadingScore,
+    error: scoreError,
+  } = useCreditScore(borrowerAddress ?? undefined, {
+    enabled: isWalletConnected && !!borrowerAddress,
   });
 
-  const creditScore = scoreHistory?.[scoreHistory.length - 1]?.score ?? 720;
-  const maxAmount = getScoreBandMax(creditScore);
+  useEffect(() => {
+    if (scoreError && scoreError.message !== scoreErrorToastRef.current) {
+      scoreErrorToastRef.current = scoreError.message;
+      addToast({
+        type: "error",
+        title: "Could not load your credit score",
+        description: scoreError.message,
+      });
+    }
+  }, [scoreError, addToast]);
+
+  useEffect(() => {
+    if (configError && configError.message !== configErrorToastRef.current) {
+      configErrorToastRef.current = configError.message;
+      addToast({
+        type: "error",
+        title: "Could not load loan eligibility config",
+        description: configError.message,
+      });
+    }
+  }, [configError, addToast]);
+
+  const minimumScore = minScoreConfig?.minScore ?? 500;
+  const resolvedCreditScore = creditScore ?? 0;
+  const maxAmount = Math.min(
+    getScoreBandMax(resolvedCreditScore),
+    minScoreConfig?.maxAmount ?? Number.POSITIVE_INFINITY,
+  );
+  const scoreDelta = resolvedCreditScore - minimumScore;
+  const isCloseToMinimum = scoreDelta >= 0 && scoreDelta <= 40;
+  const isIneligible = isWalletConnected && !isLoadingConfig && !isLoadingScore && scoreDelta < 0;
+  const isCheckingEligibility =
+    isWalletConnected && (isLoadingConfig || (isLoadingScore && !!borrowerAddress));
+
+  const hasEligibilityError = Boolean(configError || scoreError);
 
   if (successLoanId) {
     return (
@@ -69,6 +117,10 @@ export default function RequestLoanPage() {
           Complete each step to configure your loan, preview repayment terms, confirm collateral,
           and sign your Soroban transaction.
         </p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          If a transaction fails, you will now see clear guidance, retry actions for temporary
+          issues, and status tracking for submitted transactions.
+        </p>
       </header>
 
       {!isWalletConnected ? (
@@ -79,13 +131,79 @@ export default function RequestLoanPage() {
             </p>
           </CardContent>
         </Card>
+      ) : isCheckingEligibility ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-zinc-700 dark:text-zinc-300">Checking eligibility...</p>
+            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+              Fetching your latest score and loan requirements.
+            </p>
+          </CardContent>
+        </Card>
+      ) : hasEligibilityError ? (
+        <Card>
+          <CardContent className="py-10 text-center">
+            <p className="text-zinc-700 dark:text-zinc-300">Unable to verify eligibility.</p>
+            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+              Please refresh and try again. If the issue persists, reconnect your wallet and retry.
+            </p>
+          </CardContent>
+        </Card>
+      ) : isIneligible ? (
+        <Card>
+          <CardContent className="space-y-4 py-10">
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+              <Info className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="space-y-2">
+                <p className="font-semibold">Loan eligibility check</p>
+                <p className="text-sm">
+                  Your credit score ({resolvedCreditScore}) is below the minimum ({minimumScore}).
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                How to improve your score
+              </p>
+              <ul className="mt-2 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+                <li>Make repayments on time to gain positive score updates.</li>
+                <li>Keep loan utilization low and avoid late payments.</li>
+                <li>Repay active balances before applying again.</li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
       ) : (
-        <LoanApplicationWizard
-          borrowerAddress={borrowerAddress!}
-          creditScore={creditScore}
-          maxAmount={maxAmount}
-          onSuccess={setSuccessLoanId}
-        />
+        <div className="space-y-4">
+          {isCloseToMinimum && (
+            <div className="flex items-start gap-3 rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-900/50 dark:bg-yellow-950/30 dark:text-yellow-300">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-semibold">You are near the minimum score threshold</p>
+                <p className="text-sm">
+                  A score drop below {minimumScore} could make future requests ineligible.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="text-zinc-700 dark:text-zinc-300">
+              Eligibility: score {resolvedCreditScore} / minimum {minimumScore}
+            </p>
+            <p className="mt-1 text-zinc-500 dark:text-zinc-400">
+              Maximum loan amount currently available: ${maxAmount.toLocaleString("en-US")}
+            </p>
+          </div>
+
+          <LoanApplicationWizard
+            borrowerAddress={borrowerAddress!}
+            creditScore={resolvedCreditScore}
+            maxAmount={maxAmount}
+            onSuccess={setSuccessLoanId}
+          />
+        </div>
       )}
     </main>
   );

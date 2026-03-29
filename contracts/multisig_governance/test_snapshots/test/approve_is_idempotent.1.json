@@ -161,6 +161,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "proposed_at"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "signers"
                               },
                               "val": {
@@ -188,6 +196,14 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "VERSION"
+                        },
+                        "val": {
+                          "u32": 1
                         }
                       }
                     ]

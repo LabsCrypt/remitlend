@@ -1,24 +1,4 @@
-/**
- * hooks/useOptimisticUI.ts
- *
- * Provides utilities for managing optimistic UI state during transactions.
- * Handles loading states, transaction progress, and error recovery.
- *
- * Usage Example:
- * ```tsx
- * const ui = useOptimisticUI();
- *
- * const handleTransaction = async () => {
- *   ui.startTransaction("depositPool", "Depositing 100 USDC");
- *   try {
- *     await executeDeposit();
- *     ui.completeTransaction("depositPool");
- *   } catch (error) {
- *     ui.failTransaction("depositPool", error.message);
- *   }
- * };
- * ```
- */
+"use client";
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
@@ -29,39 +9,27 @@ export interface TransactionState {
   id: string;
   status: TransactionStatus;
   message: string;
-  progress?: number; // 0-100 for multi-step transactions
+  progress?: number;
   error?: string;
   txHash?: string;
   startTime: number;
 }
 
 interface OptimisticUIState {
-  /** Map of transaction ID to its state */
   transactions: Record<string, TransactionState>;
-  /** Track which data keys are being optimistically updated */
   optimisticUpdates: Set<string>;
 }
 
 interface OptimisticUIActions {
-  /** Start tracking a new transaction */
   startTransaction: (id: string, message: string) => void;
-  /** Update progress for a transaction (0-100) */
-  updateProgress: (id: string, progress: number) => void;
-  /** Mark transaction as complete */
-  completeTransaction: (id: string, txHash?: string) => void;
-  /** Mark transaction as failed */
+  updateProgress: (id: string, progress: number, message?: string) => void;
+  completeTransaction: (id: string, txHash?: string, message?: string) => void;
   failTransaction: (id: string, error: string) => void;
-  /** Clear a transaction from state */
   clearTransaction: (id: string) => void;
-  /** Clear all transactions */
   clearAllTransactions: () => void;
-  /** Track that we're optimistically updating a data key */
   addOptimisticUpdate: (key: string) => void;
-  /** Untrack an optimistic update */
   removeOptimisticUpdate: (key: string) => void;
-  /** Check if a data key is being optimistically updated */
   isOptimisticUpdate: (key: string) => boolean;
-  /** Get transaction state by ID */
   getTransaction: (id: string) => TransactionState | undefined;
 }
 
@@ -87,45 +55,59 @@ export const useOptimisticUI = create<OptimisticUIStore>()(
           },
         })),
 
-      updateProgress: (id, progress) =>
-        set((state) => ({
-          transactions: {
-            ...state.transactions,
-            [id]: {
-              ...state.transactions[id],
-              progress: Math.min(100, Math.max(0, progress)),
+      updateProgress: (id, progress, message) =>
+        set((state) => {
+          const tx = state.transactions[id];
+          if (!tx) return state;
+          return {
+            transactions: {
+              ...state.transactions,
+              [id]: {
+                ...tx,
+                progress: Math.min(100, Math.max(0, progress)),
+                ...(message ? { message } : {}),
+              },
             },
-          },
-        })),
+          };
+        }),
 
-      completeTransaction: (id, txHash) =>
-        set((state) => ({
-          transactions: {
-            ...state.transactions,
-            [id]: {
-              ...state.transactions[id],
-              status: "success",
-              progress: 100,
-              txHash,
+      completeTransaction: (id, txHash, message) =>
+        set((state) => {
+          const tx = state.transactions[id];
+          if (!tx) return state;
+          return {
+            transactions: {
+              ...state.transactions,
+              [id]: {
+                ...tx,
+                status: "success",
+                progress: 100,
+                txHash,
+                ...(message ? { message } : {}),
+              },
             },
-          },
-        })),
+          };
+        }),
 
       failTransaction: (id, error) =>
-        set((state) => ({
-          transactions: {
-            ...state.transactions,
-            [id]: {
-              ...state.transactions[id],
-              status: "error",
-              error,
+        set((state) => {
+          const tx = state.transactions[id];
+          if (!tx) return state;
+          return {
+            transactions: {
+              ...state.transactions,
+              [id]: {
+                ...tx,
+                status: "error",
+                error,
+              },
             },
-          },
-        })),
+          };
+        }),
 
       clearTransaction: (id) =>
         set((state) => {
-          const { [id]: _, ...rest } = state.transactions;
+          const { [id]: _removed, ...rest } = state.transactions;
           return { transactions: rest };
         }),
 
@@ -145,21 +127,14 @@ export const useOptimisticUI = create<OptimisticUIStore>()(
           return { optimisticUpdates: updated };
         }),
 
-      isOptimisticUpdate: (key) => {
-        return get().optimisticUpdates.has(key);
-      },
+      isOptimisticUpdate: (key) => get().optimisticUpdates.has(key),
 
-      getTransaction: (id) => {
-        return get().transactions[id];
-      },
+      getTransaction: (id) => get().transactions[id],
     }),
     { name: "OptimisticUIStore" },
   ),
 );
 
-/**
- * Helper hook to track a single transaction
- */
 export function useTransaction(id: string) {
   const store = useOptimisticUI();
   const transaction = store.getTransaction(id);

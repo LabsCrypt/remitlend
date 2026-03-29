@@ -21,6 +21,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import notificationsRoutes from "./routes/notificationsRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
+import remittanceRoutes from "./routes/remittanceRoutes.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
@@ -128,6 +129,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/events", eventRoutes);
+app.use("/api/remittances", remittanceRoutes);
 
 // Versioned API routes (v1 - current)
 app.use("/api/v1", simulationRoutes);
@@ -136,6 +138,7 @@ app.use("/api/v1/loans", loanRoutes);
 app.use("/api/v1/indexer", indexerRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/remittances", remittanceRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────
 // Only exposed in test environment to verify centralized error handling.

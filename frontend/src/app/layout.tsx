@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./[locale]/globals.css";
 import { QueryProvider } from "./components/providers/QueryProvider";
 import { DashboardShell } from "./components/global_ui/DashboardShell";
-import { Toaster } from "./components/ui/Toast";
+import { Toaster } from "./components/ui/Toaster";
 import { LevelUpModal } from "./components/gamification/LevelUpModal";
 import { GlobalXPGain } from "./components/global_ui/GlobalXPGain";
 import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";

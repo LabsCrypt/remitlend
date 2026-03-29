@@ -15,9 +15,11 @@ const router = Router();
  *     summary: SSE stream for real-time loan events
  *     description: >
  *       Server-Sent Events endpoint for real-time loan event push.
- *       Use `?borrower=G...` to receive events for a specific borrower
- *       (JWT required, must match borrower). Without the borrower param,
- *       streams all events (requires API key for admin access).
+ *       Auth is provided via Authorization bearer token or JWT cookie.
+ *       Borrowers receive only their own events; optional `?borrower=G...`
+ *       must match the authenticated wallet.
+ *       Admin users receive all events when borrower is omitted.
+ *       Supports replay on reconnect via `Last-Event-ID` header.
  *       Frontend can use the EventSource API for automatic reconnection.
  *     tags: [Events]
  *     security:
@@ -32,13 +34,13 @@ const router = Router();
  *           Borrower's Stellar address. When provided, only events for this
  *           borrower are streamed (JWT must match). When omitted, all events
  *           are streamed (API key required).
- *       - in: query
- *         name: token
+ *       - in: header
+ *         name: Last-Event-ID
  *         schema:
  *           type: string
  *         description: >
- *           JWT token (alternative to Authorization header for EventSource API
- *           which cannot set custom headers).
+ *           The ID of the last processed SSE event; server replays newer
+ *           events on reconnect.
  *     responses:
  *       200:
  *         description: Server-Sent Events stream (text/event-stream)

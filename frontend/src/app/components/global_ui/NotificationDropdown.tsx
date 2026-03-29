@@ -88,6 +88,13 @@ function NotificationItem({
     if (path) onNavigate(path);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleClick();
+    }
+  };
+
   return (
     <motion.li
       layout
@@ -100,6 +107,14 @@ function NotificationItem({
         !notification.read && "bg-indigo-50/40 dark:bg-indigo-950/20",
       )}
       onClick={handleClick}
+      onKeyDown={path ? handleKeyDown : undefined}
+      tabIndex={path ? 0 : undefined}
+      role={path ? "button" : undefined}
+      aria-label={
+        path
+          ? `${notification.title}. ${notification.read ? "" : "Unread. "}Press to view loan.`
+          : notification.title
+      }
     >
       {/* Icon */}
       <div
@@ -131,9 +146,12 @@ function NotificationItem({
         </p>
       </div>
 
-      {/* Unread dot */}
+      {/* Unread dot – decorative; state is conveyed via aria-label above */}
       {!notification.read && (
-        <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-indigo-500" />
+        <span
+          aria-hidden="true"
+          className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-indigo-500"
+        />
       )}
     </motion.li>
   );

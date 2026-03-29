@@ -10,6 +10,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useTranslations } from "next-intl"; // <--- This is the new one
+import { useRouter } from "next/navigation";
 import {
   useWalletStore,
   selectIsWalletConnected,
@@ -34,6 +35,7 @@ function formatCurrency(value: number): string {
 
 export default function Home() {
   const t = useTranslations("HomePage");
+  const router = useRouter();
   const isConnected = useWalletStore(selectIsWalletConnected);
   const address = useWalletStore(selectWalletAddress);
   const setConnected = useWalletStore((state: WalletStore) => state.setConnected);
@@ -343,15 +345,18 @@ export default function Home() {
                   title: t("quickActions.applyLoan"),
                   desc: t("quickActions.applyLoanDesc"),
                   color: "bg-indigo-600",
+                  href: "/loans",
                 },
                 {
                   title: t("quickActions.sendRemittance"),
                   desc: t("quickActions.sendRemittanceDesc"),
                   color: "bg-zinc-900",
+                  href: "/send-remittance",
                 },
               ].map((action, i) => (
                 <button
                   key={i}
+                  onClick={() => router.push(action.href)}
                   className={`w-full text-left p-4 rounded-xl ${action.color} text-white hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/10 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2`}
                 >
                   <div className="flex items-center justify-between mb-1">
