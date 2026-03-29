@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "analyze": "cross-env ANALYZE=true next build --webpack",
     "start": "next start",
     "lint": "prettier --check .",
     "audit:a11y": "next build && npx axe-playwright",
@@ -32,7 +31,6 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.2",
-    "@next/bundle-analyzer": "^16.1.6",
     "@playwright/test": "^1.50.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
@@ -44,7 +42,6 @@
     "@types/react-dom": "^19",
     "axe-playwright": "^2.2.2",
     "babel-plugin-react-compiler": "1.0.0",
-    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "eslint-config-prettier": "^10.1.8",
