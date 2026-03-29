@@ -11,6 +11,14 @@ export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "Paused",
   "Unpaused",
   "MinScoreUpdated",
+  "Deposit",
+  "Withdraw",
+  "YieldDistributed",
+  "Mint",
+  "ScoreUpd",
+  "ScoreDecr",
+  "HashUpd",
+  "Transfer",
 ] as const;
 
 export type WebhookEventType = (typeof SUPPORTED_WEBHOOK_EVENT_TYPES)[number];

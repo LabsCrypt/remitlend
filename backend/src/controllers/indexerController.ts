@@ -557,6 +557,7 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
 
     const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
     const indexer = new EventIndexer({
+      name: "reindex",
       rpcUrl,
       contractId,
       pollIntervalMs: 30_000,
