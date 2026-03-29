@@ -1542,7 +1542,8 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::Paused, &true);
         Self::bump_instance_ttl(&env);
         events::paused(&env);
-        env.events().publish((Symbol::new(&env, "ContractPaused"),), ());
+        env.events()
+            .publish((Symbol::new(&env, "ContractPaused"),), ());
     }
 
     pub fn unpause(env: Env) {
@@ -1550,7 +1551,8 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
         events::unpaused(&env);
-        env.events().publish((Symbol::new(&env, "ContractUnpaused"),), ());
+        env.events()
+            .publish((Symbol::new(&env, "ContractUnpaused"),), ());
     }
 
     pub fn is_paused(env: Env) -> bool {
