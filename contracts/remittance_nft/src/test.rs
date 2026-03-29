@@ -1,3 +1,4 @@
+#![cfg(test)]
 use super::*;
 use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env};
 

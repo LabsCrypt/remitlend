@@ -685,7 +685,6 @@ impl LoanManager {
             .get(&DataKey::NftContract)
             .ok_or(LoanError::NotInitialized)?;
         let nft_client = NftClient::new(&env, &nft_contract);
-
         let score = nft_client.get_score(&borrower);
         let min_score: u32 = env
             .storage()

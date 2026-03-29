@@ -83,6 +83,7 @@ fn test_negative_deposit_panic() {
     let env = Env::default();
     env.mock_all_auths();
 
+    let admin = Address::generate(&env);
     let token_admin = Address::generate(&env);
     let (token_id, _stellar_asset_client, _token_client) =
         create_token_contract(&env, &token_admin);
@@ -100,7 +101,7 @@ fn test_negative_deposit_panic() {
 #[should_panic]
 fn test_deposit_unauthorized() {
     let env = Env::default();
-
+    let admin = Address::generate(&env);
     let token_admin = Address::generate(&env);
     let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
@@ -158,6 +159,7 @@ fn test_negative_withdraw_panic() {
     let env = Env::default();
     env.mock_all_auths();
 
+    let admin = Address::generate(&env);
     let token_admin = Address::generate(&env);
     let (token_id, _stellar_asset_client, _token_client) =
         create_token_contract(&env, &token_admin);
@@ -177,6 +179,7 @@ fn test_insufficient_balance_withdraw_panic() {
     let env = Env::default();
     env.mock_all_auths();
 
+    let admin = Address::generate(&env);
     let token_admin = Address::generate(&env);
     let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
 
