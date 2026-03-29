@@ -8,7 +8,6 @@
  * Base URL is read from NEXT_PUBLIC_API_URL environment variable.
  */
 
-import { useEffect, useState } from "react";
 import {
   useQuery,
   useMutation,
@@ -53,9 +52,6 @@ export const queryKeys = {
   pool: {
     stats: () => ["pool", "stats"] as const,
     depositor: (address: string) => ["pool", "depositor", address] as const,
-  },
-  score: {
-    detail: (address: string) => ["score", address] as const,
   },
 } as const;
 
@@ -110,6 +106,7 @@ export interface Remittance {
   fromCurrency: string;
   toCurrency: string;
   recipientAddress: string;
+  memo?: string;
   status: "pending" | "processing" | "completed" | "failed";
   createdAt: string;
 }
@@ -133,21 +130,17 @@ export interface CreditScoreHistory {
   event?: string;
 }
 
+export interface CreditScoreResponse {
+  success: boolean;
+  userId: string;
+  score: number;
+  band: string;
+}
+
 export interface LoanConfig {
   minScore: number;
   maxAmount: number;
   interestRatePercent: number;
-}
-
-export interface CreditScore {
-  userId: string;
-  score: number;
-  band: "Excellent" | "Good" | "Fair" | "Poor";
-  factors: {
-    repaymentHistory: string;
-    latePaymentPenalty: string;
-    range: string;
-  };
 }
 
 export interface YieldHistory {
@@ -408,117 +401,21 @@ export function useCreditScoreHistory(
 }
 
 /**
- * Fetches the connected wallet's current credit score and refreshes it in
- * real time when score-changing loan events are streamed over SSE.
+ * Fetches the current credit score for the authenticated borrower.
  */
 export function useCreditScore(
-  walletAddress: string | undefined,
-  options?: Omit<UseQueryOptions<CreditScore>, "queryKey" | "queryFn">,
+  userId: string | undefined,
+  options?: Omit<UseQueryOptions<number>, "queryKey" | "queryFn">,
 ) {
-  const queryClient = useQueryClient();
-  const authToken = useUserStore((state) => state.authToken);
-  const [previousScoreState, setPreviousScoreState] = useState<{
-    walletAddress: string | undefined;
-    previousScore: number | undefined;
-  }>({ walletAddress: undefined, previousScore: undefined });
-  const enabled = !!walletAddress && (options?.enabled ?? true);
-
-  const query = useQuery<CreditScore>({
+  return useQuery<number>({
+    queryKey: ["creditScore", userId],
+    queryFn: async () => {
+      const response = await apiFetch<CreditScoreResponse>(`/score/${userId}`);
+      return response.score;
+    },
+    enabled: !!userId,
     ...options,
-    queryKey: queryKeys.score.detail(walletAddress ?? ""),
-    queryFn: () => apiFetch<CreditScore>(`/score/${walletAddress}`),
-    enabled,
-    staleTime: 30_000,
   });
-
-  useEffect(() => {
-    if (!walletAddress || !authToken) {
-      return;
-    }
-
-    let cancelled = false;
-    let retryDelay = 1_000;
-    let eventSource: EventSource | null = null;
-    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const connect = () => {
-      if (cancelled) {
-        return;
-      }
-
-      const url =
-        `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}` +
-        `&token=${encodeURIComponent(authToken)}`;
-      const es = new EventSource(url, { withCredentials: true });
-      eventSource = es;
-
-      es.onopen = () => {
-        retryDelay = 1_000;
-      };
-
-      es.onmessage = (event: MessageEvent<string>) => {
-        try {
-          const payload = JSON.parse(event.data) as {
-            type?: string;
-            borrower?: string;
-            eventType?: string;
-          };
-
-          if (payload.type === "init") {
-            return;
-          }
-
-          const scoreChangingEvent =
-            payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
-
-          if (payload.borrower === walletAddress && scoreChangingEvent) {
-            const currentScore = queryClient.getQueryData<CreditScore>(
-              queryKeys.score.detail(walletAddress),
-            )?.score;
-
-            setPreviousScoreState({
-              walletAddress,
-              previousScore: currentScore,
-            });
-            queryClient.invalidateQueries({
-              queryKey: queryKeys.score.detail(walletAddress),
-            });
-          }
-        } catch {
-          // Ignore malformed SSE payloads.
-        }
-      };
-
-      es.onerror = () => {
-        es.close();
-        eventSource = null;
-
-        if (!cancelled) {
-          const delay = Math.min(retryDelay, 30_000);
-          retryDelay = Math.min(retryDelay * 2, 30_000);
-          retryTimeout = setTimeout(connect, delay);
-        }
-      };
-    };
-
-    connect();
-
-    return () => {
-      cancelled = true;
-      eventSource?.close();
-      if (retryTimeout) {
-        clearTimeout(retryTimeout);
-      }
-    };
-  }, [authToken, queryClient, walletAddress]);
-
-  return {
-    ...query,
-    previousScore:
-      previousScoreState.walletAddress === walletAddress
-        ? previousScoreState.previousScore
-        : undefined,
-  };
 }
 
 /**
