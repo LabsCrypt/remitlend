@@ -1,73 +1,201 @@
 # RemitLend
 
-RemitLend treats remittance history as credit history. Migrant workers prove reliability through monthly transfers. They receive fair loans without predatory fees. Lenders earn transparent yield on Stellar testnet.
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
+[![Frontend: Next.js](https://img.shields.io/badge/Frontend-Next.js-black?logo=next.js)](https://nextjs.org/)
+[![Backend: Express](https://img.shields.io/badge/Backend-Express.js-white?logo=express)](https://expressjs.com/)
+[![Smart Contracts: Soroban](https://img.shields.io/badge/Smart_Contracts-Soroban-orange)](https://soroban.stellar.org/)
+[![Stellar](https://img.shields.io/badge/Stellar-Soroban-purple)](https://stellar.org)
 
-## Problem
+RemitLend treats remittance history as credit history. Migrant workers prove their financial reliability through monthly cross-border transfers, allowing them to receive fair loans without predatory fees. In return, lenders earn transparent yield powered by the Stellar network.
 
-Workers send money home every pay cycle. Banks in host countries ignore that record. Payday shops accept them, charge triple digit rates, and trap families in debt. RemitLend flips that script by turning payment streaks into a score that lenders respect.
+## ✨ Key Features
 
-## Today’s product
+### For Borrowers
+- **Credit Building**: Convert your existing remittance history into an actionable credit score.
+- **Fair Rates**: Access loans with transparent, non-predatory interest rates.
+- **Self-Custody**: Maintain full control of your assets using Stellar wallets.
 
-You connect a Stellar wallet. You mint a remittance NFT that holds your payment score. You request a loan against that NFT. Lenders deposit test USDC into a shared pool. The loan manager contract releases funds to your wallet. You repay inside the borrower dashboard and the NFT unlocks once the balance hits zero.
+### For Lenders
+- **Transparent Yield**: Earn interest by providing liquidity to audited borrowing pools.
+- **Risk Assessment**: Make informed decisions based on verifiable, on-chain remittance proofs (Remittance NFTs).
 
-## Borrower experience
+### Technical Highlights
+- **NFT-Based Collateral**: Remittance NFTs serve as proof of reliability and loan collateral.
+- **Decentralized Lending Pools**: Lenders provide liquidity and earn transparent yields.
+- **Transparent & Auditable**: All transactions and loan terms recorded on-chain.
 
-- Review your payment summary and reliability score.
-- Check modeled terms before you commit.
-- Stake the NFT, request the loan, and receive funds in minutes.
-- Track progress on the My Loans tab.
-- Repay on demand through the Make Payment button.
-- The dashboard only lists loans tied to the connected wallet.
+## 🏗 Project Structure
 
-## Lender experience
+The repository is organized as a monorepo containing three core packages:
 
-- Enable USDC spending in one click.
-- Mint test USDC directly inside the dashboard.
-- Add liquidity to the pool.
-- Monitor APY, utilization, and allowance in real time.
-- Approve or reject pending loans.
-- Withdraw liquidity when availability allows.
+- **`backend/`**: Node.js/Express server providing API support, score generation, and metadata management.
+- **`frontend/`**: Next.js web application providing the UI for both borrowers and lenders.
+- **`contracts/`**: Soroban (Rust) smart contracts covering the lending pools, loan management, and NFT collateral logic.
 
-## Live components
+*For a detailed look at how these components interact, see our [Architecture Diagram](ARCHITECTURE.md).*
 
-- Soroban contracts cover the remittance NFT, the loan manager, the lending pool, and the oracle hooks.
-- React dashboards integrate Stellar Wallet Kit.
-- Allowance helpers and the test-token minter support every wallet.
-- Borrower filtering keeps portfolios personal.
+## 🛠 Tech Stack
 
-## Simulated components
+- **Blockchain**: [Stellar](https://stellar.org) (Soroban Smart Contracts)
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
+- **Backend**: Node.js, Express, TypeScript, Jest
+- **Wallet Integration**: [Stellar Wallet Kit](https://github.com/stellar/stellar-wallet-kit) (Freighter)
 
-- Payment history uses generated data inside each NFT.
-- Auto repayment detection runs manually for now.
-- Fiat bridges and production remittance APIs are pending.
+## 🏁 Getting Started
 
-## Roadmap
+### Prerequisites
 
-- Replace dummy streams with live data from Wise, Western Union, and PayPal.
-- Automate on-chain updates when remittances land.
-- Launch a capped mainnet pool after audits.
-- Run a pilot on the UAE to Philippines corridor.
-- Expand scoring to cover multi recipient families.
-- Add risk tranches for lenders after repayment stats mature.
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
+- [Docker & Docker Compose](https://www.docker.com/) (Recommended for easy setup)
+- [Rust & Cargo](https://rustup.rs/) (Required for contract development)
+- [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup) (Required for contract deployment)
+- [Stellar Wallet](https://www.stellar.org/ecosystem/wallets) (Freighter recommended for testing)
 
-## Why Stellar
+### Quick Start with Docker (Recommended)
 
-- Five second finality aligns with cross border flows.
-- Native USDC keeps payouts stable.
-- Fees stay under one cent, so small loans remain feasible.
-- Soroban contracts interoperate cleanly with remittance rails.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/remitlend.git
+   cd remitlend
+   ```
 
-## Impact goal
+2. **Configure environment:**
+   ```bash
+   cp backend/.env.example backend/.env
+   ```
+   Edit `backend/.env` if needed (defaults work for local development).
 
-- Drop borrowing costs from four hundred percent APR to twenty percent APR for migrant families.
-- Give workers a portable credit profile instead of a payday bill.
+3. **Start all services:**
+   ```bash
+   docker compose up --build
+   ```
+   The backend waits for PostgreSQL to be ready, runs `npm run migrate:up` to apply SQL migrations, then starts the API.
 
-## Try it now
+4. **Access the application:**
+   - Frontend: [http://localhost:3000](http://localhost:3000)
+   - Backend API: [http://localhost:3001](http://localhost:3001)
+   - API Documentation: [http://localhost:3001/api-docs](http://localhost:3001/api-docs)
 
-1. Open the hosted testnet app.
-2. Connect Freighter or another supported wallet.
-3. Mint the test remittance certificate.
-4. Request a loan.
-5. Approve it in the admin view.
-6. Repay it.
-7. Watch your score respond and your NFT unlock.
+### Manual Setup
+
+#### Backend Setup
+
+1. **Navigate to backend directory:**
+   ```bash
+   cd backend
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   ```
+   Update `.env` with your configuration (at minimum `DATABASE_URL` for PostgreSQL):
+   ```env
+   CORS_ALLOWED_ORIGINS=http://localhost:3000
+   PORT=3001
+   NODE_ENV=development
+   DATABASE_URL=postgres://postgres:postgres@localhost:5432/remitlend
+   ```
+
+4. **Apply database migrations** (creates `scores`, `loan_events`, `indexer_state`, and other tables):
+   ```bash
+   npm run migrate:up
+   ```
+   Migration scripts use the colon form (`migrate:up` / `migrate:down`), which is the standard npm convention.
+
+5. **Run development server:**
+   ```bash
+   npm run dev
+   ```
+
+6. **Available scripts:**
+   - `npm run dev` - Start development server with hot reload
+   - `npm run build` - Build for production
+   - `npm start` - Run production build
+   - `npm test` - Run test suite
+   - `npm run lint` - Check code quality
+   - `npm run format` - Format code with Prettier
+
+#### Frontend Setup
+
+1. **Navigate to frontend directory:**
+   ```bash
+   cd frontend
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Run development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Access the application:**
+   Open [http://localhost:3000](http://localhost:3000) in your browser
+
+5. **Available scripts:**
+   - `npm run dev` - Start development server
+   - `npm run build` - Build for production
+   - `npm start` - Run production build
+   - `npm run lint` - Check code quality
+
+#### Smart Contracts Setup
+
+1. **Install Rust and wasm32 target:**
+   ```bash
+   rustup target add wasm32-unknown-unknown
+   ```
+
+2. **Install Soroban CLI:**
+   ```bash
+   cargo install --locked soroban-cli
+   ```
+
+3. **Navigate to contracts directory:**
+   ```bash
+   cd contracts
+   ```
+
+4. **Build all contracts:**
+   ```bash
+   cargo build --target wasm32-unknown-unknown --release
+   ```
+
+5. **Run tests:**
+   ```bash
+   cargo test
+   ```
+
+6. **Deploy to testnet (example):**
+   ```bash
+   soroban contract deploy \
+     --wasm target/wasm32-unknown-unknown/release/remittance_nft.wasm \
+     --source <YOUR_SECRET_KEY> \
+     --rpc-url https://soroban-testnet.stellar.org \
+     --network-passphrase "Test SDF Network ; September 2015"
+   ```
+
+## 🤝 Contributing
+
+We welcome contributions from developers of all skill levels! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on how to get started.
+
+### Quick Contribution Guide
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes and commit (`git commit -m 'Add amazing feature'`)
+4. Push to your branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the ISC License. See the `LICENSE` file for details.

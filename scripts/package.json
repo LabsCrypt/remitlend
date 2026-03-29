@@ -1,0 +1,20 @@
+{
+  "name": "remitlend-scripts",
+  "version": "1.0.0",
+  "description": "Deployment and maintenance scripts for RemitLend contracts",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "ts-node deploy.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^14.4.3",
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.12.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

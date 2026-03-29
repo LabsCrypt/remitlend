@@ -1,0 +1,50 @@
+[package]
+name = "remitlend-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+arbitrary = { version = "1.3", features = ["derive"] }
+
+[dependencies.lending_pool]
+path = "../lending_pool"
+
+[dependencies.loan_manager]
+path = "../loan_manager"
+
+[dependencies.remittance_nft]
+path = "../remittance_nft"
+
+[[bin]]
+name = "fuzz_target_1"
+path = "fuzz_targets/fuzz_target_1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lending_pool_fuzz"
+path = "fuzz_targets/lending_pool_fuzz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "loan_manager_fuzz"
+path = "fuzz_targets/loan_manager_fuzz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "remittance_nft_fuzz"
+path = "fuzz_targets/remittance_nft_fuzz.rs"
+test = false
+doc = false
+bench = false

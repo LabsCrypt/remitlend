@@ -1,0 +1,38 @@
+1. Kingdom Dashboard
+I worked on the gamification layer, mapping financial growth to a city-building "Kingdom" experience.
+
+Hero: Kingdom Value: $24,500
+
+Stats: Net Worth ($42,850) and Savings Rate ($1,200).
+
+CTA: "New Quest Available" to incentivize recurring transfers.
+
+2. Borrower Dashboard
+I worked on the credit identity interface, distilling complex on-chain data into a "Reliability Score."
+
+Metrics: 850 (Excellent) score with status badges for Repayment and Stability.
+
+Feature: Digital Passport with NFT Achievement Stamps for "Early Adopter" and "Trusted" status.
+
+3. Lender Pool Overview
+I worked on the liquidity provider UI, balancing high-level pool health with granular loan data.
+
+Liquidity: $850,000 at 12.4% APY.
+
+Risk: Visualized via a "Pool Health" bar (94/100) to ensure lender confidence.
+
+4. Loan Tiers
+I worked on the progression logic, creating a roadmap for users to unlock lower interest rates.
+
+Status: Current 650/1000 score tracking toward the "Silver" tier.
+
+Hierarchy: Five-tier system from "Seed" (15% interest) to "Platinum" (5% interest).
+
+5. RemitLend Kingdom (Archon)
+I worked on the high-level user experience, integrating daily investment quests into the dashboard.
+
+Engagement: XP tracking for "Level 14 Archon" status.
+
+Direct Action: "Invest $100" quest to unlock specific district upgrades. worked on
+
+figma link https://www.figma.com/design/3WvDt5wvKog3b85KT09KLX/REMIT-LEND?node-id=2-526&t=XfRD5blXkIb5CUg2-0

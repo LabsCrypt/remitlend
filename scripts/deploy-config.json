@@ -1,0 +1,22 @@
+{
+  "testnet": {
+    "networkPassphrase": "Test SDF Network ; September 2015",
+    "rpcUrl": "https://soroban-testnet.stellar.org",
+    "admin": "YOUR_ADMIN_PUBLIC_KEY",
+    "token": "CAS3J7GYCCXG7W35XU4643F2M3T63BGCV2X4D6C4V7G4X6C4V7G4X6C4",
+    "contracts": {
+      "remittance_nft": {
+        "wasm": "../contracts/target/wasm32-unknown-unknown/release/remittance_nft.wasm"
+      },
+      "lending_pool": {
+        "wasm": "../contracts/target/wasm32-unknown-unknown/release/lending_pool.wasm"
+      },
+      "loan_manager": {
+        "wasm": "../contracts/target/wasm32-unknown-unknown/release/loan_manager.wasm"
+      },
+      "multisig_governance": {
+        "wasm": "../contracts/target/wasm32-unknown-unknown/release/multisig_governance.wasm"
+      }
+    }
+  }
+}

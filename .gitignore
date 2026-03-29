@@ -1,3 +1,4 @@
+backend/node_modules/
 node_modules
 target
 dist
@@ -6,3 +7,5 @@ dist
 .DS_Store
 coverage
 *.log
+.idea
+create_issues.sh

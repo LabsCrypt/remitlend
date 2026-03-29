@@ -4,6 +4,10 @@ members = [
   "remittance_nft",
   "loan_manager",
   "lending_pool",
+  "multisig_governance",
+]
+exclude = [
+  "fuzz",
 ]
 
 [workspace.dependencies]
