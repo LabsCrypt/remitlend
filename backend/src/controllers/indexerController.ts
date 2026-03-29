@@ -355,10 +355,11 @@ export const createWebhookSubscription = async (
   res: Response,
 ) => {
   try {
-    const { callbackUrl, eventTypes, secret } = req.body as {
+    const { callbackUrl, eventTypes, secret, maxAttempts } = req.body as {
       callbackUrl?: string;
       eventTypes?: string[];
       secret?: string;
+      maxAttempts?: number;
     };
 
     if (!callbackUrl) {
@@ -398,18 +399,12 @@ export const createWebhookSubscription = async (
       });
     }
 
-    const subscription = await webhookService.registerSubscription(
-      secret
-        ? {
-            callbackUrl,
-            eventTypes: normalizedEventTypes,
-            secret,
-          }
-        : {
-            callbackUrl,
-            eventTypes: normalizedEventTypes,
-          },
-    );
+    const subscription = await webhookService.registerSubscription({
+      callbackUrl,
+      eventTypes: normalizedEventTypes,
+      secret: secret || undefined,
+      maxAttempts: maxAttempts ? Number(maxAttempts) : undefined,
+    });
 
     res.status(201).json({
       success: true,
@@ -497,6 +492,30 @@ export const getWebhookDeliveries = async (req: Request, res: Response) => {
   }
 };
 
+export const getWebhookRetryQueue = async (req: Request, res: Response) => {
+  try {
+    const limit = Number(req.query.limit ?? 50);
+    const boundedLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 50;
+
+    const pendingRetries = await webhookService.getPendingRetries(boundedLimit);
+
+    res.json({
+      success: true,
+      data: {
+        queueSize: pendingRetries.length,
+        retries: pendingRetries,
+      },
+    });
+  } catch (error) {
+    logger.error("Failed to fetch webhook retry queue", { error });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch webhook retry queue",
+    });
+  }
+};
+
 export const reindexLedgerRange = async (req: Request, res: Response) => {
   try {
     const fromLedger = Number(req.query.fromLedger);
@@ -538,6 +557,7 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
 
     const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
     const indexer = new EventIndexer({
+      name: "reindex",
       rpcUrl,
       contractId,
       pollIntervalMs: 30_000,

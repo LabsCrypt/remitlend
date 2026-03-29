@@ -9,6 +9,7 @@ import {
   createWebhookSubscription,
   deleteWebhookSubscription,
   getWebhookDeliveries,
+  getWebhookRetryQueue,
   listWebhookSubscriptions,
   reindexLedgerRange,
 } from "../controllers/indexerController.js";
@@ -205,5 +206,26 @@ router.delete(
  *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get("/webhooks/:id/deliveries", requireApiKey, getWebhookDeliveries);
+
+/**
+ * @swagger
+ * /admin/webhooks/retry-queue:
+ *   get:
+ *     summary: View pending webhook retries
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Retry queue returned
+ */
+router.get("/webhooks/retry-queue", requireApiKey, getWebhookRetryQueue);
 
 export default router;

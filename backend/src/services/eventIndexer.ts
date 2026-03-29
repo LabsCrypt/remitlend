@@ -36,6 +36,7 @@ interface LoanEvent extends IndexedLoanEvent {
 }
 
 interface EventIndexerConfig {
+  name: string;
   rpcUrl: string;
   contractId: string;
   pollIntervalMs?: number;
@@ -53,6 +54,7 @@ interface ProcessChunkResult {
 }
 
 export class EventIndexer {
+  private readonly name: string;
   private readonly rpc: SorobanRpc.Server;
   private readonly contractId: string;
   private readonly pollIntervalMs: number;
@@ -61,12 +63,13 @@ export class EventIndexer {
   private pollTimeout: NodeJS.Timeout | null = null;
 
   constructor(config: EventIndexerConfig);
-  constructor(rpcUrl: string, contractId: string);
-  constructor(configOrRpcUrl: EventIndexerConfig | string, contractId?: string) {
+  constructor(rpcUrl: string, contractId: string, name?: string);
+  constructor(configOrRpcUrl: EventIndexerConfig | string, contractId?: string, name?: string) {
     if (typeof configOrRpcUrl === "string") {
       if (!contractId) {
         throw new Error("contractId is required when using rpcUrl constructor");
       }
+      this.name = name ?? "default";
       this.rpc = new SorobanRpc.Server(configOrRpcUrl);
       this.contractId = contractId;
       this.pollIntervalMs = 30_000;
@@ -74,6 +77,7 @@ export class EventIndexer {
       return;
     }
 
+    this.name = configOrRpcUrl.name;
     this.rpc = new SorobanRpc.Server(configOrRpcUrl.rpcUrl);
     this.contractId = configOrRpcUrl.contractId;
     this.pollIntervalMs = configOrRpcUrl.pollIntervalMs ?? 30_000;
@@ -187,16 +191,16 @@ export class EventIndexer {
     const result = await query(
       `SELECT last_indexed_ledger
        FROM indexer_state
-       ORDER BY id DESC
+       WHERE indexer_name = $1
        LIMIT 1`,
-      [],
+      [this.name],
     );
 
     if (!result.rows.length) {
       await query(
-        `INSERT INTO indexer_state (last_indexed_ledger)
-         VALUES (0)`,
-        [],
+        `INSERT INTO indexer_state (last_indexed_ledger, indexer_name)
+         VALUES (0, $1)`,
+        [this.name],
       );
       return 0;
     }
@@ -209,20 +213,15 @@ export class EventIndexer {
       `UPDATE indexer_state
        SET last_indexed_ledger = GREATEST(last_indexed_ledger, $1),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = (
-         SELECT id
-         FROM indexer_state
-         ORDER BY id DESC
-         LIMIT 1
-       )`,
-      [ledger],
+       WHERE indexer_name = $2`,
+      [ledger, this.name],
     );
 
     if ((updateResult.rowCount ?? 0) === 0) {
       await query(
-        `INSERT INTO indexer_state (last_indexed_ledger)
-         VALUES ($1)`,
-        [ledger],
+        `INSERT INTO indexer_state (last_indexed_ledger, indexer_name)
+         VALUES ($1, $2)`,
+        [ledger, this.name],
       );
     }
   }
@@ -472,6 +471,24 @@ export class EventIndexer {
     } else if (type === "Seized") {
       if (!event.topic[1]) return null;
       borrower = this.decodeAddress(event.topic[1]);
+    } else if (type === "Deposit" || type === "Withdraw") {
+      if (!event.topic[1]) return null;
+      borrower = this.decodeAddress(event.topic[1]);
+      // LendingPool events: value is a tuple (amount, shares)
+      const nativeValue = scValToNative(event.value);
+      if (Array.isArray(nativeValue)) {
+        amount = nativeValue[0].toString();
+      } else {
+        amount = nativeValue.toString();
+      }
+    } else if (type === "YieldDistributed") {
+      amount = this.decodeAmount(event.value);
+    } else if (type === "Mint" || type === "ScoreUpd" || type === "ScoreDecr") {
+      if (!event.topic[1]) return null;
+      borrower = this.decodeAddress(event.topic[1]);
+    } else if (type === "Transfer") {
+      if (!event.topic[1]) return null;
+      borrower = this.decodeAddress(event.topic[1]); // 'from' address
     }
 
     return {
@@ -649,7 +666,20 @@ export class EventIndexer {
         "Paused",
         "Unpaused",
         "MinScoreUpdated",
+        "Deposit",
+        "Withdraw",
+        "YieldDistributed",
+        "Mint",
+        "ScoreUpd",
+        "ScoreDecr",
+        "HashUpd",
+        "Transfer",
+        "PoolPaused",
+        "PoolUnpaused",
       ];
+
+      if (eventType === "PoolPaused") return "Paused";
+      if (eventType === "PoolUnpaused") return "Unpaused";
 
       return supported.includes(eventType)
         ? (eventType as WebhookEventType)

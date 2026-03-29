@@ -52,6 +52,8 @@ pub enum LoanError {
     PoolPaused = 18,
     NftPaused = 19,
     InvalidConfiguration = 20,
+    LoanNotUndercollateralized = 21,
+    LoanAlreadyLiquidated = 22,
 }
 
 #[contracttype]
@@ -63,6 +65,7 @@ pub enum LoanStatus {
     Defaulted,
     Cancelled,
     Rejected,
+    Liquidated,
 }
 
 #[contracttype]
@@ -108,6 +111,8 @@ pub enum DataKey {
     GracePeriodLedgers,
     DefaultWindowLedgers,
     RateOracle,
+    LiquidationThresholdBps,
+    LiquidationBonusBps,
 }
 
 #[contract]
@@ -131,6 +136,8 @@ impl LoanManager {
     const LATE_REPAYMENT_SCORE_PENALTY: i32 = 10;
     const DEFAULT_SCORE_PENALTY_POINTS: u32 = 50;
     const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 100;
+    const DEFAULT_LIQUIDATION_THRESHOLD_BPS: u32 = 15_000;
+    const DEFAULT_LIQUIDATION_BONUS_BPS: u32 = 500;
 
     fn bump_instance_ttl(env: &Env) {
         env.storage()
@@ -1089,13 +1096,14 @@ impl LoanManager {
         // Borrower must also sign.
         loan.borrower.require_auth();
 
-        if loan.status != LoanStatus::Approved {
+        let old_status = loan.status.clone();
+        if old_status != LoanStatus::Approved && old_status != LoanStatus::Defaulted {
             return Err(LoanError::LoanNotActive);
         }
 
-        // Good-standing check: must not be past due.
+        // Good-standing check: must not be past due (unless defaulted, but we handle status transition).
         let current_ledger = env.ledger().sequence();
-        if current_ledger > loan.due_date {
+        if old_status == LoanStatus::Approved && current_ledger > loan.due_date {
             return Err(LoanError::LoanPastDue);
         }
 
@@ -1135,6 +1143,13 @@ impl LoanManager {
             .checked_add(loan.accrued_late_fee)
             .expect("overflow");
         loan.accrued_late_fee = 0;
+
+        loan.status = LoanStatus::Approved;
+
+        // If transitioning from Defaulted back to Approved, re-increment the active loan count.
+        if old_status == LoanStatus::Defaulted {
+            Self::increment_borrower_loan_count(&env, &loan.borrower);
+        }
 
         // Adjust principal to new_amount.
         let remaining_principal = Self::remaining_principal(&loan);
@@ -1603,6 +1618,167 @@ impl LoanManager {
 
             events::loan_defaulted(&env, loan_id, loan.borrower.clone());
         }
+
+        Ok(())
+    }
+
+    fn liquidation_threshold_bps(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LiquidationThresholdBps)
+            .unwrap_or(Self::DEFAULT_LIQUIDATION_THRESHOLD_BPS)
+    }
+
+    fn liquidation_bonus_bps(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LiquidationBonusBps)
+            .unwrap_or(Self::DEFAULT_LIQUIDATION_BONUS_BPS)
+    }
+
+    /// Admin function to set the liquidation threshold in basis points.
+    /// For example, 15000 = 150%. When a loan's collateral ratio falls
+    /// below this threshold, it becomes eligible for liquidation.
+    pub fn set_liquidation_threshold(env: Env, ratio_bps: u32) -> Result<(), LoanError> {
+        if ratio_bps == 0 || ratio_bps > 50_000 {
+            return Err(LoanError::InvalidConfiguration);
+        }
+        let admin = Self::admin(&env);
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::LiquidationThresholdBps, &ratio_bps);
+        Self::bump_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    /// Admin function to set the liquidation bonus in basis points.
+    /// For example, 500 = 5% of collateral awarded to the liquidator.
+    pub fn set_liquidation_bonus(env: Env, bonus_bps: u32) -> Result<(), LoanError> {
+        if bonus_bps > 5_000 {
+            return Err(LoanError::InvalidConfiguration);
+        }
+        let admin = Self::admin(&env);
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::LiquidationBonusBps, &bonus_bps);
+        Self::bump_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    pub fn get_liquidation_threshold(env: Env) -> u32 {
+        Self::liquidation_threshold_bps(&env)
+    }
+
+    pub fn get_liquidation_bonus(env: Env) -> u32 {
+        Self::liquidation_bonus_bps(&env)
+    }
+
+    /// Liquidate an under-collateralized loan. Callable by anyone.
+    ///
+    /// When the collateral ratio (collateral * 10_000 / total_debt) drops
+    /// below the configured threshold, the loan can be liquidated:
+    ///   - The liquidator receives a bonus percentage of the collateral
+    ///   - Remaining collateral is returned to the borrower
+    ///   - The loan is marked as Liquidated
+    ///   - A LoanLiquidated event is emitted
+    pub fn liquidate(env: Env, loan_id: u32, liquidator: Address) -> Result<(), LoanError> {
+        use soroban_sdk::token::TokenClient;
+
+        liquidator.require_auth();
+        Self::assert_not_paused(&env)?;
+
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        if loan.status == LoanStatus::Liquidated {
+            return Err(LoanError::LoanAlreadyLiquidated);
+        }
+        if loan.status != LoanStatus::Approved {
+            return Err(LoanError::LoanNotActive);
+        }
+
+        // Accrue interest so total_debt is up to date.
+        let (total_debt, _late_fee_delta) = Self::current_total_debt(&env, &mut loan);
+
+        if total_debt <= 0 {
+            return Err(LoanError::LoanNotActive);
+        }
+
+        let collateral = loan.collateral_amount;
+        // Collateral ratio = collateral * 10_000 / total_debt (in bps)
+        let collateral_ratio_bps = collateral
+            .checked_mul(10_000)
+            .and_then(|v| v.checked_div(total_debt))
+            .unwrap_or(0) as u32;
+
+        let threshold = Self::liquidation_threshold_bps(&env);
+        if collateral_ratio_bps >= threshold {
+            return Err(LoanError::LoanNotUndercollateralized);
+        }
+
+        // Calculate liquidation bonus for the liquidator.
+        let bonus_bps = Self::liquidation_bonus_bps(&env);
+        let liquidator_bonus = collateral
+            .checked_mul(bonus_bps as i128)
+            .and_then(|v| v.checked_div(10_000))
+            .unwrap_or(0);
+        let borrower_remainder = collateral
+            .checked_sub(liquidator_bonus)
+            .unwrap_or(0);
+
+        // Transfer collateral.
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let token_client = TokenClient::new(&env, &token);
+
+        if liquidator_bonus > 0 {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &liquidator,
+                &liquidator_bonus,
+            );
+        }
+        if borrower_remainder > 0 {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &loan.borrower,
+                &borrower_remainder,
+            );
+        }
+
+        // Mark loan as liquidated.
+        loan.collateral_amount = 0;
+        loan.status = LoanStatus::Liquidated;
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+        Self::decrement_borrower_loan_count(&env, &loan.borrower);
+
+        // Emit event.
+        events::loan_liquidated(
+            &env,
+            loan_id,
+            loan.borrower.clone(),
+            liquidator.clone(),
+            collateral,
+            liquidator_bonus,
+            borrower_remainder,
+        );
 
         Ok(())
     }
