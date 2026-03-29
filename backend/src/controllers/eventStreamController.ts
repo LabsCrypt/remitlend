@@ -76,15 +76,6 @@ export const streamEvents = asyncHandler(
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
-    // Heartbeat to keep connection alive through proxies/load balancers
-    const heartbeat = setInterval(() => {
-      try {
-        res.write(": heartbeat\n\n");
-      } catch {
-        // client already gone
-      }
-    }, 30_000);
-
     let unsubscribe: () => void;
 
     if (borrower) {
@@ -144,13 +135,8 @@ export const streamEvents = asyncHandler(
       unsubscribe = eventStreamService.subscribeAll(userKey, res);
     }
 
-    const cleanup = () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-    };
-
-    req.on("close", cleanup);
-    req.on("error", cleanup);
+    req.on("close", unsubscribe);
+    req.on("error", unsubscribe);
   },
 );
 
