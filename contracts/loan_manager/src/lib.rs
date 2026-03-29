@@ -115,7 +115,6 @@ pub enum DataKey {
 pub enum DataKey {
     Admin,
     Paused,
-}
 
 #[contractimpl]
 impl LoanManager {
