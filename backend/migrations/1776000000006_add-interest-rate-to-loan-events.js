@@ -4,7 +4,7 @@ exports.up = (pgm) => {
     term_ledgers: { type: "integer", default: null },
   });
 
-  // Also add a score penalty for defaulted loans in the metadata if needed, 
+  // Also add a score penalty for defaulted loans in the metadata if needed,
   // but for now we'll just track the rate per-loan event.
 };
 

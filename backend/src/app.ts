@@ -49,10 +49,10 @@ app.use(
     },
     strictTransportSecurity: isProduction
       ? {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true,
-      }
+          maxAge: 31536000,
+          includeSubDomains: true,
+          preload: true,
+        }
       : false,
   }),
 );
@@ -67,7 +67,7 @@ const corsOptions: cors.CorsOptions = {
       return callback(null, true);
     }
     if (allowedOrigins.includes(origin)) {
-      return callback(null, true)
+      return callback(null, true);
     }
     return callback(new Error("Not allowed by CORS"));
   },

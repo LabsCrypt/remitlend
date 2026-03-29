@@ -15,7 +15,9 @@ describe("Centralized Error Handling", () => {
       // New structured format
       expect(response.body.error).toBeDefined();
       expect(response.body.error.code).toBe("NOT_FOUND");
-      expect(response.body.error.message).toMatch(/Cannot GET \/nonexistent-route/);
+      expect(response.body.error.message).toMatch(
+        /Cannot GET \/nonexistent-route/,
+      );
     });
 
     it("should return 404 for unknown POST routes with error code", async () => {
@@ -97,7 +99,9 @@ describe("Centralized Error Handling", () => {
 
       process.env.NODE_ENV = "development";
       process.env.EXPOSE_STACK_TRACES = "true";
-      const developmentResponse = await request(app).get("/test/error/unexpected");
+      const developmentResponse = await request(app).get(
+        "/test/error/unexpected",
+      );
 
       expect(developmentResponse.status).toBe(500);
       expect(developmentResponse.body).toHaveProperty("stack");
@@ -187,9 +191,7 @@ describe("Centralized Error Handling", () => {
   describe("Authentication error codes", () => {
     it("should return VALIDATION_ERROR error code for missing public key (Zod validation)", async () => {
       // Zod validation runs before controller logic
-      const response = await request(app)
-        .post("/api/auth/challenge")
-        .send({});
+      const response = await request(app).post("/api/auth/challenge").send({});
 
       expect(response.status).toBe(400);
       expect(response.body.error.code).toBe("VALIDATION_ERROR");

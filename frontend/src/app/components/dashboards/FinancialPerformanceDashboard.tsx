@@ -1,12 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { CreditScoreTrendChart, type CreditScoreDataPoint } from "../charts/CreditScoreTrendChart";
-import { YieldEarningsChart, type YieldDataPoint } from "../charts/YieldEarningsChart";
+import { lazy, Suspense, useState } from "react";
+import type { CreditScoreDataPoint } from "../charts/CreditScoreTrendChart";
+import type { YieldDataPoint } from "../charts/YieldEarningsChart";
+
+const CreditScoreTrendChart = lazy(() =>
+  import("../charts/CreditScoreTrendChart").then((m) => ({
+    default: m.CreditScoreTrendChart,
+  })),
+);
+
+const YieldEarningsChart = lazy(() =>
+  import("../charts/YieldEarningsChart").then((m) => ({
+    default: m.YieldEarningsChart,
+  })),
+);
 import { useCreditScoreHistory, useYieldHistory } from "@/app/hooks/useApi";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { AnalyticsSkeleton } from "../skeletons/AnalyticsSkeleton";
+import { SkeletonChart } from "../ui/Skeleton";
 import { RefreshCw } from "lucide-react";
 
 interface FinancialPerformanceDashboardProps {
@@ -162,15 +175,10 @@ export function FinancialPerformanceDashboard({
           <div className="lg:col-span-2">
             {isLoadingScore && !useMockData ? (
               <AnalyticsSkeleton />
-            ) : scoreError && !useMockData ? (
-              <Card className="p-8">
-                <div className="text-center">
-                  <p className="text-red-600 mb-4">Error loading credit score data</p>
-                  <Button onClick={() => refetchScore()}>Retry</Button>
-                </div>
-              </Card>
             ) : (
-              <CreditScoreTrendChart data={displayCreditScoreData} />
+              <Suspense fallback={<SkeletonChart />}>
+                <CreditScoreTrendChart data={displayCreditScoreData} />
+              </Suspense>
             )}
           </div>
         )}
@@ -188,7 +196,9 @@ export function FinancialPerformanceDashboard({
                 </div>
               </Card>
             ) : (
-              <YieldEarningsChart data={displayYieldData} />
+              <Suspense fallback={<SkeletonChart />}>
+                <YieldEarningsChart data={displayYieldData} />
+              </Suspense>
             )}
           </div>
         )}

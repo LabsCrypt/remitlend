@@ -236,8 +236,7 @@ export const getScoreBreakdown = asyncHandler(
     const avgLedgers = parseFloat(avgRepayResult.rows[0]?.avg_ledgers || "0");
     // Convert ledger count to approximate days (1 ledger ≈ 5 seconds)
     const avgDays = Math.round((avgLedgers * 5) / 86400);
-    const averageRepaymentTime =
-      avgLedgers > 0 ? `${avgDays} days` : "N/A";
+    const averageRepaymentTime = avgLedgers > 0 ? `${avgDays} days` : "N/A";
 
     // Calculate repayment streaks (consecutive on-time repayments)
     const streakResult = await query(

@@ -9,12 +9,15 @@ interface ScoreConfig {
   defaultPenalty: number;
 }
 
-const mockGetScoreConfig = jest.fn<() => ScoreConfig>().mockImplementation(() => ({
-  repaymentDelta: parseInt(process.env.SCORE_REPAYMENT_DELTA ?? "15", 10),
-  defaultPenalty: parseInt(process.env.SCORE_DEFAULT_PENALTY ?? "50", 10),
-}));
+const mockGetScoreConfig = jest
+  .fn<() => ScoreConfig>()
+  .mockImplementation(() => ({
+    repaymentDelta: parseInt(process.env.SCORE_REPAYMENT_DELTA ?? "15", 10),
+    defaultPenalty: parseInt(process.env.SCORE_DEFAULT_PENALTY ?? "50", 10),
+  }));
 
-const mockQuery = jest.fn<() => Promise<{ rows: any[]; rowCount: number }>>()
+const mockQuery = jest
+  .fn<() => Promise<{ rows: any[]; rowCount: number }>>()
   .mockResolvedValue({ rows: [], rowCount: 0 });
 
 // All ESM mocks must be declared before any dynamic import
@@ -30,7 +33,9 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
-  webhookService: { dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(undefined) },
+  webhookService: {
+    dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  },
   WebhookEventType: {},
 }));
 
@@ -96,12 +101,14 @@ describe("EventIndexer score delta wiring", () => {
     });
 
     // Bypass XDR parsing — return the event as-is so storeEvents can process it
-    (indexer as unknown as { parseEvent: (e: unknown) => unknown })
-      .parseEvent = jest.fn().mockImplementation((e: unknown) => e);
+    (indexer as unknown as { parseEvent: (e: unknown) => unknown }).parseEvent =
+      jest.fn().mockImplementation((e: unknown) => e);
 
-    const storeEvents = (indexer as unknown as {
-      storeEvents: (events: unknown[]) => Promise<unknown>;
-    }).storeEvents.bind(indexer);
+    const storeEvents = (
+      indexer as unknown as {
+        storeEvents: (events: unknown[]) => Promise<unknown>;
+      }
+    ).storeEvents.bind(indexer);
 
     return { storeEvents };
   }
@@ -113,10 +120,10 @@ describe("EventIndexer score delta wiring", () => {
 
   it("calls sorobanService.getScoreConfig for LoanRepaid events", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })                       // BEGIN
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
       .mockResolvedValueOnce({ rows: [{ event_id: "evt-1" }], rowCount: 1 }) // INSERT
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 })                       // score upsert
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 });                      // COMMIT
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // score upsert
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const { storeEvents } = await buildIndexer();
     await storeEvents([makeEvent("evt-1", "LoanRepaid", "GABC")]);

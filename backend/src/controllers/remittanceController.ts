@@ -13,7 +13,8 @@ import logger from "../utils/logger.js";
  */
 export const createRemittance = asyncHandler(
   async (req: Request, res: Response) => {
-    const { recipientAddress, amount, fromCurrency, toCurrency, memo } = req.body;
+    const { recipientAddress, amount, fromCurrency, toCurrency, memo } =
+      req.body;
 
     // Get sender address from JWT (added by auth middleware)
     const senderAddress = (req as any).walletAddress;
@@ -41,7 +42,8 @@ export const createRemittance = asyncHandler(
     res.status(201).json({
       success: true,
       data: remittance,
-      message: "Remittance created successfully. Sign the transaction in your wallet.",
+      message:
+        "Remittance created successfully. Sign the transaction in your wallet.",
     });
   },
 );
@@ -60,7 +62,7 @@ export const getRemittances = asyncHandler(
     }
 
     const { limit, cursor } = parseCursorQueryParams(req);
-    const status = (req.query.status as string | undefined);
+    const status = req.query.status as string | undefined;
 
     const result = await remittanceService.getRemittances(
       senderAddress,
@@ -176,7 +178,7 @@ export const submitRemittanceTransaction = asyncHandler(
           id,
           "failed",
           undefined,
-          error instanceof Error ? error.message : "Unknown error"
+          error instanceof Error ? error.message : "Unknown error",
         );
       }
 

@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
+import { Skeleton, SkeletonChart } from "../components/ui/Skeleton";
+import { lazy, Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -13,9 +15,12 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
-import { Skeleton } from "../components/ui/Skeleton";
-import { YieldEarningsChart } from "../components/charts/YieldEarningsChart";
+
+const YieldEarningsChart = lazy(() =>
+  import("../components/charts/YieldEarningsChart").then((m) => ({
+    default: m.YieldEarningsChart,
+  })),
+);
 import {
   useDepositorPortfolio,
   useInvalidatePoolStats,
@@ -403,7 +408,9 @@ export default function LendPage() {
               <Skeleton className="h-[300px] w-full rounded-xl" />
             </div>
           ) : (
-            <YieldEarningsChart data={chartData} />
+            <Suspense fallback={<SkeletonChart />}>
+              <YieldEarningsChart data={chartData} />
+            </Suspense>
           )}
         </section>
       </ErrorBoundary>
