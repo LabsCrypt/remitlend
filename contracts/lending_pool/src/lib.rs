@@ -479,6 +479,25 @@ impl LendingPool {
         Ok(())
     }
 
+    /// Returns `(shares, current_asset_value)` for `provider` in the `token` pool.
+    ///
+    /// Net yield = `current_asset_value - original_deposit`.  Since original
+    /// deposit amounts are not stored per-depositor, callers derive yield by
+    /// comparing `current_asset_value` against their own recorded cost basis.
+    pub fn get_depositor_yield(env: Env, provider: Address, token: Address) -> (i128, i128) {
+        let shares = Self::read_shares(&env, &provider, &token);
+        if shares == 0 {
+            return (0, 0);
+        }
+        let cur_total_shares = Self::total_shares(&env, &token);
+        if cur_total_shares == 0 {
+            return (shares, 0);
+        }
+        let asset_value =
+            Self::calc_assets_to_redeem(shares, Self::read_pool_balance(&env, &token), cur_total_shares);
+        (shares, asset_value)
+    }
+
     /// Underlying asset value of `provider`'s LP shares (principal + yield).
     pub fn get_deposit(env: Env, provider: Address, token: Address) -> i128 {
         let shares = Self::read_shares(&env, &provider, &token);
