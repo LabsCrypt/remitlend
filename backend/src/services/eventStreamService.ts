@@ -6,9 +6,9 @@ import logger from "../utils/logger.js";
 export interface LoanEventPayload {
   eventId: string;
   eventType: string;
-  loanId?: number;
+  loanId?: number | undefined;
   borrower: string;
-  amount?: string;
+  amount?: string | undefined;
   ledger: number;
   ledgerClosedAt: string;
   txHash: string;
@@ -34,28 +34,79 @@ const userClients = new Map<string, Set<SseClient>>();
 
 // ─── Event Stream Service ─────────────────────────────────────────────────────
 
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 class EventStreamService {
-  sendEvent(res: SseClient, event: LoanEventPayload, clientUserKey: string, eventBorrower: string): void {
-    // Verify user identity before sending to prevent data leakage
-    if (clientUserKey !== eventBorrower) {
-      logger.warn("SSE user identity mismatch - skipping broadcast", {
-        clientUserKey,
-        eventBorrower,
-        eventId: event.eventId,
-        eventType: event.eventType,
-      });
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  closeAll: any;
+
+  startHeartbeat(): void {
+    if (this.heartbeatTimer) {
       return;
     }
 
-    const payload =
-      `id: ${event.eventId}\n` +
-      `event: loan-event\n` +
-      `data: ${JSON.stringify(event)}\n\n`;
+    this.heartbeatTimer = setInterval(() => {
+      const allClients = this.collectAllClients();
+      for (const res of allClients) {
+        try {
+          res.write(": ping\n\n");
+        } catch {
+          this.removeClient(res);
+        }
+      }
 
-    res.write(payload);
+      const counts = this.getConnectionCount();
+      logger.info("SSE heartbeat", {
+        borrower: counts.borrower,
+        admin: counts.admin,
+        total: counts.total,
+      });
+    }, HEARTBEAT_INTERVAL_MS);
   }
 
-  sendEventToAdmin(res: SseClient, event: LoanEventPayload): void {
+  stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  private stopHeartbeatIfEmpty(): void {
+    if (this.getConnectionCount().total === 0) {
+      this.stopHeartbeat();
+    }
+  }
+
+  private collectAllClients(): Set<SseClient> {
+    const all = new Set<SseClient>();
+    for (const clients of borrowerClients.values()) {
+      for (const client of clients) {
+        all.add(client);
+      }
+    }
+    for (const client of adminClients) {
+      all.add(client);
+    }
+    return all;
+  }
+
+  private removeClient(res: SseClient): void {
+    for (const [borrower, clients] of borrowerClients) {
+      clients.delete(res);
+      if (clients.size === 0) {
+        borrowerClients.delete(borrower);
+      }
+    }
+    adminClients.delete(res);
+    for (const [userKey, clients] of userClients) {
+      clients.delete(res);
+      if (clients.size === 0) {
+        userClients.delete(userKey);
+      }
+    }
+  }
+
+  sendEvent(res: SseClient, event: LoanEventPayload): void {
     const payload =
       `id: ${event.eventId}\n` +
       `event: loan-event\n` +
@@ -110,6 +161,7 @@ class EventStreamService {
     const clientInfo: ClientInfo = { res, userKey };
     borrowerClients.get(borrower)!.add(clientInfo);
     this.registerUserClient(userKey, res);
+    this.startHeartbeat();
 
     logger.info("SSE client subscribed to borrower events", {
       borrower,
@@ -123,6 +175,7 @@ class EventStreamService {
         borrowerClients.delete(borrower);
       }
       this.unregisterUserClient(userKey, res);
+      this.stopHeartbeatIfEmpty();
       logger.info("SSE client unsubscribed from borrower events", {
         borrower,
         userKey,
@@ -139,6 +192,7 @@ class EventStreamService {
     const clientInfo: ClientInfo = { res, userKey };
     adminClients.add(clientInfo);
     this.registerUserClient(userKey, res);
+    this.startHeartbeat();
 
     logger.info("SSE admin client subscribed to all events", {
       userKey,
@@ -148,6 +202,7 @@ class EventStreamService {
     return () => {
       adminClients.delete(clientInfo);
       this.unregisterUserClient(userKey, res);
+      this.stopHeartbeatIfEmpty();
       logger.info("SSE admin client unsubscribed from all events", {
         userKey,
         activeConnections: this.getUserConnectionCount(userKey),
@@ -219,7 +274,8 @@ class EventStreamService {
   }
 
   closeAllConnections(message = "Server shutting down"): void {
-    const clients = new Set<ClientInfo>();
+    this.stopHeartbeat();
+    const clients = new Set<SseClient>();
 
     for (const borrowerClientSet of borrowerClients.values()) {
       for (const clientInfo of borrowerClientSet) {
@@ -261,6 +317,7 @@ class EventStreamService {
   }
 
   reset(): void {
+    this.stopHeartbeat();
     borrowerClients.clear();
     adminClients.clear();
     userClients.clear();

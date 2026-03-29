@@ -54,9 +54,6 @@ export const queryKeys = {
     stats: () => ["pool", "stats"] as const,
     depositor: (address: string) => ["pool", "depositor", address] as const,
   },
-  score: {
-    detail: (address: string) => ["score", address] as const,
-  },
 } as const;
 
 // ─── Base fetch helper ────────────────────────────────────────────────────────
@@ -110,6 +107,7 @@ export interface Remittance {
   fromCurrency: string;
   toCurrency: string;
   recipientAddress: string;
+  memo?: string;
   status: "pending" | "processing" | "completed" | "failed";
   createdAt: string;
 }
@@ -133,21 +131,17 @@ export interface CreditScoreHistory {
   event?: string;
 }
 
+export interface CreditScoreResponse {
+  success: boolean;
+  userId: string;
+  score: number;
+  band: string;
+}
+
 export interface LoanConfig {
   minScore: number;
   maxAmount: number;
   interestRatePercent: number;
-}
-
-export interface CreditScore {
-  userId: string;
-  score: number;
-  band: "Excellent" | "Good" | "Fair" | "Poor";
-  factors: {
-    repaymentHistory: string;
-    latePaymentPenalty: string;
-    range: string;
-  };
 }
 
 export interface YieldHistory {
@@ -408,31 +402,37 @@ export function useCreditScoreHistory(
 }
 
 /**
- * Fetches the connected wallet's current credit score and refreshes it in
- * real time when score-changing loan events are streamed over SSE.
+ * Fetches the current credit score for the authenticated borrower.
  */
 export function useCreditScore(
-  walletAddress: string | undefined,
-  options?: Omit<UseQueryOptions<CreditScore>, "queryKey" | "queryFn">,
+  userId: string | undefined,
+  options?: Omit<UseQueryOptions<number>, "queryKey" | "queryFn">,
 ) {
   const queryClient = useQueryClient();
-  const authToken = useUserStore((state) => state.authToken);
+  const userData = useUserStore((s) => s.user);
+  const walletAddress = userData?.walletAddress;
+  const authToken = useUserStore((s) => s.authToken);
+
   const [previousScoreState, setPreviousScoreState] = useState<{
     walletAddress: string | undefined;
     previousScore: number | undefined;
-  }>({ walletAddress: undefined, previousScore: undefined });
-  const enabled = !!walletAddress && (options?.enabled ?? true);
+  }>({
+    walletAddress: undefined,
+    previousScore: undefined,
+  });
 
-  const query = useQuery<CreditScore>({
+  const query = useQuery<number>({
+    queryKey: ["creditScore", userId],
+    queryFn: async () => {
+      const response = await apiFetch<CreditScoreResponse>(`/score/${userId}`);
+      return response.score;
+    },
+    enabled: !!userId,
     ...options,
-    queryKey: queryKeys.score.detail(walletAddress ?? ""),
-    queryFn: () => apiFetch<CreditScore>(`/score/${walletAddress}`),
-    enabled,
-    staleTime: 30_000,
   });
 
   useEffect(() => {
-    if (!walletAddress || !authToken) {
+    if (!walletAddress || !authToken || !userId) {
       return;
     }
 
@@ -446,9 +446,7 @@ export function useCreditScore(
         return;
       }
 
-      const url =
-        `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}` +
-        `&token=${encodeURIComponent(authToken)}`;
+      const url = `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
       const es = new EventSource(url, { withCredentials: true });
       eventSource = es;
 
@@ -472,16 +470,15 @@ export function useCreditScore(
             payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
 
           if (payload.borrower === walletAddress && scoreChangingEvent) {
-            const currentScore = queryClient.getQueryData<CreditScore>(
-              queryKeys.score.detail(walletAddress),
-            )?.score;
+            const currentScore = queryClient.getQueryData<number>(["creditScore", userId]);
 
             setPreviousScoreState({
               walletAddress,
               previousScore: currentScore,
             });
+
             queryClient.invalidateQueries({
-              queryKey: queryKeys.score.detail(walletAddress),
+              queryKey: ["creditScore", userId],
             });
           }
         } catch {
@@ -510,7 +507,7 @@ export function useCreditScore(
         clearTimeout(retryTimeout);
       }
     };
-  }, [authToken, queryClient, walletAddress]);
+  }, [authToken, queryClient, walletAddress, userId]);
 
   return {
     ...query,

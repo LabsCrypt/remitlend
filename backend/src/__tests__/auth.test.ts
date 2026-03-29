@@ -160,4 +160,53 @@ describe("Auth API", () => {
       expect(response.body.success).toBe(false);
     });
   });
+
+  describe("Rate limiting", () => {
+    it("should return 429 after 10 challenge requests from same IP", async () => {
+      const keypair = Keypair.random();
+      let lastResponse: any;
+      for (let i = 0; i < 11; i++) {
+        lastResponse = await request(app)
+          .post("/api/auth/challenge")
+          .set("X-Forwarded-For", "1.2.3.4")
+          .send({ publicKey: keypair.publicKey() });
+      }
+      expect(lastResponse.status).toBe(429);
+      expect(lastResponse.body.success).toBe(false);
+    });
+
+    it("should return 429 and Retry-After after 5 login attempts from same IP", async () => {
+      const keypair = Keypair.random();
+      let lastResponse: any;
+      for (let i = 0; i < 6; i++) {
+        lastResponse = await request(app)
+          .post("/api/auth/login")
+          .set("X-Forwarded-For", "5.6.7.8")
+          .send({
+            publicKey: keypair.publicKey(),
+            message: "fake-message",
+            signature: "fake-signature",
+          });
+      }
+      expect(lastResponse.status).toBe(429);
+      expect(lastResponse.headers["retry-after"]).toBeDefined();
+    });
+
+    it("should return 429 after 5 login attempts with same public key", async () => {
+      const keypair = Keypair.random();
+      let lastResponse: any;
+      for (let i = 0; i < 6; i++) {
+        lastResponse = await request(app)
+          .post("/api/auth/login")
+          .set("X-Forwarded-For", `9.9.9.${i}`)
+          .send({
+            publicKey: keypair.publicKey(),
+            message: "fake-message",
+            signature: "fake-signature",
+          });
+      }
+      expect(lastResponse.status).toBe(429);
+      expect(lastResponse.body.success).toBe(false);
+    });
+  });
 });

@@ -1,6 +1,9 @@
 backend/node_modules/
 node_modules
 target
+contracts/target/
+contracts/**/test_snapshots/
+contracts/cobertura.xml
 dist
 .env
 .next
