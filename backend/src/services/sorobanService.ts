@@ -337,6 +337,25 @@ class SorobanService {
       ...(resultXdr !== undefined ? { resultXdr } : {}),
     };
   }
+
+  /**
+   * Returns score adjustment constants for indexing.
+   * Values are sourced from environment variables so they stay in sync
+   * with the deployed RemittanceNFT contract constants without requiring
+   * a hardcoded value in application logic.
+   */
+  getScoreConfig(): { repaymentDelta: number; defaultPenalty: number } {
+    const repaymentDelta = parseInt(
+      process.env.SCORE_REPAYMENT_DELTA ?? "15",
+      10,
+    );
+    const defaultPenalty = parseInt(
+      process.env.SCORE_DEFAULT_PENALTY ?? "50",
+      10,
+    );
+    return { repaymentDelta, defaultPenalty };
+  }
+
 }
 
 export const sorobanService = new SorobanService();

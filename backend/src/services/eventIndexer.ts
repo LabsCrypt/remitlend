@@ -8,6 +8,7 @@ import {
   webhookService,
 } from "./webhookService.js";
 import { eventStreamService } from "./eventStreamService.js";
+import { sorobanService } from "./sorobanService.js";
 
 interface SorobanRawEvent {
   id: string;
@@ -389,9 +390,11 @@ export class EventIndexer {
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
           if (event.eventType === "LoanRepaid") {
-            await this.updateUserScore(event.borrower, 15);
+            const { repaymentDelta } = sorobanService.getScoreConfig();
+            await this.updateUserScore(event.borrower, repaymentDelta);
           } else if (event.eventType === "LoanDefaulted") {
-            await this.updateUserScore(event.borrower, -50);
+            const { defaultPenalty } = sorobanService.getScoreConfig();
+            await this.updateUserScore(event.borrower, -defaultPenalty);
           }
         }
       }
