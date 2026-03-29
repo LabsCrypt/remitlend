@@ -4,46 +4,61 @@
  * Zustand store for Web3 wallet connection state.
  *
  * Responsibilities:
- *  - Track the connected wallet address and provider type
- *  - Restore persisted wallet sessions after refresh
+ *  - Track the connected wallet address
+ *  - Track the current chain / network
+ *  - Track available token balances
  *  - Provide actions to connect / disconnect
- *  - Track network and balances derived from the active wallet session
+ *
+ * Design decision: actual wallet provider interaction (ethers / wagmi calls)
+ * lives in a separate hook or service. This store is the single source of truth
+ * for the resulting state so any component can read it without a provider tree.
  */
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 export type WalletStatus = "disconnected" | "connecting" | "connected" | "error";
-export type WalletType = "freighter" | "xbull" | "albedo" | "demo";
 
 export interface TokenBalance {
   symbol: string;
+  /** Human-readable amount, e.g. "1.234" */
   amount: string;
+  /** USD value, or null if price unavailable */
   usdValue: number | null;
 }
 
 export interface WalletNetwork {
   chainId: number;
   name: string;
+  /** Whether this is one of the app's supported networks */
   isSupported: boolean;
 }
 
 interface WalletState {
+  /** Wallet connection status */
   status: WalletStatus;
-  walletType: WalletType | null;
+  /** Connected wallet address (checksummed) — null when disconnected */
   address: string | null;
+  /** Current network info */
   network: WalletNetwork | null;
+  /** Token balances for the connected wallet */
   balances: TokenBalance[];
+  /** True while fetching/refreshing balances */
   isLoadingBalances: boolean;
+  /** Human-readable error message */
   error: string | null;
-  hydrated: boolean;
 }
 
 interface WalletActions {
-  setConnected: (walletType: WalletType, address: string, network: WalletNetwork) => void;
+  /** Call after a successful wallet.connect() to store the result */
+  setConnected: (address: string, network: WalletNetwork) => void;
+  /** Call on disconnect or user-initiated Sign Out with wallet */
   disconnect: () => void;
-  initializeSession: () => void;
+  /** Update balances after fetching from the chain */
   setBalances: (balances: TokenBalance[]) => void;
+  /** Update network when the user switches chains */
   setNetwork: (network: WalletNetwork) => void;
   setStatus: (status: WalletStatus) => void;
   setError: (error: string | null) => void;
@@ -52,148 +67,42 @@ interface WalletActions {
 
 export type WalletStore = WalletState & WalletActions;
 
-const WALLET_STORAGE_KEY = "remitlend.wallet-session";
-
-interface PersistedWalletSession {
-  walletType: WalletType;
-  address: string;
-  network: WalletNetwork;
-}
-
-function isWalletType(value: unknown): value is WalletType {
-  return value === "freighter" || value === "xbull" || value === "albedo" || value === "demo";
-}
-
-function readStoredWalletSession(): PersistedWalletSession | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(WALLET_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<PersistedWalletSession>;
-    if (
-      !isWalletType(parsed.walletType) ||
-      typeof parsed.address !== "string" ||
-      typeof parsed.network?.chainId !== "number" ||
-      typeof parsed.network?.name !== "string" ||
-      typeof parsed.network?.isSupported !== "boolean"
-    ) {
-      window.localStorage.removeItem(WALLET_STORAGE_KEY);
-      return null;
-    }
-
-    return {
-      walletType: parsed.walletType,
-      address: parsed.address,
-      network: parsed.network,
-    };
-  } catch {
-    window.localStorage.removeItem(WALLET_STORAGE_KEY);
-    return null;
-  }
-}
-
-function writeStoredWalletSession(session: PersistedWalletSession) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(session));
-}
-
-function clearStoredWalletSession() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(WALLET_STORAGE_KEY);
-}
+// ─── Initial state ────────────────────────────────────────────────────────────
 
 const initialState: WalletState = {
   status: "disconnected",
-  walletType: null,
   address: null,
   network: null,
   balances: [],
   isLoadingBalances: false,
   error: null,
-  hydrated: false,
 };
+
+// ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useWalletStore = create<WalletStore>()(
   devtools(
     (set) => ({
       ...initialState,
 
-      setConnected: (walletType, address, network) => {
-        writeStoredWalletSession({ walletType, address, network });
-
+      setConnected: (address, network) =>
         set(
           {
             status: "connected",
-            walletType,
             address,
             network,
             error: null,
-            hydrated: true,
           },
           false,
           "wallet/setConnected",
-        );
-      },
+        ),
 
-      disconnect: () => {
-        clearStoredWalletSession();
-        set({ ...initialState, hydrated: true }, false, "wallet/disconnect");
-      },
-
-      initializeSession: () => {
-        const storedSession = readStoredWalletSession();
-
-        if (!storedSession) {
-          set({ hydrated: true }, false, "wallet/initializeSession");
-          return;
-        }
-
-        set(
-          {
-            status: "connected",
-            walletType: storedSession.walletType,
-            address: storedSession.address,
-            network: storedSession.network,
-            error: null,
-            hydrated: true,
-          },
-          false,
-          "wallet/initializeSession",
-        );
-      },
+      disconnect: () => set({ ...initialState }, false, "wallet/disconnect"),
 
       setBalances: (balances) =>
         set({ balances, isLoadingBalances: false }, false, "wallet/setBalances"),
 
-      setNetwork: (network) => {
-        set(
-          (state) => {
-            if (state.walletType && state.address) {
-              writeStoredWalletSession({
-                walletType: state.walletType,
-                address: state.address,
-                network,
-              });
-            }
-
-            return { network };
-          },
-          false,
-          "wallet/setNetwork",
-        );
-      },
+      setNetwork: (network) => set({ network }, false, "wallet/setNetwork"),
 
       setStatus: (status) => set({ status }, false, "wallet/setStatus"),
 
@@ -207,11 +116,11 @@ export const useWalletStore = create<WalletStore>()(
   ),
 );
 
+// ─── Selectors ────────────────────────────────────────────────────────────────
+
 export const selectWalletAddress = (state: WalletStore) => state.address;
 export const selectWalletStatus = (state: WalletStore) => state.status;
 export const selectIsWalletConnected = (state: WalletStore) => state.status === "connected";
-export const selectWalletType = (state: WalletStore) => state.walletType;
 export const selectWalletNetwork = (state: WalletStore) => state.network;
 export const selectWalletBalances = (state: WalletStore) => state.balances;
 export const selectWalletError = (state: WalletStore) => state.error;
-export const selectWalletHydrated = (state: WalletStore) => state.hydrated;

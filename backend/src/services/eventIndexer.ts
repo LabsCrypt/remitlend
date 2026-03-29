@@ -339,6 +339,7 @@ export class EventIndexer {
           eventId: event.id,
           error,
         });
+        await this.quarantineEvent(event, error);
       }
     }
 
@@ -552,11 +553,23 @@ export class EventIndexer {
   }
 
   private decodeAddress(value: xdr.ScVal): string {
-    return scValToNative(value).toString();
+    const native = scValToNative(value);
+    if (typeof native !== "string") {
+      throw new Error(
+        `Expected address string, got ${typeof native}: ${String(native)}`,
+      );
+    }
+    return native;
   }
 
   private decodeAmount(value: xdr.ScVal): string {
-    return scValToNative(value).toString();
+    const native = scValToNative(value);
+    if (typeof native !== "bigint" && typeof native !== "number") {
+      throw new Error(
+        `Expected numeric amount, got ${typeof native}: ${String(native)}`,
+      );
+    }
+    return native.toString();
   }
 
   private decodeLoanId(value: xdr.ScVal): number | undefined {
@@ -564,6 +577,61 @@ export class EventIndexer {
       return Number(scValToNative(value));
     } catch {
       return undefined;
+    }
+  }
+
+  private async quarantineEvent(
+    event: SorobanRawEvent,
+    error: unknown,
+  ): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    let rawTopics: string[] = [];
+    let rawValue = "";
+    try {
+      rawTopics = event.topic.map((t) => t.toXDR("base64"));
+      rawValue = event.value.toXDR("base64");
+    } catch {
+      // XDR serialisation itself failed; store empty strings so the row is
+      // still inserted and the error_message captures the original failure.
+    }
+
+    const rawXdr = {
+      id: event.id,
+      topics: rawTopics,
+      value: rawValue,
+      ledger: event.ledger,
+      txHash: event.txHash,
+      contractId: event.contractId,
+    };
+
+    logger.warn("Quarantining malformed event", {
+      eventId: event.id,
+      ledger: event.ledger,
+      txHash: event.txHash,
+      rawXdr,
+      error: errorMessage,
+    });
+
+    try {
+      await query(
+        `INSERT INTO quarantine_events (event_id, ledger, tx_hash, contract_id, raw_xdr, error_message)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (event_id) DO NOTHING`,
+        [
+          event.id,
+          event.ledger,
+          event.txHash,
+          event.contractId,
+          JSON.stringify(rawXdr),
+          errorMessage,
+        ],
+      );
+    } catch (dbError) {
+      logger.error("Failed to quarantine malformed event", {
+        eventId: event.id,
+        dbError,
+      });
     }
   }
 
