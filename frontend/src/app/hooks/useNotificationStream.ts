@@ -31,7 +31,7 @@ export function useNotificationStream() {
 
       // EventSource is notoriously difficult to authenticate because it doesn't
       // support custom headers. We now rely on the secure, HTTP-only JWT
-      // cookie set during login instead of passing the token as a leaky 
+      // cookie set during login instead of passing the token as a leaky
       // query parameter.
       const url = `${API_URL}/api/notifications/stream`;
       const es = new EventSource(url, { withCredentials: true });

@@ -182,7 +182,11 @@ impl GovernanceContract {
         let admin = Self::get_admin(&env);
         admin.require_auth();
 
-        if let Some(pending) = env.storage().instance().get::<Symbol, PendingTransfer>(&KEY_PENDING) {
+        if let Some(pending) = env
+            .storage()
+            .instance()
+            .get::<Symbol, PendingTransfer>(&KEY_PENDING)
+        {
             if pending.status == ProposalStatus::Active {
                 panic!("transfer already pending — cancel first (4005)");
             }
@@ -220,9 +224,15 @@ impl GovernanceContract {
         let now = env.ledger().timestamp();
         let executable_after = now.saturating_add(delay_seconds);
 
-        let proposal_count: u32 = env.storage().instance().get(&KEY_PROPOSAL_COUNT).unwrap_or(0);
+        let proposal_count: u32 = env
+            .storage()
+            .instance()
+            .get(&KEY_PROPOSAL_COUNT)
+            .unwrap_or(0);
         let proposal_id = proposal_count + 1;
-        env.storage().instance().set(&KEY_PROPOSAL_COUNT, &proposal_id);
+        env.storage()
+            .instance()
+            .set(&KEY_PROPOSAL_COUNT, &proposal_id);
 
         let pending = PendingTransfer {
             id: proposal_id,
@@ -499,7 +509,11 @@ impl GovernanceContract {
     }
 
     pub fn has_pending_transfer(env: Env) -> bool {
-        if let Some(pending) = env.storage().instance().get::<Symbol, PendingTransfer>(&KEY_PENDING) {
+        if let Some(pending) = env
+            .storage()
+            .instance()
+            .get::<Symbol, PendingTransfer>(&KEY_PENDING)
+        {
             pending.status == ProposalStatus::Active
         } else {
             false
