@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
-import { LoanApplicationWizard } from "../components/loan-wizard/LoanApplicationWizard";
+import { WizardSkeleton } from "../components/skeletons/WizardSkeleton";
 import { useCreditScore, useMinimumScore } from "../hooks/useApi";
+
+const LoanApplicationWizard = lazy(() =>
+  import("../components/loan-wizard/LoanApplicationWizard").then((m) => ({
+    default: m.LoanApplicationWizard,
+  })),
+);
 import { useToastStore } from "../stores/useToastStore";
 import {
   useWalletStore,
@@ -197,12 +203,14 @@ export default function RequestLoanPage() {
             </p>
           </div>
 
-          <LoanApplicationWizard
-            borrowerAddress={borrowerAddress!}
-            creditScore={resolvedCreditScore}
-            maxAmount={maxAmount}
-            onSuccess={setSuccessLoanId}
-          />
+          <Suspense fallback={<WizardSkeleton />}>
+            <LoanApplicationWizard
+              borrowerAddress={borrowerAddress!}
+              creditScore={resolvedCreditScore}
+              maxAmount={maxAmount}
+              onSuccess={setSuccessLoanId}
+            />
+          </Suspense>
         </div>
       )}
     </main>
