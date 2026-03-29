@@ -28,11 +28,38 @@
       "explore": "Explorar oportunidades"
     }
   },
+  "ActivityPage": {
+    "title": "Historial de actividad",
+    "description": "Ver todas tus solicitudes de préstamo, remesas y transacciones en un solo lugar.",
+    "notConnected": "Cartera no conectada",
+    "connectWalletToViewActivity": "Conecte su cartera para ver su historial de actividad.",
+    "emptyState": "Sin actividad aún. Sus transacciones aparecerán aquí.",
+    "filters": {
+      "all": "Toda la actividad",
+      "loan": "Préstamos",
+      "remittance": "Remesas"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "processing": "Procesando",
+      "active": "Activo",
+      "completed": "Completado",
+      "repaid": "Pagado",
+      "failed": "Fallido",
+      "defaulted": "Incumplido"
+    },
+    "pagination": {
+      "showing": "Mostrando {start}–{end} de {total} transacciones",
+      "previous": "Anterior",
+      "next": "Siguiente"
+    }
+  },
   "Navigation": {
     "home": "Inicio",
     "loans": "Préstamos",
     "repay": "Repagar",
-    "dashboard": "Tablero"
+    "dashboard": "Tablero",
+    "activity": "Actividad"
   },
   "Loans": {
     "title": "Préstamos",

@@ -28,11 +28,38 @@
       "explore": "Explore Opportunities"
     }
   },
+  "ActivityPage": {
+    "title": "Activity History",
+    "description": "View all your loan requests, remittances, and transactions in one place.",
+    "notConnected": "Wallet Not Connected",
+    "connectWalletToViewActivity": "Connect your wallet to view your activity history.",
+    "emptyState": "No activity yet. Your transactions will appear here.",
+    "filters": {
+      "all": "All Activity",
+      "loan": "Loans",
+      "remittance": "Remittances"
+    },
+    "status": {
+      "pending": "Pending",
+      "processing": "Processing",
+      "active": "Active",
+      "completed": "Completed",
+      "repaid": "Repaid",
+      "failed": "Failed",
+      "defaulted": "Defaulted"
+    },
+    "pagination": {
+      "showing": "Showing {start}–{end} of {total} transactions",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
   "Navigation": {
     "home": "Home",
     "loans": "Loans",
     "repay": "Repay",
-    "dashboard": "Dashboard"
+    "dashboard": "Dashboard",
+    "activity": "Activity"
   },
   "Loans": {
     "title": "Loans",

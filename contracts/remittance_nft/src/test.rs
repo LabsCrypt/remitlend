@@ -1008,3 +1008,61 @@ fn test_is_remint_approved_cleared_after_remint() {
     client.mint(&user, &600, &create_test_hash(&env, 34), &None);
     assert!(!client.is_remint_approved(&user));
 }
+
+// ── Admin transfer ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_propose_and_accept_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    assert_eq!(client.get_admin(), admin);
+
+    client.propose_admin(&new_admin);
+    client.accept_admin();
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+#[should_panic]
+fn test_accept_admin_without_proposal() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.accept_admin();
+}
+
+#[test]
+fn test_new_admin_can_act_after_transfer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.propose_admin(&new_admin);
+    client.accept_admin();
+
+    // New admin should be able to mint
+    client.mint(&user, &500, &create_test_hash(&env, 40), &None);
+    assert_eq!(client.get_score(&user), 500);
+}
