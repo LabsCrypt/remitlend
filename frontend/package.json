@@ -9,7 +9,7 @@
     "lint": "prettier --check .",
     "audit:a11y": "next build && npx axe-playwright",
     "format": "prettier --write .",
-    "prepare": "cd .. && husky install frontend/.husky"
+    "prepare": "husky"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.46.0",
@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.3",
+    "@next/bundle-analyzer": "^16.2.1",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@testing-library/jest-dom": "^6.9.1",

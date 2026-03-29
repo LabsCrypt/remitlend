@@ -21,6 +21,7 @@ pub enum NftError {
     InvalidThreshold = 12,
     ContractPaused = 13,
     InvalidHistoryHash = 14,
+    NoProposedAdmin = 15,
 }
 
 #[contracttype]
@@ -53,6 +54,7 @@ pub enum DataKey {
     RemintApproval(Address),
     TransferCooldown(Address),
     Paused,
+    ProposedAdmin,
 }
 
 #[contract]
@@ -823,6 +825,44 @@ impl RemittanceNFT {
         env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
         env.events().publish((symbol_short!("Unpaused"),), ());
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        Self::admin(&env)
+    }
+
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposedAdmin, &new_admin);
+        Self::bump_instance_ttl(&env);
+
+        env.events().publish(
+            (Symbol::new(&env, "AdminProposed"), current_admin),
+            new_admin,
+        );
+    }
+
+    pub fn accept_admin(env: Env) -> Result<(), NftError> {
+        let proposed_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposedAdmin)
+            .ok_or(NftError::NoProposedAdmin)?;
+        proposed_admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&Self::admin_key(), &proposed_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+
+        env.events()
+            .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
+        Ok(())
     }
 }
 

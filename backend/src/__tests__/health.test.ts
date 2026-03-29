@@ -33,6 +33,13 @@ describe("GET /health", () => {
     expect(response.body.checks.api).toBe("ok");
   });
 
+  it("should include soroban_rpc in checks", async () => {
+    const response = await request(app).get("/health");
+
+    expect(response.body.checks).toHaveProperty("soroban_rpc");
+    expect(["ok", "error"]).toContain(response.body.checks.soroban_rpc);
+  });
+
   it("should return uptime as a number", async () => {
     const response = await request(app).get("/health");
 

@@ -369,6 +369,9 @@ impl GovernanceContract {
         env.storage().instance().remove(&KEY_PENDING);
         env.storage().instance().set(&KEY_ADMIN, &new_admin);
 
+        // Update the last cancelled/proposal timestamp to enforce reproposal cooldown
+        env.storage().instance().set(&KEY_LAST_CANCELLED_AT, &now);
+
         env.events().publish(
             (symbol_short!("GovFin"), new_admin.clone()),
             AdminTransferFinalizedEvent {
