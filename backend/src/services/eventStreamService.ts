@@ -14,17 +14,20 @@ export interface LoanEventPayload {
   txHash: string;
 }
 
-// ─── SSE client registry ──────────────────────────────────────────────────────
-
 type SseClient = Response;
+
+interface ClientInfo {
+  res: SseClient;
+  userKey: string;
+}
 
 const MAX_CONNECTIONS_PER_USER = 3;
 
-/** Borrower-specific SSE clients: borrowerPublicKey → Set<Response> */
-const borrowerClients = new Map<string, Set<SseClient>>();
+/** Borrower-specific SSE clients: borrowerPublicKey → Set<ClientInfo> */
+const borrowerClients = new Map<string, Set<ClientInfo>>();
 
 /** Admin SSE clients listening to all events */
-const adminClients = new Set<SseClient>();
+const adminClients = new Set<ClientInfo>();
 
 /** All SSE clients grouped by authenticated user key for connection limiting */
 const userClients = new Map<string, Set<SseClient>>();
@@ -32,7 +35,27 @@ const userClients = new Map<string, Set<SseClient>>();
 // ─── Event Stream Service ─────────────────────────────────────────────────────
 
 class EventStreamService {
-  sendEvent(res: SseClient, event: LoanEventPayload): void {
+  sendEvent(res: SseClient, event: LoanEventPayload, clientUserKey: string, eventBorrower: string): void {
+    // Verify user identity before sending to prevent data leakage
+    if (clientUserKey !== eventBorrower) {
+      logger.warn("SSE user identity mismatch - skipping broadcast", {
+        clientUserKey,
+        eventBorrower,
+        eventId: event.eventId,
+        eventType: event.eventType,
+      });
+      return;
+    }
+
+    const payload =
+      `id: ${event.eventId}\n` +
+      `event: loan-event\n` +
+      `data: ${JSON.stringify(event)}\n\n`;
+
+    res.write(payload);
+  }
+
+  sendEventToAdmin(res: SseClient, event: LoanEventPayload): void {
     const payload =
       `id: ${event.eventId}\n` +
       `event: loan-event\n` +
@@ -84,7 +107,8 @@ class EventStreamService {
     if (!borrowerClients.has(borrower)) {
       borrowerClients.set(borrower, new Set());
     }
-    borrowerClients.get(borrower)!.add(res);
+    const clientInfo: ClientInfo = { res, userKey };
+    borrowerClients.get(borrower)!.add(clientInfo);
     this.registerUserClient(userKey, res);
 
     logger.info("SSE client subscribed to borrower events", {
@@ -94,7 +118,7 @@ class EventStreamService {
     });
 
     return () => {
-      borrowerClients.get(borrower)?.delete(res);
+      borrowerClients.get(borrower)?.delete(clientInfo);
       if (borrowerClients.get(borrower)?.size === 0) {
         borrowerClients.delete(borrower);
       }
@@ -112,7 +136,8 @@ class EventStreamService {
    * Returns an unsubscribe function for cleanup on disconnect.
    */
   subscribeAll(userKey: string, res: SseClient): () => void {
-    adminClients.add(res);
+    const clientInfo: ClientInfo = { res, userKey };
+    adminClients.add(clientInfo);
     this.registerUserClient(userKey, res);
 
     logger.info("SSE admin client subscribed to all events", {
@@ -121,7 +146,7 @@ class EventStreamService {
     });
 
     return () => {
-      adminClients.delete(res);
+      adminClients.delete(clientInfo);
       this.unregisterUserClient(userKey, res);
       logger.info("SSE admin client unsubscribed from all events", {
         userKey,
@@ -132,36 +157,51 @@ class EventStreamService {
 
   /**
    * Broadcasts a loan event to relevant SSE clients:
-   * - Borrower-specific clients for that borrower
+   * - Borrower-specific clients for that borrower (with user identity verification)
    * - All admin clients
    */
   broadcast(event: LoanEventPayload): void {
-    // Push to borrower-specific clients
+    // Push to borrower-specific clients with user identity verification
     if (event.borrower) {
       const clients = borrowerClients.get(event.borrower);
       if (clients?.size) {
-        for (const res of clients) {
+        const clientsToRemove: ClientInfo[] = [];
+        for (const clientInfo of clients) {
           try {
-            this.sendEvent(res, event);
+            // Verify user identity before sending (fixes #471)
+            this.sendEvent(clientInfo.res, event, clientInfo.userKey, event.borrower);
           } catch (err) {
             logger.error("SSE write error (borrower)", {
               borrower: event.borrower,
+              userKey: clientInfo.userKey,
               err,
             });
-            clients.delete(res);
+            clientsToRemove.push(clientInfo);
           }
+        }
+        // Remove failed clients after iteration
+        for (const clientInfo of clientsToRemove) {
+          clients.delete(clientInfo);
         }
       }
     }
 
     // Push to admin clients
-    for (const res of adminClients) {
+    const adminsToRemove: ClientInfo[] = [];
+    for (const clientInfo of adminClients) {
       try {
-        this.sendEvent(res, event);
+        this.sendEventToAdmin(clientInfo.res, event);
       } catch (err) {
-        logger.error("SSE write error (admin)", { err });
-        adminClients.delete(res);
+        logger.error("SSE write error (admin)", { 
+          userKey: clientInfo.userKey,
+          err 
+        });
+        adminsToRemove.push(clientInfo);
       }
+    }
+    // Remove failed clients after iteration
+    for (const clientInfo of adminsToRemove) {
+      adminClients.delete(clientInfo);
     }
   }
 
@@ -179,33 +219,39 @@ class EventStreamService {
   }
 
   closeAllConnections(message = "Server shutting down"): void {
-    const clients = new Set<SseClient>();
+    const clients = new Set<ClientInfo>();
 
     for (const borrowerClientSet of borrowerClients.values()) {
-      for (const client of borrowerClientSet) {
-        clients.add(client);
+      for (const clientInfo of borrowerClientSet) {
+        clients.add(clientInfo);
       }
     }
 
-    for (const client of adminClients) {
-      clients.add(client);
+    for (const clientInfo of adminClients) {
+      clients.add(clientInfo);
     }
 
     const shutdownPayload =
       `event: shutdown\n` +
       `data: ${JSON.stringify({ type: "shutdown", message })}\n\n`;
 
-    for (const client of clients) {
+    for (const clientInfo of clients) {
       try {
-        client.write(shutdownPayload);
+        clientInfo.res.write(shutdownPayload);
       } catch (err) {
-        logger.error("SSE shutdown write error", { err });
+        logger.error("SSE shutdown write error", { 
+          userKey: clientInfo.userKey,
+          err 
+        });
       }
 
       try {
-        client.end();
+        clientInfo.res.end();
       } catch (err) {
-        logger.error("SSE shutdown close error", { err });
+        logger.error("SSE shutdown close error", { 
+          userKey: clientInfo.userKey,
+          err 
+        });
       }
     }
 
