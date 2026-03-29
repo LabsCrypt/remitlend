@@ -1,0 +1,104 @@
+{
+  "HomePage": {
+    "title": "Welcome, {address}",
+    "description": "Empowering cross-border financial inclusion through micro-loans backed by remittances.",
+    "getStarted": "Get Started",
+    "learnMore": "Learn More",
+    "stats": {
+      "netWorth": "Net Worth",
+      "activeLoans": "Active Loans",
+      "totalRemitted": "Total Remitted",
+      "yieldApy": "Yield (APY)"
+    },
+    "activity": {
+      "title": "Recent Activity",
+      "viewAll": "View All",
+      "empty": "No recent activity yet. Your transactions will appear here."
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "applyLoan": "Apply for Loan",
+      "applyLoanDesc": "Get instant liquidity",
+      "sendRemittance": "Send Remittance",
+      "sendRemittanceDesc": "Transfer funds globally"
+    },
+    "outreach": {
+      "title": "Community Outreach",
+      "description": "New borrowers in Ghana are looking for micro-loans for agricultural tools. Help grow the ecosystem!",
+      "explore": "Explore Opportunities"
+    }
+  },
+  "ActivityPage": {
+    "title": "Activity History",
+    "description": "View all your loan requests, remittances, and transactions in one place.",
+    "notConnected": "Wallet Not Connected",
+    "connectWalletToViewActivity": "Connect your wallet to view your activity history.",
+    "emptyState": "No activity yet. Your transactions will appear here.",
+    "filters": {
+      "all": "All Activity",
+      "loan": "Loans",
+      "remittance": "Remittances"
+    },
+    "status": {
+      "pending": "Pending",
+      "processing": "Processing",
+      "active": "Active",
+      "completed": "Completed",
+      "repaid": "Repaid",
+      "failed": "Failed",
+      "defaulted": "Defaulted"
+    },
+    "pagination": {
+      "showing": "Showing {start}–{end} of {total} transactions",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
+  "Navigation": {
+    "home": "Home",
+    "loans": "Loans",
+    "repay": "Repay",
+    "dashboard": "Dashboard",
+    "activity": "Activity"
+  },
+  "Loans": {
+    "title": "Loans",
+    "description": "Review active facilities, due dates, and repayment windows from one place.",
+    "borrowerPortal": "Borrower Portal",
+    "outstanding": "Outstanding",
+    "dueThisWeek": "Due This Week",
+    "portfolioHealth": "Portfolio Health",
+    "viewDetails": "View details",
+    "health": {
+      "strong": "Strong",
+      "watch": "Watch",
+      "atRisk": "At Risk"
+    },
+    "tabs": {
+      "all": "All",
+      "active": "Active",
+      "repaid": "Repaid",
+      "defaulted": "Defaulted"
+    },
+    "empty": {
+      "title": "No loans found",
+      "description": "You do not have loans in this category yet.",
+      "action": "Request a loan"
+    },
+    "pagination": {
+      "prev": "Prev",
+      "next": "Next",
+      "pageOf": "Page {current} of {total}"
+    },
+    "loanNumber": "Loan #{id}",
+    "due": "Due {date}",
+    "status": {
+      "active": "Active",
+      "pending": "Pending"
+    }
+  },
+  "Settings": {
+    "language": "Language",
+    "selectLanguage": "Select Language"
+  }
+}

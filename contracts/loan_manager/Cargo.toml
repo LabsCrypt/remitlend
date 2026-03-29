@@ -12,3 +12,4 @@ soroban-sdk = { workspace = true }
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 remittance_nft = { path = "../remittance_nft" }
+lending_pool = { path = "../lending_pool" }

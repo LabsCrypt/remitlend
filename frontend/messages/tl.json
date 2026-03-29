@@ -1,0 +1,104 @@
+{
+  "HomePage": {
+    "title": "Maligayang pagdating, {address}",
+    "description": "Pagbibigay ng tulong pinansyal sa pamamagitan ng micro-loans na sinusuportahan ng remittance.",
+    "getStarted": "Magsimula Na",
+    "learnMore": "Matuto Nang Higit Pa",
+    "stats": {
+      "netWorth": "Net Worth",
+      "activeLoans": "Mga aktibong loan",
+      "totalRemitted": "Kabuuang naipadala",
+      "yieldApy": "Yield (APY)"
+    },
+    "activity": {
+      "title": "Kamakailang aktibidad",
+      "viewAll": "Tingnan lahat",
+      "empty": "Wala pang kamakailang aktibidad. Lalabas dito ang iyong mga transaksyon."
+    },
+    "quickActions": {
+      "title": "Mabilis na aksyon",
+      "applyLoan": "Mag-apply ng loan",
+      "applyLoanDesc": "Kumuha ng agarang liquidity",
+      "sendRemittance": "Magpadala ng remittance",
+      "sendRemittanceDesc": "Maglipat ng pondo sa buong mundo"
+    },
+    "outreach": {
+      "title": "Community Outreach",
+      "description": "Ang mga bagong borrower sa Ghana ay naghahanap ng mga micro-loan para sa mga kagamitang pang-agrikultura. Tulungang palaguin ang ecosystem!",
+      "explore": "Galugarin ang mga pagkakataon"
+    }
+  },
+  "ActivityPage": {
+    "title": "Kasaysayan ng Aktibidad",
+    "description": "Tingnan ang lahat ng iyong mga kahilingan pang-pautang, remesa, at transaksyon sa isang lugar.",
+    "notConnected": "Wallet na hindi konektado",
+    "connectWalletToViewActivity": "Ikonekta ang iyong wallet upang makita ang iyong kasaysayan ng aktibidad.",
+    "emptyState": "Walang aktibidad pa. Ang iyong mga transaksyon ay lalitaw dito.",
+    "filters": {
+      "all": "Lahat ng Aktibidad",
+      "loan": "Mga Pautang",
+      "remittance": "Mga Remesa"
+    },
+    "status": {
+      "pending": "Naghihintay",
+      "processing": "Pinoproseso",
+      "active": "Aktibo",
+      "completed": "Nakumpleto",
+      "repaid": "Binayaran",
+      "failed": "Nabigo",
+      "defaulted": "Di-nakamit"
+    },
+    "pagination": {
+      "showing": "Ipinapakita {start}–{end} ng {total} na mga transaksyon",
+      "previous": "Nakaraang",
+      "next": "Susunod"
+    }
+  },
+  "Navigation": {
+    "home": "Home",
+    "loans": "Mga Loan",
+    "repay": "Bayaran",
+    "dashboard": "Dashboard",
+    "activity": "Aktibidad"
+  },
+  "Loans": {
+    "title": "Mga Loan",
+    "description": "Suriin ang mga aktibong pasilidad, mga takdang petsa, at mga panahon ng pagbabayad sa isang lugar.",
+    "borrowerPortal": "Portal ng Borrower",
+    "outstanding": "Natitira",
+    "dueThisWeek": "Dapat Bayaran Ngayong Linggo",
+    "portfolioHealth": "Kalusugan ng Portfolio",
+    "viewDetails": "Tingnan ang mga detalye",
+    "health": {
+      "strong": "Malakas",
+      "watch": "Bantayan",
+      "atRisk": "Nasa Panganib"
+    },
+    "tabs": {
+      "all": "Lahat",
+      "active": "Aktibo",
+      "repaid": "Bayad Na",
+      "defaulted": "Defaulted"
+    },
+    "empty": {
+      "title": "Walang nahanap na loan",
+      "description": "Wala ka pang loan sa kategoryang ito.",
+      "action": "Mag-apply ng loan"
+    },
+    "pagination": {
+      "prev": "Nakaraan",
+      "next": "Susunod",
+      "pageOf": "Pahina {current} of {total}"
+    },
+    "loanNumber": "Loan #{id}",
+    "due": "Dapat bayaran sa {date}",
+    "status": {
+      "active": "Aktibo",
+      "pending": "Nakabinbin"
+    }
+  },
+  "Settings": {
+    "language": "Wika",
+    "selectLanguage": "Piliin ang Wika"
+  }
+}

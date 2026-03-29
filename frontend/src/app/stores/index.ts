@@ -57,3 +57,8 @@ export type {
   LevelUpReward,
   GamificationStore,
 } from "./useGamificationStore";
+
+export { useThemeStore, selectTheme, selectThemeHydrated } from "./useThemeStore";
+export { THEME_STORAGE_KEY } from "../lib/theme";
+export type { ThemeStore } from "./useThemeStore";
+export type { Theme } from "../lib/theme";

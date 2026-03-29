@@ -17,7 +17,7 @@ export interface Notification {
   type: NotificationType;
   title: string;
   message: string;
-  loanId?: number;
+  loanId?: number | undefined;
   read: boolean;
   createdAt: Date;
 }
@@ -27,7 +27,7 @@ interface CreateNotificationParams {
   type: NotificationType;
   title: string;
   message: string;
-  loanId?: number;
+  loanId?: number | undefined;
 }
 
 // ─── SSE subscriber registry ──────────────────────────────────────────────────
@@ -150,6 +150,31 @@ class NotificationService {
     }
   }
 
+  /**
+   * Deletes notifications older than the specified number of days.
+   * @param retentionDays The number of days to keep notifications.
+   * @returns The number of deleted notifications.
+   */
+  async deleteOldNotifications(retentionDays: number): Promise<number> {
+    try {
+      const result = await query(
+        `DELETE FROM notifications
+         WHERE created_at < NOW() - (INTERVAL '1 day' * $1)`,
+        [retentionDays],
+      );
+      const deletedCount = result.rowCount ?? 0;
+      if (deletedCount > 0) {
+        logger.info(`Notification cleanup completed: ${deletedCount} rows deleted`, {
+          retentionDays,
+        });
+      }
+      return deletedCount;
+    } catch (error) {
+      logger.error("Error during notification cleanup", { error, retentionDays });
+      return 0;
+    }
+  }
+
   // ─── Row mapper ──────────────────────────────────────────────────────────────
 
   private mapRow(row: Record<string, unknown>): Notification {
@@ -168,3 +193,41 @@ class NotificationService {
 }
 
 export const notificationService = new NotificationService();
+
+let cleanupInterval: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * Starts a periodic scheduler to clean up old notifications based on retention policy.
+ */
+export function startNotificationCleanupScheduler(): void {
+  if (cleanupInterval) return;
+
+  const retentionDays = parseInt(process.env.NOTIFICATION_RETENTION_DAYS || "90", 10);
+  const intervalMs = parseInt(
+    process.env.NOTIFICATION_CLEANUP_INTERVAL_MS || String(24 * 60 * 60 * 1000), // Default: 24h
+    10,
+  );
+
+  // Run once immediately on start (optional, but good for clearing backlog)
+  void notificationService.deleteOldNotifications(retentionDays);
+
+  cleanupInterval = setInterval(async () => {
+    await notificationService.deleteOldNotifications(retentionDays);
+  }, intervalMs);
+
+  logger.info("Notification cleanup scheduler started", {
+    retentionDays,
+    intervalMs,
+  });
+}
+
+/**
+ * Stops the notification cleanup scheduler.
+ */
+export function stopNotificationCleanupScheduler(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = undefined;
+    logger.info("Notification cleanup scheduler stopped");
+  }
+}

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  getLoanConfig,
   getBorrowerLoans,
   getLoanDetails,
   requestLoan,
@@ -13,9 +14,12 @@ import {
 } from "../middleware/jwtAuth.js";
 import { requireLoanBorrowerAccess } from "../middleware/loanAccess.js";
 import { validate } from "../middleware/validation.js";
+import { idempotencyMiddleware } from "../middleware/idempotency.js";
 import { borrowerParamSchema } from "../schemas/stellarSchemas.js";
 
 const router = Router();
+
+router.get("/config", getLoanConfig);
 
 /**
  * @swagger
@@ -44,6 +48,10 @@ const router = Router();
  *     responses:
  *       200:
  *         description: Loans retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BorrowerLoansResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  *       403:
@@ -79,6 +87,10 @@ router.get(
  *     responses:
  *       200:
  *         description: Loan details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LoanDetailsResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  *       404:
@@ -126,20 +138,13 @@ router.get(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 unsignedTxXdr:
- *                   type: string
- *                 networkPassphrase:
- *                   type: string
+ *               $ref: '#/components/schemas/UnsignedTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/request", requireJwtAuth, requestLoan);
+router.post("/request", requireJwtAuth, idempotencyMiddleware, requestLoan);
 
 /**
  * @swagger
@@ -169,20 +174,13 @@ router.post("/request", requireJwtAuth, requestLoan);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 txHash:
- *                   type: string
- *                 status:
- *                   type: string
+ *               $ref: '#/components/schemas/SubmittedTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/submit", requireJwtAuth, submitTransaction);
+router.post("/submit", requireJwtAuth, idempotencyMiddleware, submitTransaction);
 
 /**
  * @swagger
@@ -226,16 +224,7 @@ router.post("/submit", requireJwtAuth, submitTransaction);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 loanId:
- *                   type: integer
- *                 unsignedTxXdr:
- *                   type: string
- *                 networkPassphrase:
- *                   type: string
+ *               $ref: '#/components/schemas/RepayTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
@@ -247,6 +236,7 @@ router.post(
   "/:loanId/repay",
   requireJwtAuth,
   requireLoanBorrowerAccess,
+  idempotencyMiddleware,
   repayLoan,
 );
 
@@ -282,6 +272,10 @@ router.post(
  *     responses:
  *       200:
  *         description: Transaction submitted and result returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SubmittedTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
@@ -293,6 +287,7 @@ router.post(
   "/:loanId/submit",
   requireJwtAuth,
   requireLoanBorrowerAccess,
+  idempotencyMiddleware,
   submitTransaction,
 );
 

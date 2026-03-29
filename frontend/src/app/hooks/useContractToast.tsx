@@ -2,13 +2,10 @@
  * hooks/useContractToast.ts
  *
  * Custom hook for displaying toast notifications during blockchain transaction lifecycle.
- * Provides automatic feedback for Pending / Success / Failed states with Stellar Expert links.
+ * Provides automatic feedback for pending/success/failed states with Stellar explorer links.
  */
 
-import { toast } from "sonner";
-import { ExternalLink } from "lucide-react";
-
-export type TransactionStatus = "pending" | "success" | "failed";
+import { useToastStore } from "../stores/useToastStore";
 
 interface ToastOptions {
   /** Transaction hash from Stellar */
@@ -19,6 +16,8 @@ interface ToastOptions {
   errorMessage?: string;
   /** Stellar network (testnet or public) */
   network?: "testnet" | "public";
+  /** Optional retry action shown on error toasts */
+  retryAction?: () => void;
 }
 
 /**
@@ -26,6 +25,9 @@ interface ToastOptions {
  * Automatically shows pending state and updates to success/failure.
  */
 export function useContractToast() {
+  const addToast = useToastStore((state) => state.addToast);
+  const updateToast = useToastStore((state) => state.updateToast);
+
   const getStellarExpertUrl = (txHash: string, network: "testnet" | "public" = "testnet") => {
     const baseUrl =
       network === "testnet"
@@ -39,7 +41,9 @@ export function useContractToast() {
    * Returns the toast ID for later updates.
    */
   const showPending = (message: string = "Transaction pending..."): string | number => {
-    return toast.loading(message, {
+    return addToast({
+      type: "info",
+      title: message,
       description: "Waiting for blockchain confirmation",
     });
   };
@@ -50,42 +54,40 @@ export function useContractToast() {
    */
   const showSuccess = (toastId: string | number, options: ToastOptions = {}): string | number => {
     const { txHash, successMessage = "Transaction successful!", network = "testnet" } = options;
+    const explorerUrl = txHash ? getStellarExpertUrl(txHash, network) : undefined;
 
-    if (txHash) {
-      const expertUrl = getStellarExpertUrl(txHash, network);
-      return toast.success(successMessage, {
-        id: toastId,
-        description: "Your transaction has been confirmed on the blockchain",
-        action: {
-          label: (
-            <span className="flex items-center gap-1">
-              View on Explorer <ExternalLink size={14} />
-            </span>
-          ),
-          onClick: () => window.open(expertUrl, "_blank", "noopener,noreferrer"),
-        },
-        duration: 6000,
-      });
-    }
-
-    return toast.success(successMessage, {
-      id: toastId,
-      description: "Your transaction has been confirmed",
-      duration: 5000,
+    updateToast(String(toastId), {
+      type: "success",
+      title: successMessage,
+      description: "Your transaction has been confirmed on the blockchain",
+      txHash,
+      explorerUrl,
+      duration: 6000,
     });
+
+    return toastId;
   };
 
   /**
    * Update a pending toast to error state.
    */
   const showError = (toastId: string | number, options: ToastOptions = {}): string | number => {
-    const { errorMessage = "Transaction failed" } = options;
+    const { errorMessage = "Transaction failed", retryAction } = options;
 
-    return toast.error(errorMessage, {
-      id: toastId,
+    updateToast(String(toastId), {
+      type: "error",
+      title: errorMessage,
       description: "Please try again or contact support if the issue persists",
-      duration: 6000,
+      duration: 10000,
+      action: retryAction
+        ? {
+            label: "Retry",
+            onClick: retryAction,
+          }
+        : undefined,
     });
+
+    return toastId;
   };
 
   /**
@@ -93,24 +95,14 @@ export function useContractToast() {
    */
   const success = (message: string, options: ToastOptions = {}): string | number => {
     const { txHash, network = "testnet" } = options;
+    const explorerUrl = txHash ? getStellarExpertUrl(txHash, network) : undefined;
 
-    if (txHash) {
-      const expertUrl = getStellarExpertUrl(txHash, network);
-      return toast.success(message, {
-        description: "Your transaction has been confirmed on the blockchain",
-        action: {
-          label: (
-            <span className="flex items-center gap-1">
-              View on Explorer <ExternalLink size={14} />
-            </span>
-          ),
-          onClick: () => window.open(expertUrl, "_blank", "noopener,noreferrer"),
-        },
-        duration: 6000,
-      });
-    }
-
-    return toast.success(message, {
+    return addToast({
+      type: "success",
+      title: message,
+      description: "Your transaction has been confirmed on the blockchain",
+      txHash,
+      explorerUrl,
       duration: 5000,
     });
   };
@@ -119,9 +111,11 @@ export function useContractToast() {
    * Standalone error toast.
    */
   const error = (message: string, description?: string): string | number => {
-    return toast.error(message, {
+    return addToast({
+      type: "error",
+      title: message,
       description: description ?? "Please try again or contact support if the issue persists",
-      duration: 6000,
+      duration: 10000,
     });
   };
 
@@ -129,7 +123,9 @@ export function useContractToast() {
    * Info toast for general notifications.
    */
   const info = (message: string, description?: string): string | number => {
-    return toast.info(message, {
+    return addToast({
+      type: "info",
+      title: message,
       description,
       duration: 4000,
     });
@@ -139,7 +135,9 @@ export function useContractToast() {
    * Warning toast for cautionary messages.
    */
   const warning = (message: string, description?: string): string | number => {
-    return toast.warning(message, {
+    return addToast({
+      type: "warning",
+      title: message,
       description,
       duration: 5000,
     });

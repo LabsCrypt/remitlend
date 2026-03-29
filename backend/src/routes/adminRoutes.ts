@@ -4,6 +4,7 @@ import { requireApiKey } from "../middleware/auth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
 import { validateBody } from "../middleware/validation.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { auditLog } from "../middleware/auditLog.js";
 import { defaultChecker } from "../services/defaultChecker.js";
 import {
   createWebhookSubscription,
@@ -45,11 +46,16 @@ const checkDefaultsBodySchema = z.object({
  *     responses:
  *       200:
  *         description: Default check run completed (see batch errors in payload)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DefaultCheckResponse'
  */
 router.post(
   "/check-defaults",
   requireApiKey,
   strictRateLimiter,
+  auditLog,
   validateBody(checkDefaultsBodySchema),
   asyncHandler(async (req, res) => {
     const { loanIds } = req.body as z.infer<typeof checkDefaultsBodySchema>;
@@ -84,8 +90,18 @@ router.post(
  *     responses:
  *       200:
  *         description: Reindex completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ReindexResponse'
  */
-router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
+router.post(
+  "/reindex",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  reindexLedgerRange,
+);
 
 /**
  * @swagger
@@ -114,6 +130,10 @@ router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
  *     responses:
  *       201:
  *         description: Subscription created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookSubscriptionResponse'
  *   get:
  *     summary: List webhook subscriptions
  *     tags: [Admin]
@@ -122,8 +142,18 @@ router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
  *     responses:
  *       200:
  *         description: List of subscriptions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookSubscriptionListResponse'
  */
-router.post("/webhooks", requireApiKey, strictRateLimiter, createWebhookSubscription);
+router.post(
+  "/webhooks",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  createWebhookSubscription,
+);
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
 
 /**
@@ -143,8 +173,18 @@ router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
  *     responses:
  *       200:
  *         description: Subscription deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessMessageResponse'
  */
-router.delete("/webhooks/:id", requireApiKey, strictRateLimiter, deleteWebhookSubscription);
+router.delete(
+  "/webhooks/:id",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  deleteWebhookSubscription,
+);
 
 /**
  * @swagger
@@ -169,6 +209,10 @@ router.delete("/webhooks/:id", requireApiKey, strictRateLimiter, deleteWebhookSu
  *     responses:
  *       200:
  *         description: Delivery history returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get("/webhooks/:id/deliveries", requireApiKey, getWebhookDeliveries);
 

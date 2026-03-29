@@ -1,5 +1,6 @@
 import { EventIndexer } from "./eventIndexer.js";
 import logger from "../utils/logger.js";
+import { getStellarRpcUrl } from "../config/stellar.js";
 
 let indexerInstance: EventIndexer | null = null;
 
@@ -12,8 +13,6 @@ export const startIndexer = (): void => {
     return;
   }
 
-  const rpcUrl =
-    process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
   const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
   const pollIntervalMs = parseInt(
     process.env.INDEXER_POLL_INTERVAL_MS || "30000",
@@ -26,6 +25,8 @@ export const startIndexer = (): void => {
     );
     return;
   }
+
+  const rpcUrl = getStellarRpcUrl();
 
   indexerInstance = new EventIndexer({
     rpcUrl,

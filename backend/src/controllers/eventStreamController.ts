@@ -5,6 +5,34 @@ import { AppError } from "../errors/AppError.js";
 import { eventStreamService } from "../services/eventStreamService.js";
 import logger from "../utils/logger.js";
 
+const REPLAY_LIMIT = 100;
+
+type DbEventRow = Record<string, unknown>;
+
+const mapLoanEventRow = (row: DbEventRow) => ({
+  eventId: String(row.event_id ?? ""),
+  eventType: String(row.event_type ?? ""),
+  loanId: row.loan_id !== undefined ? Number(row.loan_id) : undefined,
+  borrower: String(row.borrower ?? ""),
+  amount: row.amount !== undefined ? String(row.amount) : undefined,
+  ledger: Number(row.ledger ?? 0),
+  ledgerClosedAt: String(row.ledger_closed_at ?? ""),
+  txHash: String(row.tx_hash ?? ""),
+});
+
+const parseLastEventId = (req: Request): string | null => {
+  const headerValue = req.headers["last-event-id"];
+  if (typeof headerValue === "string" && headerValue.trim().length > 0) {
+    return headerValue.trim();
+  }
+
+  if (Array.isArray(headerValue) && headerValue[0]?.trim()) {
+    return headerValue[0].trim();
+  }
+
+  return null;
+};
+
 /**
  * GET /api/events/stream?borrower=G...
  *
@@ -14,12 +42,25 @@ import logger from "../utils/logger.js";
  */
 export const streamEvents = asyncHandler(
   async (req: Request, res: Response) => {
-    const borrower = req.query.borrower as string | undefined;
+    const requestedBorrower =
+      typeof req.query.borrower === "string" ? req.query.borrower : undefined;
+    const lastEventId = parseLastEventId(req);
     const userKey = req.user?.publicKey;
+    const role = req.user?.role;
 
     if (!userKey) {
       throw AppError.unauthorized("Authentication required");
     }
+
+    const isAdmin = role === "admin";
+
+    if (!isAdmin && requestedBorrower && requestedBorrower !== userKey) {
+      throw AppError.forbidden(
+        "Borrowers can only subscribe to their own events",
+      );
+    }
+
+    const borrower = requestedBorrower ?? (isAdmin ? undefined : userKey);
 
     if (!eventStreamService.canOpenConnection(userKey)) {
       throw new AppError(
@@ -35,65 +76,67 @@ export const streamEvents = asyncHandler(
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
-    // Heartbeat to keep connection alive through proxies/load balancers
-    const heartbeat = setInterval(() => {
-      try {
-        res.write(": heartbeat\n\n");
-      } catch {
-        // client already gone
-      }
-    }, 30_000);
-
     let unsubscribe: () => void;
 
     if (borrower) {
-      // Send recent events on connect so client has context
+      // Send replay events first (if Last-Event-ID is provided), otherwise
+      // send recent events for initial context.
       try {
-        const recentEvents = await query(
+        const replayEvents = await query(
           `SELECT event_id, event_type, loan_id, borrower, amount, ledger, ledger_closed_at, tx_hash
            FROM loan_events
            WHERE borrower = $1
-           ORDER BY ledger_closed_at DESC
-           LIMIT 20`,
-          [borrower],
+             AND (
+               $2::text IS NULL
+               OR id > COALESCE((SELECT id FROM loan_events WHERE event_id = $2), 0)
+             )
+           ORDER BY id ASC
+           LIMIT $3`,
+          [borrower, lastEventId, REPLAY_LIMIT],
         );
 
-        if (recentEvents.rows.length > 0) {
-          const initData = recentEvents.rows.reverse().map((row: Record<string, unknown>) => ({
-            eventId: row.event_id,
-            eventType: row.event_type,
-            loanId: row.loan_id,
-            borrower: row.borrower,
-            amount: row.amount,
-            ledger: row.ledger,
-            ledgerClosedAt: row.ledger_closed_at,
-            txHash: row.tx_hash,
-          }));
-          res.write(
-            `data: ${JSON.stringify({ type: "init", events: initData })}\n\n`,
-          );
+        if (replayEvents.rows.length > 0) {
+          for (const row of replayEvents.rows) {
+            eventStreamService.sendEvent(res, mapLoanEventRow(row as DbEventRow));
+          }
+        } else if (!lastEventId) {
+          res.write(`event: init\ndata: ${JSON.stringify({ type: "init", replayed: 0 })}\n\n`);
         }
       } catch (err) {
-        logger.error("SSE init fetch error", { borrower, err });
+        logger.error("SSE replay fetch error", { borrower, lastEventId, err });
       }
 
       unsubscribe = eventStreamService.subscribeBorrower(userKey, borrower, res);
     } else {
-      // Admin stream — send connection count
+      try {
+        const replayEvents = await query(
+          `SELECT event_id, event_type, loan_id, borrower, amount, ledger, ledger_closed_at, tx_hash
+           FROM loan_events
+           WHERE (
+             $1::text IS NULL
+             OR id > COALESCE((SELECT id FROM loan_events WHERE event_id = $1), 0)
+           )
+           ORDER BY id ASC
+           LIMIT $2`,
+          [lastEventId, REPLAY_LIMIT],
+        );
+
+        if (replayEvents.rows.length > 0) {
+          for (const row of replayEvents.rows) {
+            eventStreamService.sendEvent(res, mapLoanEventRow(row as DbEventRow));
+          }
+        }
+      } catch (err) {
+        logger.error("SSE admin replay fetch error", { lastEventId, err });
+      }
+
       const counts = eventStreamService.getConnectionCount();
-      res.write(
-        `data: ${JSON.stringify({ type: "init", connections: counts })}\n\n`,
-      );
+      res.write(`event: init\ndata: ${JSON.stringify({ type: "init", connections: counts })}\n\n`);
       unsubscribe = eventStreamService.subscribeAll(userKey, res);
     }
 
-    const cleanup = () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-    };
-
-    req.on("close", cleanup);
-    req.on("error", cleanup);
+    req.on("close", unsubscribe);
+    req.on("error", unsubscribe);
   },
 );
 

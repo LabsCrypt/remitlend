@@ -16,6 +16,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Spinner } from "../components/global_ui/Spinner";
+import { TransactionsSkeleton } from "../components/skeletons/TransactionsSkeleton";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import {
   useWalletStore,
@@ -213,7 +214,7 @@ function BalancesCard({ address, horizonUrl }: { address: string; horizonUrl: st
       <CardContent>
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <Spinner size="md" />
+            <Spinner type="spin" size={24} />
           </div>
         ) : isError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
@@ -311,9 +312,7 @@ function TransactionHistoryCard({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Spinner size="md" />
-          </div>
+          <TransactionsSkeleton />
         ) : isError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
             <p className="text-sm text-red-700 dark:text-red-400">

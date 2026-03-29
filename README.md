@@ -107,6 +107,7 @@ The repository is organized as a monorepo containing three core packages:
    ```bash
    npm run migrate:up
    ```
+   Migration scripts use the colon form (`migrate:up` / `migrate:down`), which is the standard npm convention.
 
 5. **Run development server:**
    ```bash

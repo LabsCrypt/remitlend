@@ -29,12 +29,11 @@ export function useNotificationStream() {
     function connect() {
       if (cancelled) return;
 
-      // EventSource does not support custom headers, so we pass the token as a
-      // query parameter. The backend already validates JWT from the
-      // Authorization header; we would need a small backend change to also
-      // accept a `token` query param for SSE — but we handle that gracefully
-      // here by still initiating the connection (it will 401 and we back off).
-      const url = `${API_URL}/api/notifications/stream?token=${encodeURIComponent(token!)}`;
+      // EventSource is notoriously difficult to authenticate because it doesn't
+      // support custom headers. We now rely on the secure, HTTP-only JWT
+      // cookie set during login instead of passing the token as a leaky
+      // query parameter.
+      const url = `${API_URL}/api/notifications/stream`;
       const es = new EventSource(url, { withCredentials: true });
       esRef.current = es;
 

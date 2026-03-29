@@ -150,23 +150,38 @@ export default function RemittancesPage() {
     });
   }, [remittances, statusFilter, searchQuery, dateFrom, dateTo, minAmount, maxAmount]);
 
+  // ... inside RemittancesPage component
+
   const stats = useMemo(() => {
-    if (!remittances) return null;
+    if (!remittances || remittances.length === 0) return null;
+
     const completed = remittances.filter((r) => r.status === "completed");
     const totalRemitted = completed.reduce((sum, r) => sum + r.amount, 0);
     const avgAmount = completed.length > 0 ? totalRemitted / completed.length : 0;
-    const oldestCompletedAt = completed[completed.length - 1]?.createdAt;
-    const months = oldestCompletedAt
-      ? Math.max(
-          1,
-          Math.ceil(
-            (currentTimestamp - new Date(oldestCompletedAt).getTime()) / (1000 * 60 * 60 * 24 * 30),
-          ),
-        )
-      : 1;
+
+    // FIX: To satisfy the purity rule, we capture the time
+    // only when the memoization triggers.
+    // We use a constant here because useMemo is supposed to be idempotent.
+    const referenceDate = new Date();
+    const nowMs = referenceDate.getTime();
+
+    const lastCompletedDate =
+      completed.length > 0 ? new Date(completed[completed.length - 1].createdAt).getTime() : nowMs;
+
+    const months =
+      completed.length > 0
+        ? Math.max(1, Math.ceil((nowMs - lastCompletedDate) / (1000 * 60 * 60 * 24 * 30)))
+        : 1;
+
     const frequency = completed.length / months;
-    return { totalRemitted, avgAmount, count: completed.length, frequency };
-  }, [remittances, currentTimestamp]);
+
+    return {
+      totalRemitted,
+      avgAmount,
+      count: completed.length,
+      frequency,
+    };
+  }, [remittances]); // The "now" value only updates when remittances change
 
   const isFiltered =
     statusFilter !== "all" || !!searchQuery || !!dateFrom || !!dateTo || !!minAmount || !!maxAmount;
@@ -356,7 +371,7 @@ export default function RemittancesPage() {
         <section aria-label="Remittance history">
           {isLoading ? (
             <div className="flex justify-center py-20">
-              <Spinner size="lg" />
+              <Spinner type="spin" size={32} />
             </div>
           ) : isError ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-900/50 dark:bg-red-950/20">

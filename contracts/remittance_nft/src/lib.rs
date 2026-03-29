@@ -19,6 +19,9 @@ pub enum NftError {
     DestinationOccupied = 10,
     TransferCooldownActive = 11,
     InvalidThreshold = 12,
+    ContractPaused = 13,
+    InvalidHistoryHash = 14,
+    NoProposedAdmin = 15,
 }
 
 #[contracttype]
@@ -50,6 +53,8 @@ pub enum DataKey {
     Burned(Address),
     RemintApproval(Address),
     TransferCooldown(Address),
+    Paused,
+    ProposedAdmin,
 }
 
 #[contract]
@@ -63,7 +68,7 @@ impl RemittanceNFT {
     const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 2;
     const DEFAULT_BURN_THRESHOLD: u32 = 3;
-    const MAX_SCORE_HISTORY: u32 = 10;
+    pub const MAX_SCORE_HISTORY_ENTRIES: u32 = 50;
     const TRANSFER_COOLDOWN_LEDGERS: u32 = 17280;
     const MIN_CREDIT_SCORE: u32 = 300;
     const MAX_CREDIT_SCORE: u32 = 850;
@@ -103,6 +108,7 @@ impl RemittanceNFT {
         env: &Env,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
+        Self::assert_not_paused(env)?;
         if let Some(minter_addr) = minter {
             minter_addr.require_auth();
             let key = DataKey::AuthorizedMinter(minter_addr);
@@ -149,8 +155,25 @@ impl RemittanceNFT {
 
     fn get_score_history_or_default(env: &Env, user: &Address) -> Vec<ScoreHistoryEntry> {
         let key = DataKey::ScoreHistory(user.clone());
-        if let Some(history) = env.storage().persistent().get(&key) {
+        if let Some(history) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Vec<ScoreHistoryEntry>>(&key)
+        {
             Self::bump_persistent_ttl(env, &key);
+            // Migration: truncate to the most recent MAX_SCORE_HISTORY_ENTRIES if over limit
+            let len = history.len();
+            if len > Self::MAX_SCORE_HISTORY_ENTRIES {
+                let keep_from = len - Self::MAX_SCORE_HISTORY_ENTRIES;
+                let mut truncated = Vec::new(env);
+                for (idx, entry) in history.iter().enumerate() {
+                    if (idx as u32) >= keep_from {
+                        truncated.push_back(entry);
+                    }
+                }
+                Self::write_score_history(env, user, truncated.clone());
+                return truncated;
+            }
             history
         } else {
             Vec::new(env)
@@ -173,7 +196,7 @@ impl RemittanceNFT {
         let current_history = Self::get_score_history_or_default(env, user);
         let mut next_history = Vec::new(env);
         let current_len = current_history.len();
-        let keep_from = current_len.saturating_sub(Self::MAX_SCORE_HISTORY - 1);
+        let keep_from = current_len.saturating_sub(Self::MAX_SCORE_HISTORY_ENTRIES - 1);
 
         for (idx, entry) in current_history.iter().enumerate() {
             if (idx as u32) >= keep_from {
@@ -222,30 +245,6 @@ impl RemittanceNFT {
                 .storage()
                 .persistent()
                 .has(&DataKey::Score(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::DefaultCount(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::Seized(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::ScoreHistory(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::RemintApproval(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::Burned(user.clone()))
-            || env
-                .storage()
-                .persistent()
-                .has(&DataKey::TransferCooldown(user.clone()))
     }
 
     fn burn_internal(env: &Env, user: &Address) {
@@ -264,6 +263,9 @@ impl RemittanceNFT {
         env.storage()
             .persistent()
             .remove(&DataKey::RemintApproval(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::TransferCooldown(user.clone()));
 
         let burned_key = DataKey::Burned(user.clone());
         env.storage().persistent().set(&burned_key, &true);
@@ -284,11 +286,25 @@ impl RemittanceNFT {
         env.storage()
             .instance()
             .set(&DataKey::Version, &Self::CURRENT_VERSION);
+        env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
         // Admin is automatically authorized to mint
         let key = DataKey::AuthorizedMinter(admin.clone());
         env.storage().persistent().set(&key, &true);
         Self::bump_persistent_ttl(&env, &key);
+        Ok(())
+    }
+
+    fn assert_not_paused(env: &Env) -> Result<(), NftError> {
+        Self::bump_instance_ttl(env);
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            return Err(NftError::ContractPaused);
+        }
         Ok(())
     }
 
@@ -299,6 +315,15 @@ impl RemittanceNFT {
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         Self::admin(&env).require_auth();
+        let old_version = Self::version(env.clone());
+        let new_version = old_version.saturating_add(1);
+        env.storage()
+            .instance()
+            .set(&DataKey::Version, &new_version);
+        env.events().publish(
+            (Symbol::new(&env, "ContractUpgraded"),),
+            (old_version, new_version),
+        );
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
@@ -384,6 +409,9 @@ impl RemittanceNFT {
             env.storage()
                 .persistent()
                 .remove(&DataKey::Seized(user.clone()));
+            env.storage()
+                .persistent()
+                .remove(&DataKey::TransferCooldown(user.clone()));
         }
 
         let metadata = RemittanceMetadata {
@@ -525,12 +553,16 @@ impl RemittanceNFT {
     ) -> Result<(), NftError> {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
+        if new_history_hash == BytesN::from_array(&env, &[0u8; 32]) {
+            return Err(NftError::InvalidHistoryHash);
+        }
+
         let metadata_key = DataKey::Metadata(user.clone());
         let mut metadata =
             Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         if metadata.history_hash == new_history_hash {
-            return Ok(());
+            return Err(NftError::InvalidHistoryHash);
         }
         metadata.history_hash = new_history_hash;
 
@@ -733,12 +765,14 @@ impl RemittanceNFT {
         count
     }
 
-    pub fn approve_remint(env: Env, user: Address) {
+    pub fn approve_remint(env: Env, user: Address) -> Result<(), NftError> {
         Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env)?;
 
         let approval_key = DataKey::RemintApproval(user);
         env.storage().persistent().set(&approval_key, &true);
         Self::bump_persistent_ttl(&env, &approval_key);
+        Ok(())
     }
 
     pub fn set_default_burn_threshold(env: Env, threshold: u32) -> Result<(), NftError> {
@@ -746,6 +780,7 @@ impl RemittanceNFT {
             return Err(NftError::InvalidThreshold);
         }
         Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env)?;
 
         env.storage()
             .instance()
@@ -759,8 +794,107 @@ impl RemittanceNFT {
         Self::default_burn_threshold(&env)
     }
 
-    pub fn get_score_history(env: Env, user: Address) -> Vec<ScoreHistoryEntry> {
-        Self::get_score_history_or_default(&env, &user)
+    pub fn get_score_history(
+        env: Env,
+        user: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<ScoreHistoryEntry> {
+        let history = Self::get_score_history_or_default(&env, &user);
+        let len = history.len();
+        if offset >= len {
+            return Vec::new(&env);
+        }
+        let mut page = Vec::new(&env);
+        let end = (offset + limit).min(len);
+        for idx in offset..end {
+            page.push_back(history.get(idx).unwrap());
+        }
+        page
+    }
+
+    /// Get the number of ledgers remaining in a user's transfer cooldown.
+    /// Returns 0 if no cooldown is active or the cooldown has expired.
+    pub fn get_transfer_cooldown_remaining(env: Env, user: Address) -> u32 {
+        let key = DataKey::TransferCooldown(user);
+        if let Some(next_allowed_ledger) = env.storage().persistent().get::<DataKey, u32>(&key) {
+            Self::bump_persistent_ttl(&env, &key);
+            let current = env.ledger().sequence();
+            if current < next_allowed_ledger {
+                return next_allowed_ledger - current;
+            }
+        }
+        0
+    }
+
+    /// Check if a remint approval exists for a user.
+    pub fn is_remint_approved(env: Env, user: Address) -> bool {
+        let key = DataKey::RemintApproval(user);
+        let approved = env.storage().persistent().has(&key);
+        if approved {
+            Self::bump_persistent_ttl(&env, &key);
+        }
+        approved
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    pub fn pause(env: Env) {
+        Self::admin(&env).require_auth();
+        env.storage().instance().set(&DataKey::Paused, &true);
+        Self::bump_instance_ttl(&env);
+        env.events().publish((symbol_short!("Paused"),), ());
+    }
+
+    pub fn unpause(env: Env) {
+        Self::admin(&env).require_auth();
+        env.storage().instance().set(&DataKey::Paused, &false);
+        Self::bump_instance_ttl(&env);
+        env.events().publish((symbol_short!("Unpaused"),), ());
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        Self::admin(&env)
+    }
+
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposedAdmin, &new_admin);
+        Self::bump_instance_ttl(&env);
+
+        env.events().publish(
+            (Symbol::new(&env, "AdminProposed"), current_admin),
+            new_admin,
+        );
+    }
+
+    pub fn accept_admin(env: Env) -> Result<(), NftError> {
+        let proposed_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposedAdmin)
+            .ok_or(NftError::NoProposedAdmin)?;
+        proposed_admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&Self::admin_key(), &proposed_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+
+        env.events()
+            .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
+        Ok(())
     }
 }
 
