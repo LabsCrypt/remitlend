@@ -14,6 +14,7 @@ const mockQuery: jest.MockedFunction<
 > = jest.fn();
 const mockCacheGet = jest.fn<() => Promise<unknown | null>>().mockResolvedValue(null);
 const mockCacheSet = jest.fn<() => Promise<void>>().mockResolvedValue();
+const mockCachePing = jest.fn<() => Promise<string>>().mockResolvedValue("ok");
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
@@ -28,7 +29,7 @@ jest.unstable_mockModule("../services/cacheService.js", () => ({
     set: mockCacheSet,
     delete: jest.fn(),
     invalidatePattern: jest.fn(),
-    ping: jest.fn().mockResolvedValue("ok"),
+    ping: mockCachePing,
     close: jest.fn(),
   },
 }));
