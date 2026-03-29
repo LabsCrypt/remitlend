@@ -12,10 +12,10 @@ jest.unstable_mockModule("../db/connection.js", () => ({
 // Mock CacheService to prevent Redis connections
 jest.unstable_mockModule("../services/cacheService.js", () => ({
   cacheService: {
-    get: jest.fn().mockResolvedValue(null),
-    set: jest.fn().mockResolvedValue(undefined),
-    delete: jest.fn().mockResolvedValue(undefined),
-    ping: jest.fn().mockResolvedValue("ok"),
+    get: jest.fn<() => Promise<any>>().mockResolvedValue(null),
+    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
   },
 }));
 

@@ -4,12 +4,17 @@
 import { jest } from "@jest/globals";
 
 // ── mockGetScoreConfig reads env vars just like the real implementation ───
-const mockGetScoreConfig = jest.fn().mockImplementation(() => ({
+interface ScoreConfig {
+  repaymentDelta: number;
+  defaultPenalty: number;
+}
+
+const mockGetScoreConfig = jest.fn<() => ScoreConfig>().mockImplementation(() => ({
   repaymentDelta: parseInt(process.env.SCORE_REPAYMENT_DELTA ?? "15", 10),
   defaultPenalty: parseInt(process.env.SCORE_DEFAULT_PENALTY ?? "50", 10),
 }));
 
-const mockQuery = jest.fn<() => Promise<{ rows: unknown[]; rowCount: number }>>()
+const mockQuery = jest.fn<() => Promise<{ rows: any[]; rowCount: number }>>()
   .mockResolvedValue({ rows: [], rowCount: 0 });
 
 // All ESM mocks must be declared before any dynamic import
@@ -25,7 +30,7 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
-  webhookService: { dispatch: jest.fn().mockResolvedValue(undefined) },
+  webhookService: { dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(undefined) },
   WebhookEventType: {},
 }));
 
@@ -43,25 +48,25 @@ describe("SorobanService.getScoreConfig()", () => {
 
   it("returns default repaymentDelta of 15 when env var is not set", () => {
     delete process.env.SCORE_REPAYMENT_DELTA;
-    const cfg = mockGetScoreConfig();
+    const cfg = mockGetScoreConfig() as ScoreConfig;
     expect(cfg.repaymentDelta).toBe(15);
   });
 
   it("returns default defaultPenalty of 50 when env var is not set", () => {
     delete process.env.SCORE_DEFAULT_PENALTY;
-    const cfg = mockGetScoreConfig();
+    const cfg = mockGetScoreConfig() as ScoreConfig;
     expect(cfg.defaultPenalty).toBe(50);
   });
 
   it("returns repaymentDelta from SCORE_REPAYMENT_DELTA env var", () => {
     process.env.SCORE_REPAYMENT_DELTA = "20";
-    const cfg = mockGetScoreConfig();
+    const cfg = mockGetScoreConfig() as ScoreConfig;
     expect(cfg.repaymentDelta).toBe(20);
   });
 
   it("returns defaultPenalty from SCORE_DEFAULT_PENALTY env var", () => {
     process.env.SCORE_DEFAULT_PENALTY = "75";
-    const cfg = mockGetScoreConfig();
+    const cfg = mockGetScoreConfig() as ScoreConfig;
     expect(cfg.defaultPenalty).toBe(75);
   });
 });

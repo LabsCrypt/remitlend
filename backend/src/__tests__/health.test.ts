@@ -4,14 +4,14 @@ import request from "supertest";
 // Use unstable_mockModule for robust ESM mocking
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: {
-    query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+    query: jest.fn<() => Promise<any>>().mockResolvedValue({ rows: [], rowCount: 0 }),
   },
-  query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+  query: jest.fn<() => Promise<any>>().mockResolvedValue({ rows: [], rowCount: 0 }),
 }));
 
 jest.unstable_mockModule("../services/cacheService.js", () => ({
   cacheService: {
-    ping: jest.fn().mockResolvedValue("ok"),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
   },
 }));
 
