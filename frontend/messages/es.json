@@ -99,7 +99,8 @@
   },
   "Settings": {
     "language": "Idioma",
-    "selectLanguage": "Seleccione el idioma"  },
+    "selectLanguage": "Seleccione el idioma"
+  },
   "SendRemittance": {
     "title": "Enviar Remesa",
     "description": "Transfiera fondos globalmente utilizando la cadena de bloques Stellar",
@@ -194,5 +195,6 @@
     "error": "Error",
     "success": "Éxito",
     "failed": "No se pudo cargar los préstamos. Por favor reconecte su cartera e intente de nuevo.",
-    "walletNotConnected": "Cartera no conectada"  }
+    "walletNotConnected": "Cartera no conectada"
+  }
 }
