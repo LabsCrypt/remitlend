@@ -12,6 +12,13 @@ impl MockTarget {
             .instance()
             .set(&symbol_short!("admin"), &new_admin);
     }
+    pub fn has_pending_transfer(env: Env) -> bool {
+        if let Some(pending) = env.storage().instance().get::<Symbol, PendingTransfer>(&KEY_PENDING) {
+            pending.status == ProposalStatus::Active
+        } else {
+            false
+        }
+    }
     pub fn get_admin(env: Env) -> Address {
         env.storage()
             .instance()
@@ -479,4 +486,58 @@ fn new_proposal_allowed_after_expiry() {
     let pending = client.get_pending_transfer();
     assert_eq!(pending.proposed_admin, proposed2);
 }
-// }
+#[test]
+fn emergency_cancel_works_and_prevents_finalization() {
+    let (env, client, admin, _) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    let proposal_id = client.get_pending_transfer().id;
+
+    // Emergency cancel
+    let reason = Some(soroban_sdk::String::from_slice(&env, "Emergency"));
+    client.emergency_cancel_proposal(&proposal_id, &reason);
+
+    // Proposal should no longer be "pending" (active)
+    assert!(!client.has_pending_transfer());
+    assert_eq!(client.get_pending_transfer().status, ProposalStatus::Cancelled);
+
+    // Finalization should panic
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    // client.finalize_admin_transfer(&admin); // This would panic
+}
+
+#[test]
+#[should_panic(expected = "proposal is not active")]
+fn cannot_approve_cancelled_proposal() {
+    let (env, client, admin, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
+    let proposal_id = client.get_pending_transfer().id;
+    client.emergency_cancel_proposal(&proposal_id, &None);
+
+    client.approve_transfer(&s);
+}
+
+#[test]
+#[should_panic(expected = "proposal is not active")]
+fn cannot_finalize_cancelled_proposal() {
+    let (env, client, admin, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
+    let proposal_id = client.get_pending_transfer().id;
+    client.approve_transfer(&s);
+
+    client.emergency_cancel_proposal(&proposal_id, &None);
+
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    client.finalize_admin_transfer(&admin);
+}

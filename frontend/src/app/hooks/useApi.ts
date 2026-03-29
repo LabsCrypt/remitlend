@@ -446,9 +446,7 @@ export function useCreditScore(
         return;
       }
 
-      const url =
-        `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}` +
-        `&token=${encodeURIComponent(authToken)}`;
+      const url = `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
       const es = new EventSource(url, { withCredentials: true });
       eventSource = es;
 

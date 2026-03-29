@@ -87,6 +87,17 @@ export const login = (req: Request, res: Response): void => {
   }
 
   const token = generateJwtToken(publicKey);
+  const cookieName = process.env.JWT_COOKIE_NAME ?? "remitlend_jwt";
+
+  // Set secure, HTTP-only cookie to avoid leaking tokens in URL query parameters
+  // for EventSource (SSE) connections.
+  res.cookie(cookieName, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  });
 
   res.status(200).json({
     success: true,
