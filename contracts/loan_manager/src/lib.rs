@@ -1038,6 +1038,7 @@ impl LoanManager {
         Self::release_collateral_internal(&env, loan_id, &borrower);
 
         loan.status = LoanStatus::Cancelled;
+        loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
         events::loan_cancelled(&env, borrower, loan_id);
@@ -1065,6 +1066,7 @@ impl LoanManager {
         Self::release_collateral_internal(&env, loan_id, &loan.borrower);
 
         loan.status = LoanStatus::Rejected;
+        loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
         events::loan_rejected(&env, loan_id, reason);
@@ -1560,7 +1562,7 @@ impl LoanManager {
             .set(&DataKey::ProposedAdmin, &new_admin);
         Self::bump_instance_ttl(&env);
         env.events()
-            .publish((symbol_short!("AdminProposed"), current_admin), new_admin);
+            .publish((Symbol::new(&env, "AdminProposed"), current_admin), new_admin);
     }
 
     pub fn accept_admin(env: Env) -> Result<(), LoanError> {
@@ -1577,7 +1579,7 @@ impl LoanManager {
         env.storage().instance().remove(&DataKey::ProposedAdmin);
         Self::bump_instance_ttl(&env);
         env.events()
-            .publish((symbol_short!("AdminTransferred"),), proposed_admin);
+            .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
         Ok(())
     }
 
