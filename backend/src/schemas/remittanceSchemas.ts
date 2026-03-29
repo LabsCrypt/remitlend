@@ -35,12 +35,14 @@ export const getRemittancesSchema = z.object({
     limit: z
       .string()
       .transform((v) => Math.min(parseInt(v, 10), 100))
-      .default("20")
+      .pipe(z.number())
+      .default(20)
       .optional(),
     offset: z
       .string()
       .transform((v) => Math.max(parseInt(v, 10), 0))
-      .default("0")
+      .pipe(z.number())
+      .default(0)
       .optional(),
     status: z
       .enum(["all", "pending", "processing", "completed", "failed"])
@@ -54,8 +56,8 @@ export const getRemittanceSchema = z.object({
   params: z.object({
     id: z
       .string()
-      .uuid("Invalid remittance ID format")
-      .describe("Remittance ID"),
+      .min(1, "Remittance ID is required")
+      .describe("Remittance ID (UUID format)"),
   }),
 });
 

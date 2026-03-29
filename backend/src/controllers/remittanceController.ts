@@ -53,15 +53,15 @@ export const createRemittance = asyncHandler(
  */
 export const getRemittances = asyncHandler(
   async (req: Request, res: Response) => {
-    const senderAddress = (req as any).walletAddress;
+    const senderAddress = (req as any).walletAddress as string;
 
     if (!senderAddress) {
       throw AppError.unauthorized("Wallet address not found in request");
     }
 
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
-    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-    const status = req.query.status as string | undefined;
+    const limit = Math.min(Math.max(parseInt((req.query.limit as string) || "20", 10), 1), 100);
+    const offset = Math.max(parseInt((req.query.offset as string) || "0", 10), 0);
+    const status = (req.query.status as string | undefined);
 
     const result = await remittanceService.getRemittances(
       senderAddress,
@@ -89,11 +89,15 @@ export const getRemittances = asyncHandler(
  */
 export const getRemittance = asyncHandler(
   async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const senderAddress = (req as any).walletAddress;
+    const { id } = req.params as { id: string };
+    const senderAddress = (req as any).walletAddress as string;
 
     if (!senderAddress) {
       throw AppError.unauthorized("Wallet address not found in request");
+    }
+
+    if (!id) {
+      throw AppError.badRequest("Remittance ID is required");
     }
 
     const remittance = await remittanceService.getRemittance(id);
@@ -117,9 +121,9 @@ export const getRemittance = asyncHandler(
  */
 export const submitRemittanceTransaction = asyncHandler(
   async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const { signedXdr } = req.body;
-    const senderAddress = (req as any).walletAddress;
+    const { id } = req.params as { id: string };
+    const { signedXdr } = req.body as { signedXdr: string };
+    const senderAddress = (req as any).walletAddress as string;
 
     if (!senderAddress) {
       throw AppError.unauthorized("Wallet address not found in request");
@@ -127,6 +131,10 @@ export const submitRemittanceTransaction = asyncHandler(
 
     if (!signedXdr) {
       throw AppError.badRequest("Signed XDR is required");
+    }
+
+    if (!id) {
+      throw AppError.badRequest("Remittance ID is required");
     }
 
     logger.info("Submitting remittance transaction", { remittanceId: id });
@@ -163,12 +171,14 @@ export const submitRemittanceTransaction = asyncHandler(
     } catch (error) {
       logger.error("Error submitting remittance transaction:", error);
 
-      await remittanceService.updateRemittanceStatus(
-        id,
-        "failed",
-        undefined,
-        error instanceof Error ? error.message : "Unknown error"
-      );
+      if (id) {
+        await remittanceService.updateRemittanceStatus(
+          id,
+          "failed",
+          undefined,
+          error instanceof Error ? error.message : "Unknown error"
+        );
+      }
 
       throw error;
     }
