@@ -12,6 +12,10 @@ import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
+import {
+  startWebhookRetryProcessor,
+  stopWebhookRetryProcessor,
+} from "./services/webhookRetryProcessor.js";
 import { eventStreamService } from "./services/eventStreamService.js";
 
 const port = process.env.PORT || 3001;
@@ -24,6 +28,9 @@ const server = app.listen(port, () => {
 
   // Start periodic on-chain default checks (if configured)
   startDefaultCheckerScheduler();
+
+  // Start webhook retry processor
+  startWebhookRetryProcessor();
 });
 
 const shutdown = (signal: "SIGTERM" | "SIGINT") => {
@@ -31,6 +38,7 @@ const shutdown = (signal: "SIGTERM" | "SIGINT") => {
 
   stopIndexer();
   stopDefaultCheckerScheduler();
+  stopWebhookRetryProcessor();
   eventStreamService.closeAllConnections("Server shutting down");
 
   server.close((err) => {

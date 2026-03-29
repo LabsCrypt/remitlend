@@ -60,7 +60,224 @@ interface RegisterWebhookInput {
   secret?: string;
 }
 
+// Retry configuration for webhook delivery
+const RETRY_DELAYS_MS = [
+  30 * 1000, // First retry after 30 seconds
+  2 * 60 * 1000, // Second retry after 2 minutes
+  10 * 60 * 1000, // Third retry after 10 minutes
+] as const;
+
+const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1; // Initial attempt + 3 retries
+
+export const getRetryDelayMs = (attemptNumber: number): number => {
+  const delayIndex = Math.min(
+    attemptNumber - 1,
+    RETRY_DELAYS_MS.length - 1,
+  );
+  return RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
+};
+
 export class WebhookService {
+  // Retry processor that polls for pending retries
+  static async processRetries(): Promise<void> {
+    logger.info("Starting webhook retry processor");
+
+    try {
+      const now = new Date();
+      const result = await query(
+        `SELECT id, subscription_id, callback_url, secret, event_id, event_type, 
+                payload, attempt_count
+         FROM webhook_deliveries wd
+         JOIN webhook_subscriptions ws ON wd.subscription_id = ws.id
+         WHERE wd.delivered_at IS NULL 
+           AND wd.next_retry_at IS NOT NULL
+           AND wd.next_retry_at <= $1
+           AND wd.attempt_count < $2
+         ORDER BY wd.next_retry_at ASC
+         LIMIT 100`,
+        [now, MAX_RETRY_ATTEMPTS],
+      );
+
+      if (result.rows.length === 0) {
+        logger.debug("No pending webhook retries");
+        return;
+      }
+
+      logger.info(`Processing ${result.rows.length} pending webhook retries`);
+
+      for (const row of result.rows) {
+        const delivery = row as unknown as {
+          id: number;
+          subscription_id: number;
+          callback_url: string;
+          secret: string | null;
+          event_id: string;
+          event_type: string;
+          payload: Record<string, unknown>;
+          attempt_count: number;
+        };
+        await WebhookService.retryWebhookDelivery(
+          delivery.id,
+          delivery.subscription_id,
+          delivery.callback_url,
+          delivery.secret || undefined,
+          delivery.event_id,
+          delivery.event_type as WebhookEventType,
+          delivery.payload,
+          delivery.attempt_count,
+        );
+      }
+    } catch (error) {
+      logger.error("Error in webhook retry processor", { error });
+    }
+  }
+
+  private static async retryWebhookDelivery(
+    deliveryId: number,
+    subscriptionId: number,
+    callbackUrl: string,
+    secret: string | undefined,
+    eventId: string,
+    eventType: WebhookEventType,
+    payload: Record<string, unknown>,
+    attemptCount: number,
+  ): Promise<void> {
+    const body = JSON.stringify(payload);
+
+    const signature = secret
+      ? crypto.createHmac("sha256", secret).update(body).digest("hex")
+      : undefined;
+
+    let response: Response | null = null;
+
+    try {
+      response = await fetch(callbackUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(signature && { "x-remitlend-signature": signature }),
+        },
+        body,
+      });
+
+      const successful = response.ok;
+      const newAttemptCount = attemptCount + 1;
+
+      if (successful) {
+        // Mark as delivered
+        await query(
+          `UPDATE webhook_deliveries 
+           SET attempt_count = $1, 
+               last_status_code = $2, 
+               delivered_at = $3,
+               last_error = NULL,
+               next_retry_at = NULL,
+               updated_at = $4
+           WHERE id = $5`,
+          [
+            newAttemptCount,
+            response.status,
+            new Date(),
+            new Date(),
+            deliveryId,
+          ],
+        );
+
+        logger.info("Webhook delivery succeeded after retry", {
+          deliveryId,
+          subscriptionId,
+          eventId,
+          attemptCount: newAttemptCount,
+        });
+      } else {
+        // Schedule next retry or mark as permanently failed
+        const nextRetryTime =
+          newAttemptCount < MAX_RETRY_ATTEMPTS
+            ? new Date(Date.now() + getRetryDelayMs(newAttemptCount))
+            : null;
+
+        const errorMsg = `Webhook returned status ${response.status}`;
+        await query(
+          `UPDATE webhook_deliveries 
+           SET attempt_count = $1, 
+               last_status_code = $2, 
+               last_error = $3,
+               next_retry_at = $4,
+               updated_at = $5
+           WHERE id = $6`,
+          [
+            newAttemptCount,
+            response.status,
+            errorMsg,
+            nextRetryTime,
+            new Date(),
+            deliveryId,
+          ],
+        );
+
+        if (nextRetryTime) {
+          logger.warn("Webhook delivery failed, scheduled retry", {
+            deliveryId,
+            subscriptionId,
+            eventId,
+            attemptCount: newAttemptCount,
+            statusCode: response.status,
+            nextRetryAt: nextRetryTime,
+          });
+        } else {
+          logger.error("Webhook delivery permanently failed after max retries", {
+            deliveryId,
+            subscriptionId,
+            eventId,
+            attemptCount: newAttemptCount,
+            statusCode: response.status,
+            payload: body,
+          });
+        }
+      }
+    } catch (error) {
+      const newAttemptCount = attemptCount + 1;
+      const nextRetryTime =
+        newAttemptCount < MAX_RETRY_ATTEMPTS
+          ? new Date(Date.now() + getRetryDelayMs(newAttemptCount))
+          : null;
+
+      const errorMsg =
+        error instanceof Error ? error.message : "Unknown webhook error";
+
+      await query(
+        `UPDATE webhook_deliveries 
+         SET attempt_count = $1, 
+             last_error = $2,
+             next_retry_at = $3,
+             updated_at = $4
+         WHERE id = $5`,
+        [newAttemptCount, errorMsg, nextRetryTime, new Date(), deliveryId],
+      );
+
+      if (nextRetryTime) {
+        logger.warn("Webhook delivery error, scheduled retry", {
+          deliveryId,
+          subscriptionId,
+          eventId,
+          attemptCount: newAttemptCount,
+          error,
+          nextRetryAt: nextRetryTime,
+        });
+      } else {
+        logger.error(
+          "Webhook delivery permanently failed after max retries",
+          {
+            deliveryId,
+            subscriptionId,
+            eventId,
+            attemptCount: newAttemptCount,
+            error,
+          },
+        );
+      }
+    }
+  }
   static isSupported(type: string): type is WebhookEventType {
     return SUPPORTED_WEBHOOK_EVENT_TYPES.includes(type as WebhookEventType);
   }
@@ -181,58 +398,93 @@ export class WebhookService {
 
       const successful = response.ok;
 
-      await query(
-        `INSERT INTO webhook_deliveries (
-          subscription_id,
-          event_id,
-          event_type,
-          attempt_count,
-          last_status_code,
-          last_error,
-          delivered_at
-        )
-        VALUES ($1, $2, $3, 1, $4, $5, $6)`,
-        [
-          subscriptionId,
-          payload.eventId,
-          payload.eventType,
-          response.status,
-          successful ? null : `Webhook returned status ${response.status}`,
-          successful ? new Date() : null,
-        ],
-      );
+      if (successful) {
+        // Delivery succeeded, mark as delivered
+        await query(
+          `INSERT INTO webhook_deliveries (
+            subscription_id,
+            event_id,
+            event_type,
+            attempt_count,
+            last_status_code,
+            delivered_at,
+            payload,
+            next_retry_at
+          )
+          VALUES ($1, $2, $3, 1, $4, $5, $6::jsonb, NULL)`,
+          [
+            subscriptionId,
+            payload.eventId,
+            payload.eventType,
+            response.status,
+            new Date(),
+            body,
+          ],
+        );
+      } else {
+        // Delivery failed, schedule first retry
+        const nextRetryAt = new Date(Date.now() + getRetryDelayMs(1));
+        await query(
+          `INSERT INTO webhook_deliveries (
+            subscription_id,
+            event_id,
+            event_type,
+            attempt_count,
+            last_status_code,
+            last_error,
+            payload,
+            next_retry_at
+          )
+          VALUES ($1, $2, $3, 1, $4, $5, $6::jsonb, $7)`,
+          [
+            subscriptionId,
+            payload.eventId,
+            payload.eventType,
+            response.status,
+            `Webhook returned status ${response.status}`,
+            body,
+            nextRetryAt,
+          ],
+        );
 
-      if (!successful) {
-        logger.warn("Webhook delivery failed", {
+        logger.warn("Webhook delivery failed, scheduled retry", {
           subscriptionId,
           callbackUrl,
           eventId: payload.eventId,
           statusCode: response.status,
+          nextRetryAt,
         });
       }
     } catch (error) {
+      // Network error or timeout, schedule first retry
+      const nextRetryAt = new Date(Date.now() + getRetryDelayMs(1));
       await query(
         `INSERT INTO webhook_deliveries (
           subscription_id,
           event_id,
           event_type,
           attempt_count,
-          last_error
+          last_error,
+          payload,
+          next_retry_at
         )
-        VALUES ($1, $2, $3, 1, $4)`,
+        VALUES ($1, $2, $3, 1, $4, $5::jsonb, $6)`,
         [
           subscriptionId,
           payload.eventId,
           payload.eventType,
           error instanceof Error ? error.message : "Unknown webhook error",
+          body,
+          nextRetryAt,
         ],
       );
 
-      logger.error("Failed to send webhook", {
+      logger.error("Failed to send webhook, scheduled retry", {
         subscriptionId,
         callbackUrl,
         eventId: payload.eventId,
         error,
+        nextRetryAt,
       });
     }
   }
