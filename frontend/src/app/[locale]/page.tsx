@@ -10,17 +10,24 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useTranslations } from "next-intl"; // <--- This is the new one
+import { useRouter } from "next/navigation";
 import {
   useWalletStore,
   selectIsWalletConnected,
   selectWalletAddress,
   type WalletStore,
 } from "../stores/useWalletStore";
-import { useLoans, useRemittances, useUserBalance, useCreditScore } from "../hooks/useApi";
+import {
+  useLoans,
+  useRemittances,
+  useUserBalance,
+  useUserProfile,
+  useCreditScoreHistory,
+} from "../hooks/useApi";
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { CreditScoreGauge } from "../components/ui/CreditScoreGauge";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -28,6 +35,7 @@ function formatCurrency(value: number): string {
 
 export default function Home() {
   const t = useTranslations("HomePage");
+  const router = useRouter();
   const isConnected = useWalletStore(selectIsWalletConnected);
   const address = useWalletStore(selectWalletAddress);
   const setConnected = useWalletStore((state: WalletStore) => state.setConnected);
@@ -39,16 +47,22 @@ export default function Home() {
   const { data: balance, isLoading: balanceLoading } = useUserBalance({
     enabled: isConnected,
   });
-  const {
-    data: creditScore,
-    previousScore,
-    isLoading: creditScoreLoading,
-    error: creditScoreError,
-  } = useCreditScore(address ?? undefined, {
-    enabled: isConnected && !!address,
+  const { data: userProfile } = useUserProfile({ enabled: isConnected });
+  const { data: creditHistory } = useCreditScoreHistory(userProfile?.id, {
+    enabled: isConnected && !!userProfile?.id,
   });
 
   const isLoading = (loansLoading || remittancesLoading || balanceLoading) && isConnected;
+
+  const currentCreditScore = useMemo(() => {
+    if (!creditHistory || creditHistory.length === 0) return null;
+    return creditHistory[creditHistory.length - 1].score;
+  }, [creditHistory]);
+
+  const previousCreditScore = useMemo(() => {
+    if (!creditHistory || creditHistory.length < 2) return null;
+    return creditHistory[creditHistory.length - 2].score;
+  }, [creditHistory]);
 
   const stats = useMemo(() => {
     if (!isConnected) {
@@ -149,11 +163,7 @@ export default function Home() {
           </p>
           <button
             onClick={() => {
-              setConnected("demo", "0x123...abc", {
-                chainId: 1,
-                name: "Stellar",
-                isSupported: true,
-              });
+              setConnected("0x123...abc", { chainId: 1, name: "Stellar", isSupported: true });
             }}
             className="mt-6 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20"
           >
@@ -335,15 +345,18 @@ export default function Home() {
                   title: t("quickActions.applyLoan"),
                   desc: t("quickActions.applyLoanDesc"),
                   color: "bg-indigo-600",
+                  href: "/loans",
                 },
                 {
                   title: t("quickActions.sendRemittance"),
                   desc: t("quickActions.sendRemittanceDesc"),
                   color: "bg-zinc-900",
+                  href: "/send-remittance",
                 },
               ].map((action, i) => (
                 <button
                   key={i}
+                  onClick={() => router.push(action.href)}
                   className={`w-full text-left p-4 rounded-xl ${action.color} text-white hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/10 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2`}
                 >
                   <div className="flex items-center justify-between mb-1">
@@ -361,11 +374,14 @@ export default function Home() {
               aria-label="Credit Score"
             >
               <CreditScoreGauge
-                score={creditScore?.score}
-                previousScore={previousScore}
-                isLoading={creditScoreLoading}
-                error={creditScoreError instanceof Error ? creditScoreError.message : null}
+                score={currentCreditScore ?? 300}
+                previousScore={previousCreditScore ?? undefined}
               />
+              {!currentCreditScore && (
+                <p className="mt-2 text-center text-[10px] text-zinc-400">
+                  Join the ecosystem to build your on-chain credit history.
+                </p>
+              )}
             </section>
 
             <section

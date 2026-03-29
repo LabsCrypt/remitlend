@@ -578,6 +578,8 @@ impl LoanManager {
             .expect("lending pool not set");
         let token_client = TokenClient::new(env, &token);
         token_client.transfer(&env.current_contract_address(), &lending_pool, &collateral);
+
+        events::collateral_liquidated(env, loan_id, collateral);
     }
 
     pub fn initialize(
@@ -822,6 +824,7 @@ impl LoanManager {
             .persistent()
             .get(&loan_key)
             .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
 
         if loan.borrower != borrower {
             return Err(LoanError::BorrowerMismatch);
@@ -1081,6 +1084,7 @@ impl LoanManager {
             .persistent()
             .get(&loan_key)
             .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
 
         // Borrower must also sign.
         loan.borrower.require_auth();
@@ -1344,6 +1348,26 @@ impl LoanManager {
         Self::borrower_loan_count(&env, &borrower)
     }
 
+    pub fn get_admin(env: Env) -> Address {
+        Self::admin(&env)
+    }
+
+    pub fn get_nft_contract(env: Env) -> Address {
+        Self::nft_contract(&env)
+    }
+
+    pub fn get_pool_address(env: Env) -> Address {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("not initialized")
+    }
+
+    pub fn get_default_window(env: Env) -> u32 {
+        Self::default_window_ledgers(&env)
+    }
+
     pub fn get_min_score(env: Env) -> u32 {
         Self::bump_instance_ttl(&env);
         env.storage()
@@ -1563,7 +1587,6 @@ impl LoanManager {
             }
 
             loan.status = LoanStatus::Defaulted;
-            loan.collateral_amount = 0;
             env.storage().persistent().set(&loan_key, &loan);
             Self::bump_persistent_ttl(&env, &loan_key);
             Self::decrement_borrower_loan_count(&env, &loan.borrower);

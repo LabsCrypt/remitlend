@@ -4,10 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { PenLine, CircleAlert, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
-import {
-  TransactionConfirmModal,
-  type TransactionConfirmData,
-} from "../ui/TransactionConfirmModal";
 import { TransactionPreviewModal } from "../transaction/TransactionPreviewModal";
 import {
   TransactionStatusTracker,
@@ -54,7 +50,6 @@ export function StepFinalSignature({
   onBack,
   onSuccess,
 }: StepFinalSignatureProps) {
-  const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
   const [unsignedXdr, setUnsignedXdr] = useState<string>("");
   const [xdrError, setXdrError] = useState<string | null>(null);
   const [isBuildingXdr, setIsBuildingXdr] = useState(false);
@@ -64,8 +59,6 @@ export function StepFinalSignature({
   const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
   const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
   const [lastErrorDetails, setLastErrorDetails] = useState<TransactionErrorDetails | null>(null);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [confirmData, setConfirmData] = useState<TransactionConfirmData | null>(null);
 
   const pollingAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -142,25 +135,7 @@ export function StepFinalSignature({
     setTrackerGuidance("If needed, you can retry submission.");
   };
 
-  const openConfirmModal = () => {
-    setConfirmData({
-      type: "Loan Request",
-      amount: `${formatMoney(principal)} ${data.asset}`,
-      feeEstimate: "0.00001 XLM",
-      gasEstimate: "0.00001 XLM",
-      network: "Stellar Testnet",
-      details: [
-        { label: "Term", value: `${data.termDays} days` },
-        { label: "APR", value: `${ANNUAL_RATE_PERCENT}%` },
-        { label: "Due Date", value: dueDate.toLocaleDateString() },
-      ],
-    });
-    setIsConfirmOpen(true);
-  };
-
   const handleSignAndSubmit = () => {
-    setIsConfirmOpen(false);
-
     const managerContractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
     if (!managerContractId) {
       setXdrError("Missing NEXT_PUBLIC_MANAGER_CONTRACT_ID configuration.");
@@ -434,7 +409,7 @@ export function StepFinalSignature({
               Back
             </Button>
             <Button
-              onClick={openConfirmModal}
+              onClick={handleSignAndSubmit}
               isLoading={createLoan.isPending}
               disabled={isBuildingXdr}
               className="w-full"
@@ -445,16 +420,6 @@ export function StepFinalSignature({
           </div>
         </CardContent>
       </Card>
-
-      {confirmData && (
-        <TransactionConfirmModal
-          isOpen={isConfirmOpen}
-          data={confirmData}
-          onCancel={() => setIsConfirmOpen(false)}
-          onConfirm={handleSignAndSubmit}
-          isLoading={createLoan.isPending || txPreview.isLoading}
-        />
-      )}
 
       {txPreview.data && (
         <TransactionPreviewModal

@@ -1,11 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
+import { LoanApplicationWizard } from "../components/loan-wizard/LoanApplicationWizard";
 import { useCreditScore, useMinimumScore } from "../hooks/useApi";
 import { useToastStore } from "../stores/useToastStore";
 import {
@@ -13,25 +13,6 @@ import {
   selectWalletAddress,
   selectIsWalletConnected,
 } from "../stores/useWalletStore";
-
-const LazyLoanApplicationWizard = dynamic(
-  () =>
-    import("../components/loan-wizard/LoanApplicationWizard").then(
-      (module) => module.LoanApplicationWizard,
-    ),
-  {
-    loading: () => (
-      <Card>
-        <CardContent className="space-y-4 py-10">
-          <div className="h-4 w-40 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
-          <div className="h-24 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-900" />
-          <div className="h-24 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-900" />
-        </CardContent>
-      </Card>
-    ),
-    ssr: false,
-  },
-);
 
 function getScoreBandMax(score: number): number {
   if (score >= 750) return 50_000;
@@ -87,7 +68,7 @@ export default function RequestLoanPage() {
   }, [configError, addToast]);
 
   const minimumScore = minScoreConfig?.minScore ?? 500;
-  const resolvedCreditScore = creditScore?.score ?? 0;
+  const resolvedCreditScore = creditScore ?? 0;
   const maxAmount = Math.min(
     getScoreBandMax(resolvedCreditScore),
     minScoreConfig?.maxAmount ?? Number.POSITIVE_INFINITY,
@@ -216,7 +197,7 @@ export default function RequestLoanPage() {
             </p>
           </div>
 
-          <LazyLoanApplicationWizard
+          <LoanApplicationWizard
             borrowerAddress={borrowerAddress!}
             creditScore={resolvedCreditScore}
             maxAmount={maxAmount}

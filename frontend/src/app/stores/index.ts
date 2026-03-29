@@ -22,19 +22,11 @@ export {
   selectWalletAddress,
   selectWalletStatus,
   selectIsWalletConnected,
-  selectWalletType,
   selectWalletNetwork,
   selectWalletBalances,
   selectWalletError,
-  selectWalletHydrated,
 } from "./useWalletStore";
-export type {
-  WalletStatus,
-  WalletType,
-  WalletNetwork,
-  TokenBalance,
-  WalletStore,
-} from "./useWalletStore";
+export type { WalletStatus, WalletNetwork, TokenBalance, WalletStore } from "./useWalletStore";
 
 export {
   useUIStore,

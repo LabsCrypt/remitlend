@@ -84,6 +84,14 @@
                       },
                       {
                         "key": {
+                          "symbol": "COUNT"
+                        },
+                        "val": {
+                          "u32": 1
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "PENDING"
                         },
                         "val": {
@@ -102,6 +110,14 @@
                               },
                               "val": {
                                 "u64": 87400
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "id"
+                              },
+                              "val": {
+                                "u32": 1
                               }
                             },
                             {
@@ -130,6 +146,14 @@
                                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                                   }
                                 ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "status"
+                              },
+                              "val": {
+                                "u32": 0
                               }
                             },
                             {

@@ -17,13 +17,11 @@ beforeEach(() => {
   useUserStore.setState({ user: null, isLoading: false, error: null, isAuthenticated: false });
   useWalletStore.setState({
     status: "disconnected",
-    walletType: null,
     address: null,
     network: null,
     balances: [],
     isLoadingBalances: false,
     error: null,
-    hydrated: false,
   });
   useUIStore.setState((state) => ({
     ...state,
@@ -99,69 +97,28 @@ describe("useWalletStore", () => {
   const mockNetwork = { chainId: 1, name: "Ethereum", isSupported: true };
 
   it("starts disconnected", () => {
-    const { status, address, walletType } = useWalletStore.getState();
+    const { status, address } = useWalletStore.getState();
     expect(status).toBe("disconnected");
     expect(address).toBeNull();
-    expect(walletType).toBeNull();
   });
 
-  it("setConnected stores wallet type, address, and network", () => {
-    useWalletStore.getState().setConnected("demo", "0x123", mockNetwork);
+  it("setConnected stores address and network", () => {
+    useWalletStore.getState().setConnected("0x123", mockNetwork);
 
-    const { status, walletType, address, network, hydrated } = useWalletStore.getState();
+    const { status, address, network } = useWalletStore.getState();
     expect(status).toBe("connected");
-    expect(walletType).toBe("demo");
     expect(address).toBe("0x123");
     expect(network?.chainId).toBe(1);
-    expect(hydrated).toBe(true);
-    expect(window.localStorage.getItem("remitlend.wallet-session")).toContain(
-      '"walletType":"demo"',
-    );
   });
 
   it("disconnect resets to initial state", () => {
-    useWalletStore.getState().setConnected("demo", "0x123", mockNetwork);
+    useWalletStore.getState().setConnected("0x123", mockNetwork);
     useWalletStore.getState().disconnect();
 
-    const { status, walletType, address, balances, hydrated } = useWalletStore.getState();
+    const { status, address, balances } = useWalletStore.getState();
     expect(status).toBe("disconnected");
-    expect(walletType).toBeNull();
     expect(address).toBeNull();
     expect(balances).toHaveLength(0);
-    expect(hydrated).toBe(true);
-    expect(window.localStorage.getItem("remitlend.wallet-session")).toBeNull();
-  });
-
-  it("initializeSession silently restores a persisted wallet session", () => {
-    window.localStorage.setItem(
-      "remitlend.wallet-session",
-      JSON.stringify({
-        walletType: "freighter",
-        address: "GABC123",
-        network: mockNetwork,
-      }),
-    );
-
-    useWalletStore.getState().initializeSession();
-
-    const { status, walletType, address, network, hydrated } = useWalletStore.getState();
-    expect(status).toBe("connected");
-    expect(walletType).toBe("freighter");
-    expect(address).toBe("GABC123");
-    expect(network).toEqual(mockNetwork);
-    expect(hydrated).toBe(true);
-  });
-
-  it("initializeSession clears malformed persisted wallet data", () => {
-    window.localStorage.setItem("remitlend.wallet-session", JSON.stringify({ address: "bad" }));
-
-    useWalletStore.getState().initializeSession();
-
-    const { status, address, hydrated } = useWalletStore.getState();
-    expect(status).toBe("disconnected");
-    expect(address).toBeNull();
-    expect(hydrated).toBe(true);
-    expect(window.localStorage.getItem("remitlend.wallet-session")).toBeNull();
   });
 
   it("setBalances stores balances and clears loading flag", () => {
