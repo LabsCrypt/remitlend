@@ -108,7 +108,7 @@ pub enum DataKey {
     GracePeriodLedgers,
     DefaultWindowLedgers,
     RateOracle,
-
+}
 
 #[contractimpl]
 impl LoanManager {
