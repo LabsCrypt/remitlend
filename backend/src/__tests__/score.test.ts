@@ -21,6 +21,16 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   closePool: jest.fn(),
 }));
 
+// Mock CacheService to prevent Redis connections
+jest.unstable_mockModule("../services/cacheService.js", () => ({
+  cacheService: {
+    get: jest.fn<() => Promise<any>>().mockResolvedValue(null),
+    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
+  },
+}));
+
 // Use dynamic imports to ensure mocks are applied
 await import("../db/connection.js");
 const { default: app } = await import("../app.js");
