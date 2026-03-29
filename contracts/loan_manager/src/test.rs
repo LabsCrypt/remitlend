@@ -1022,7 +1022,7 @@ fn test_small_loan_interest_accrual_precision() {
 
     // Verify the loan persists with the new field intact
     let loan_after_repayment = manager.get_loan(&loan_id);
-    
+
     // Principal should be fully paid
     assert_eq!(loan_after_repayment.principal_paid, approved_loan.amount);
     // Interest should have been accrued and paid
