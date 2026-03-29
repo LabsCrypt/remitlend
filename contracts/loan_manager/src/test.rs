@@ -204,8 +204,14 @@ fn test_cancel_pending_loan_returns_collateral() {
     manager.cancel_loan(&borrower, &loan_id);
 
     assert_eq!(manager.get_collateral(&loan_id), 0);
-    assert_eq!(token_client.balance(&borrower), borrower_balance_before + 500);
-    assert_eq!(token_client.balance(&manager.address), contract_balance_before - 500);
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before + 500
+    );
+    assert_eq!(
+        token_client.balance(&manager.address),
+        contract_balance_before - 500
+    );
 }
 
 #[test]
@@ -233,7 +239,10 @@ fn test_reject_pending_loan_returns_collateral() {
     manager.reject_loan(&loan_id, &String::from_str(&env, "manual review failed"));
 
     assert_eq!(manager.get_collateral(&loan_id), 0);
-    assert_eq!(token_client.balance(&borrower), borrower_balance_before + 400);
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before + 400
+    );
 }
 
 #[test]
@@ -242,11 +251,7 @@ fn test_admin_transfer_via_propose_accept() {
     env.mock_all_auths_allowing_non_root_auth();
 
     let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
-    let current_admin: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Admin)
-        .unwrap();
+    let current_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
 
     let proposed_admin = Address::generate(&env);
 
@@ -261,11 +266,7 @@ fn test_admin_transfer_via_propose_accept() {
 
     manager.accept_admin();
 
-    let accepted_admin: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Admin)
-        .unwrap();
+    let accepted_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
     assert_eq!(accepted_admin, proposed_admin);
     assert_ne!(accepted_admin, current_admin);
 }

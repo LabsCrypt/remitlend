@@ -143,7 +143,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
   try {
     const { borrower } = req.params;
     const { limit, offset, sort } = parseQueryParams(req);
-    const cacheKey = buildEventsCacheKey("borrower", borrower, req);
+    const cacheKey = buildEventsCacheKey("borrower", borrower as string, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
@@ -213,7 +213,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = buildEventsCacheKey("loan", loanId, req);
+    const cacheKey = buildEventsCacheKey("loan", loanId as string, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
@@ -248,7 +248,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
 
     const response = createPaginatedResponse(
       {
-        loanId: Number.parseInt(loanId, 10),
+        loanId: Number.parseInt(loanId as string, 10),
         events: result.rows,
       },
       Number.parseInt(totalCount.rows[0].count, 10),

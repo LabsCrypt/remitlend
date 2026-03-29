@@ -28,7 +28,7 @@ jest.unstable_mockModule("../services/cacheService.js", () => ({
     set: mockCacheSet,
     delete: jest.fn(),
     invalidatePattern: jest.fn(),
-    ping: jest.fn().mockResolvedValue("ok"),
+    ping: jest.fn<() => Promise<"ok" | "error">>().mockResolvedValue("ok"),
     close: jest.fn(),
   },
 }));

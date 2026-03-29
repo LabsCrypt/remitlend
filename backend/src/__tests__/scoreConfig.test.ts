@@ -25,7 +25,7 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
-  webhookService: { dispatch: jest.fn().mockResolvedValue(undefined) },
+  webhookService: { dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(void 0) },
   WebhookEventType: {},
 }));
 
@@ -44,25 +44,25 @@ describe("SorobanService.getScoreConfig()", () => {
   it("returns default repaymentDelta of 15 when env var is not set", () => {
     delete process.env.SCORE_REPAYMENT_DELTA;
     const cfg = mockGetScoreConfig();
-    expect(cfg.repaymentDelta).toBe(15);
+    expect((cfg as any).repaymentDelta).toBe(15);
   });
 
   it("returns default defaultPenalty of 50 when env var is not set", () => {
     delete process.env.SCORE_DEFAULT_PENALTY;
     const cfg = mockGetScoreConfig();
-    expect(cfg.defaultPenalty).toBe(50);
+    expect((cfg as any).defaultPenalty).toBe(50);
   });
 
   it("returns repaymentDelta from SCORE_REPAYMENT_DELTA env var", () => {
     process.env.SCORE_REPAYMENT_DELTA = "20";
     const cfg = mockGetScoreConfig();
-    expect(cfg.repaymentDelta).toBe(20);
+    expect((cfg as any).repaymentDelta).toBe(20);
   });
 
   it("returns defaultPenalty from SCORE_DEFAULT_PENALTY env var", () => {
     process.env.SCORE_DEFAULT_PENALTY = "75";
     const cfg = mockGetScoreConfig();
-    expect(cfg.defaultPenalty).toBe(75);
+    expect((cfg as any).defaultPenalty).toBe(75);
   });
 });
 
