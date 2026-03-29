@@ -831,3 +831,48 @@ fn test_get_admin_returns_initialized_admin() {
 
     assert_eq!(pool_client.get_admin(), admin);
 }
+
+#[test]
+fn test_get_depositor_yield_no_deposit() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token_id, _, _) = create_token_contract(&env, &admin);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    let provider = Address::generate(&env);
+    assert_eq!(pool_client.get_depositor_yield(&provider, &token_id), (0, 0));
+}
+
+#[test]
+fn test_get_depositor_yield_reflects_accrued_interest() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _) = create_token_contract(&env, &admin);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1000);
+    pool_client.deposit(&provider, &token_id, &1000);
+
+    // Before any yield: asset_value == deposit amount.
+    let (shares, asset_value) = pool_client.get_depositor_yield(&provider, &token_id);
+    assert_eq!(shares, 1000);
+    assert_eq!(asset_value, 1000);
+
+    // Simulate interest repaid into the pool (increases pool balance without
+    // minting new shares, so each share is now worth more).
+    stellar_asset_client.mint(&pool_id, &200);
+
+    let (shares2, asset_value2) = pool_client.get_depositor_yield(&provider, &token_id);
+    assert_eq!(shares2, 1000);
+    assert_eq!(asset_value2, 1200); // 1000 shares * 1200 assets / 1000 total_shares
+}

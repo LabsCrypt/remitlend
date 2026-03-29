@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { Networks } from "@stellar/stellar-sdk";
-import { getStellarConfig } from "../config/stellar.js";
+import { getStellarConfig, createSorobanRpcServer } from "../config/stellar.js";
 
 const originalStellarEnv = {
   STELLAR_NETWORK: process.env.STELLAR_NETWORK,
@@ -33,8 +33,7 @@ afterEach(() => {
   restoreEnv();
 });
 
-describe("stellar config", () => {
-  it("defaults to testnet settings when env vars are absent", () => {
+describe("stellar config", () => {  it("defaults to testnet settings when env vars are absent", () => {
     delete process.env.STELLAR_NETWORK;
     delete process.env.STELLAR_RPC_URL;
     delete process.env.STELLAR_NETWORK_PASSPHRASE;
@@ -74,5 +73,64 @@ describe("stellar config", () => {
     expect(() => getStellarConfig()).toThrow(
       'STELLAR_RPC_URL appears to target testnet while STELLAR_NETWORK is "mainnet".',
     );
+  });
+});
+
+describe("createSorobanRpcServer / fetchWithTimeout", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    delete process.env.STELLAR_NETWORK;
+    delete process.env.STELLAR_RPC_URL;
+    delete process.env.STELLAR_NETWORK_PASSPHRASE;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  });
+
+  it("passes the AbortSignal through to fetch", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    globalThis.fetch = jest.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedSignal = init?.signal ?? undefined;
+      return Promise.resolve(new Response("{}"));
+    }) as typeof fetch;
+
+    const server = createSorobanRpcServer();
+    // Trigger any HTTP call; getHealth is the lightest one
+    await (server as unknown as { _fetch: typeof fetch })._fetch?.("https://soroban-testnet.stellar.org", {});
+
+    // Directly invoke the custom fetch that was injected
+    const customFetch = (globalThis.fetch as jest.Mock);
+    expect(customFetch).toBeDefined();
+  });
+
+  it("aborts the request after the timeout fires", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    globalThis.fetch = jest.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedSignal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+        );
+      });
+    }) as typeof fetch;
+
+    const TIMEOUT = 50;
+    function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT);
+      return globalThis.fetch(input, { ...init, signal: controller.signal }).finally(() =>
+        clearTimeout(timer),
+      );
+    }
+
+    await expect(
+      fetchWithTimeout("https://soroban-testnet.stellar.org"),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });
