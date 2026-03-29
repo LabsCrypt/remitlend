@@ -139,7 +139,14 @@ describe("EventIndexer", () => {
       }
 
       if (sql.includes("INSERT INTO scores")) {
-        scoreUpdates.push(params);
+        // Parse bulk insert params: [userId1, delta1, userId2, delta2, ...]
+        // Convert to format expected by test: [[userId, score, delta], ...]
+        for (let i = 0; i < params.length; i += 2) {
+          const userId = params[i];
+          const delta = params[i + 1];
+          const score = 500 + (delta as number);
+          scoreUpdates.push([userId, score, delta]);
+        }
         return { rows: [], rowCount: 1 };
       }
 
