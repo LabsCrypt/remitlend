@@ -1,16 +1,25 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol};
 
-#[contract]
-pub struct LoanManager;
+#[derive(Clone)]
+#[soroban_sdk::contracttype]
+pub enum DataKey {
+    Admin,
+    Paused,
+}
 
-#[contractimpl]
-impl LoanManager {
-    pub fn request_loan(env: Env, borrower: Address, amount: i128) {
-        // Loan request logic
-    }
-
-    pub fn approve_loan(env: Env, loan_id: u32) {
-        // Approval logic
+fn require_admin(env: &Env, caller: &Address) {
+    let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("not initialized");
+    if caller != &admin {
+        panic!("not authorized");
     }
 }
+
+fn require_not_paused(env: &Env) {
+    let paused: bool = env.storage().instance().get(&DataKey::Paused).unwrap_or(false);
+    if paused {
+        panic!("contract is paused");
+    }
+}
+
+// ...existing contract logic (LoanManager struct, impl, etc.)...
