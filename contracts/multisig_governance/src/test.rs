@@ -590,7 +590,12 @@ fn propose_rejects_too_many_signers() {
 fn propose_rejects_zero_threshold() {
     let (env, client, _, _) = setup();
     let signers = Vec::from_slice(&env, &[Address::generate(&env)]);
-    client.propose_admin_transfer(&Address::generate(&env), &signers, &0, &MIN_TIMELOCK_SECONDS);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &0,
+        &MIN_TIMELOCK_SECONDS,
+    );
 }
 
 #[test]
@@ -601,7 +606,12 @@ fn propose_succeeds_after_cancelled_proposal() {
     let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
 
     set_ts(&env, 1000);
-    client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
     client.cancel_admin_transfer();
 
     set_ts(&env, 1000 + REPROPOSAL_COOLDOWN_SECONDS + 1);
@@ -618,7 +628,12 @@ fn cancel_already_cancelled_is_noop() {
     let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
 
     set_ts(&env, 1000);
-    client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
     let proposal_id = client.get_pending_transfer().id;
     client.emergency_cancel_proposal(&proposal_id, &None);
 
@@ -635,7 +650,12 @@ fn emergency_cancel_already_cancelled_is_noop() {
     let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
 
     set_ts(&env, 1000);
-    client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
     let proposal_id = client.get_pending_transfer().id;
     client.emergency_cancel_proposal(&proposal_id, &None);
 
@@ -652,7 +672,12 @@ fn emergency_cancel_wrong_id_panics() {
     let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
 
     set_ts(&env, 1000);
-    client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
     client.emergency_cancel_proposal(&9999, &None);
 }
 
@@ -664,7 +689,12 @@ fn expire_cancelled_proposal_panics() {
     let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
 
     set_ts(&env, 1000);
-    client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
     let proposal_id = client.get_pending_transfer().id;
     client.emergency_cancel_proposal(&proposal_id, &None);
 
