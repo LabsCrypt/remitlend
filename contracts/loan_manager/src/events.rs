@@ -56,10 +56,10 @@ pub fn unpaused(env: &Env) {
     env.events().publish(topics, ());
 }
 
-pub fn min_score_updated(env: &Env, old_score: u32, new_score: u32) {
-    let topics = (Symbol::new(env, "MinScoreUpdated"),);
-    env.events().publish(topics, (old_score, new_score));
-}
+// pub fn min_score_updated(env: &Env, old_score: u32, new_score: u32) {
+//     let topics = (Symbol::new(env, "MinScoreUpdated"),);
+//     env.events().publish(topics, (old_score, new_score));
+// }
 
 pub fn interest_rate_updated(env: &Env, old_rate: u32, new_rate: u32) {
     let topics = (Symbol::new(env, "InterestRateUpdated"),);
