@@ -367,7 +367,7 @@ export class EventIndexer {
             term_ledgers
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          ON CONFLICT (event_id) DO NOTHING
+          ON CONFLICT DO NOTHING
           RETURNING event_id`,
           [
             event.eventId,
