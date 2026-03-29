@@ -1,12 +1,30 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState } from "react";
-import { CreditScoreTrendChart, type CreditScoreDataPoint } from "../charts/CreditScoreTrendChart";
-import { YieldEarningsChart, type YieldDataPoint } from "../charts/YieldEarningsChart";
+import type { CreditScoreDataPoint } from "../charts/CreditScoreTrendChart";
+import type { YieldDataPoint } from "../charts/YieldEarningsChart";
 import { useCreditScoreHistory, useYieldHistory } from "@/app/hooks/useApi";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { SkeletonChart } from "../ui/Skeleton";
 import { RefreshCw } from "lucide-react";
+
+const LazyCreditScoreTrendChart = dynamic(
+  () => import("../charts/CreditScoreTrendChart").then((module) => module.CreditScoreTrendChart),
+  {
+    loading: () => <SkeletonChart className="h-full" />,
+    ssr: false,
+  },
+);
+
+const LazyYieldEarningsChart = dynamic(
+  () => import("../charts/YieldEarningsChart").then((module) => module.YieldEarningsChart),
+  {
+    loading: () => <SkeletonChart className="h-full" />,
+    ssr: false,
+  },
+);
 
 interface FinancialPerformanceDashboardProps {
   userId: string;
@@ -160,11 +178,7 @@ export function FinancialPerformanceDashboard({
         {showCreditScore && (
           <div className="lg:col-span-2">
             {isLoadingScore && !useMockData ? (
-              <Card className="p-8">
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                </div>
-              </Card>
+              <SkeletonChart />
             ) : scoreError && !useMockData ? (
               <Card className="p-8">
                 <div className="text-center">
@@ -173,7 +187,7 @@ export function FinancialPerformanceDashboard({
                 </div>
               </Card>
             ) : (
-              <CreditScoreTrendChart data={displayCreditScoreData} />
+              <LazyCreditScoreTrendChart data={displayCreditScoreData} />
             )}
           </div>
         )}
@@ -182,11 +196,7 @@ export function FinancialPerformanceDashboard({
         {showYield && (
           <div className="lg:col-span-2">
             {isLoadingYield && !useMockData ? (
-              <Card className="p-8">
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-                </div>
-              </Card>
+              <SkeletonChart />
             ) : yieldError && !useMockData ? (
               <Card className="p-8">
                 <div className="text-center">
@@ -195,7 +205,7 @@ export function FinancialPerformanceDashboard({
                 </div>
               </Card>
             ) : (
-              <YieldEarningsChart data={displayYieldData} />
+              <LazyYieldEarningsChart data={displayYieldData} />
             )}
           </div>
         )}

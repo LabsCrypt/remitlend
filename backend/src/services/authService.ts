@@ -1,9 +1,16 @@
 import jwt from "jsonwebtoken";
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import crypto from "crypto";
+import {
+  resolveRoleForWallet,
+  resolveScopesForRole,
+  type UserRole,
+} from "../auth/rbac.js";
 
 export interface JwtPayload {
   publicKey: string;
+  role: UserRole;
+  scopes: string[];
   iat: number;
   exp: number;
 }
@@ -80,8 +87,13 @@ export function verifyChallengeTimestamp(
 
 export function generateJwtToken(publicKey: string): string {
   const secret = getJwtSecret();
+  const role = resolveRoleForWallet(publicKey);
+  const scopes = resolveScopesForRole(role);
+
   const payload: Omit<JwtPayload, "iat" | "exp"> = {
     publicKey,
+    role,
+    scopes,
   };
 
   return jwt.sign(payload, secret, {

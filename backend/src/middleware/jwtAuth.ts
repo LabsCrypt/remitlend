@@ -1,10 +1,43 @@
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "../errors/AppError.js";
+import { type UserRole } from "../auth/rbac.js";
 import {
   verifyJwtToken,
   extractBearerToken,
   type JwtPayload,
 } from "../services/authService.js";
+
+const DEFAULT_JWT_COOKIE_NAME = "remitlend_jwt";
+
+function extractCookieToken(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookieName = process.env.JWT_COOKIE_NAME ?? DEFAULT_JWT_COOKIE_NAME;
+  const cookiePairs = cookieHeader.split(";");
+
+  for (const pair of cookiePairs) {
+    const [rawKey, ...rawValueParts] = pair.split("=");
+    const key = rawKey?.trim();
+    if (key !== cookieName) {
+      continue;
+    }
+
+    const rawValue = rawValueParts.join("=").trim();
+    if (!rawValue) {
+      return null;
+    }
+
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+
+  return null;
+}
 
 declare module "express" {
   interface Request {
@@ -18,14 +51,11 @@ export const requireJwtAuth = (
   next: NextFunction,
 ): void => {
   const authHeader = req.headers.authorization;
+  const cookieToken = extractCookieToken(req.headers.cookie);
 
-  // For SSE connections the browser's EventSource API cannot set custom
-  // headers, so we also accept the token as a `?token=` query parameter.
-  // We prioritise the Authorization header when both are present.
-  const rawQueryToken =
-    typeof req.query.token === "string" ? req.query.token : undefined;
-
-  const token = extractBearerToken(authHeader) ?? rawQueryToken ?? null;
+  // Token must come from Authorization header or authenticated cookie.
+  // Query-string tokens are intentionally rejected to avoid URL token leaks.
+  const token = extractBearerToken(authHeader) ?? cookieToken ?? null;
   if (!token) {
     throw AppError.unauthorized("Missing or invalid Authorization header");
   }
@@ -116,8 +146,9 @@ export const requireBorrower = (
   _res: Response,
   next: NextFunction,
 ): void => {
-  if (!req.user?.publicKey) {
-    throw AppError.unauthorized("Authentication required");
+  if (!req.user?.publicKey) throw AppError.unauthorized("Authentication required");
+  if (req.user.role !== "borrower" && req.user.role !== "admin") {
+    throw AppError.forbidden("Borrower role required");
   }
 
   next();
@@ -128,11 +159,49 @@ export const requireLender = (
   _res: Response,
   next: NextFunction,
 ): void => {
-  if (!req.user?.publicKey) {
-    throw AppError.unauthorized("Authentication required");
+  if (!req.user?.publicKey) throw AppError.unauthorized("Authentication required");
+  if (req.user.role !== "lender" && req.user.role !== "admin") {
+    throw AppError.forbidden("Lender role required");
   }
 
   next();
+};
+
+export const requireRoles = (...roles: UserRole[]) => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user?.publicKey) {
+      throw AppError.unauthorized("Authentication required");
+    }
+
+    if (!roles.includes(req.user.role)) {
+      throw AppError.forbidden("Insufficient role permissions");
+    }
+
+    next();
+  };
+};
+
+export const requireScopes = (...requiredScopes: string[]) => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user?.publicKey) {
+      throw AppError.unauthorized("Authentication required");
+    }
+
+    const grantedScopes = new Set(req.user.scopes ?? []);
+    if (grantedScopes.has("admin:all")) {
+      return next();
+    }
+
+    const missingScope = requiredScopes.find(
+      (scope) => !grantedScopes.has(scope),
+    );
+
+    if (missingScope) {
+      throw AppError.forbidden(`Missing required scope: ${missingScope}`);
+    }
+
+    next();
+  };
 };
 
 export { JwtPayload };

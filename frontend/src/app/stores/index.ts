@@ -22,11 +22,19 @@ export {
   selectWalletAddress,
   selectWalletStatus,
   selectIsWalletConnected,
+  selectWalletType,
   selectWalletNetwork,
   selectWalletBalances,
   selectWalletError,
+  selectWalletHydrated,
 } from "./useWalletStore";
-export type { WalletStatus, WalletNetwork, TokenBalance, WalletStore } from "./useWalletStore";
+export type {
+  WalletStatus,
+  WalletType,
+  WalletNetwork,
+  TokenBalance,
+  WalletStore,
+} from "./useWalletStore";
 
 export {
   useUIStore,
@@ -57,3 +65,8 @@ export type {
   LevelUpReward,
   GamificationStore,
 } from "./useGamificationStore";
+
+export { useThemeStore, selectTheme, selectThemeHydrated } from "./useThemeStore";
+export { THEME_STORAGE_KEY } from "../lib/theme";
+export type { ThemeStore } from "./useThemeStore";
+export type { Theme } from "../lib/theme";

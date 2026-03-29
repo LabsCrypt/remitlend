@@ -1,5 +1,24 @@
-import { FinancialPerformanceDashboard } from "../components/dashboards/FinancialPerformanceDashboard";
+"use client";
+
+import dynamic from "next/dynamic";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
+import { SkeletonChart } from "../components/ui/Skeleton";
+
+const LazyFinancialPerformanceDashboard = dynamic(
+  () =>
+    import("../components/dashboards/FinancialPerformanceDashboard").then(
+      (module) => module.FinancialPerformanceDashboard,
+    ),
+  {
+    loading: () => (
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SkeletonChart />
+        <SkeletonChart />
+      </div>
+    ),
+    ssr: false,
+  },
+);
 
 export default function AnalyticsPage() {
   // In a real app, this would come from authentication context
@@ -15,7 +34,7 @@ export default function AnalyticsPage() {
       </header>
 
       <ErrorBoundary scope="analytics dashboard" variant="section">
-        <FinancialPerformanceDashboard userId={userId} userType="both" />
+        <LazyFinancialPerformanceDashboard userId={userId} userType="both" />
       </ErrorBoundary>
     </main>
   );

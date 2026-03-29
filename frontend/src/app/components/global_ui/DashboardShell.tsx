@@ -4,8 +4,10 @@ import { useState, type ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { Breadcrumbs } from "./Breadcrumbs";
+import { Spinner } from "./Spinner";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { selectWalletHydrated, useWalletStore } from "../../stores/useWalletStore";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,6 +19,7 @@ interface DashboardShellProps {
 
 export function DashboardShell({ children }: DashboardShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const walletHydrated = useWalletStore(selectWalletHydrated);
 
   return (
     <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -24,6 +27,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
       {isSidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-zinc-900/50 backdrop-blur-sm lg:hidden"
+          aria-hidden="true"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -44,8 +48,21 @@ export function DashboardShell({ children }: DashboardShellProps) {
         {/* Dynamic Page Content */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
-            <Breadcrumbs />
-            {children}
+            {walletHydrated ? (
+              <>
+                <Breadcrumbs />
+                {children}
+              </>
+            ) : (
+              <div className="flex min-h-[50vh] items-center justify-center">
+                <Spinner
+                  type="spin"
+                  size="lg"
+                  color="rgb(79 70 229)"
+                  label="Restoring wallet session"
+                />
+              </div>
+            )}
           </div>
         </main>
       </div>

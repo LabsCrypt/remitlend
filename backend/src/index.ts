@@ -1,17 +1,23 @@
 import dotenv from "dotenv";
+dotenv.config();
+
+// Sentry must be initialized before any other imports so it can instrument them
+import { initSentry } from "./config/sentry.js";
+initSentry();
+
 import app from "./app.js";
 import logger from "./utils/logger.js";
+import pool from "./db/connection.js";
 import { startIndexer, stopIndexer } from "./services/indexerManager.js";
 import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
-
-dotenv.config();
+import { eventStreamService } from "./services/eventStreamService.js";
 
 const port = process.env.PORT || 3001;
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   logger.info(`Server is running on port ${port}`);
 
   // Start the event indexer
@@ -21,17 +27,47 @@ app.listen(port, () => {
   startDefaultCheckerScheduler();
 });
 
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  logger.info("SIGTERM signal received: closing HTTP server");
-  stopIndexer();
-  stopDefaultCheckerScheduler();
-  process.exit(0);
-});
+const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
+  logger.info(`${signal} signal received: closing HTTP server`);
 
-process.on("SIGINT", () => {
-  logger.info("SIGINT signal received: closing HTTP server");
+  // Timeout (30s) force-kills if shutdown stalls
+  const timeout = setTimeout(() => {
+    logger.error("Shutdown stalled for 30s, forcing exit.");
+    process.exit(1);
+  }, 30000);
+  timeout.unref();
+
   stopIndexer();
   stopDefaultCheckerScheduler();
-  process.exit(0);
-});
+  
+  if (typeof eventStreamService.closeAll === 'function') {
+    eventStreamService.closeAll("Server shutting down");
+  } else if (typeof eventStreamService.closeAllConnections === 'function') {
+    eventStreamService.closeAllConnections("Server shutting down");
+  }
+
+  server.close(async (err) => {
+    if (err) {
+      logger.error("HTTP server shutdown failed", { signal, err });
+      process.exit(1);
+      return;
+    }
+
+    try {
+      if (pool && typeof (pool as any).drain === 'function') {
+        await (pool as any).drain();
+        logger.info("Database pool drained.");
+      } else if (pool && typeof (pool as any).end === 'function') {
+        await (pool as any).end();
+        logger.info("Database pool ended.");
+      }
+    } catch (e) {
+      logger.error("Failed to drain DB pool", e);
+    }
+
+    process.exit(0);
+  });
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

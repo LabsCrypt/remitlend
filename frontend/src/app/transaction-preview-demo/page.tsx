@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { TransactionPreviewModal } from "../components/transaction/TransactionPreviewModal";
@@ -13,8 +12,12 @@ import {
   formatRemittanceSend,
 } from "../utils/transactionFormatter";
 import { Wallet, ArrowUpRight, ArrowDownLeft, Send, HandCoins } from "lucide-react";
+import { useContractToast } from "../hooks/useContractToast";
 
 export default function TransactionPreviewDemo() {
+  const txPreview = useTransactionPreview();
+  const toast = useContractToast();
+
   // Gate demo page in production
   if (process.env.NODE_ENV === "production") {
     return (
@@ -32,7 +35,6 @@ export default function TransactionPreviewDemo() {
       </main>
     );
   }
-  const txPreview = useTransactionPreview();
 
   const demoTransactions = [
     {
@@ -47,7 +49,7 @@ export default function TransactionPreviewDemo() {
         });
         txPreview.show(data, async () => {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          alert("Loan request submitted successfully!");
+          toast.success("Loan request submitted successfully!");
         });
       },
     },
@@ -63,7 +65,7 @@ export default function TransactionPreviewDemo() {
         });
         txPreview.show(data, async () => {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          alert("Loan repayment successful!");
+          toast.success("Loan repayment successful!");
         });
       },
     },
@@ -79,7 +81,7 @@ export default function TransactionPreviewDemo() {
         });
         txPreview.show(data, async () => {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          alert("Deposit successful!");
+          toast.success("Deposit successful!");
         });
       },
     },
@@ -95,7 +97,7 @@ export default function TransactionPreviewDemo() {
         });
         txPreview.show(data, async () => {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          alert("Withdrawal successful!");
+          toast.success("Withdrawal successful!");
         });
       },
     },
@@ -112,7 +114,7 @@ export default function TransactionPreviewDemo() {
         });
         txPreview.show(data, async () => {
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          alert("Remittance sent successfully!");
+          toast.success("Remittance sent successfully!");
         });
       },
     },
@@ -127,7 +129,7 @@ export default function TransactionPreviewDemo() {
         </h1>
         <p className="text-zinc-600 dark:text-zinc-400">
           Click any button below to see the transaction preview modal in action. This modal shows
-          users exactly what they're signing before a blockchain transaction.
+          users exactly what they&apos;re signing before a blockchain transaction.
         </p>
       </header>
 

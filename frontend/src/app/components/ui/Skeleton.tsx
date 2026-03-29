@@ -6,7 +6,7 @@ import { clsx } from "clsx";
 const baseClasses = "animate-pulse rounded bg-zinc-200 dark:bg-zinc-800";
 
 export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={clsx(baseClasses, className)} {...props} />;
+  return <div aria-hidden="true" className={clsx(baseClasses, className)} {...props} />;
 }
 
 export function SkeletonText({ lines = 1, className }: { lines?: number; className?: string }) {
@@ -25,6 +25,8 @@ export function SkeletonText({ lines = 1, className }: { lines?: number; classNa
 export function SkeletonCard({ className }: { className?: string }) {
   return (
     <div
+      role="status"
+      aria-label="Loading card content"
       className={clsx(
         "rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950",
         className,
@@ -45,6 +47,8 @@ export function SkeletonCard({ className }: { className?: string }) {
 export function SkeletonChart({ className }: { className?: string }) {
   return (
     <div
+      role="status"
+      aria-label="Loading chart"
       className={clsx(
         "rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950",
         className,

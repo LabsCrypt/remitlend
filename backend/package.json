@@ -16,12 +16,15 @@
     "migrate:create": "node-pg-migrate create",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
-    "seed": "tsx src/seed/index.ts"
+    "seed": "npm run seed:dev",
+    "seed:dev": "tsx src/seed/index.ts",
+    "seed:reset": "tsx src/seed/index.ts --reset"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@sentry/node": "^10.45.0",
     "@stellar/stellar-sdk": "^14.5.0",
     "compression": "^1.8.1",
     "cors": "^2.8.6",

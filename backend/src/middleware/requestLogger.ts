@@ -19,6 +19,7 @@ export const requestLogger = (
     const { statusCode } = res;
 
     const payload = {
+      requestId: req.requestId,
       method,
       url: originalUrl,
       statusCode,

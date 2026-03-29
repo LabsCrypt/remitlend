@@ -71,7 +71,7 @@ export function useTransactionPreview(): UseTransactionPreviewReturn {
       setIsLoading(true);
       await onConfirmCallback();
       close();
-    } catch (error) {
+    } catch {
       // Error handling is done by the callback (useContractMutation)
       setIsLoading(false);
       // Keep modal open on error so user can retry or cancel

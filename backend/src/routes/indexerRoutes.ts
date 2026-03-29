@@ -11,6 +11,7 @@ import {
 import { requireApiKey } from "../middleware/auth.js";
 import {
   requireJwtAuth,
+  requireScopes,
   requireWalletOwnership,
 } from "../middleware/jwtAuth.js";
 import { requireLoanBorrowerAccess } from "../middleware/loanAccess.js";
@@ -30,24 +31,7 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     lastIndexedLedger:
- *                       type: integer
- *                     lastIndexedCursor:
- *                       type: string
- *                     lastUpdated:
- *                       type: string
- *                       format: date-time
- *                     totalEvents:
- *                       type: integer
- *                     eventsByType:
- *                       type: object
+ *               $ref: '#/components/schemas/IndexerStatusResponse'
  */
 router.get("/status", getIndexerStatus);
 
@@ -82,6 +66,10 @@ router.get("/status", getIndexerStatus);
  *     responses:
  *       200:
  *         description: Events retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BorrowerEventsResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  *       403:
@@ -90,6 +78,7 @@ router.get("/status", getIndexerStatus);
 router.get(
   "/events/borrower/:borrower",
   requireJwtAuth,
+  requireScopes("read:loans"),
   requireWalletOwnership,
   getBorrowerEvents,
 );
@@ -114,6 +103,10 @@ router.get(
  *     responses:
  *       200:
  *         description: Events retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LoanEventsResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  *       404:
@@ -122,6 +115,7 @@ router.get(
 router.get(
   "/events/loan/:loanId",
   requireJwtAuth,
+  requireScopes("read:loans"),
   requireLoanBorrowerAccess,
   getLoanEvents,
 );
@@ -151,6 +145,10 @@ router.get(
  *     responses:
  *       200:
  *         description: Events retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RecentEventsResponse'
  *       401:
  *         description: Missing or invalid API key
  */
@@ -167,6 +165,10 @@ router.get("/events/recent", requireApiKey, getRecentEvents);
  *     responses:
  *       200:
  *         description: Webhook subscriptions retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookSubscriptionListResponse'
  *       401:
  *         description: Missing or invalid API key
  *   post:
@@ -194,6 +196,10 @@ router.get("/events/recent", requireApiKey, getRecentEvents);
  *     responses:
  *       201:
  *         description: Webhook subscription created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookSubscriptionResponse'
  *       401:
  *         description: Missing or invalid API key
  */
@@ -217,6 +223,10 @@ router.post("/webhooks", requireApiKey, createWebhookSubscription);
  *     responses:
  *       200:
  *         description: Webhook subscription deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessMessageResponse'
  *       401:
  *         description: Missing or invalid API key
  */

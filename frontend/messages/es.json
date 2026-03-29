@@ -1,0 +1,77 @@
+{
+  "HomePage": {
+    "title": "Bienvenido, {address}",
+    "description": "Potenciar la inclusión financiera transfronteriza a través de micropréstamos respaldados por remesas.",
+    "getStarted": "Empezar",
+    "learnMore": "Aprender más",
+    "stats": {
+      "netWorth": "Valor neto",
+      "activeLoans": "Préstamos activos",
+      "totalRemitted": "Total remetido",
+      "yieldApy": "Rendimiento (APY)"
+    },
+    "activity": {
+      "title": "Actividad reciente",
+      "viewAll": "Ver todo",
+      "empty": "Aún no hay actividad reciente. Sus transacciones aparecerán aquí."
+    },
+    "quickActions": {
+      "title": "Acciones rápidas",
+      "applyLoan": "Solicitar préstamo",
+      "applyLoanDesc": "Obtenga liquidez instantánea",
+      "sendRemittance": "Enviar remesa",
+      "sendRemittanceDesc": "Transferir fondos globalmente"
+    },
+    "outreach": {
+      "title": "Alcance comunitario",
+      "description": "Nuevos prestatarios en Ghana buscan micropréstamos para herramientas agrícolas. ¡Ayuda a hacer crecer el ecosistema!",
+      "explore": "Explorar oportunidades"
+    }
+  },
+  "Navigation": {
+    "home": "Inicio",
+    "loans": "Préstamos",
+    "repay": "Repagar",
+    "dashboard": "Tablero"
+  },
+  "Loans": {
+    "title": "Préstamos",
+    "description": "Revise las instalaciones activas, las fechas de vencimiento y los periodos de reembolso en un solo lugar.",
+    "borrowerPortal": "Portal del Prestatario",
+    "outstanding": "Pendiente",
+    "dueThisWeek": "Vence esta semana",
+    "portfolioHealth": "Salud de la cartera",
+    "viewDetails": "Ver detalles",
+    "health": {
+      "strong": "Fuerte",
+      "watch": "Vigilar",
+      "atRisk": "En riesgo"
+    },
+    "tabs": {
+      "all": "Todos",
+      "active": "Activos",
+      "repaid": "Pagados",
+      "defaulted": "Incumplidos"
+    },
+    "empty": {
+      "title": "No se encontraron préstamos",
+      "description": "Aún no tienes préstamos en esta categoría.",
+      "action": "Solicitar un préstamo"
+    },
+    "pagination": {
+      "prev": "Anterior",
+      "next": "Siguiente",
+      "pageOf": "Página {current} de {total}"
+    },
+    "loanNumber": "Préstamo #{id}",
+    "due": "Vence el {date}",
+    "status": {
+      "active": "Activo",
+      "pending": "Pendiente"
+    }
+  },
+  "Settings": {
+    "language": "Idioma",
+    "selectLanguage": "Seleccione el idioma"
+  }
+}

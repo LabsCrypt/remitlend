@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { query } from "../db/connection.js";
 import { cacheService } from "../services/cacheService.js";
+import { AppError } from "../errors/AppError.js";
 
 // ---------------------------------------------------------------------------
 // Score computation helpers
@@ -15,20 +16,6 @@ function getCreditBand(score: number): CreditBand {
   if (score >= 670) return "Good";
   if (score >= 580) return "Fair";
   return "Poor";
-}
-
-/**
- * Derive a deterministic base score from a userId so that every call to
- * getScore for the same user returns consistent data without a database.
- * Range: 500–850 (typical credit score window).
- * Deprecated - 24/03/2026
- */
-function baseScore(userId: string): number {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
-  }
-  return 500 + (hash % 351); // [500, 850]
 }
 
 // ---------------------------------------------------------------------------
@@ -153,3 +140,192 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
     band,
   });
 });
+
+/**
+ * GET /api/score/:userId/breakdown
+ *
+ * Returns a detailed breakdown of the factors contributing to the user's
+ * credit score, derived from loan_events and scores tables. Gives borrowers
+ * transparency into their credit profile.
+ */
+export const getScoreBreakdown = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { userId } = req.params as { userId: string };
+
+    const cacheKey = `score:breakdown:${userId}`;
+    const cached = await cacheService.get<Record<string, unknown>>(cacheKey);
+    if (cached) {
+      res.json({ success: true, ...cached });
+      return;
+    }
+
+    // Fetch current score
+    const scoreResult = await query(
+      "SELECT current_score FROM scores WHERE user_id = $1",
+      [userId],
+    );
+    const score =
+      scoreResult.rows.length > 0 ? scoreResult.rows[0].current_score : 500;
+    const band = getCreditBand(score);
+
+    // Fetch loan event stats for the borrower
+    const statsResult = await query(
+      `SELECT
+         COUNT(DISTINCT loan_id) FILTER (WHERE event_type = 'LoanRequested') AS total_loans,
+         COUNT(DISTINCT loan_id) FILTER (WHERE event_type = 'LoanRepaid') AS repaid_count,
+         COUNT(DISTINCT loan_id) FILTER (WHERE event_type = 'LoanDefaulted') AS defaulted_count,
+         COALESCE(SUM(CASE WHEN event_type = 'LoanRepaid' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0) AS total_repaid
+       FROM loan_events
+       WHERE borrower = $1`,
+      [userId],
+    );
+
+    const stats = statsResult.rows[0] || {};
+    const totalLoans = parseInt(stats.total_loans || "0", 10);
+    const repaidCount = parseInt(stats.repaid_count || "0", 10);
+    const defaultedCount = parseInt(stats.defaulted_count || "0", 10);
+    const totalRepaid = parseFloat(stats.total_repaid || "0");
+
+    // Determine on-time vs late repayments by checking if repaid before term expiry
+    const repaymentTimingResult = await query(
+      `WITH approved AS (
+         SELECT loan_id, MAX(ledger) AS approved_ledger,
+                MAX(COALESCE(term_ledgers, 17280)) AS term_ledgers
+         FROM loan_events
+         WHERE event_type = 'LoanApproved' AND borrower = $1 AND loan_id IS NOT NULL
+         GROUP BY loan_id
+       ),
+       repaid AS (
+         SELECT loan_id, MIN(ledger) AS repaid_ledger
+         FROM loan_events
+         WHERE event_type = 'LoanRepaid' AND borrower = $1 AND loan_id IS NOT NULL
+         GROUP BY loan_id
+       )
+       SELECT
+         COUNT(*) FILTER (WHERE r.repaid_ledger <= a.approved_ledger + a.term_ledgers) AS on_time,
+         COUNT(*) FILTER (WHERE r.repaid_ledger > a.approved_ledger + a.term_ledgers) AS late
+       FROM repaid r
+       JOIN approved a ON a.loan_id = r.loan_id`,
+      [userId],
+    );
+
+    const timing = repaymentTimingResult.rows[0] || {};
+    const repaidOnTime = parseInt(timing.on_time || "0", 10);
+    const repaidLate = parseInt(timing.late || "0", 10);
+
+    // Calculate average repayment time (in ledgers, converted to approx days)
+    const avgRepayResult = await query(
+      `WITH approved AS (
+         SELECT loan_id, MAX(ledger) AS approved_ledger
+         FROM loan_events
+         WHERE event_type = 'LoanApproved' AND borrower = $1 AND loan_id IS NOT NULL
+         GROUP BY loan_id
+       ),
+       repaid AS (
+         SELECT loan_id, MIN(ledger) AS repaid_ledger
+         FROM loan_events
+         WHERE event_type = 'LoanRepaid' AND borrower = $1 AND loan_id IS NOT NULL
+         GROUP BY loan_id
+       )
+       SELECT AVG(r.repaid_ledger - a.approved_ledger) AS avg_ledgers
+       FROM repaid r
+       JOIN approved a ON a.loan_id = r.loan_id`,
+      [userId],
+    );
+
+    const avgLedgers = parseFloat(avgRepayResult.rows[0]?.avg_ledgers || "0");
+    // Convert ledger count to approximate days (1 ledger ≈ 5 seconds)
+    const avgDays = Math.round((avgLedgers * 5) / 86400);
+    const averageRepaymentTime =
+      avgLedgers > 0 ? `${avgDays} days` : "N/A";
+
+    // Calculate repayment streaks (consecutive on-time repayments)
+    const streakResult = await query(
+      `WITH approved AS (
+         SELECT loan_id, MAX(ledger) AS approved_ledger,
+                MAX(COALESCE(term_ledgers, 17280)) AS term_ledgers
+         FROM loan_events
+         WHERE event_type = 'LoanApproved' AND borrower = $1 AND loan_id IS NOT NULL
+         GROUP BY loan_id
+       ),
+       repaid AS (
+         SELECT loan_id, MIN(ledger) AS repaid_ledger,
+                MIN(ledger_closed_at) AS repaid_at
+         FROM loan_events
+         WHERE event_type = 'LoanRepaid' AND borrower = $1 AND loan_id IS NOT NULL
+         GROUP BY loan_id
+       ),
+       timeline AS (
+         SELECT r.loan_id, r.repaid_at,
+                CASE WHEN r.repaid_ledger <= a.approved_ledger + a.term_ledgers THEN true ELSE false END AS on_time
+         FROM repaid r
+         JOIN approved a ON a.loan_id = r.loan_id
+         ORDER BY r.repaid_at ASC
+       )
+       SELECT on_time FROM timeline ORDER BY repaid_at ASC`,
+      [userId],
+    );
+
+    let longestStreak = 0;
+    let currentStreak = 0;
+    let tempStreak = 0;
+
+    for (const row of streakResult.rows) {
+      if (row.on_time) {
+        tempStreak++;
+        longestStreak = Math.max(longestStreak, tempStreak);
+      } else {
+        tempStreak = 0;
+      }
+    }
+    currentStreak = tempStreak;
+
+    // Fetch score history from score-changing events
+    const historyResult = await query(
+      `SELECT ledger_closed_at AS date, event_type AS event
+       FROM loan_events
+       WHERE borrower = $1
+         AND event_type IN ('LoanRepaid', 'LoanDefaulted')
+       ORDER BY ledger_closed_at ASC`,
+      [userId],
+    );
+
+    // Build score history by replaying deltas from base 500
+    let runningScore = 500;
+    const history = historyResult.rows.map((row: Record<string, unknown>) => {
+      if (row.event === "LoanRepaid") {
+        runningScore = Math.min(850, runningScore + ON_TIME_DELTA);
+      } else if (row.event === "LoanDefaulted") {
+        runningScore = Math.max(300, runningScore - 50);
+      }
+      return {
+        date: row.date
+          ? new Date(row.date as string).toISOString().split("T")[0]
+          : null,
+        score: runningScore,
+        event: row.event,
+      };
+    });
+
+    const responseData = {
+      userId,
+      score,
+      band,
+      breakdown: {
+        totalLoans,
+        repaidOnTime,
+        repaidLate,
+        defaulted: defaultedCount,
+        totalRepaid,
+        averageRepaymentTime,
+        longestStreak,
+        currentStreak,
+      },
+      history,
+    };
+
+    await cacheService.set(cacheKey, responseData, 300);
+
+    res.json({ success: true, ...responseData });
+  },
+);

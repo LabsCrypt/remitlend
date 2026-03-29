@@ -8,6 +8,7 @@ const segmentLabels: Record<string, string> = {
   borrower: "Borrower Portal",
   lender: "Lender Portal",
   loans: "Loans",
+  lend: "Lender Portal",
   remittances: "Remittances",
   wallet: "Wallet",
   settings: "Settings",

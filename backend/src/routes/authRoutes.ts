@@ -5,6 +5,10 @@ import {
   login,
   verify,
 } from "../controllers/authController.js";
+import {
+  challengeRateLimiter,
+  verifyRateLimiter,
+} from "../middleware/rateLimiter.js";
 import { requireJwtAuth } from "../middleware/jwtAuth.js";
 import { validateBody } from "../middleware/validation.js";
 
@@ -41,8 +45,17 @@ const loginSchema = z.object({
  *     responses:
  *       200:
  *         description: Challenge payload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthChallengeResponse'
  */
-router.post("/challenge", validateBody(challengeSchema), requestChallenge);
+router.post(
+  "/challenge",
+  challengeRateLimiter,
+  validateBody(challengeSchema),
+  requestChallenge,
+);
 
 /**
  * @swagger
@@ -69,8 +82,12 @@ router.post("/challenge", validateBody(challengeSchema), requestChallenge);
  *     responses:
  *       200:
  *         description: JWT issued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthLoginResponse'
  */
-router.post("/login", validateBody(loginSchema), login);
+router.post("/login", verifyRateLimiter, validateBody(loginSchema), login);
 
 /**
  * @swagger
@@ -83,6 +100,10 @@ router.post("/login", validateBody(loginSchema), login);
  *     responses:
  *       200:
  *         description: Token valid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthVerifyResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  */

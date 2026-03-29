@@ -5,7 +5,7 @@ import {
   markAllRead,
   streamNotifications,
 } from "../controllers/notificationController.js";
-import { requireJwtAuth } from "../middleware/jwtAuth.js";
+import { requireJwtAuth, requireScopes } from "../middleware/jwtAuth.js";
 
 const router = Router();
 
@@ -16,7 +16,7 @@ const router = Router();
  *     summary: Get notifications for the authenticated user
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     parameters:
  *       - in: query
  *         name: limit
@@ -30,19 +30,14 @@ const router = Router();
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     notifications:
- *                       type: array
- *                     unreadCount:
- *                       type: integer
+ *               $ref: '#/components/schemas/NotificationsResponse'
  */
-router.get("/", requireJwtAuth, getNotifications);
+router.get(
+  "/",
+  requireJwtAuth,
+  requireScopes("read:notifications"),
+  getNotifications,
+);
 
 /**
  * @swagger
@@ -51,12 +46,21 @@ router.get("/", requireJwtAuth, getNotifications);
  *     summary: SSE stream for real-time notification push
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     responses:
  *       200:
  *         description: Server-Sent Events stream (text/event-stream)
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               $ref: '#/components/schemas/ServerSentEventStream'
  */
-router.get("/stream", requireJwtAuth, streamNotifications);
+router.get(
+  "/stream",
+  requireJwtAuth,
+  requireScopes("read:notifications"),
+  streamNotifications,
+);
 
 /**
  * @swagger
@@ -65,7 +69,7 @@ router.get("/stream", requireJwtAuth, streamNotifications);
  *     summary: Mark specific notifications as read
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -80,8 +84,17 @@ router.get("/stream", requireJwtAuth, streamNotifications);
  *     responses:
  *       200:
  *         description: Notifications marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SimpleSuccessResponse'
  */
-router.post("/mark-read", requireJwtAuth, markRead);
+router.post(
+  "/mark-read",
+  requireJwtAuth,
+  requireScopes("write:notifications"),
+  markRead,
+);
 
 /**
  * @swagger
@@ -90,11 +103,20 @@ router.post("/mark-read", requireJwtAuth, markRead);
  *     summary: Mark all notifications as read
  *     tags: [Notifications]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     responses:
  *       200:
  *         description: All notifications marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SimpleSuccessResponse'
  */
-router.post("/mark-all-read", requireJwtAuth, markAllRead);
+router.post(
+  "/mark-all-read",
+  requireJwtAuth,
+  requireScopes("write:notifications"),
+  markAllRead,
+);
 
 export default router;

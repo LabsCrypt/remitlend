@@ -1,12 +1,86 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { query } from "../db/connection.js";
-import logger from "../utils/logger.js";
+import { EventIndexer } from "../services/eventIndexer.js";
+import { cacheService } from "../services/cacheService.js";
 import {
   SUPPORTED_WEBHOOK_EVENT_TYPES,
   webhookService,
   type WebhookEventType,
 } from "../services/webhookService.js";
-import { cacheService } from "../services/cacheService.js";
+import {
+  createPaginatedResponse,
+  getSortConfig,
+  parseQueryParams,
+} from "../utils/pagination.js";
+import logger from "../utils/logger.js";
+
+const EVENT_SORT_FIELDS = [
+  "event_type",
+  "amount",
+  "ledger",
+  "ledger_closed_at",
+] as const;
+
+const buildEventFilters = (
+  req: Request,
+  baseParams: unknown[],
+  initialWhereClause: string,
+) => {
+  const { status, dateRange, amountRange } = parseQueryParams(req);
+  const params = [...baseParams];
+  let whereClause = initialWhereClause;
+
+  const appendCondition = (condition: string) => {
+    whereClause += whereClause.includes("WHERE")
+      ? ` AND ${condition}`
+      : ` WHERE ${condition}`;
+  };
+
+  const requestedStatus =
+    status && status !== "all"
+      ? status
+      : typeof req.query.eventType === "string"
+        ? req.query.eventType
+        : null;
+
+  if (requestedStatus) {
+    params.push(requestedStatus);
+    appendCondition(`event_type = $${params.length}`);
+  }
+
+  if (amountRange) {
+    params.push(amountRange.min, amountRange.max);
+    appendCondition(
+      `CAST(amount AS NUMERIC) BETWEEN $${params.length - 1} AND $${params.length}`,
+    );
+  }
+
+  if (dateRange) {
+    params.push(dateRange.start.toISOString(), dateRange.end.toISOString());
+    appendCondition(
+      `ledger_closed_at BETWEEN $${params.length - 1} AND $${params.length}`,
+    );
+  }
+
+  return { params, whereClause };
+};
+
+const buildEventsCacheKey = (
+  scope: string,
+  resourceId: string | number,
+  req: Request,
+) =>
+  [
+    "events",
+    scope,
+    String(resourceId),
+    `limit:${req.query.limit ?? "default"}`,
+    `offset:${req.query.offset ?? "default"}`,
+    `sort:${req.query.sort ?? "default"}`,
+    `status:${req.query.status ?? req.query.eventType ?? "all"}`,
+    `date:${req.query.date_range ?? "all"}`,
+    `amount:${req.query.amount_range ?? "all"}`,
+  ].join(":");
 
 /**
  * Get indexer status
@@ -26,15 +100,12 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
     }
 
     const state = result.rows[0];
-
-    // Get event counts
     const eventCounts = await query(
-      `SELECT event_type, COUNT(*) as count 
-       FROM loan_events 
+      `SELECT event_type, COUNT(*) as count
+       FROM loan_events
        GROUP BY event_type`,
       [],
     );
-
     const totalEvents = await query(
       "SELECT COUNT(*) as total FROM loan_events",
       [],
@@ -46,10 +117,10 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
         lastIndexedLedger: state.last_indexed_ledger,
         lastIndexedCursor: state.last_indexed_cursor,
         lastUpdated: state.updated_at,
-        totalEvents: parseInt(totalEvents.rows[0].total),
+        totalEvents: Number.parseInt(totalEvents.rows[0].total, 10),
         eventsByType: eventCounts.rows.reduce(
           (acc, row) => {
-            acc[row.event_type] = parseInt(row.count);
+            acc[row.event_type] = Number.parseInt(row.count, 10);
             return acc;
           },
           {} as Record<string, number>,
@@ -71,49 +142,53 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
 export const getBorrowerEvents = async (req: Request, res: Response) => {
   try {
     const { borrower } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
-
-    const cacheKey = `events:borrower:${borrower}:limit:${limit}:offset:${offset}`;
+    const { limit, offset, sort } = parseQueryParams(req);
+    const cacheKey = buildEventsCacheKey("borrower", borrower, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
-      res.json({
-        success: true,
-        data: cachedData,
-      });
+      res.json(cachedData);
       return;
     }
 
-    const result = await query(
-      `SELECT event_id, event_type, loan_id, borrower, amount, 
-              ledger, ledger_closed_at, tx_hash, created_at
-       FROM loan_events
-       WHERE borrower = $1
-       ORDER BY ledger DESC
-       LIMIT $2 OFFSET $3`,
-      [borrower, limit, offset],
+    const { params, whereClause } = buildEventFilters(req, [borrower], "WHERE borrower = $1");
+    const sortConfig = getSortConfig(
+      sort,
+      EVENT_SORT_FIELDS,
+      "ledger",
+      "DESC",
     );
 
-    const total = await query(
-      "SELECT COUNT(*) as count FROM loan_events WHERE borrower = $1",
-      [borrower],
-    );
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount,
+             ledger, ledger_closed_at, tx_hash, created_at
+      FROM loan_events
+      ${whereClause}
+      ORDER BY ${sortConfig.field} ${sortConfig.direction}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
 
-    const data = {
-      events: result.rows,
-      pagination: {
-        total: parseInt(total.rows[0].count),
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
+    const [result, totalCount] = await Promise.all([
+      query(queryText, [...params, limit, offset]),
+      query(
+        `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
+        params,
+      ),
+    ]);
+
+    const response = createPaginatedResponse(
+      {
+        borrower,
+        events: result.rows,
       },
-    };
+      Number.parseInt(totalCount.rows[0].count, 10),
+      limit,
+      offset,
+      result.rows.length,
+    );
 
-    await cacheService.set(cacheKey, data, 300); // 5 minutes TTL
-
-    res.json({
-      success: true,
-      data,
-    });
+    await cacheService.set(cacheKey, response, 300);
+    res.json(response);
   } catch (error) {
     logger.error("Failed to get borrower events", { error });
     res.status(500).json({
@@ -129,6 +204,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
 export const getLoanEvents = async (req: Request, res: Response) => {
   try {
     const { loanId } = req.params;
+    const { limit, offset, sort } = parseQueryParams(req);
 
     if (!loanId) {
       return res.status(400).json({
@@ -137,37 +213,52 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = `events:loan:${loanId}`;
+    const cacheKey = buildEventsCacheKey("loan", loanId, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
-      res.json({
-        success: true,
-        data: cachedData,
-      });
+      res.json(cachedData);
       return;
     }
 
-    const result = await query(
-      `SELECT event_id, event_type, loan_id, borrower, amount, 
-              ledger, ledger_closed_at, tx_hash, created_at
-       FROM loan_events
-       WHERE loan_id = $1
-       ORDER BY ledger ASC`,
-      [loanId],
+    const { params, whereClause } = buildEventFilters(req, [loanId], "WHERE loan_id = $1");
+    const sortConfig = getSortConfig(
+      sort,
+      EVENT_SORT_FIELDS,
+      "ledger",
+      "ASC",
     );
 
-    const data = {
-      loanId: parseInt(loanId as string),
-      events: result.rows,
-    };
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount,
+             ledger, ledger_closed_at, tx_hash, created_at
+      FROM loan_events
+      ${whereClause}
+      ORDER BY ${sortConfig.field} ${sortConfig.direction}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
 
-    await cacheService.set(cacheKey, data, 300); // 5 minutes TTL
+    const [result, totalCount] = await Promise.all([
+      query(queryText, [...params, limit, offset]),
+      query(
+        `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
+        params,
+      ),
+    ]);
 
-    res.json({
-      success: true,
-      data,
-    });
+    const response = createPaginatedResponse(
+      {
+        loanId: Number.parseInt(loanId, 10),
+        events: result.rows,
+      },
+      Number.parseInt(totalCount.rows[0].count, 10),
+      limit,
+      offset,
+      result.rows.length,
+    );
+
+    await cacheService.set(cacheKey, response, 300);
+    res.json(response);
   } catch (error) {
     logger.error("Failed to get loan events", { error });
     res.status(500).json({
@@ -182,47 +273,52 @@ export const getLoanEvents = async (req: Request, res: Response) => {
  */
 export const getRecentEvents = async (req: Request, res: Response) => {
   try {
-    const { limit = 20, eventType } = req.query;
-
-    const cacheKey = `events:recent:limit:${limit}:type:${eventType || "all"}`;
+    const { limit, offset, sort } = parseQueryParams(req);
+    const cacheKey = buildEventsCacheKey("recent", "all", req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
-      res.json({
-        success: true,
-        data: cachedData,
-      });
+      res.json(cachedData);
       return;
     }
 
-    let queryText = `
-      SELECT event_id, event_type, loan_id, borrower, amount, 
+    const { params, whereClause } = buildEventFilters(req, [], "");
+    const sortConfig = getSortConfig(
+      sort,
+      EVENT_SORT_FIELDS,
+      "ledger",
+      "DESC",
+    );
+
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount,
              ledger, ledger_closed_at, tx_hash, created_at
       FROM loan_events
+      ${whereClause}
+      ORDER BY ${sortConfig.field} ${sortConfig.direction}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `;
 
-    const params: unknown[] = [];
+    const [result, totalCount] = await Promise.all([
+      query(queryText, [...params, limit, offset]),
+      query(
+        `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
+        params,
+      ),
+    ]);
 
-    if (eventType) {
-      queryText += " WHERE event_type = $1";
-      params.push(eventType);
-    }
+    const response = createPaginatedResponse(
+      {
+        events: result.rows,
+      },
+      Number.parseInt(totalCount.rows[0].count, 10),
+      limit,
+      offset,
+      result.rows.length,
+    );
 
-    queryText += ` ORDER BY ledger DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
-
-    const result = await query(queryText, params);
-
-    const data = {
-      events: result.rows,
-    };
-
-    await cacheService.set(cacheKey, data, 120); // 2 minutes TTL for recent events
-
-    res.json({
-      success: true,
-      data,
-    });
+    await cacheService.set(cacheKey, response, 120);
+    res.json(response);
   } catch (error) {
     logger.error("Failed to get recent events", { error });
     res.status(500).json({
@@ -335,7 +431,7 @@ export const deleteWebhookSubscription = async (
   res: Response,
 ) => {
   try {
-    const subscriptionId = Number(req.params.subscriptionId);
+    const subscriptionId = Number(req.params.id ?? req.params.subscriptionId);
 
     if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) {
       return res.status(400).json({
@@ -361,6 +457,104 @@ export const deleteWebhookSubscription = async (
     res.status(500).json({
       success: false,
       message: "Failed to delete webhook subscription",
+    });
+  }
+};
+
+export const getWebhookDeliveries = async (req: Request, res: Response) => {
+  try {
+    const subscriptionId = Number(req.params.id ?? req.params.subscriptionId);
+    const limit = Number(req.query.limit ?? 50);
+
+    if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "subscription id must be a positive integer",
+      });
+    }
+
+    const boundedLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
+
+    const deliveries = await webhookService.getSubscriptionDeliveries(
+      subscriptionId,
+      boundedLimit,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        subscriptionId,
+        deliveries,
+      },
+    });
+  } catch (error) {
+    logger.error("Failed to fetch webhook deliveries", { error });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch webhook deliveries",
+    });
+  }
+};
+
+export const reindexLedgerRange = async (req: Request, res: Response) => {
+  try {
+    const fromLedger = Number(req.query.fromLedger);
+    const toLedger = Number(req.query.toLedger);
+
+    if (!Number.isInteger(fromLedger) || !Number.isInteger(toLedger)) {
+      return res.status(400).json({
+        success: false,
+        message: "fromLedger and toLedger must be integers",
+      });
+    }
+
+    if (fromLedger <= 0 || toLedger <= 0 || fromLedger > toLedger) {
+      return res.status(400).json({
+        success: false,
+        message: "Ledger range is invalid",
+      });
+    }
+
+    const maxRange = Number(process.env.REINDEX_MAX_RANGE ?? 25000);
+    const requestedRange = toLedger - fromLedger + 1;
+    if (requestedRange > maxRange) {
+      return res.status(400).json({
+        success: false,
+        message: `Requested range exceeds maximum of ${maxRange} ledgers`,
+      });
+    }
+
+    const rpcUrl =
+      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
+    const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
+
+    if (!contractId) {
+      return res.status(500).json({
+        success: false,
+        message: "LOAN_MANAGER_CONTRACT_ID is not configured",
+      });
+    }
+
+    const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
+    const indexer = new EventIndexer({
+      rpcUrl,
+      contractId,
+      pollIntervalMs: 30_000,
+      batchSize,
+    });
+
+    const result = await indexer.reindexRange(fromLedger, toLedger);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error("Failed to reindex ledger range", { error });
+    res.status(500).json({
+      success: false,
+      message: "Failed to reindex ledger range",
     });
   }
 };

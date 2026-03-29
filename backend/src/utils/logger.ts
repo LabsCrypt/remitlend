@@ -1,4 +1,5 @@
 import winston from "winston";
+import { getRequestId } from "./requestContext.js";
 
 const levels = {
   error: 0,
@@ -44,11 +45,21 @@ const productionFormat = winston.format.combine(
   winston.format.json(),
 );
 
+const withRequestId = winston.format((info) => {
+  const requestIdFromContext = getRequestId();
+  if (requestIdFromContext && !info.requestId) {
+    info.requestId = requestIdFromContext;
+  }
+  return info;
+});
+
 const isProduction = process.env.NODE_ENV === "production";
 
 const transports: winston.transport[] = [
   new winston.transports.Console({
-    format: isProduction ? productionFormat : devFormat,
+    format: isProduction
+      ? winston.format.combine(withRequestId(), productionFormat)
+      : winston.format.combine(withRequestId(), devFormat),
   }),
 ];
 

@@ -140,6 +140,9 @@ describe("Auth API", () => {
       expect(verifyResponse.body.success).toBe(true);
       expect(verifyResponse.body.data.valid).toBe(true);
       expect(verifyResponse.body.data.publicKey).toBe(keypair.publicKey());
+      expect(verifyResponse.body.data.role).toBe("borrower");
+      expect(Array.isArray(verifyResponse.body.data.scopes)).toBe(true);
+      expect(verifyResponse.body.data.scopes).toContain("read:loans");
     });
 
     it("should reject missing token", async () => {
