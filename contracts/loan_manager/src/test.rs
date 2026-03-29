@@ -49,6 +49,13 @@ fn setup_test<'a>(
     )
 }
 
+fn reset_borrower_count(env: &Env, manager_address: &Address, borrower: &Address) {
+    env.as_contract(manager_address, || {
+        let key = DataKey::BorrowerLoanCount(borrower.clone());
+        env.storage().persistent().remove(&key);
+    });
+}
+
 fn create_upgrade_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[9u8; 32])
 }
@@ -1088,4 +1095,308 @@ fn test_set_default_window_below_minimum_rejected() {
     let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
     let result = manager.try_set_default_window_ledgers(&99);
     assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+}
+
+// ───────────────────────── Liquidation Tests ─────────────────────────
+
+#[test]
+fn test_liquidation_default_threshold_and_bonus() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    // Defaults: 15000 bps (150%) threshold, 500 bps (5%) bonus
+    assert_eq!(manager.get_liquidation_threshold(), 15_000);
+    assert_eq!(manager.get_liquidation_bonus(), 500);
+}
+
+#[test]
+fn test_set_liquidation_threshold_and_bonus() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    manager.set_liquidation_threshold(&12_000);
+    assert_eq!(manager.get_liquidation_threshold(), 12_000);
+
+    manager.set_liquidation_bonus(&1_000);
+    assert_eq!(manager.get_liquidation_bonus(), 1_000);
+}
+
+#[test]
+fn test_set_liquidation_threshold_zero_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let result = manager.try_set_liquidation_threshold(&0);
+    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+}
+
+#[test]
+fn test_set_liquidation_threshold_too_high_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let result = manager.try_set_liquidation_threshold(&50_001);
+    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+}
+
+#[test]
+fn test_set_liquidation_bonus_too_high_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let result = manager.try_set_liquidation_bonus(&5_001);
+    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+}
+
+#[test]
+fn test_liquidate_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    // Request and approve a loan of 1000
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    // Deposit 1200 collateral (120% ratio, below 150% threshold)
+    manager.deposit_collateral(&loan_id, &1_200);
+
+    // Collateral ratio = 1200 * 10000 / 1000 = 12000 bps (120%)
+    // Threshold = 15000 bps (150%), so ratio < threshold → eligible
+
+    let liquidator_balance_before = token_client.balance(&liquidator);
+    let borrower_balance_before = token_client.balance(&borrower);
+
+    manager.liquidate(&loan_id, &liquidator);
+
+    // Verify loan status is Liquidated
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.status, LoanStatus::Liquidated);
+    assert_eq!(loan.collateral_amount, 0);
+
+    // Liquidator bonus = 1200 * 500 / 10000 = 60
+    let liquidator_bonus = 1_200i128 * 500 / 10_000;
+    assert_eq!(liquidator_bonus, 60);
+
+    // Borrower remainder = 1200 - 60 = 1140
+    let borrower_remainder = 1_200 - liquidator_bonus;
+    assert_eq!(borrower_remainder, 1_140);
+
+    assert_eq!(
+        token_client.balance(&liquidator),
+        liquidator_balance_before + liquidator_bonus
+    );
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before + borrower_remainder
+    );
+}
+
+#[test]
+fn test_liquidate_over_threshold_rejected() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    // Deposit 2000 collateral (200% ratio, above 150% threshold)
+    manager.deposit_collateral(&loan_id, &2_000);
+
+    let result = manager.try_liquidate(&loan_id, &liquidator);
+    assert_eq!(result, Err(Ok(LoanError::LoanNotUndercollateralized)));
+}
+
+#[test]
+fn test_liquidate_already_liquidated_rejected() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    // Deposit under-collateralized amount
+    manager.deposit_collateral(&loan_id, &1_200);
+
+    // First liquidation succeeds
+    manager.liquidate(&loan_id, &liquidator);
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Liquidated);
+
+    // Second liquidation fails
+    let result = manager.try_liquidate(&loan_id, &liquidator);
+    assert_eq!(result, Err(Ok(LoanError::LoanAlreadyLiquidated)));
+}
+
+#[test]
+fn test_liquidate_non_active_loan_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    // Loan is Pending, not Approved
+    let loan_id = manager.request_loan(&borrower, &500);
+    let result = manager.try_liquidate(&loan_id, &liquidator);
+    assert_eq!(result, Err(Ok(LoanError::LoanNotActive)));
+}
+
+#[test]
+fn test_liquidate_with_custom_threshold_and_bonus() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    // Set custom threshold to 120% (12000 bps) and bonus to 10% (1000 bps)
+    manager.set_liquidation_threshold(&12_000);
+    manager.set_liquidation_bonus(&1_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    // Deposit 1100 collateral (110% ratio, below 120% threshold)
+    manager.deposit_collateral(&loan_id, &1_100);
+
+    let liquidator_balance_before = token_client.balance(&liquidator);
+    let borrower_balance_before = token_client.balance(&borrower);
+
+    manager.liquidate(&loan_id, &liquidator);
+
+    // Liquidator bonus = 1100 * 1000 / 10000 = 110
+    let liquidator_bonus = 1_100i128 * 1_000 / 10_000;
+    assert_eq!(liquidator_bonus, 110);
+
+    // Borrower remainder = 1100 - 110 = 990
+    let borrower_remainder = 1_100 - liquidator_bonus;
+    assert_eq!(borrower_remainder, 990);
+
+    assert_eq!(
+        token_client.balance(&liquidator),
+        liquidator_balance_before + liquidator_bonus
+    );
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before + borrower_remainder
+    );
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Liquidated);
+}
+
+#[test]
+fn test_liquidate_decrements_borrower_loan_count() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    // Ensure a clean start for this borrower (in case of state leakage)
+    reset_borrower_count(&env, &manager.address, &borrower);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+
+    manager.deposit_collateral(&loan_id, &1_200);
+    manager.liquidate(&loan_id, &liquidator);
+
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+}
+
+#[test]
+fn test_refinance_from_defaulted_increments_count() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+
+    // Force default
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let window = manager.get_default_window_ledgers();
+    env.ledger().set_sequence_number(due_date + window + 1);
+    manager.check_default(&loan_id);
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    // Refinance (move back to Approved)
+    manager.refinance_loan(&loan_id, &1_000, &10_000);
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
 }
