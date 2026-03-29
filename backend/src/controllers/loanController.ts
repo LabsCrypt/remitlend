@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { getLoanConfig } from "../config/loanConfig.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { sorobanService } from "../services/sorobanService.js";
 import {
@@ -14,9 +15,6 @@ import logger from "../utils/logger.js";
 const LEDGER_CLOSE_SECONDS = 5;
 const DEFAULT_TERM_LEDGERS = 17280; // 1 day in ledgers
 const DEFAULT_INTEREST_RATE_BPS = 1200; // 12%
-const DEFAULT_MIN_SCORE = 500;
-const DEFAULT_MAX_AMOUNT = 50_000;
-const DEFAULT_INTEREST_RATE_PERCENT = 12;
 const LOAN_SORT_FIELDS = [
   "loanId",
   "principal",
@@ -28,21 +26,6 @@ const LOAN_SORT_FIELDS = [
   "nextPaymentDeadline",
 ] as const;
 
-const parsePositiveInteger = (
-  value: string | undefined,
-  fallback: number,
-): number => {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-
-  return parsed;
-};
 
 type BorrowerLoan = {
   loanId: number;
@@ -227,31 +210,19 @@ export const getBorrowerLoans = asyncHandler(
 /**
  * GET /api/loans/config
  */
-export const getLoanConfig = asyncHandler(
-  async (_req: Request, res: Response) => {
-    const minScore = parsePositiveInteger(
-      process.env.LOAN_MIN_SCORE,
-      DEFAULT_MIN_SCORE,
-    );
-    const maxAmount = parsePositiveInteger(
-      process.env.LOAN_MAX_AMOUNT,
-      DEFAULT_MAX_AMOUNT,
-    );
-    const interestRatePercent = parsePositiveInteger(
-      process.env.LOAN_INTEREST_RATE_PERCENT,
-      DEFAULT_INTEREST_RATE_PERCENT,
-    );
+export const getLoanConfigEndpoint = asyncHandler(async (_req: Request, res: Response) => {
+  const loanConfig = getLoanConfig();
 
-    res.json({
-      success: true,
-      data: {
-        minScore,
-        maxAmount,
-        interestRatePercent,
-      },
-    });
-  },
-);
+  res.json({
+    success: true,
+    data: {
+      minScore: loanConfig.minScore,
+      maxAmount: loanConfig.maxAmount,
+      interestRatePercent: loanConfig.interestRatePercent,
+      creditScoreThreshold: loanConfig.creditScoreThreshold,
+    },
+  });
+});
 
 /**
  * Get detailed loan history and current stats

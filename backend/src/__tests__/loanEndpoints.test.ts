@@ -96,10 +96,11 @@ describe("GET /api/loans/config", () => {
     }
   });
 
-  it("should return defaults when env values are not set", async () => {
-    delete process.env.LOAN_MIN_SCORE;
-    delete process.env.LOAN_MAX_AMOUNT;
-    delete process.env.LOAN_INTEREST_RATE_PERCENT;
+  it("should return configured env values when all required vars are set", async () => {
+    process.env.LOAN_MIN_SCORE = "500";
+    process.env.LOAN_MAX_AMOUNT = "50000";
+    process.env.LOAN_INTEREST_RATE_PERCENT = "12";
+    process.env.CREDIT_SCORE_THRESHOLD = "600";
 
     const response = await request(app).get("/api/loans/config");
 
@@ -110,6 +111,7 @@ describe("GET /api/loans/config", () => {
         minScore: 500,
         maxAmount: 50000,
         interestRatePercent: 12,
+        creditScoreThreshold: 600,
       },
     });
   });
@@ -118,6 +120,7 @@ describe("GET /api/loans/config", () => {
     process.env.LOAN_MIN_SCORE = "620";
     process.env.LOAN_MAX_AMOUNT = "65000";
     process.env.LOAN_INTEREST_RATE_PERCENT = "14";
+    process.env.CREDIT_SCORE_THRESHOLD = "640";
 
     const response = await request(app).get("/api/loans/config");
 
@@ -128,6 +131,7 @@ describe("GET /api/loans/config", () => {
         minScore: 620,
         maxAmount: 65000,
         interestRatePercent: 14,
+        creditScoreThreshold: 640,
       },
     });
   });

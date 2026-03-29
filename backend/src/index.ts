@@ -15,8 +15,17 @@ import {
 } from "./services/defaultChecker.js";
 import { eventStreamService } from "./services/eventStreamService.js";
 import { sorobanService } from "./services/sorobanService.js";
+import { validateLoanConfig } from "./config/loanConfig.js";
 
 const port = process.env.PORT || 3001;
+
+// Validate loan config on startup before accepting traffic
+try {
+  validateLoanConfig();
+} catch (err) {
+  logger.error("Loan configuration is invalid, aborting startup.", { err });
+  process.exit(1);
+}
 
 // Validate Soroban contract IDs and RPC connectivity before accepting traffic
 try {
