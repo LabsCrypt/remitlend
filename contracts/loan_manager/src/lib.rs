@@ -578,6 +578,8 @@ impl LoanManager {
             .expect("lending pool not set");
         let token_client = TokenClient::new(env, &token);
         token_client.transfer(&env.current_contract_address(), &lending_pool, &collateral);
+
+        events::collateral_liquidated(env, loan_id, collateral);
     }
 
     pub fn initialize(
@@ -822,6 +824,7 @@ impl LoanManager {
             .persistent()
             .get(&loan_key)
             .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
 
         if loan.borrower != borrower {
             return Err(LoanError::BorrowerMismatch);
@@ -1081,6 +1084,7 @@ impl LoanManager {
             .persistent()
             .get(&loan_key)
             .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
 
         // Borrower must also sign.
         loan.borrower.require_auth();
@@ -1563,7 +1567,6 @@ impl LoanManager {
             }
 
             loan.status = LoanStatus::Defaulted;
-            loan.collateral_amount = 0;
             env.storage().persistent().set(&loan_key, &loan);
             Self::bump_persistent_ttl(&env, &loan_key);
             Self::decrement_borrower_loan_count(&env, &loan.borrower);

@@ -20,6 +20,7 @@ pub enum NftError {
     TransferCooldownActive = 11,
     InvalidThreshold = 12,
     ContractPaused = 13,
+    InvalidHistoryHash = 14,
 }
 
 #[contracttype]
@@ -389,6 +390,9 @@ impl RemittanceNFT {
             env.storage()
                 .persistent()
                 .remove(&DataKey::Seized(user.clone()));
+            env.storage()
+                .persistent()
+                .remove(&DataKey::TransferCooldown(user.clone()));
         }
 
         let metadata = RemittanceMetadata {
@@ -530,12 +534,16 @@ impl RemittanceNFT {
     ) -> Result<(), NftError> {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
+        if new_history_hash == BytesN::from_array(&env, &[0u8; 32]) {
+            return Err(NftError::InvalidHistoryHash);
+        }
+
         let metadata_key = DataKey::Metadata(user.clone());
         let mut metadata =
             Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         if metadata.history_hash == new_history_hash {
-            return Ok(());
+            return Err(NftError::InvalidHistoryHash);
         }
         metadata.history_hash = new_history_hash;
 

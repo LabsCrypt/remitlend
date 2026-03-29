@@ -14,8 +14,17 @@ import {
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
 import { eventStreamService } from "./services/eventStreamService.js";
+import { sorobanService } from "./services/sorobanService.js";
 
 const port = process.env.PORT || 3001;
+
+// Validate Soroban contract IDs and RPC connectivity before accepting traffic
+try {
+  await sorobanService.validateConfig();
+} catch (err) {
+  logger.error("Soroban configuration is invalid, aborting startup.", { err });
+  process.exit(1);
+}
 
 const server = app.listen(port, () => {
   logger.info(`Server is running on port ${port}`);
