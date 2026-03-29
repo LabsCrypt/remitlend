@@ -1400,6 +1400,14 @@ impl LoanManager {
         Self::admin(&env)
     }
 
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        Self::bump_instance_ttl(&env);
+    }
+
     pub fn get_nft_contract(env: Env) -> Address {
         Self::nft_contract(&env)
     }

@@ -108,6 +108,26 @@ fn initialize_sets_admin() {
 }
 
 #[test]
+fn exposes_target_pending_admin_and_approval_queries() {
+    let (env, client, admin, target) = setup();
+    let proposed = Address::generate(&env);
+    let signer = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&signer));
+
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_target(), target);
+    assert!(client.get_pending().is_none());
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.approve_transfer(&signer);
+
+    let pending = client.get_pending().expect("pending transfer");
+    assert_eq!(pending.proposed_admin, proposed);
+    assert_eq!(client.get_approval_count(), 1);
+}
+
+#[test]
 #[should_panic(expected = "already initialized")]
 fn double_initialize_panics() {
     let (env, client, _, _) = setup();

@@ -896,6 +896,18 @@ impl RemittanceNFT {
             .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
         Ok(())
     }
+
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&Self::admin_key(), &new_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+
+        env.events()
+            .publish((Symbol::new(&env, "AdminTransferred"),), new_admin);
+    }
 }
 
 #[cfg(test)]
