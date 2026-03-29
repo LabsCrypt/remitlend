@@ -12,6 +12,17 @@ import {
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
 
+const RPC_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms = RPC_TIMEOUT_MS): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`RPC call timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 /**
  * Service for building and submitting Soroban contract transactions.
  * Handles the transaction lifecycle: build → (frontend signs) → submit.
@@ -70,7 +81,7 @@ class SorobanService {
     const contractId = this.getLoanManagerContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(borrowerPublicKey);
+    const account = await withTimeout(server.getAccount(borrowerPublicKey));
 
     const borrowerScVal = nativeToScVal(
       Address.fromString(borrowerPublicKey),
@@ -92,7 +103,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await withTimeout(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built request_loan transaction", {
@@ -116,7 +127,7 @@ class SorobanService {
     const contractId = this.getLoanManagerContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(borrowerPublicKey);
+    const account = await withTimeout(server.getAccount(borrowerPublicKey));
 
     const borrowerScVal = nativeToScVal(
       Address.fromString(borrowerPublicKey),
@@ -139,7 +150,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await withTimeout(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built repay transaction", {
@@ -164,7 +175,7 @@ class SorobanService {
     const contractId = this.getLendingPoolContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(depositorPublicKey);
+    const account = await withTimeout(server.getAccount(depositorPublicKey));
 
     const providerScVal = nativeToScVal(
       Address.fromString(depositorPublicKey),
@@ -190,7 +201,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await withTimeout(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built deposit transaction", {
@@ -214,7 +225,7 @@ class SorobanService {
     const contractId = this.getLendingPoolContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(depositorPublicKey);
+    const account = await withTimeout(server.getAccount(depositorPublicKey));
 
     const providerScVal = nativeToScVal(
       Address.fromString(depositorPublicKey),
@@ -240,7 +251,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await withTimeout(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built withdraw transaction", {
@@ -264,7 +275,7 @@ class SorobanService {
     const contractId = this.getLoanManagerContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(adminPublicKey);
+    const account = await withTimeout(server.getAccount(adminPublicKey));
 
     const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
 
@@ -282,7 +293,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await withTimeout(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built approve_loan transaction", {
@@ -350,7 +361,7 @@ class SorobanService {
       this.getNetworkPassphrase(),
     );
 
-    const sendResult = await server.sendTransaction(tx);
+    const sendResult = await withTimeout(server.sendTransaction(tx));
     const txHash = sendResult.hash;
 
     if (!txHash) {
@@ -363,10 +374,13 @@ class SorobanService {
     });
 
     // Poll for final result
-    const polled = await server.pollTransaction(txHash, {
-      attempts: 30,
-      sleepStrategy: () => 1000,
-    });
+    const polled = await withTimeout(
+      server.pollTransaction(txHash, {
+        attempts: 30,
+        sleepStrategy: () => 1000,
+      }),
+      60_000,
+    );
 
     const resultXdr =
       polled.status === "SUCCESS" && polled.resultXdr
