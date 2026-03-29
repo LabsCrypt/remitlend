@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { query } from "../db/connection.js";
+import { withTransaction, withStellarAndDbTransaction } from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { sorobanService } from "../services/sorobanService.js";
@@ -416,18 +417,44 @@ export const submitTransaction = asyncHandler(
       throw AppError.badRequest("signedTxXdr is required");
     }
 
-    const result = await sorobanService.submitSignedTx(signedTxXdr);
+    // Use transaction wrapper for consistency with multi-step operations
+    const result = await withStellarAndDbTransaction(
+      // Stellar operation
+      async () => {
+        return await sorobanService.submitSignedTx(signedTxXdr);
+      },
+      // Database operations (currently none, but structured for future use)
+      async (stellarResult, client) => {
+        // Log the transaction submission for audit and reconciliation
+        await client.query(
+          `INSERT INTO transaction_submissions (tx_hash, status, submitted_at, submitted_by)
+           VALUES ($1, $2, NOW(), $3)
+           ON CONFLICT (tx_hash) DO UPDATE SET
+             status = EXCLUDED.status,
+             submitted_at = EXCLUDED.submitted_at`,
+          [stellarResult.txHash, stellarResult.status, req.user?.publicKey || null]
+        );
 
-    logger.info("Transaction submitted", {
-      txHash: result.txHash,
-      status: result.status,
+        logger.info("Transaction submission recorded", {
+          txHash: stellarResult.txHash,
+          status: stellarResult.status,
+          submittedBy: req.user?.publicKey,
+        });
+
+        return { recorded: true };
+      }
+    );
+
+    logger.info("Transaction submitted successfully", {
+      txHash: result.stellarResult.txHash,
+      status: result.stellarResult.status,
     });
 
     res.json({
       success: true,
-      txHash: result.txHash,
-      status: result.status,
-      ...(result.resultXdr ? { resultXdr: result.resultXdr } : {}),
+      txHash: result.stellarResult.txHash,
+      status: result.stellarResult.status,
+      ...(result.stellarResult.resultXdr ? { resultXdr: result.stellarResult.resultXdr } : {}),
     });
   },
 );
