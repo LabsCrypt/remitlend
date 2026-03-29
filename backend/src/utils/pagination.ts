@@ -12,6 +12,15 @@ export interface PaginationParams {
   amountRange: { min: number; max: number } | null;
 }
 
+export interface CursorPaginationParams {
+  limit: number;
+  cursor: string | null;
+  sort: string | null;
+  status: string | null;
+  dateRange: { start: Date; end: Date } | null;
+  amountRange: { min: number; max: number } | null;
+}
+
 export interface SortConfig {
   field: string;
   direction: "ASC" | "DESC";
@@ -32,6 +41,31 @@ export function parseQueryParams(req: Request): PaginationParams {
   return {
     limit,
     offset,
+    sort,
+    status,
+    dateRange: parseDateRange(req.query.date_range),
+    amountRange: parseAmountRange(req.query.amount_range),
+  };
+}
+
+export function parseCursorQueryParams(req: Request): CursorPaginationParams {
+  const limit = parsePositiveInteger(req.query.limit, DEFAULT_LIMIT, MAX_LIMIT);
+  const cursor =
+    typeof req.query.cursor === "string" && req.query.cursor.trim().length > 0
+      ? req.query.cursor.trim()
+      : null;
+  const sort =
+    typeof req.query.sort === "string" && req.query.sort.trim().length > 0
+      ? req.query.sort.trim()
+      : null;
+  const status =
+    typeof req.query.status === "string" && req.query.status.trim().length > 0
+      ? req.query.status.trim()
+      : null;
+
+  return {
+    limit,
+    cursor,
     sort,
     status,
     dateRange: parseDateRange(req.query.date_range),
@@ -77,6 +111,28 @@ export function createPaginatedResponse<T>(
       count: currentCount,
       has_previous: offset > 0,
       has_next: offset + currentCount < totalCount,
+    },
+  };
+}
+
+export function createCursorPaginatedResponse<T>(
+  data: T,
+  totalCount: number | null,
+  limit: number,
+  currentCount: number,
+  nextCursor: string | null,
+  hasPrevious: boolean,
+) {
+  return {
+    success: true,
+    data,
+    total_count: totalCount,
+    page_info: {
+      limit,
+      count: currentCount,
+      next_cursor: nextCursor,
+      has_previous: hasPrevious,
+      has_next: nextCursor !== null,
     },
   };
 }

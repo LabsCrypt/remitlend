@@ -6,26 +6,14 @@ import { getLoanConfig } from "../config/loanConfig.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { sorobanService } from "../services/sorobanService.js";
 import {
-  createPaginatedResponse,
-  getSortConfig,
-  parseQueryParams,
+  createCursorPaginatedResponse,
+  parseCursorQueryParams,
 } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
 
 const LEDGER_CLOSE_SECONDS = 5;
 const DEFAULT_TERM_LEDGERS = 17280; // 1 day in ledgers
 const DEFAULT_INTEREST_RATE_BPS = 1200; // 12%
-const LOAN_SORT_FIELDS = [
-  "loanId",
-  "principal",
-  "accruedInterest",
-  "totalRepaid",
-  "totalOwed",
-  "status",
-  "approvedAt",
-  "nextPaymentDeadline",
-] as const;
-
 
 type BorrowerLoan = {
   loanId: number;
@@ -48,28 +36,6 @@ const getLatestLedger = async (): Promise<number> => {
   return result.rows[0]?.last_indexed_ledger ?? 0;
 };
 
-const compareLoanValues = (
-  left: BorrowerLoan,
-  right: BorrowerLoan,
-  field: (typeof LOAN_SORT_FIELDS)[number],
-  direction: "ASC" | "DESC",
-) => {
-  const leftValue = left[field];
-  const rightValue = right[field];
-
-  let comparison = 0;
-
-  if (typeof leftValue === "number" && typeof rightValue === "number") {
-    comparison = leftValue - rightValue;
-  } else {
-    const normalizedLeft = leftValue ?? "";
-    const normalizedRight = rightValue ?? "";
-    comparison = String(normalizedLeft).localeCompare(String(normalizedRight));
-  }
-
-  return direction === "DESC" ? comparison * -1 : comparison;
-};
-
 /**
  * Get active loans for a borrower
  *
@@ -78,30 +44,9 @@ const compareLoanValues = (
 export const getBorrowerLoans = asyncHandler(
   async (req: Request, res: Response) => {
     const { borrower } = req.params;
-    const { limit, offset, sort, status, dateRange, amountRange } =
-      parseQueryParams(req);
+    const { limit, cursor, sort, status, dateRange, amountRange } =
+      parseCursorQueryParams(req);
 
-
-    const sortConfig = getSortConfig(
-      sort,
-      LOAN_SORT_FIELDS,
-      "approvedAt",
-      "DESC",
-    );
-
-    const sortFieldMap: Record<string, string> = {
-      loanId: "loan_id",
-      principal: "principal",
-      accruedInterest: "accrued_interest",
-      totalRepaid: "total_repaid",
-      totalOwed: "total_owed",
-      status: "status",
-      approvedAt: "approved_at",
-      nextPaymentDeadline: "next_payment_deadline",
-    };
-
-    const sqlSortField = sortFieldMap[sortConfig.field] || "approved_at";
-    const sqlSortDirection = sortConfig.direction === "DESC" ? "DESC" : "ASC";
 
     const currentLedger = await getLatestLedger();
 
@@ -157,10 +102,12 @@ export const getBorrowerLoans = asyncHandler(
         AND ($5::numeric IS NULL OR principal <= $5)
         AND ($6::timestamp IS NULL OR approved_at >= $6)
         AND ($7::timestamp IS NULL OR approved_at <= $7)
-      ORDER BY ${sqlSortField} ${sqlSortDirection}
-      LIMIT $8 OFFSET $9
+        AND ($8::int IS NULL OR loan_id > $8)
+      ORDER BY loan_id ASC
+      LIMIT $9
     `;
 
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
     const queryParams = [
       borrower,
       currentLedger,
@@ -169,8 +116,8 @@ export const getBorrowerLoans = asyncHandler(
       amountRange?.max ?? null,
       dateRange?.start ?? null,
       dateRange?.end ?? null,
-      limit,
-      offset,
+      cursorValue,
+      limit + 1,
     ];
 
     const result = await query(loansQuery, queryParams);
@@ -178,7 +125,10 @@ export const getBorrowerLoans = asyncHandler(
     const totalCount =
       result.rows.length > 0 ? Number.parseInt(result.rows[0].full_count, 10) : 0;
 
-    const loans: BorrowerLoan[] = result.rows.map((row: any) => ({
+    const hasNext = result.rows.length > limit;
+    const trimmedRows = hasNext ? result.rows.slice(0, limit) : result.rows;
+
+    const loans: BorrowerLoan[] = trimmedRows.map((row: any) => ({
       loanId: Number(row.loan_id),
       principal: Number.parseFloat(row.principal || "0"),
       accruedInterest: Number.parseFloat(row.accrued_interest || "0"),
@@ -192,16 +142,20 @@ export const getBorrowerLoans = asyncHandler(
         : null,
     }));
 
+    const lastLoan = loans.length > 0 ? loans[loans.length - 1] : undefined;
+    const nextCursor = hasNext && lastLoan ? String(lastLoan.loanId) : null;
+
     res.json(
-      createPaginatedResponse(
+      createCursorPaginatedResponse(
         {
           borrower,
           loans,
         },
         totalCount,
         limit,
-        offset,
         loans.length,
+        nextCursor,
+        Boolean(cursor),
       ),
     );
   },
