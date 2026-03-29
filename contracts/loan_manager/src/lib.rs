@@ -25,6 +25,7 @@ pub trait RateOracleInterface {
 #[contractclient(name = "PoolClient")]
 pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
+    fn pool_balance(env: Env, token: Address) -> i128;
 }
 
 mod events;
@@ -759,6 +760,22 @@ impl LoanManager {
             return Err(LoanError::LoanNotPending);
         }
 
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let pool_client = PoolClient::new(&env, &lending_pool);
+        let pool_balance = pool_client.pool_balance(&token);
+        if pool_balance < loan.amount {
+            return Err(LoanError::InsufficientPoolLiquidity);
+        }
+
         let term_ledgers = Self::read_default_term(&env);
 
         loan.status = LoanStatus::Approved;
@@ -770,22 +787,7 @@ impl LoanManager {
             .expect("grace period overflow");
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
-
-        let lending_pool: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::LendingPool)
-            .expect("lending pool not set");
-        let token: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .expect("token not set");
         let token_client = TokenClient::new(&env, &token);
-        let pool_balance = token_client.balance(&lending_pool);
-        if pool_balance < loan.amount {
-            return Err(LoanError::InsufficientPoolLiquidity);
-        }
 
         Self::increment_borrower_loan_count(&env, &loan.borrower);
         token_client.transfer(&lending_pool, &loan.borrower, &loan.amount);
