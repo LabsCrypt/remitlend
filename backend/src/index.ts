@@ -15,6 +15,7 @@ import {
 } from "./services/defaultChecker.js";
 import { eventStreamService } from "./services/eventStreamService.js";
 import { sorobanService } from "./services/sorobanService.js";
+import { webhookRetryScheduler } from "./services/webhookRetryScheduler.js";
 
 const port = process.env.PORT || 3001;
 
@@ -34,6 +35,9 @@ const server = app.listen(port, () => {
 
   // Start periodic on-chain default checks (if configured)
   startDefaultCheckerScheduler();
+
+  // Start webhook retry scheduler
+  webhookRetryScheduler.start();
 });
 
 const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
@@ -48,6 +52,7 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
 
   stopIndexer();
   stopDefaultCheckerScheduler();
+  webhookRetryScheduler.stop();
   
   if (typeof eventStreamService.closeAll === 'function') {
     eventStreamService.closeAll("Server shutting down");

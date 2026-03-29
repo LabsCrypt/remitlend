@@ -120,3 +120,19 @@ pub fn collateral_liquidated(env: &Env, loan_id: u32, amount: i128) {
     let topics = (Symbol::new(env, "CollateralLiquidated"), loan_id);
     env.events().publish(topics, amount);
 }
+
+pub fn loan_liquidated(
+    env: &Env,
+    loan_id: u32,
+    borrower: Address,
+    liquidator: Address,
+    total_collateral: i128,
+    liquidator_bonus: i128,
+    borrower_remainder: i128,
+) {
+    let topics = (Symbol::new(env, "LoanLiquidated"), loan_id, borrower);
+    env.events().publish(
+        topics,
+        (liquidator, total_collateral, liquidator_bonus, borrower_remainder),
+    );
+}

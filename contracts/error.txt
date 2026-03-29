@@ -1,0 +1,14 @@
+    Checking loan_manager v0.0.1 (/mnt/c/Users/NWAJAGU/Desktop/remitlend/contracts/loan_manager)
+error[E0382]: borrow of partially moved value: `loan`
+    --> loan_manager/src/lib.rs:1132:37
+     |
+1099 | ... = loan.status;
+     |       ----------- value partially moved here
+...
+1132 | ...nterest(&env, &mut loan);
+     |                  ^^^^^^^^^ value borrowed here after partial move
+     |
+     = note: partial move occurs because `loan.status` has type `LoanStatus`, which does not implement the `Copy` trait
+
+For more information about this error, try `rustc --explain E0382`.
+error: could not compile `loan_manager` (lib) due to 1 previous error

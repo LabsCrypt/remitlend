@@ -1,0 +1,11 @@
+   Compiling stellar-xdr v22.1.0
+    Checking arbitrary v1.3.2
+   Compiling soroban-env-common v22.1.3
+   Compiling soroban-sdk-macros v22.0.9
+   Compiling soroban-sdk v22.0.9
+    Checking soroban-env-host v22.1.3
+    Checking soroban-ledger-snapshot v22.0.9
+    Checking remittance_nft v0.0.1 (/mnt/c/Users/NWAJAGU/Desktop/remitlend/contracts/remittance_nft)
+    Checking lending_pool v0.0.1 (/mnt/c/Users/NWAJAGU/Desktop/remitlend/contracts/lending_pool)
+    Checking loan_manager v0.0.1 (/mnt/c/Users/NWAJAGU/Desktop/remitlend/contracts/loan_manager)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 47.88s
