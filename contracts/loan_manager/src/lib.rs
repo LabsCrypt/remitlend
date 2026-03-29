@@ -110,9 +110,6 @@ pub enum DataKey {
     RateOracle,
 }
 
-#[contract]
-pub struct LoanManager;
-
 #[contractimpl]
 impl LoanManager {
     const INSTANCE_TTL_THRESHOLD: u32 = 17280;
@@ -1204,6 +1201,7 @@ impl LoanManager {
 
         Ok(())
     }
+}
 
     pub fn get_late_fee_rate(env: Env) -> u32 {
         Self::late_fee_rate_bps(&env)
