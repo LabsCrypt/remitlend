@@ -368,11 +368,9 @@ impl GovernanceContract {
         // 2. Effects: Clear pending transfer and update local admin state only after successful interaction.
         env.storage().instance().remove(&KEY_PENDING);
         env.storage().instance().set(&KEY_ADMIN, &new_admin);
-        
+
         // Update the last cancelled/proposal timestamp to enforce reproposal cooldown
-        env.storage()
-            .instance()
-            .set(&KEY_LAST_CANCELLED_AT, &now);
+        env.storage().instance().set(&KEY_LAST_CANCELLED_AT, &now);
 
         env.events().publish(
             (symbol_short!("GovFin"), new_admin.clone()),
