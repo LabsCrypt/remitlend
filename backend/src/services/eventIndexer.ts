@@ -1,7 +1,10 @@
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
-import { createRequestId, runWithRequestContext } from "../utils/requestContext.js";
+import {
+  createRequestId,
+  runWithRequestContext,
+} from "../utils/requestContext.js";
 import {
   type IndexedLoanEvent,
   type WebhookEventType,
@@ -62,7 +65,10 @@ export class EventIndexer {
 
   constructor(config: EventIndexerConfig);
   constructor(rpcUrl: string, contractId: string);
-  constructor(configOrRpcUrl: EventIndexerConfig | string, contractId?: string) {
+  constructor(
+    configOrRpcUrl: EventIndexerConfig | string,
+    contractId?: string,
+  ) {
     if (typeof configOrRpcUrl === "string") {
       if (!contractId) {
         throw new Error("contractId is required when using rpcUrl constructor");
@@ -104,7 +110,10 @@ export class EventIndexer {
     return chunkResult.lastProcessedLedger;
   }
 
-  async reindexRange(fromLedger: number, toLedger: number): Promise<{
+  async reindexRange(
+    fromLedger: number,
+    toLedger: number,
+  ): Promise<{
     fromLedger: number;
     toLedger: number;
     fetchedEvents: number;
@@ -168,9 +177,11 @@ export class EventIndexer {
 
   private async getLatestLedgerSequence(): Promise<number> {
     try {
-      const latest = (await (this.rpc as unknown as {
-        getLatestLedger: () => Promise<Record<string, unknown>>;
-      }).getLatestLedger()) as Record<string, unknown>;
+      const latest = (await (
+        this.rpc as unknown as {
+          getLatestLedger: () => Promise<Record<string, unknown>>;
+        }
+      ).getLatestLedger()) as Record<string, unknown>;
 
       const candidate =
         latest.sequence ?? latest.sequenceNumber ?? latest.seq ?? latest.id;
@@ -325,7 +336,9 @@ export class EventIndexer {
     return result;
   }
 
-  private async storeEvents(events: SorobanRawEvent[]): Promise<StoreEventsResult> {
+  private async storeEvents(
+    events: SorobanRawEvent[],
+  ): Promise<StoreEventsResult> {
     const parsedEvents: LoanEvent[] = [];
 
     for (const event of events) {
@@ -348,6 +361,11 @@ export class EventIndexer {
     }
 
     const insertedEvents: LoanEvent[] = [];
+
+    // Collect score deltas per user during the DB transaction to avoid N+1
+    // updates. After committing the inserted events we apply a single bulk
+    // upsert that adds the deltas and keeps scores bounded.
+    const scoreUpdates: Map<string, number> = new Map();
 
     await query("BEGIN", []);
     try {
@@ -390,17 +408,40 @@ export class EventIndexer {
 
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
+
+          // aggregate score deltas per borrower; apply after the transaction
+          // to avoid issuing a query per event (N+1).
           if (event.eventType === "LoanRepaid") {
             const { repaymentDelta } = sorobanService.getScoreConfig();
-            await this.updateUserScore(event.borrower, repaymentDelta);
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) + repaymentDelta,
+              );
+            }
           } else if (event.eventType === "LoanDefaulted") {
             const { defaultPenalty } = sorobanService.getScoreConfig();
-            await this.updateUserScore(event.borrower, -defaultPenalty);
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
+              );
+            }
           }
         }
       }
 
       await query("COMMIT", []);
+      // apply batched score updates after the transaction commits
+      if (scoreUpdates.size > 0) {
+        try {
+          await this.updateUserScoresBulk(scoreUpdates);
+        } catch (err) {
+          logger.error("Failed to apply bulk user score updates", {
+            error: err,
+          });
+        }
+      }
     } catch (error) {
       await query("ROLLBACK", []);
       throw error;
@@ -509,6 +550,55 @@ export class EventIndexer {
       });
     } catch (error) {
       logger.error("Failed to update user score", { userId, error });
+    }
+  }
+
+  /**
+   * Apply multiple user score deltas in a single DB statement to avoid N+1
+   * behavior. The `updates` map contains userId => delta (can be positive or
+   * negative). We use a CTE with VALUES to insert rows for new users with an
+   * initial score of 500 + delta and on conflict update by adding the delta.
+   */
+  private async updateUserScoresBulk(
+    updates: Map<string, number>,
+  ): Promise<void> {
+    if (!updates || updates.size === 0) return;
+
+    const params: (string | number)[] = [];
+    const valuePlaceholders: string[] = [];
+    let idx = 1;
+
+    for (const [userId, delta] of updates) {
+      // skip empty user ids
+      if (!userId) continue;
+      params.push(userId, delta);
+      valuePlaceholders.push(`($${idx}, $${idx + 1})`);
+      idx += 2;
+    }
+
+    if (valuePlaceholders.length === 0) return;
+
+    const sql = `
+      WITH updates (user_id, delta) AS (
+        VALUES ${valuePlaceholders.join(",")}
+      )
+      INSERT INTO scores (user_id, current_score)
+      SELECT user_id, 500 + delta FROM updates
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        -- existing rows are incremented by delta (EXCLUDED.current_score - 500)
+        current_score = LEAST(850, GREATEST(300, scores.current_score + (EXCLUDED.current_score - 500))),
+        updated_at = CURRENT_TIMESTAMP
+    `;
+
+    try {
+      await query(sql, params);
+      logger.info("Applied bulk user score updates", {
+        updatedCount: updates.size,
+      });
+    } catch (error) {
+      logger.error("Failed to apply bulk user score updates", { error });
+      throw error;
     }
   }
 
@@ -635,7 +725,9 @@ export class EventIndexer {
     }
   }
 
-  private decodeEventType(value: xdr.ScVal | undefined): WebhookEventType | null {
+  private decodeEventType(
+    value: xdr.ScVal | undefined,
+  ): WebhookEventType | null {
     if (!value) return null;
 
     try {
