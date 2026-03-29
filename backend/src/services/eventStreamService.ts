@@ -245,7 +245,7 @@ class EventStreamService {
     const adminsToRemove: ClientInfo[] = [];
     for (const clientInfo of adminClients) {
       try {
-        this.sendEventToAdmin(clientInfo.res, event);
+        this.sendEvent(clientInfo.res, event);
       } catch (err) {
         logger.error("SSE write error (admin)", { 
           userKey: clientInfo.userKey,
