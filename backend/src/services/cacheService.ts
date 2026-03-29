@@ -4,37 +4,49 @@ import logger from "../utils/logger.js";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 class CacheService {
-  private client: RedisClientType;
+  private client: RedisClientType | undefined;
   private isConnected: boolean = false;
+  private isConnecting: boolean = false;
 
-  constructor() {
-    this.client = createClient({
-      url: REDIS_URL,
-    });
+  private getClient(): RedisClientType {
+    if (!this.client) {
+      this.client = createClient({
+        url: REDIS_URL,
+      });
 
-    this.client.on("error", (err) => {
-      logger.error("Redis Client Error", err);
-      this.isConnected = false;
-    });
+      this.client.on("error", (err: Error) => {
+        logger.error("Redis Client Error", err);
+        this.isConnected = false;
+      });
 
-    this.client.on("connect", () => {
-      logger.info("Redis Client Connected");
-      this.isConnected = true;
-    });
+      this.client.on("connect", () => {
+        logger.info("Redis Client Connected");
+        this.isConnected = true;
+      });
 
-    this.client.on("reconnecting", () => {
-      logger.info("Redis Client Reconnecting");
-    });
-
-    // Attempt to connect immediately. If it fails it will reconnect in the background.
-    this.connect().catch((err) => {
-      logger.error("Initial Redis connection failed", err);
-    });
+      this.client.on("reconnecting", () => {
+        logger.info("Redis Client Reconnecting");
+      });
+    }
+    return this.client;
   }
 
-  private async connect() {
-    if (!this.isConnected) {
-      await this.client.connect();
+  private async connect(): Promise<void> {
+    if (this.isConnected || this.isConnecting) return;
+    
+    const client = this.getClient();
+    this.isConnecting = true;
+    
+    try {
+      if (!client.isReady) {
+        await client.connect();
+      }
+      this.isConnected = true;
+    } catch (error) {
+      logger.error("Redis connection failed", { error });
+      this.isConnected = false;
+    } finally {
+      this.isConnecting = false;
     }
   }
 
@@ -50,10 +62,12 @@ class CacheService {
     ttlSeconds: number = 300,
   ): Promise<void> {
     try {
+      await this.connect();
       if (!this.isConnected) return;
 
+      const client = this.getClient();
       const stringValue = JSON.stringify(value);
-      await this.client.setEx(key, ttlSeconds, stringValue);
+      await client.setEx(key, ttlSeconds, stringValue);
     } catch (error) {
       logger.error(`Error setting cache for key ${key}`, { error });
     }
@@ -66,9 +80,11 @@ class CacheService {
    */
   async get<T>(key: string): Promise<T | null> {
     try {
+      await this.connect();
       if (!this.isConnected) return null;
 
-      const value = await this.client.get(key);
+      const client = this.getClient();
+      const value = await client.get(key);
       if (!value) return null;
 
       return JSON.parse(value) as T;
@@ -84,8 +100,10 @@ class CacheService {
    */
   async delete(key: string): Promise<void> {
     try {
+      await this.connect();
       if (!this.isConnected) return;
-      await this.client.del(key);
+      const client = this.getClient();
+      await client.del(key);
     } catch (error) {
       logger.error(`Error deleting cache for key ${key}`, { error });
     }
@@ -97,10 +115,12 @@ class CacheService {
    */
   async invalidatePattern(pattern: string): Promise<void> {
     try {
+      await this.connect();
       if (!this.isConnected) return;
-      const keys = await this.client.keys(pattern);
+      const client = this.getClient();
+      const keys = await client.keys(pattern);
       if (keys.length > 0) {
-        await this.client.del(keys);
+        await client.del(keys);
       }
     } catch (error) {
       logger.error(`Error invalidating pattern ${pattern}`, { error });
@@ -113,8 +133,10 @@ class CacheService {
    */
   async ping(): Promise<"ok" | "error"> {
     try {
+      await this.connect();
       if (!this.isConnected) return "error";
-      const reply = await this.client.ping();
+      const client = this.getClient();
+      const reply = await client.ping();
       return reply === "PONG" ? "ok" : "error";
     } catch {
       return "error";
@@ -122,7 +144,7 @@ class CacheService {
   }
 
   async close(): Promise<void> {
-    if (this.isConnected) {
+    if (this.isConnected && this.client) {
       await this.client.quit();
       this.isConnected = false;
     }
