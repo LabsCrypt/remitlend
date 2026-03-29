@@ -1,30 +1,29 @@
 import {
   BASE_FEE,
-  Networks,
   Operation,
   TransactionBuilder,
   nativeToScVal,
   Address,
-  rpc,
   xdr,
 } from "@stellar/stellar-sdk";
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
+import {
+  createSorobanRpcServer,
+  getStellarNetworkPassphrase,
+} from "../config/stellar.js";
 
 /**
  * Service for building and submitting Soroban contract transactions.
  * Handles the transaction lifecycle: build → (frontend signs) → submit.
  */
 class SorobanService {
-  private getRpcServer(): rpc.Server {
-    const rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
-    const allowHttp = rpcUrl.startsWith("http://");
-    return new rpc.Server(rpcUrl, { allowHttp });
+  private getRpcServer() {
+    return createSorobanRpcServer();
   }
 
   private getNetworkPassphrase(): string {
-    return process.env.STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
+    return getStellarNetworkPassphrase();
   }
 
   private getLoanManagerContractId(): string {
