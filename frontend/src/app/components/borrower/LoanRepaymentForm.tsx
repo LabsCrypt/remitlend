@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -20,6 +21,7 @@ interface LoanRepaymentFormProps {
 }
 
 export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRepaymentFormProps) {
+  const t = useTranslations("LoanRepayment");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const txPreview = useTransactionPreview();
@@ -50,22 +52,22 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
     const numAmount = parseFloat(amount);
 
     if (!amount || isNaN(numAmount)) {
-      setError("Please enter a valid amount");
+      setError(t("validationError"));
       return false;
     }
 
     if (numAmount <= 0) {
-      setError("Amount must be greater than 0");
+      setError(t("amountGreaterThanZero"));
       return false;
     }
 
     if (minPayment > 0 && numAmount < minPayment) {
-      setError(`Minimum payment is ${minPayment} USDC`);
+      setError(t("minPaymentRequired", { amount: minPayment }));
       return false;
     }
 
     if (numAmount > totalOwed) {
-      setError(`Amount cannot exceed total owed (${totalOwed} USDC)`);
+      setError(t("amountExceedsOwed", { amount: totalOwed }));
       return false;
     }
 
@@ -100,20 +102,22 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Repay Loan #{loanId}</CardTitle>
+          <CardTitle>{t("title", { loanId })}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Loan Summary */}
           <div className="rounded-lg bg-gray-50 p-4 dark:bg-zinc-900/50">
             <div className="flex justify-between items-center mb-2">
-              <span className="text-sm text-gray-600 dark:text-zinc-400">Total Owed</span>
+              <span className="text-sm text-gray-600 dark:text-zinc-400">{t("totalOwed")}</span>
               <span className="text-2xl font-bold text-gray-900 dark:text-zinc-100">
                 {totalOwed} USDC
               </span>
             </div>
             {minPayment > 0 && (
               <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-500 dark:text-zinc-500">Minimum Payment</span>
+                <span className="text-xs text-gray-500 dark:text-zinc-500">
+                  {t("minPaymentLabel")}
+                </span>
                 <span className="text-sm font-medium text-gray-700 dark:text-zinc-300">
                   {minPayment} USDC
                 </span>
@@ -125,17 +129,17 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
           <div className="space-y-2">
             <Input
               type="number"
-              label="Repayment Amount"
-              placeholder="0.00"
+              label={t("repaymentAmount")}
+              placeholder={t("repaymentPlaceholder")}
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
               error={error || undefined}
               leftIcon={<DollarSign className="h-4 w-4" />}
-              helperText="Enter the amount you want to repay in USDC"
+              helperText={t("repaymentHelper")}
             />
 
             <Button variant="ghost" size="sm" onClick={handlePayFullAmount} className="w-full">
-              Pay Full Amount ({totalOwed} USDC)
+              {t("payFullAmount", { amount: totalOwed })}
             </Button>
           </div>
 
@@ -143,10 +147,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/50 dark:bg-blue-950/20">
             <div className="flex gap-2">
               <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-blue-800 dark:text-blue-300">
-                Repaying your loan on time improves your credit score and unlocks better rates for
-                future loans.
-              </p>
+              <p className="text-xs text-blue-800 dark:text-blue-300">{t("infoMessage")}</p>
             </div>
           </div>
 
@@ -160,7 +161,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
             disabled={!amount || !!error || repayment.isLoading}
             className="w-full"
           >
-            {repayment.isLoading ? "Processing..." : "Review Repayment"}
+            {repayment.isLoading ? t("processingButton") : t("reviewButton")}
           </Button>
         </CardContent>
       </Card>

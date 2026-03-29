@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { Button } from "../components/ui/Button";
@@ -23,6 +24,7 @@ function getScoreBandMax(score: number): number {
 }
 
 export default function RequestLoanPage() {
+  const t = useTranslations("RequestLoan");
   const borrowerAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const [successLoanId, setSuccessLoanId] = useState<string | null>(null);
@@ -50,22 +52,22 @@ export default function RequestLoanPage() {
       scoreErrorToastRef.current = scoreError.message;
       addToast({
         type: "error",
-        title: "Could not load your credit score",
+        title: t("errorLoadingScore"),
         description: scoreError.message,
       });
     }
-  }, [scoreError, addToast]);
+  }, [scoreError, addToast, t]);
 
   useEffect(() => {
     if (configError && configError.message !== configErrorToastRef.current) {
       configErrorToastRef.current = configError.message;
       addToast({
         type: "error",
-        title: "Could not load loan eligibility config",
+        title: t("errorLoadingConfig"),
         description: configError.message,
       });
     }
-  }, [configError, addToast]);
+  }, [configError, addToast, t]);
 
   const minimumScore = minScoreConfig?.minScore ?? 500;
   const resolvedCreditScore = creditScore ?? 0;
@@ -87,16 +89,14 @@ export default function RequestLoanPage() {
         <Card>
           <CardContent className="space-y-4 p-8 text-center">
             <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-              Loan Request Submitted
-            </h1>
-            <p className="text-zinc-600 dark:text-zinc-400">Request ID: {successLoanId}</p>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Next steps: monitor approval status and prepare repayment before the due date.
+            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{t("title")}</h1>
+            <p className="text-zinc-600 dark:text-zinc-400">
+              {t("requestId", { id: successLoanId })}
             </p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("nextSteps")}</p>
             <div className="flex justify-center gap-3 pt-2">
               <Link href="/loans">
-                <Button variant="outline">View Loans</Button>
+                <Button variant="outline">{t("viewLoans")}</Button>
               </Link>
               <Button onClick={() => setSuccessLoanId(null)}>Request Another</Button>
             </div>

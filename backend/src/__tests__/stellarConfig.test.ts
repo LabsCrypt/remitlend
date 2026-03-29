@@ -60,6 +60,7 @@ describe("stellar config", () => {
 
   it("rejects passphrase/network mismatches", () => {
     process.env.STELLAR_NETWORK = "mainnet";
+    process.env.STELLAR_RPC_URL = "https://soroban-mainnet.stellar.org";
     process.env.STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
 
     expect(() => getStellarConfig()).toThrow(
