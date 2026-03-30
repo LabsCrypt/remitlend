@@ -1,19 +1,9 @@
 import { jest } from "@jest/globals";
 import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 
-// Seed required runtime env vars before importing modules that may validate config.
-process.env.DATABASE_URL ??= "postgresql://test:test@localhost/test";
-process.env.REDIS_URL ??= "redis://localhost:6379";
-process.env.JWT_SECRET ??= "test-secret-key";
-process.env.STELLAR_RPC_URL ??= "https://soroban-testnet.stellar.org";
-process.env.STELLAR_NETWORK_PASSPHRASE ??= "Test SDF Network ; September 2015";
-process.env.LOAN_MANAGER_CONTRACT_ID ??= "CINDEXERTEST";
-process.env.LENDING_POOL_CONTRACT_ID ??= "CPOOL123";
-process.env.POOL_TOKEN_ADDRESS ??= "CTOKEN123";
-process.env.LOAN_MANAGER_ADMIN_SECRET ??= "test-admin-secret";
-process.env.INTERNAL_API_KEY ??= "test-api-key";
-
-const mockQuery = jest.fn();
+const mockQuery = jest.fn<
+  (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>
+>();
 const mockDispatch = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const mockBroadcast = jest.fn();
 const mockCreateNotification = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -163,8 +153,8 @@ describe("EventIndexer", () => {
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }).rpc = {
-      getEvents: jest.fn().mockResolvedValue({
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
         events: [
           makeRawEvent({
             id: "evt-requested",
@@ -220,9 +210,7 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([
-      [borrowerRepaid, 15, borrowerDefaulted, -50],
-    ]);
+    expect(scoreUpdates).toEqual([[borrowerRepaid, 15, borrowerDefaulted, -50]]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
@@ -268,8 +256,8 @@ describe("EventIndexer", () => {
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }).rpc = {
-      getEvents: jest.fn().mockResolvedValue({
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
         events: [duplicateEvent, duplicateEvent],
       }),
     };
@@ -316,20 +304,20 @@ describe("EventIndexer", () => {
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { running: boolean }).running = true;
-    (indexer as {
+    (indexer as unknown as { running: boolean }).running = true;
+    (indexer as unknown as {
       rpc: {
-        getLatestLedger: () => Promise<{ sequence: number }>;
-        getEvents: () => Promise<{ events: unknown[] }>;
+        getLatestLedger: unknown;
+        getEvents: unknown;
       };
     }).rpc = {
-      getLatestLedger: jest.fn().mockResolvedValue({ sequence: 15 }),
-      getEvents: jest.fn().mockResolvedValue({
+      getLatestLedger: async () => ({ sequence: 15 }),
+      getEvents: async () => ({
         events: [makeRawEvent({ id: "evt-poll", ledger: 15, type: "LoanRequested" })],
       }),
     };
 
-    await (indexer as { pollOnce: () => Promise<void> }).pollOnce();
+    await (indexer as unknown as { pollOnce: () => Promise<void> }).pollOnce();
 
     expect(stateWrites).toEqual([0, 15]);
   });
