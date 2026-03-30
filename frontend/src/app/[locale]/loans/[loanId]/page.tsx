@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronRight, Clock, Wallet } from "lucide-react";
+import { ChevronRight, Clock, Download, Wallet } from "lucide-react";
 import { LoanDetailSkeleton } from "../../../components/skeletons/LoanDetailSkeleton";
-import { useLoan } from "../../../hooks/useApi";
+import { useLoan, type LoanDetails } from "../../../hooks/useApi";
 import { RepaymentProgress } from "../../../components/ui/RepaymentProgress";
 import { LoanTimeline } from "../../../components/ui/LoanTimeline";
 import { TxHashLink } from "../../../components/ui/TxHashLink";
+import { Button } from "../../../components/ui/Button";
+import { downloadCsv } from "../../../utils/csv";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -26,6 +28,44 @@ function getDaysRemaining(deadline: string | undefined): number | null {
   if (!deadline) return null;
   const diff = new Date(deadline).getTime() - Date.now();
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+function formatLoanEventType(type: string): string {
+  return type
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .trim();
+}
+
+function getLoanAsset(loan: LoanDetails): string {
+  const loanWithAsset = loan as LoanDetails & { currency?: string; asset?: string };
+  return loanWithAsset.currency ?? loanWithAsset.asset ?? "USD";
+}
+
+function buildLoanCsvRows(loan: LoanDetails) {
+  const asset = getLoanAsset(loan);
+
+  if (loan.events.length > 0) {
+    return loan.events.map((event) => ({
+      date: event.timestamp,
+      type: formatLoanEventType(event.type),
+      amount: event.amount,
+      asset,
+      status: loan.status,
+      transaction_hash: event.txHash ?? "",
+    }));
+  }
+
+  return [
+    {
+      date: loan.requestedAt ?? loan.approvedAt ?? new Date().toISOString(),
+      type: "Loan Record",
+      amount: loan.totalOwed,
+      asset,
+      status: loan.status,
+      transaction_hash: "",
+    },
+  ];
 }
 
 export default function LoanDetailsPage() {
@@ -63,39 +103,55 @@ export default function LoanDetailsPage() {
   }
 
   const latestTxHash = loan.events.find((event) => Boolean(event.txHash))?.txHash;
-  // Some API responses include nextPaymentDeadline in the extended loan object
-  const nextDeadline = (loan as unknown as { nextPaymentDeadline?: string }).nextPaymentDeadline;
+  const nextDeadline = (loan as LoanDetails & { nextPaymentDeadline?: string }).nextPaymentDeadline;
   const daysRemaining = getDaysRemaining(nextDeadline);
+
+  const handleExport = () => {
+    downloadCsv(
+      `loan-record-${loanId}-${new Date().toISOString().slice(0, 10)}.csv`,
+      buildLoanCsvRows(loan),
+    );
+  };
 
   return (
     <section className="space-y-6">
-      {/* Breadcrumb */}
       <nav
         aria-label="Breadcrumb"
         className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400"
       >
-        <Link href="/" className="hover:text-zinc-900 dark:hover:text-zinc-100 transition">
+        <Link href="/" className="transition hover:text-zinc-900 dark:hover:text-zinc-100">
           Home
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
-        <Link href="/loans" className="hover:text-zinc-900 dark:hover:text-zinc-100 transition">
+        <Link href="/loans" className="transition hover:text-zinc-900 dark:hover:text-zinc-100">
           Loans
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <span className="font-medium text-zinc-900 dark:text-zinc-50">Loan #{loanId}</span>
       </nav>
 
-      {/* Header */}
       <header className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
-          Borrower Portal
-        </p>
-        <h1 className="mt-3 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Loan #{loanId}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-          Track repayment timing, lender terms, and the current outstanding balance for this loan.
-        </p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
+              Borrower Portal
+            </p>
+            <h1 className="mt-3 text-3xl font-bold text-zinc-900 dark:text-zinc-50">
+              Loan #{loanId}
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
+              Track repayment timing, lender terms, and the current outstanding balance for this loan.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            leftIcon={<Download className="h-4 w-4" />}
+            onClick={handleExport}
+          >
+            Export CSV
+          </Button>
+        </div>
 
-        {/* Loan metadata row */}
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-zinc-500 dark:text-zinc-400">
           {loan.interestRate > 0 && (
             <span>
@@ -125,7 +181,6 @@ export default function LoanDetailsPage() {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-        {/* Main content */}
         <article className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Repayment plan</h2>
 
@@ -163,9 +218,7 @@ export default function LoanDetailsPage() {
           </div>
         </article>
 
-        {/* Sidebar */}
         <aside className="space-y-4">
-          {/* Due date countdown */}
           {loan.status === "active" && daysRemaining !== null && (
             <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
               <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
@@ -199,7 +252,6 @@ export default function LoanDetailsPage() {
             </div>
           )}
 
-          {/* Action panel */}
           <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
             <div className="rounded-2xl bg-indigo-50 p-5 dark:bg-indigo-500/10">
               <div className="flex items-center gap-3 text-indigo-700 dark:text-indigo-300">
@@ -230,7 +282,6 @@ export default function LoanDetailsPage() {
             </div>
           </div>
 
-          {/* Collateral status */}
           <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
             <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
               Collateral status

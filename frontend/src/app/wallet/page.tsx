@@ -12,6 +12,7 @@ import {
   QrCode,
   ExternalLink,
   Globe,
+  Download,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -25,6 +26,7 @@ import {
   selectIsWalletConnected,
 } from "../stores/useWalletStore";
 import Link from "next/link";
+import { downloadCsv } from "../utils/csv";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,6 +50,34 @@ function getExplorerBase(networkName: string | null | undefined): string {
   return isMainnet
     ? "https://stellar.expert/explorer/public"
     : "https://stellar.expert/explorer/testnet";
+}
+
+function paymentAsset(p: HorizonPayment): string {
+  return p.asset_type === "native" ? "XLM" : (p.asset_code ?? p.asset_type ?? "Unknown");
+}
+
+function buildPaymentCsvRows(payments: HorizonPayment[], address: string) {
+  return payments.map((payment) => {
+    const inflow = payment.to === address || (payment.type === "create_account" && payment.source_account !== address);
+
+    return {
+      date: payment.created_at,
+      type:
+        payment.type === "payment"
+          ? inflow
+            ? "Received"
+            : "Sent"
+          : payment.type === "create_account"
+            ? "Account Created"
+            : payment.type === "path_payment_strict_send" || payment.type === "path_payment_strict_receive"
+              ? "Path Payment"
+              : payment.type.replace(/_/g, " "),
+      amount: payment.amount ?? "",
+      asset: paymentAsset(payment),
+      status: "completed",
+      transaction_hash: payment.transaction_hash,
+    };
+  });
 }
 
 // ─── Horizon types ─────────────────────────────────────────────────────────────
@@ -298,17 +328,42 @@ function TransactionHistoryCard({
 
   function paymentAmount(p: HorizonPayment): string {
     if (!p.amount) return "—";
-    const asset = p.asset_type === "native" ? "XLM" : (p.asset_code ?? "");
-    return `${parseFloat(p.amount).toLocaleString("en-US", { maximumFractionDigits: 7 })} ${asset}`;
+    return `${parseFloat(p.amount).toLocaleString("en-US", { maximumFractionDigits: 7 })} ${paymentAsset(p)}`;
   }
+
+  const canExport = Boolean(payments?.length);
+
+  const handleExport = () => {
+    if (!payments?.length) {
+      return;
+    }
+
+    downloadCsv(
+      `transaction-history-${address.slice(0, 6)}-${new Date().toISOString().slice(0, 10)}.csv`,
+      buildPaymentCsvRows(payments, address),
+    );
+  };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Transaction History</CardTitle>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-          Recent payments from Stellar Horizon
-        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Transaction History</CardTitle>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              Recent payments from Stellar Horizon
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<Download className="h-4 w-4" />}
+            onClick={handleExport}
+            disabled={!canExport || isLoading || isError}
+          >
+            Export CSV
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -320,16 +375,16 @@ function TransactionHistoryCard({
             </p>
           </div>
         ) : !payments || payments.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center py-8">
+          <p className="py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
             No transactions found.
           </p>
         ) : (
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {payments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between py-3 gap-4">
-                <div className="flex items-center gap-3 min-w-0">
+              <div key={p.id} className="flex items-center justify-between gap-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <div
-                    className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${
                       isInflow(p)
                         ? "bg-green-50 dark:bg-green-500/10"
                         : "bg-zinc-50 dark:bg-zinc-900"
@@ -342,15 +397,15 @@ function TransactionHistoryCard({
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 truncate capitalize">
+                    <p className="truncate text-sm font-semibold capitalize text-zinc-900 dark:text-zinc-50">
                       {paymentLabel(p)}
                     </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono truncate">
+                    <p className="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
                       {counterparty(p)}
                     </p>
                   </div>
                 </div>
-                <div className="text-right flex-shrink-0 flex items-center gap-2">
+                <div className="flex flex-shrink-0 items-center gap-2 text-right">
                   <div>
                     <p
                       className={`text-sm font-bold ${
@@ -370,7 +425,7 @@ function TransactionHistoryCard({
                     href={`${explorerBase}/tx/${p.transaction_hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    className="p-1 text-zinc-400 transition-colors hover:text-indigo-600 dark:hover:text-indigo-400"
                     title="View on Stellar Explorer"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
@@ -384,7 +439,6 @@ function TransactionHistoryCard({
     </Card>
   );
 }
-
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
