@@ -584,6 +584,17 @@ impl LendingPool {
         Ok(())
     }
 
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+
+        admin_transferred(&env, new_admin);
+    }
+
     pub fn pause(env: Env) {
         Self::admin(&env).require_auth();
         env.storage().instance().set(&DataKey::Paused, &true);

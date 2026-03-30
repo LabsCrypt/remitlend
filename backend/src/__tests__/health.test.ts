@@ -15,6 +15,12 @@ jest.unstable_mockModule("../services/cacheService.js", () => ({
   },
 }));
 
+jest.unstable_mockModule("../services/sorobanService.js", () => ({
+  sorobanService: {
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
+  },
+}));
+
 // Use dynamic import for app to ensure mocks are applied
 const { default: app } = await import("../app.js");
 

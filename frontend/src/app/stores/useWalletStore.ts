@@ -15,7 +15,7 @@
  */
 
 import { create } from "zustand";
-import { devtools } from "zustand/middleware";
+import { createJSONStorage, devtools, persist } from "zustand/middleware";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +49,8 @@ interface WalletState {
   isLoadingBalances: boolean;
   /** Human-readable error message */
   error: string | null;
+  /** Whether the app should try to restore the wallet on refresh */
+  shouldAutoReconnect: boolean;
 }
 
 interface WalletActions {
@@ -61,7 +63,7 @@ interface WalletActions {
   /** Update network when the user switches chains */
   setNetwork: (network: WalletNetwork) => void;
   setStatus: (status: WalletStatus) => void;
-  setError: (error: string | null) => void;
+  setError: (error: string | null, status?: WalletStatus) => void;
   setLoadingBalances: (loading: boolean) => void;
 }
 
@@ -76,42 +78,64 @@ const initialState: WalletState = {
   balances: [],
   isLoadingBalances: false,
   error: null,
+  shouldAutoReconnect: false,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useWalletStore = create<WalletStore>()(
   devtools(
-    (set) => ({
-      ...initialState,
+    persist(
+      (set) => ({
+        ...initialState,
 
-      setConnected: (address, network) =>
-        set(
-          {
-            status: "connected",
-            address,
-            network,
-            error: null,
-          },
-          false,
-          "wallet/setConnected",
-        ),
+        setConnected: (address, network) =>
+          set(
+            {
+              status: "connected",
+              address,
+              network,
+              error: null,
+              shouldAutoReconnect: true,
+            },
+            false,
+            "wallet/setConnected",
+          ),
 
-      disconnect: () => set({ ...initialState }, false, "wallet/disconnect"),
+        disconnect: () =>
+          set(
+            {
+              ...initialState,
+            },
+            false,
+            "wallet/disconnect",
+          ),
 
-      setBalances: (balances) =>
-        set({ balances, isLoadingBalances: false }, false, "wallet/setBalances"),
+        setBalances: (balances) =>
+          set({ balances, isLoadingBalances: false }, false, "wallet/setBalances"),
 
-      setNetwork: (network) => set({ network }, false, "wallet/setNetwork"),
+        setNetwork: (network) => set({ network }, false, "wallet/setNetwork"),
 
-      setStatus: (status) => set({ status }, false, "wallet/setStatus"),
+        setStatus: (status) => set({ status }, false, "wallet/setStatus"),
 
-      setError: (error) =>
-        set({ error, status: "error", isLoadingBalances: false }, false, "wallet/setError"),
+        setError: (error, status = "error") =>
+          set({ error, status, isLoadingBalances: false }, false, "wallet/setError"),
 
-      setLoadingBalances: (isLoadingBalances) =>
-        set({ isLoadingBalances }, false, "wallet/setLoadingBalances"),
-    }),
+        setLoadingBalances: (isLoadingBalances) =>
+          set({ isLoadingBalances }, false, "wallet/setLoadingBalances"),
+      }),
+      {
+        name: "remitlend-wallet",
+        storage: createJSONStorage(() => localStorage),
+        partialize: (state) => ({
+          status: state.status,
+          address: state.address,
+          network: state.network,
+          balances: state.balances,
+          shouldAutoReconnect: state.shouldAutoReconnect,
+        }),
+      },
+    ),
     { name: "WalletStore" },
   ),
 );
@@ -124,3 +148,4 @@ export const selectIsWalletConnected = (state: WalletStore) => state.status === 
 export const selectWalletNetwork = (state: WalletStore) => state.network;
 export const selectWalletBalances = (state: WalletStore) => state.balances;
 export const selectWalletError = (state: WalletStore) => state.error;
+export const selectWalletShouldAutoReconnect = (state: WalletStore) => state.shouldAutoReconnect;

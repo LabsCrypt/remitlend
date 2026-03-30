@@ -1022,6 +1022,23 @@ fn test_propose_and_accept_admin() {
 }
 
 #[test]
+fn test_set_admin_updates_admin_immediately() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.set_admin(&new_admin);
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
 #[should_panic]
 fn test_accept_admin_without_proposal() {
     let env = Env::default();

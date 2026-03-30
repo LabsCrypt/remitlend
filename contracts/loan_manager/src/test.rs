@@ -1,4 +1,4 @@
-use crate::{DataKey, LoanError, LoanManager, LoanManagerClient, LoanStatus};
+use crate::{DataKey, Loan, LoanError, LoanManager, LoanManagerClient, LoanStatus};
 use lending_pool::{LendingPool, LendingPoolClient};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::Ledger as _;
@@ -61,6 +61,19 @@ fn test_upgrade_requires_admin_auth() {
 
     env.mock_auths(&[]);
     manager.upgrade(&create_upgrade_hash(&env));
+}
+
+#[test]
+fn test_set_admin_updates_admin_immediately() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let new_admin = Address::generate(&env);
+
+    manager.set_admin(&new_admin);
+
+    assert_eq!(manager.get_admin(), new_admin);
 }
 
 #[test]
@@ -195,6 +208,106 @@ fn test_reject_pending_loan() {
 
     let loan = manager.get_loan(&loan_id);
     assert_eq!(loan.status, LoanStatus::Rejected);
+}
+
+#[test]
+fn test_cancel_pending_loan_returns_collateral() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, _pool, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&manager.address, &500);
+
+    let _borrower_balance_before = token_client.balance(&borrower);
+    let _contract_balance_before = token_client.balance(&manager.address);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    env.as_contract(&manager.address, || {
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
+        loan.collateral_amount = 500;
+        env.storage().persistent().set(&loan_key, &loan);
+    });
+
+    assert_eq!(manager.get_collateral(&loan_id), 500);
+
+    manager.cancel_loan(&borrower, &loan_id);
+
+    assert_eq!(manager.get_collateral(&loan_id), 0);
+}
+
+#[test]
+fn test_reject_pending_loan_returns_collateral() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, _pool, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&manager.address, &400);
+
+    let borrower_balance_before = token_client.balance(&borrower);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    env.as_contract(&manager.address, || {
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
+        loan.collateral_amount = 400;
+        env.storage().persistent().set(&loan_key, &loan);
+    });
+
+    assert_eq!(manager.get_collateral(&loan_id), 400);
+
+    manager.reject_loan(&loan_id, &String::from_str(&env, "manual review failed"));
+
+    assert_eq!(manager.get_collateral(&loan_id), 0);
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before + 400
+    );
+}
+
+#[test]
+fn test_admin_transfer_via_propose_accept() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let current_admin: Address = env.as_contract(&manager.address, || {
+        env.storage().instance().get(&DataKey::Admin).unwrap()
+    });
+
+    let proposed_admin = Address::generate(&env);
+
+    manager.propose_admin(&proposed_admin);
+
+    let pending_admin: Address = env.as_contract(&manager.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::ProposedAdmin)
+            .unwrap()
+    });
+    assert_eq!(pending_admin, proposed_admin);
+
+    manager.accept_admin();
+
+    let accepted_admin: Address = env.as_contract(&manager.address, || {
+        env.storage().instance().get(&DataKey::Admin).unwrap()
+    });
+    assert_eq!(accepted_admin, proposed_admin);
+    assert_ne!(accepted_admin, current_admin);
 }
 
 #[test]

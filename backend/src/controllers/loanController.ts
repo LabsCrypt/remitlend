@@ -2,47 +2,18 @@ import type { Request, Response } from "express";
 import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { getLoanConfig } from "../config/loanConfig.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { sorobanService } from "../services/sorobanService.js";
 import {
-  createPaginatedResponse,
-  getSortConfig,
-  parseQueryParams,
+  createCursorPaginatedResponse,
+  parseCursorQueryParams,
 } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
 
 const LEDGER_CLOSE_SECONDS = 5;
 const DEFAULT_TERM_LEDGERS = 17280; // 1 day in ledgers
 const DEFAULT_INTEREST_RATE_BPS = 1200; // 12%
-const DEFAULT_MIN_SCORE = 500;
-const DEFAULT_MAX_AMOUNT = 50_000;
-const DEFAULT_INTEREST_RATE_PERCENT = 12;
-const LOAN_SORT_FIELDS = [
-  "loanId",
-  "principal",
-  "accruedInterest",
-  "totalRepaid",
-  "totalOwed",
-  "status",
-  "approvedAt",
-  "nextPaymentDeadline",
-] as const;
-
-const parsePositiveInteger = (
-  value: string | undefined,
-  fallback: number,
-): number => {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-
-  return parsed;
-};
 
 type BorrowerLoan = {
   loanId: number;
@@ -65,26 +36,77 @@ const getLatestLedger = async (): Promise<number> => {
   return result.rows[0]?.last_indexed_ledger ?? 0;
 };
 
-const compareLoanValues = (
-  left: BorrowerLoan,
-  right: BorrowerLoan,
-  field: (typeof LOAN_SORT_FIELDS)[number],
-  direction: "ASC" | "DESC",
+const roundToCents = (value: number): number =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
+const addDays = (date: Date, days: number): Date => {
+  const result = new Date(date);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+};
+
+const buildAmortizationSchedule = (
+  principal: number,
+  interestRateBps: number,
+  termLedgers: number,
+  startDate: Date,
 ) => {
-  const leftValue = left[field];
-  const rightValue = right[field];
+  const totalInterest = principal * (interestRateBps / 10000);
+  const totalDue = principal + totalInterest;
 
-  let comparison = 0;
+  const LEDGER_DAY = 17280; // 1 day in ledgers
+  const termDays = termLedgers / LEDGER_DAY;
 
-  if (typeof leftValue === "number" && typeof rightValue === "number") {
-    comparison = leftValue - rightValue;
-  } else {
-    const normalizedLeft = leftValue ?? "";
-    const normalizedRight = rightValue ?? "";
-    comparison = String(normalizedLeft).localeCompare(String(normalizedRight));
+  const periodCount = Math.max(1, Math.round(termDays / 30) || 1);
+  const daysPerPeriod = termDays / periodCount;
+
+  const rawPrincipalPortion = principal / periodCount;
+  const rawInterestPortion = totalInterest / periodCount;
+
+  const schedule = [] as Array<{
+    date: string;
+    principalPortion: number;
+    interestPortion: number;
+    totalDue: number;
+    runningBalance: number;
+  }>;
+
+  let remainingPrincipal = principal;
+  let remainingInterest = totalInterest;
+
+  for (let i = 1; i <= periodCount; i++) {
+    const isLast = i === periodCount;
+
+    const principalPortion = isLast
+      ? roundToCents(remainingPrincipal)
+      : roundToCents(rawPrincipalPortion);
+
+    const interestPortion = isLast
+      ? roundToCents(remainingInterest)
+      : roundToCents(rawInterestPortion);
+
+    remainingPrincipal = roundToCents(remainingPrincipal - principalPortion);
+    remainingInterest = roundToCents(remainingInterest - interestPortion);
+
+    const dueDate = addDays(startDate, Math.round(daysPerPeriod * i));
+
+    schedule.push({
+      date: dueDate.toISOString(),
+      principalPortion,
+      interestPortion,
+      totalDue: roundToCents(principalPortion + interestPortion),
+      runningBalance: Math.max(0, remainingPrincipal),
+    });
   }
 
-  return direction === "DESC" ? comparison * -1 : comparison;
+  return {
+    principal: roundToCents(principal),
+    interestRateBps,
+    termLedgers,
+    totalInterest: roundToCents(totalInterest),
+    totalDue: roundToCents(totalDue),
+    schedule,
+  };
 };
 
 /**
@@ -95,30 +117,9 @@ const compareLoanValues = (
 export const getBorrowerLoans = asyncHandler(
   async (req: Request, res: Response) => {
     const { borrower } = req.params;
-    const { limit, offset, sort, status, dateRange, amountRange } =
-      parseQueryParams(req);
+    const { limit, cursor, sort, status, dateRange, amountRange } =
+      parseCursorQueryParams(req);
 
-
-    const sortConfig = getSortConfig(
-      sort,
-      LOAN_SORT_FIELDS,
-      "approvedAt",
-      "DESC",
-    );
-
-    const sortFieldMap: Record<string, string> = {
-      loanId: "loan_id",
-      principal: "principal",
-      accruedInterest: "accrued_interest",
-      totalRepaid: "total_repaid",
-      totalOwed: "total_owed",
-      status: "status",
-      approvedAt: "approved_at",
-      nextPaymentDeadline: "next_payment_deadline",
-    };
-
-    const sqlSortField = sortFieldMap[sortConfig.field] || "approved_at";
-    const sqlSortDirection = sortConfig.direction === "DESC" ? "DESC" : "ASC";
 
     const currentLedger = await getLatestLedger();
 
@@ -174,10 +175,12 @@ export const getBorrowerLoans = asyncHandler(
         AND ($5::numeric IS NULL OR principal <= $5)
         AND ($6::timestamp IS NULL OR approved_at >= $6)
         AND ($7::timestamp IS NULL OR approved_at <= $7)
-      ORDER BY ${sqlSortField} ${sqlSortDirection}
-      LIMIT $8 OFFSET $9
+        AND ($8::int IS NULL OR loan_id > $8)
+      ORDER BY loan_id ASC
+      LIMIT $9
     `;
 
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
     const queryParams = [
       borrower,
       currentLedger,
@@ -186,8 +189,8 @@ export const getBorrowerLoans = asyncHandler(
       amountRange?.max ?? null,
       dateRange?.start ?? null,
       dateRange?.end ?? null,
-      limit,
-      offset,
+      cursorValue,
+      limit + 1,
     ];
 
     const result = await query(loansQuery, queryParams);
@@ -195,7 +198,10 @@ export const getBorrowerLoans = asyncHandler(
     const totalCount =
       result.rows.length > 0 ? Number.parseInt(result.rows[0].full_count, 10) : 0;
 
-    const loans: BorrowerLoan[] = result.rows.map((row: any) => ({
+    const hasNext = result.rows.length > limit;
+    const trimmedRows = hasNext ? result.rows.slice(0, limit) : result.rows;
+
+    const loans: BorrowerLoan[] = trimmedRows.map((row: any) => ({
       loanId: Number(row.loan_id),
       principal: Number.parseFloat(row.principal || "0"),
       accruedInterest: Number.parseFloat(row.accrued_interest || "0"),
@@ -209,16 +215,20 @@ export const getBorrowerLoans = asyncHandler(
         : null,
     }));
 
+    const lastLoan = loans.length > 0 ? loans[loans.length - 1] : undefined;
+    const nextCursor = hasNext && lastLoan ? String(lastLoan.loanId) : null;
+
     res.json(
-      createPaginatedResponse(
+      createCursorPaginatedResponse(
         {
           borrower,
           loans,
         },
         totalCount,
         limit,
-        offset,
         loans.length,
+        nextCursor,
+        Boolean(cursor),
       ),
     );
   },
@@ -227,31 +237,19 @@ export const getBorrowerLoans = asyncHandler(
 /**
  * GET /api/loans/config
  */
-export const getLoanConfig = asyncHandler(
-  async (_req: Request, res: Response) => {
-    const minScore = parsePositiveInteger(
-      process.env.LOAN_MIN_SCORE,
-      DEFAULT_MIN_SCORE,
-    );
-    const maxAmount = parsePositiveInteger(
-      process.env.LOAN_MAX_AMOUNT,
-      DEFAULT_MAX_AMOUNT,
-    );
-    const interestRatePercent = parsePositiveInteger(
-      process.env.LOAN_INTEREST_RATE_PERCENT,
-      DEFAULT_INTEREST_RATE_PERCENT,
-    );
+export const getLoanConfigEndpoint = asyncHandler(async (_req: Request, res: Response) => {
+  const loanConfig = getLoanConfig();
 
-    res.json({
-      success: true,
-      data: {
-        minScore,
-        maxAmount,
-        interestRatePercent,
-      },
-    });
-  },
-);
+  res.json({
+    success: true,
+    data: {
+      minScore: loanConfig.minScore,
+      maxAmount: loanConfig.maxAmount,
+      interestRatePercent: loanConfig.interestRatePercent,
+      creditScoreThreshold: loanConfig.creditScoreThreshold,
+    },
+  });
+});
 
 /**
  * Get detailed loan history and current stats
@@ -329,6 +327,53 @@ export const getLoanDetails = asyncHandler(
           tx: event.tx_hash,
         })),
       },
+    });
+  },
+);
+
+export const getLoanAmortizationSchedule = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { loanId } = req.params;
+
+    const eventsResult = await query(
+      `SELECT event_type, amount, ledger_closed_at, interest_rate_bps, term_ledgers
+       FROM loan_events
+       WHERE loan_id = $1
+       ORDER BY ledger_closed_at ASC`,
+      [loanId],
+    );
+
+    if (eventsResult.rows.length === 0) {
+      throw AppError.notFound("Loan not found", ErrorCode.LOAN_NOT_FOUND, "loanId");
+    }
+
+    const events = eventsResult.rows;
+    const requestEvent = events.find((event: any) => event.event_type === "LoanRequested");
+    const approvalEvent = events.find((event: any) => event.event_type === "LoanApproved");
+
+    if (!requestEvent || !approvalEvent || !requestEvent.amount) {
+      throw AppError.notFound("Loan not fully approved", ErrorCode.LOAN_NOT_FOUND, "loanId");
+    }
+
+    const principal = Number.parseFloat(String(requestEvent.amount));
+    const interestRateBps = Number.parseInt(String(approvalEvent.interest_rate_bps ?? DEFAULT_INTEREST_RATE_BPS), 10);
+    const termLedgers = Number.parseInt(String(approvalEvent.term_ledgers ?? DEFAULT_TERM_LEDGERS), 10);
+
+    const approvedAt = approvalEvent.ledger_closed_at
+      ? new Date(approvalEvent.ledger_closed_at)
+      : new Date();
+
+    const amortization = buildAmortizationSchedule(
+      principal,
+      interestRateBps,
+      termLedgers,
+      approvedAt,
+    );
+
+    res.json({
+      success: true,
+      loanId,
+      amortization,
     });
   },
 );
