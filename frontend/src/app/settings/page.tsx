@@ -21,6 +21,7 @@ import { ThemeToggle } from "../components/ui/ThemeToggle";
 import { useWalletStore, selectWalletAddress, selectWalletNetwork } from "../stores/useWalletStore";
 import { useUserStore, selectUser } from "../stores/useUserStore";
 
+// i
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface NotificationPrefs {
