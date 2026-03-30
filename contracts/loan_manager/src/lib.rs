@@ -856,10 +856,10 @@ impl LoanManager {
         }
 
         let min_repayment_amount = Self::min_repayment_amount(&env);
-        
+
         // Fix for rounding dust: if amount covers all but 1 unit of remaining debt, treat as full repayment
         let is_rounding_dust_forgiveness = amount >= total_debt.saturating_sub(1);
-        
+
         // Skip minimum amount check if this is a rounding dust forgiveness or full repayment
         if amount < total_debt && !is_rounding_dust_forgiveness && amount < min_repayment_amount {
             panic!("repayment amount below minimum");
@@ -909,12 +909,12 @@ impl LoanManager {
                 .expect("grace period overflow");
 
         let mut completed = false;
-        
+
         // Check if loan is fully repaid (including rounding dust forgiveness)
         let is_fully_repaid = loan.principal_paid == loan.amount
             && loan.accrued_interest == 0
             && loan.accrued_late_fee == 0;
-            
+
         // If this is rounding dust forgiveness, treat as full repayment
         if is_rounding_dust_forgiveness && !is_fully_repaid {
             // Forgive the remaining dust and mark as fully repaid
@@ -929,7 +929,7 @@ impl LoanManager {
         } else if is_fully_repaid {
             completed = true;
         }
-        
+
         if completed {
             loan.status = LoanStatus::Repaid;
             loan.collateral_amount = 0;

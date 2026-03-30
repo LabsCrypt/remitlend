@@ -1224,19 +1224,23 @@ fn test_rounding_dust_forgiveness_on_repayment() {
     // Make a partial repayment that leaves a small remaining balance
     // Use 998 to leave 2 units remaining (which should trigger dust forgiveness)
     manager.repay(&borrower, &loan_id, &998);
-    
+
     let loan = manager.get_loan(&loan_id);
-    let remaining_debt = loan.amount - loan.principal_paid + loan.accrued_interest + loan.accrued_late_fee;
-    
+    let remaining_debt =
+        loan.amount - loan.principal_paid + loan.accrued_interest + loan.accrued_late_fee;
+
     // Set minimum repayment amount higher than the remaining dust
     manager.set_min_repayment_amount(&100);
-    
+
     // The remaining debt should be small (2 units or less) - this should trigger rounding dust forgiveness
-    assert!(remaining_debt > 0 && remaining_debt <= 100, "Remaining debt should be small but non-zero");
-    
+    assert!(
+        remaining_debt > 0 && remaining_debt <= 100,
+        "Remaining debt should be small but non-zero"
+    );
+
     // This repayment should succeed despite being below minimum amount because it's rounding dust
     manager.repay(&borrower, &loan_id, &remaining_debt);
-    
+
     let completed_loan = manager.get_loan(&loan_id);
     assert_eq!(completed_loan.status, LoanStatus::Repaid);
     assert_eq!(completed_loan.principal_paid, 1000);
