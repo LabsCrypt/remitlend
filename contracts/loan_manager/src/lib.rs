@@ -860,11 +860,6 @@ impl LoanManager {
             panic!("repayment amount below minimum");
         }
 
-        let min_repayment_amount = Self::min_repayment_amount(&env);
-        if amount < total_debt && amount < min_repayment_amount {
-            panic!("repayment amount below minimum");
-        }
-
         let token: Address = env
             .storage()
             .instance()
