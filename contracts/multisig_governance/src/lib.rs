@@ -576,3 +576,117 @@ impl GovernanceContract {
             .expect("contract not initialized (4002)")
     }
 }
+
+#[derive(scale::Encode, scale::Decode, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+pub struct Proposal {
+    pub id: u64,
+    pub creator: AccountId,
+    pub approvals: Vec<AccountId>,
+    pub executed: bool,
+    pub expires_at: u64, // NEW: ledger height expiry
+}
+
+#[ink(storage)]
+pub struct MultisigGovernance {
+    proposals: Mapping<u64, Proposal>,
+    next_proposal_id: u64,
+    expiry_window: u64, // NEW: configurable expiry window in ledgers
+    admin: AccountId,
+}
+
+impl MultisigGovernance {
+    #[ink(constructor)]
+    pub fn new(admin: AccountId, expiry_window: u64) -> Self {
+        Self {
+            proposals: Mapping::default(),
+            next_proposal_id: 0,
+            expiry_window,
+            admin,
+        }
+    }
+
+    #[ink(message)]
+    pub fn set_expiry_window(&mut self, new_window: u64) -> Result<(), String> {
+        if self.env().caller() != self.admin {
+            return Err(String::from("Only admin can set expiry window"));
+        }
+        self.expiry_window = new_window;
+        Ok(())
+    }
+
+    #[ink(message)]
+    pub fn create_proposal(&mut self) -> u64 {
+        let id = self.next_proposal_id;
+        self.next_proposal_id += 1;
+
+        let current_ledger = Self::current_ledger();
+        let expires_at = current_ledger + self.expiry_window;
+
+        let proposal = Proposal {
+            id,
+            creator: self.env().caller(),
+            approvals: Vec::new(),
+            executed: false,
+            expires_at,
+        };
+
+        self.proposals.insert(id, &proposal);
+        id
+    }
+
+    #[ink(message)]
+    pub fn approve_proposal(&mut self, proposal_id: u64) -> Result<(), String> {
+        let mut proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        let current_ledger = Self::current_ledger();
+
+        if current_ledger > proposal.expires_at {
+            return Err(String::from("Proposal expired"));
+        }
+
+        let caller = self.env().caller();
+        if !proposal.approvals.contains(&caller) {
+            proposal.approvals.push(caller);
+        }
+
+        self.proposals.insert(proposal_id, &proposal);
+        Ok(())
+    }
+
+    #[ink(message)]
+    pub fn finalize_proposal(&mut self, proposal_id: u64) -> Result<(), String> {
+        let mut proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        let current_ledger = Self::current_ledger();
+
+        if current_ledger > proposal.expires_at {
+            return Err(String::from("Proposal expired"));
+        }
+
+        if proposal.executed {
+            return Err(String::from("Already executed"));
+        }
+
+        // Execute logic here...
+        proposal.executed = true;
+        self.proposals.insert(proposal_id, &proposal);
+        Ok(())
+    }
+
+    #[ink(message)]
+    pub fn cancel_expired_proposal(&mut self, proposal_id: u64) -> Result<(), String> {
+        let proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        let current_ledger = Self::current_ledger();
+
+        if current_ledger <= proposal.expires_at {
+            return Err(String::from("Proposal not expired yet"));
+        }
+
+        self.proposals.remove(proposal_id);
+        Ok(())
+    }
+
+    fn current_ledger() -> u64 {
+        // Placeholder: integrate with environment ledger height
+        Self::env().block_number()
+    }
+}
