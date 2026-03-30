@@ -11,6 +11,8 @@ export type NotificationType =
   | "loan_defaulted"
   | "score_changed";
 
+export type NotificationStatus = "unread" | "read" | "archived";
+
 export interface Notification {
   id: number;
   userId: string;
@@ -19,6 +21,7 @@ export interface Notification {
   message: string;
   loanId?: number | undefined;
   read: boolean;
+  status: NotificationStatus;
   createdAt: Date;
 }
 
@@ -48,9 +51,9 @@ class NotificationService {
     const { userId, type, title, message, loanId } = params;
 
     const result = await query(
-      `INSERT INTO notifications (user_id, type, title, message, loan_id)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, user_id, type, title, message, loan_id, read, created_at`,
+      `INSERT INTO notifications (user_id, type, title, message, loan_id, status)
+       VALUES ($1, $2, $3, $4, $5, 'unread')
+       RETURNING id, user_id, type, title, message, loan_id, read, status, created_at`,
       [userId, type, title, message, loanId ?? null],
     );
 
@@ -67,7 +70,7 @@ class NotificationService {
     limit = 50,
   ): Promise<Notification[]> {
     const result = await query(
-      `SELECT id, user_id, type, title, message, loan_id, read, created_at
+      `SELECT id, user_id, type, title, message, loan_id, read, status, created_at
        FROM notifications
        WHERE user_id = $1
        ORDER BY created_at DESC
@@ -82,7 +85,7 @@ class NotificationService {
    */
   async getUnreadCount(userId: string): Promise<number> {
     const result = await query(
-      `SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND read = false`,
+      `SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND status = 'unread'`,
       [userId],
     );
     return parseInt(result.rows[0]?.count ?? "0", 10);
@@ -95,8 +98,8 @@ class NotificationService {
   async markRead(userId: string, ids: number[]): Promise<void> {
     if (!ids.length) return;
     await query(
-      `UPDATE notifications SET read = true
-       WHERE user_id = $1 AND id = ANY($2::int[]) AND read = false`,
+      `UPDATE notifications SET read = true, status = 'read'
+       WHERE user_id = $1 AND id = ANY($2::int[]) AND status = 'unread'`,
       [userId, ids],
     );
   }
@@ -106,8 +109,22 @@ class NotificationService {
    */
   async markAllRead(userId: string): Promise<void> {
     await query(
-      `UPDATE notifications SET read = true WHERE user_id = $1 AND read = false`,
+      `UPDATE notifications SET read = true, status = 'read'
+       WHERE user_id = $1 AND status = 'unread'`,
       [userId],
+    );
+  }
+
+  /**
+   * Archives specific notifications for a user.
+   * Archived notifications are excluded from the main feed and cleaned up sooner.
+   */
+  async archiveNotifications(userId: string, ids: number[]): Promise<void> {
+    if (!ids.length) return;
+    await query(
+      `UPDATE notifications SET read = true, status = 'archived'
+       WHERE user_id = $1 AND id = ANY($2::int[]) AND status != 'archived'`,
+      [userId, ids],
     );
   }
 
@@ -175,6 +192,37 @@ class NotificationService {
     }
   }
 
+  /**
+   * Deletes read and archived notifications older than the specified number of days.
+   * Acknowledged notifications are cleaned up on a shorter retention cycle than unread ones.
+   * @param retentionDays The number of days to keep read/archived notifications.
+   * @returns The number of deleted notifications.
+   */
+  async deleteReadAndArchived(retentionDays: number): Promise<number> {
+    try {
+      const result = await query(
+        `DELETE FROM notifications
+         WHERE status IN ('read', 'archived')
+           AND created_at < NOW() - (INTERVAL '1 day' * $1)`,
+        [retentionDays],
+      );
+      const deletedCount = result.rowCount ?? 0;
+      if (deletedCount > 0) {
+        logger.info(
+          `Read/archived notification cleanup completed: ${deletedCount} rows deleted`,
+          { retentionDays },
+        );
+      }
+      return deletedCount;
+    } catch (error) {
+      logger.error("Error during read/archived notification cleanup", {
+        error,
+        retentionDays,
+      });
+      return 0;
+    }
+  }
+
   // ─── Row mapper ──────────────────────────────────────────────────────────────
 
   private mapRow(row: Record<string, unknown>): Notification {
@@ -186,6 +234,7 @@ class NotificationService {
       title: row.title as string,
       message: row.message as string,
       read: row.read as boolean,
+      status: (row.status as NotificationStatus) ?? (row.read ? "read" : "unread"),
       createdAt: new Date(row.created_at as string),
     };
     return loanId !== undefined ? { ...base, loanId } : base;
@@ -203,20 +252,27 @@ export function startNotificationCleanupScheduler(): void {
   if (cleanupInterval) return;
 
   const retentionDays = parseInt(process.env.NOTIFICATION_RETENTION_DAYS || "90", 10);
+  const readRetentionDays = parseInt(
+    process.env.READ_NOTIFICATION_RETENTION_DAYS || "30",
+    10,
+  );
   const intervalMs = parseInt(
     process.env.NOTIFICATION_CLEANUP_INTERVAL_MS || String(24 * 60 * 60 * 1000), // Default: 24h
     10,
   );
 
-  // Run once immediately on start (optional, but good for clearing backlog)
+  // Run once immediately on start to clear any backlog
   void notificationService.deleteOldNotifications(retentionDays);
+  void notificationService.deleteReadAndArchived(readRetentionDays);
 
   cleanupInterval = setInterval(async () => {
     await notificationService.deleteOldNotifications(retentionDays);
+    await notificationService.deleteReadAndArchived(readRetentionDays);
   }, intervalMs);
 
   logger.info("Notification cleanup scheduler started", {
     retentionDays,
+    readRetentionDays,
     intervalMs,
   });
 }
