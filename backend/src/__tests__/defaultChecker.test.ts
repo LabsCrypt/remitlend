@@ -38,6 +38,8 @@ describe("DefaultChecker", () => {
       },
       passphrase: "test-passphrase",
     });
+    (checker as any).acquireLock = async () => true;
+    (checker as any).releaseLock = async () => {};
     (checker as any).fetchOverdueStats = async () => ({
       overdueCount: 2,
       oldestDueLedger: 4200,
