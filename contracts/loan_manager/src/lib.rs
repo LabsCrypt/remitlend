@@ -54,6 +54,8 @@ pub enum LoanError {
     PoolPaused = 19,
     NftPaused = 20,
     InvalidConfiguration = 21,
+    LoanNotDefaulted = 22,
+    CollateralAlreadyLiquidated = 23,
 }
 
 #[contracttype]
@@ -114,6 +116,7 @@ pub enum DataKey {
     DefaultWindowLedgers,
     RateOracle,
     ProposedAdmin,
+    Liquidated(u32),
 }
 
 #[contract]
@@ -442,6 +445,26 @@ impl LoanManager {
         (total_debt, late_fee_delta)
     }
 
+    fn outstanding_debt(loan: &Loan) -> i128 {
+        Self::remaining_principal(loan)
+            .checked_add(loan.accrued_interest)
+            .and_then(|value| value.checked_add(loan.accrued_late_fee))
+            .expect("debt overflow")
+    }
+
+    fn collateral_liquidated_flag(env: &Env, loan_id: u32) -> bool {
+        let key = DataKey::Liquidated(loan_id);
+        let liquidated = env
+            .storage()
+            .persistent()
+            .get::<DataKey, bool>(&key)
+            .unwrap_or(false);
+        if liquidated {
+            Self::bump_persistent_ttl(env, &key);
+        }
+        liquidated
+    }
+
     /// Split a repayment across principal, interest, and late fees based on
     /// each component's share of the current total debt. This avoids a strict
     /// waterfall where a borrower can repeatedly clear one bucket first while
@@ -563,10 +586,8 @@ impl LoanManager {
     }
 
     fn seize_collateral_internal(env: &Env, loan_id: u32) {
-        use soroban_sdk::token::TokenClient;
-
         let loan_key = DataKey::Loan(loan_id);
-        let mut loan: Loan = env
+        let loan: Loan = env
             .storage()
             .persistent()
             .get(&loan_key)
@@ -577,24 +598,14 @@ impl LoanManager {
             return;
         }
 
-        loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(env, &loan_key);
-
-        let token: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .expect("token not set");
-        let lending_pool: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::LendingPool)
-            .expect("lending pool not set");
-        let token_client = TokenClient::new(env, &token);
-        token_client.transfer(&env.current_contract_address(), &lending_pool, &collateral);
-
-        events::collateral_liquidated(env, loan_id, collateral);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Liquidated(loan_id), &false);
+        Self::bump_persistent_ttl(env, &DataKey::Liquidated(loan_id));
+        env.events()
+            .publish((Symbol::new(env, "CollateralSeized"), loan_id), collateral);
     }
 
     pub fn initialize(
@@ -1672,6 +1683,7 @@ impl LoanManager {
             return Err(LoanError::LoanNotPastDue);
         }
 
+        let _ = Self::current_total_debt(&env, &mut loan);
         loan.status = LoanStatus::Defaulted;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
@@ -1717,6 +1729,7 @@ impl LoanManager {
                 continue;
             }
 
+            let _ = Self::current_total_debt(&env, &mut loan);
             loan.status = LoanStatus::Defaulted;
             env.storage().persistent().set(&loan_key, &loan);
             Self::bump_persistent_ttl(&env, &loan_key);
@@ -1736,6 +1749,93 @@ impl LoanManager {
         }
 
         Ok(())
+    }
+
+    pub fn liquidate_collateral(
+        env: Env,
+        loan_id: u32,
+        sale_proceeds: i128,
+    ) -> Result<(), LoanError> {
+        use soroban_sdk::token::TokenClient;
+
+        let admin = Self::admin(&env);
+        admin.require_auth();
+        Self::require_not_paused(&env)?;
+
+        if sale_proceeds < 0 {
+            return Err(LoanError::InvalidAmount);
+        }
+
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        if loan.status != LoanStatus::Defaulted {
+            return Err(LoanError::LoanNotDefaulted);
+        }
+        if Self::collateral_liquidated_flag(&env, loan_id) {
+            return Err(LoanError::CollateralAlreadyLiquidated);
+        }
+
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+        let token_client = TokenClient::new(&env, &token);
+
+        // `sale_proceeds` represents off-chain auction/floor-sale amount
+        // delivered by the liquidator into the pool.
+        if sale_proceeds > 0 {
+            token_client.transfer(&admin, &lending_pool, &sale_proceeds);
+        }
+
+        let seized_collateral = loan.collateral_amount;
+        if seized_collateral > 0 {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &lending_pool,
+                &seized_collateral,
+            );
+            loan.collateral_amount = 0;
+        }
+
+        let recovered_total = seized_collateral
+            .checked_add(sale_proceeds)
+            .expect("recovery overflow");
+        let debt_outstanding = Self::outstanding_debt(&loan);
+        let repaid_debt = if recovered_total > debt_outstanding {
+            debt_outstanding
+        } else {
+            recovered_total
+        };
+        let surplus_to_pool = recovered_total
+            .checked_sub(repaid_debt)
+            .expect("surplus underflow");
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Liquidated(loan_id), &true);
+        Self::bump_persistent_ttl(&env, &DataKey::Liquidated(loan_id));
+
+        events::collateral_liquidated(&env, loan_id, recovered_total, repaid_debt, surplus_to_pool);
+
+        Ok(())
+    }
+
+    pub fn is_collateral_liquidated(env: Env, loan_id: u32) -> bool {
+        Self::collateral_liquidated_flag(&env, loan_id)
     }
 }
 

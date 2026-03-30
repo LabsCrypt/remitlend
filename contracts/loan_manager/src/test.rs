@@ -1015,6 +1015,8 @@ fn test_collateral_is_seized_on_default() {
     let stellar_token = StellarAssetClient::new(&env, &token_id);
     stellar_token.mint(&pool_client.address, &20_000);
     stellar_token.mint(&borrower, &20_000);
+    let admin = manager.get_admin();
+    stellar_token.mint(&admin, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1_000);
     manager.approve_loan(&loan_id);
@@ -1030,14 +1032,23 @@ fn test_collateral_is_seized_on_default() {
     manager.check_default(&loan_id);
 
     assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
-    assert_eq!(manager.get_collateral(&loan_id), 0);
+    assert_eq!(manager.get_collateral(&loan_id), 400);
+    assert!(!manager.is_collateral_liquidated(&loan_id));
     assert_eq!(
         token_client.balance(&pool_client.address),
-        pool_balance_before_default + 400
+        pool_balance_before_default
     );
     assert_eq!(
         token_client.balance(&manager.address),
-        contract_balance_before_default - 400
+        contract_balance_before_default
+    );
+
+    manager.liquidate_collateral(&loan_id, &250);
+    assert_eq!(manager.get_collateral(&loan_id), 0);
+    assert!(manager.is_collateral_liquidated(&loan_id));
+    assert_eq!(
+        token_client.balance(&pool_client.address),
+        pool_balance_before_default + 650
     );
 }
 
@@ -1059,6 +1070,8 @@ fn test_collateral_is_seized_on_batch_default() {
     stellar_token.mint(&pool_client.address, &50_000);
     stellar_token.mint(&borrower1, &20_000);
     stellar_token.mint(&borrower2, &20_000);
+    let admin = manager.get_admin();
+    stellar_token.mint(&admin, &10_000);
 
     let loan_id1 = manager.request_loan(&borrower1, &1_000);
     let loan_id2 = manager.request_loan(&borrower2, &1_000);
@@ -1077,12 +1090,53 @@ fn test_collateral_is_seized_on_batch_default() {
     let loan_ids = soroban_sdk::vec![&env, loan_id1, loan_id2];
     manager.check_defaults(&loan_ids);
 
+    assert_eq!(manager.get_collateral(&loan_id1), 300);
+    assert_eq!(manager.get_collateral(&loan_id2), 500);
+    assert_eq!(
+        token_client.balance(&pool_client.address),
+        pool_balance_before
+    );
+
+    manager.liquidate_collateral(&loan_id1, &100);
+    manager.liquidate_collateral(&loan_id2, &200);
     assert_eq!(manager.get_collateral(&loan_id1), 0);
     assert_eq!(manager.get_collateral(&loan_id2), 0);
     assert_eq!(
         token_client.balance(&pool_client.address),
-        pool_balance_before + 300 + 500
+        pool_balance_before + 300 + 500 + 100 + 200
     );
+}
+
+#[test]
+fn test_liquidate_collateral_only_once() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+    let admin = manager.get_admin();
+    stellar_token.mint(&admin, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+    manager.deposit_collateral(&loan_id, &300);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+    manager.check_default(&loan_id);
+
+    manager.liquidate_collateral(&loan_id, &50);
+    let result = manager.try_liquidate_collateral(&loan_id, &10);
+    assert_eq!(result, Err(Ok(LoanError::CollateralAlreadyLiquidated)));
 }
 
 #[test]

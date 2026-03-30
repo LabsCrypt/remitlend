@@ -46,6 +46,15 @@ export interface DefaultCheckRunResult {
   batches: DefaultCheckBatchResult[];
 }
 
+export interface CollateralLiquidationResult {
+  loanId: number;
+  saleProceeds: number;
+  txHash?: string;
+  submitStatus?: string;
+  txStatus?: string;
+  error?: string;
+}
+
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const n = parseInt(value ?? "", 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -409,6 +418,94 @@ export class DefaultChecker {
     return result;
   }
 
+  async liquidateCollateral(
+    loanId: number,
+    saleProceeds: number,
+  ): Promise<CollateralLiquidationResult> {
+    const { signer, server, passphrase } = this.assertConfigured();
+
+    const account = await server.getAccount(signer.publicKey());
+    const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
+    const saleProceedsScVal = nativeToScVal(BigInt(saleProceeds), {
+      type: "i128",
+    });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: this.contractId,
+          function: "liquidate_collateral",
+          args: [loanIdScVal, saleProceedsScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    let prepared;
+    try {
+      prepared = await server.prepareTransaction(tx);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        loanId,
+        saleProceeds,
+        error: `prepareTransaction failed: ${message}`,
+      };
+    }
+
+    prepared.sign(signer);
+
+    let send;
+    try {
+      send = await server.sendTransaction(prepared);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        loanId,
+        saleProceeds,
+        error: `sendTransaction failed: ${message}`,
+      };
+    }
+
+    const txHash = send.hash;
+    const submitStatus = send.status;
+
+    if (!txHash) {
+      return {
+        loanId,
+        saleProceeds,
+        ...(submitStatus !== undefined ? { submitStatus } : {}),
+        error: "sendTransaction returned no hash",
+      };
+    }
+
+    let txStatus: string | undefined;
+    try {
+      const polled = await server.pollTransaction(txHash, {
+        attempts: this.pollAttempts,
+        sleepStrategy: (_attempt: number) => this.pollSleepMs,
+      });
+      txStatus = polled.status;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn("Collateral liquidation transaction polling failed", {
+        txHash,
+        message,
+      });
+    }
+
+    return {
+      loanId,
+      saleProceeds,
+      txHash,
+      ...(submitStatus !== undefined ? { submitStatus } : {}),
+      ...(txStatus !== undefined ? { txStatus } : {}),
+    };
+  }
+
   /**
    * Runs default checks for either:
    * - explicit `loanIds` (validated + de-duped), or
@@ -477,6 +574,11 @@ export class DefaultChecker {
         timedOut: result.timedOut,
       });
     }
+
+    const batchResults = batches;
+    const loansChecked = targetIds.length;
+    const successfulSubmissions = batchResults.filter((b) => !b.error).length;
+    const failedSubmissions = batchResults.length - successfulSubmissions;
 
     logger.info("default_check.run.complete", {
       runId,
