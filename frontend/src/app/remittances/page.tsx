@@ -291,6 +291,7 @@ export default function RemittancesPage() {
                       ? "bg-indigo-600 text-white"
                       : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
                   }`}
+                  aria-pressed={statusFilter === s}
                 >
                   {s === "all" ? "All" : STATUS_CONFIG[s].label}
                 </button>

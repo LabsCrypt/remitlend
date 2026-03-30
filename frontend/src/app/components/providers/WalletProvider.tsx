@@ -163,10 +163,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         throw new Error("No Stellar address was returned by Freighter.");
       }
 
-      const freighterApi = api as FreighterApi & {
-        getNetworkDetails?: () => Promise<FreighterNetworkResult>;
-        getNetwork: () => Promise<FreighterNetworkResult>;
-      };
+      const freighterApi = api as any;
       const networkResult: FreighterNetworkResult = freighterApi.getNetworkDetails
         ? await freighterApi.getNetworkDetails()
         : await freighterApi.getNetwork();
@@ -223,21 +220,23 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }
 
   async function refreshWallet() {
-    if (!shouldAutoReconnect && !address) {
-      return;
-    }
-
     await syncWallet(false);
   }
 
+  // Initial check and Auto-reconnect
   useEffect(() => {
     let cancelled = false;
 
     void loadFreighterApi()
       .then((api) => api.isConnected())
-      .then((result) => {
+      .then(async (result) => {
         if (!cancelled) {
-          setIsFreighterAvailable(Boolean(result.isConnected && !result.error));
+          const isAvailable = Boolean(result.isConnected && !result.error);
+          setIsFreighterAvailable(isAvailable);
+
+          if (isAvailable && shouldAutoReconnect) {
+            await refreshWallet();
+          }
         }
       })
       .catch(() => {
@@ -251,39 +250,36 @@ export function WalletProvider({ children }: WalletProviderProps) {
     };
   }, []);
 
+  // Event Listeners
   useEffect(() => {
-    if (!shouldAutoReconnect) {
-      return;
-    }
+    let unwatchAddress: (() => void) | undefined;
+    let unwatchNetwork: (() => void) | undefined;
 
-    void refreshWallet();
-  }, [shouldAutoReconnect]);
+    void loadFreighterApi().then((api) => {
+      const freighterApi = api as any;
 
-  useEffect(() => {
-    if (!shouldAutoReconnect) {
-      return;
-    }
-
-    const syncOnFocus = () => {
-      void refreshWallet();
-    };
-
-    const syncOnVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void refreshWallet();
+      if (typeof freighterApi.watchAddress === "function") {
+        unwatchAddress = freighterApi.watchAddress((newAddress: string) => {
+          if (!newAddress && address) {
+            disconnect();
+          } else if (newAddress && newAddress !== address) {
+            void refreshWallet();
+          }
+        });
       }
-    };
 
-    window.addEventListener("focus", syncOnFocus);
-    document.addEventListener("visibilitychange", syncOnVisibility);
-    const interval = window.setInterval(syncOnFocus, 30_000);
+      if (typeof freighterApi.watchNetwork === "function") {
+        unwatchNetwork = freighterApi.watchNetwork((newNetwork: string) => {
+          void refreshWallet();
+        });
+      }
+    });
 
     return () => {
-      window.removeEventListener("focus", syncOnFocus);
-      document.removeEventListener("visibilitychange", syncOnVisibility);
-      window.clearInterval(interval);
+      if (unwatchAddress) unwatchAddress();
+      if (unwatchNetwork) unwatchNetwork();
     };
-  }, [shouldAutoReconnect, address]);
+  }, [address]);
 
   return (
     <WalletProviderContext.Provider

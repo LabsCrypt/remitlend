@@ -363,9 +363,14 @@ export function StepFinalSignature({
               Unsigned Soroban XDR
             </p>
             {isBuildingXdr && (
-              <div className="mt-2 flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+              <div
+                role="status"
+                aria-label="Building transaction..."
+                className="mt-2 flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400"
+              >
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Building transaction…
+                Building transaction...
+                <span className="sr-only">Building transaction...</span>
               </div>
             )}
             {xdrError && (

@@ -189,7 +189,7 @@ export default function ActivityPage() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
-                            aria-label={`View transaction ${item.txHash} on Stellar`}
+                            aria-label={`View transaction ${item.txHash} on Stellar Explorer`}
                           >
                             <ExternalLink className="h-3 w-3" />
                           </a>

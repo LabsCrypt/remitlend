@@ -251,10 +251,11 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
                 className="flex-1"
               >
                 {mutation.isPending ? (
-                  <>
+                  <div role="status" aria-label="Processing..." className="flex items-center">
                     <Loader className="h-4 w-4 mr-2 animate-spin" />
                     Processing...
-                  </>
+                    <span className="sr-only">Processing...</span>
+                  </div>
                 ) : (
                   <>
                     <Send className="h-4 w-4 mr-2" />

@@ -21,7 +21,7 @@ export const Spinner: FC<SpinnerProps> = ({
   size = "md",
   duration = 1,
   delayStep = 0.2,
-  label = "Loading…",
+  label = "Loading...",
 }) => {
   const numericSize = typeof size === "string" ? SIZE_MAP[size] : size;
   if (type === "spin") {

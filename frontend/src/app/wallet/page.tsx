@@ -25,6 +25,7 @@ import {
   selectIsWalletConnected,
 } from "../stores/useWalletStore";
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ function CopyButton({ value }: { value: string }) {
       onClick={handleCopy}
       className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
       title="Copy to clipboard"
+      aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
     >
       {copied ? <CheckCheck className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
     </button>
@@ -141,11 +143,8 @@ function QRDisplay({ address }: { address: string }) {
       </Button>
       {show && (
         <div className="mt-4 flex flex-col items-center gap-3 p-6 rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="h-40 w-40 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center gap-2">
-            <QrCode className="h-16 w-16 text-zinc-300 dark:text-zinc-700" />
-            <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center px-2">
-              Install <code>qrcode.react</code> to render
-            </p>
+          <div className="p-2 rounded-lg bg-white border border-zinc-200 dark:border-zinc-800 shadow-sm">
+            <QRCodeSVG value={address} size={200} marginSize={2} />
           </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono text-center break-all max-w-xs">
             {address}
@@ -205,6 +204,7 @@ function BalancesCard({ address, horizonUrl }: { address: string; horizonUrl: st
             leftIcon={<RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />}
             onClick={() => refetch()}
             disabled={isFetching}
+            aria-label="Refresh token balances"
           >
             Refresh
           </Button>
