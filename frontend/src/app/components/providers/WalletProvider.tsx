@@ -229,9 +229,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   async function signTransaction(unsignedTxXdr: string): Promise<string> {
     const api = await loadFreighterApi();
-    
+
     // Map the network name to the required passphrase string
-    const networkPassphrase = NETWORK_PASSPHRASES[network.name] || NETWORK_PASSPHRASES.TESTNET;
+    const networkPassphrase =
+      NETWORK_PASSPHRASES[network?.name ?? "TESTNET"] || NETWORK_PASSPHRASES.TESTNET;
 
     const result = await api.signTransaction(unsignedTxXdr, {
       networkPassphrase,
