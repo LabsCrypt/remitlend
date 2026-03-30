@@ -144,7 +144,7 @@ export const remittanceService = {
 
       const cursorValue = cursor ? new Date(cursor) : null;
       if (cursor && (Number.isNaN(cursorValue?.getTime ?? NaN) || !cursorValue)) {
-        throw new AppError(400, "Invalid cursor", "INVALID_CURSOR");
+        throw AppError.badRequest("Invalid cursor");
       }
 
       if (cursorValue) {
