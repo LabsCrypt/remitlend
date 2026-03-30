@@ -175,7 +175,7 @@ describe("EventIndexer", () => {
 
     mockUpdateUserScoresBulk.mockImplementation(async (updates: Map<string, number>) => {
       for (const [userId, delta] of updates) {
-        scoreUpdates.push([userId, 500 + delta, delta]);
+        scoreUpdates.push([userId, delta]);
       }
     });
 
@@ -241,10 +241,7 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([
-      [borrowerRepaid, 15],
-      [borrowerDefaulted, -50],
-    ]);
+    expect(scoreUpdates).toEqual([[borrowerRepaid, 15], [borrowerDefaulted, -50]]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);

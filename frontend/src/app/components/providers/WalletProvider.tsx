@@ -223,12 +223,21 @@ export function WalletProvider({ children }: WalletProviderProps) {
     disconnect();
   }
 
+  const NETWORK_PASSPHRASES: Record<string, string> = {
+    PUBLIC: "Public Global Stellar Network ; October 2015",
+    TESTNET: "Test SDF Network ; September 2015",
+    FUTURENET: "Test SDF Future Network ; October 2022",
+    STANDALONE: "Standalone Network ; Separate from SDF",
+  };
+
   async function signTransaction(unsignedTxXdr: string): Promise<string> {
     const api = await loadFreighterApi();
-    const network = useWalletStore.getState().network?.name ?? "TESTNET";
+    const networkName = useWalletStore.getState().network?.name ?? "TESTNET";
+    const networkPassphrase =
+      NETWORK_PASSPHRASES[networkName] ?? NETWORK_PASSPHRASES.TESTNET;
 
     const result = await api.signTransaction(unsignedTxXdr, {
-      network: network as any,
+      networkPassphrase,
     });
 
     if (typeof result === "string") {
