@@ -778,7 +778,6 @@
             "ext": "v0"
           },
           518400
-          518400
         ]
       ],
       [
@@ -1132,6 +1131,17 @@
                     },
                     {
                       "key": {
+                        "symbol": "interest_residual"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "last_interest_ledger"
                       },
                       "val": {
@@ -1187,7 +1197,6 @@
             "ext": "v0"
           },
           518400
-          518400
         ]
       ],
       [
@@ -1223,6 +1232,25 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "BorrowerLoans"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "u32": 1
+                            }
+                          ]
                         }
                       },
                       {
@@ -1340,18 +1368,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Paused"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "bool": false
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "Token"
                             }
                           ]
@@ -1369,7 +1385,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 2
+                          "u32": 3
                         }
                       }
                     ]
@@ -1379,7 +1395,6 @@
             },
             "ext": "v0"
           },
-          518400
           518400
         ]
       ],
@@ -1725,7 +1740,6 @@
             },
             "ext": "v0"
           },
-          518400
           518400
         ]
       ]

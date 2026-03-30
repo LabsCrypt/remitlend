@@ -83,6 +83,7 @@ pub struct Loan {
     pub last_interest_ledger: u32,
     pub last_late_fee_ledger: u32,
     pub status: LoanStatus,
+    pub interest_residual: i128,
     // How many extensions have been granted for this loan.
     // Capped at MaxExtensions to prevent indefinite deferral.
     pub extension_count: u32,
@@ -102,6 +103,7 @@ pub enum DataKey {
     MaxLoanAmount,
     MaxLoansPerBorrower,
     BorrowerLoanCount(Address),
+    BorrowerLoans(Address),
     Paused,
     InterestRateBps,
     DefaultTermLedgers,
@@ -127,7 +129,7 @@ impl LoanManager {
     const PERSISTENT_TTL_BUMP: u32 = 518400;
     const DEFAULT_INTEREST_RATE_BPS: u32 = 1200;
     const DEFAULT_TERM_LEDGERS: u32 = 17280;
-    const CURRENT_VERSION: u32 = 2;
+    const CURRENT_VERSION: u32 = 3;
     const DEFAULT_LATE_FEE_RATE_BPS: u32 = 500;
     const MAX_LATE_FEE_CAP_BPS: u32 = 2500;
     const DEFAULT_MAX_LOAN_AMOUNT: i128 = 50_000;
@@ -175,6 +177,22 @@ impl LoanManager {
             .instance()
             .get(&DataKey::Admin)
             .expect("not initialized")
+    }
+
+    fn lending_pool(env: &Env) -> Address {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("not initialized")
+    }
+
+    fn loan_counter(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LoanCounter)
+            .unwrap_or(0)
     }
 
     fn read_interest_rate(env: &Env) -> u32 {
@@ -271,17 +289,34 @@ impl LoanManager {
         }
 
         let elapsed_ledgers = current_ledger - loan.last_interest_ledger;
-        let interest_delta = remaining_principal
+        const PRECISION: i128 = 1_000_000;
+
+        // Calculate interest with high precision to avoid truncation for small loans
+        let numerator = remaining_principal
             .checked_mul(loan.interest_rate_bps as i128)
-            .and_then(|value| value.checked_mul(elapsed_ledgers as i128))
-            .and_then(|value| value.checked_div(10_000))
-            .and_then(|value| value.checked_div(Self::DEFAULT_TERM_LEDGERS as i128))
-            .expect("interest overflow");
+            .and_then(|v| v.checked_mul(elapsed_ledgers as i128))
+            .and_then(|v| v.checked_mul(PRECISION))
+            .expect("interest calculation overflow");
+
+        let denominator = 10_000i128
+            .checked_mul(Self::DEFAULT_TERM_LEDGERS as i128)
+            .expect("denominator overflow");
+
+        let total_interest = numerator / denominator;
+        let interest_delta = total_interest / PRECISION;
+        let new_residual = total_interest % PRECISION;
+
+        // Add the previous residual to the new calculation
+        let combined_residual = loan.interest_residual + new_residual;
+        let additional_interest = combined_residual / PRECISION;
+        let final_residual = combined_residual % PRECISION;
 
         loan.accrued_interest = loan
             .accrued_interest
             .checked_add(interest_delta)
+            .and_then(|v| v.checked_add(additional_interest))
             .expect("interest overflow");
+        loan.interest_residual = final_residual;
         loan.last_interest_ledger = current_ledger;
     }
 
@@ -737,6 +772,7 @@ impl LoanManager {
             last_interest_ledger: 0,
             last_late_fee_ledger: 0,
             status: LoanStatus::Pending,
+            interest_residual: 0,
             extension_count: 0,
         };
 
@@ -748,6 +784,19 @@ impl LoanManager {
             .set(&DataKey::LoanCounter, &loan_counter);
         Self::bump_instance_ttl(&env);
         Self::bump_persistent_ttl(&env, &DataKey::Loan(loan_counter));
+
+        // Add loan ID to borrower's loan list
+        let borrower_loans_key = DataKey::BorrowerLoans(borrower.clone());
+        let mut borrower_loans: Vec<u32> = env
+            .storage()
+            .instance()
+            .get(&borrower_loans_key)
+            .unwrap_or(Vec::new(&env));
+        borrower_loans.push_back(loan_counter);
+        env.storage()
+            .instance()
+            .set(&borrower_loans_key, &borrower_loans);
+        Self::bump_instance_ttl(&env);
 
         events::loan_requested(&env, borrower.clone(), amount);
         env.events()
@@ -1424,28 +1473,24 @@ impl LoanManager {
         Self::admin(&env)
     }
 
-    pub fn set_admin(env: Env, new_admin: Address) {
-        let current_admin = Self::admin(&env);
-        current_admin.require_auth();
+    pub fn get_total_loans(env: Env) -> u32 {
+        Self::loan_counter(&env)
+    }
 
-        env.storage().instance().set(&DataKey::Admin, &new_admin);
-        Self::bump_instance_ttl(&env);
+    pub fn get_lending_pool(env: Env) -> Address {
+        Self::lending_pool(&env)
     }
 
     pub fn get_nft_contract(env: Env) -> Address {
         Self::nft_contract(&env)
     }
 
-    pub fn get_pool_address(env: Env) -> Address {
+    pub fn get_borrower_loans(env: Env, borrower: Address) -> Vec<u32> {
         Self::bump_instance_ttl(&env);
         env.storage()
             .instance()
-            .get(&DataKey::LendingPool)
-            .expect("not initialized")
-    }
-
-    pub fn get_default_window(env: Env) -> u32 {
-        Self::default_window_ledgers(&env)
+            .get(&DataKey::BorrowerLoans(borrower))
+            .unwrap_or(Vec::new(&env))
     }
 
     pub fn get_min_score(env: Env) -> u32 {
