@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "lucide-react": "^1.7.0"
+  }
+}

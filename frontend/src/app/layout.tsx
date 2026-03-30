@@ -10,6 +10,7 @@ import { GlobalXPGain } from "./components/global_ui/GlobalXPGain";
 import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";
 import { NextIntlClientProvider } from "next-intl";
 import { THEME_STORAGE_KEY } from "./lib/theme";
+import { TooltipProvider } from "./components/ui/tooltip";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,11 +48,13 @@ export default async function RootLayout({
         <NextIntlClientProvider locale="en" messages={messages}>
           <QueryProvider>
             <WalletProvider>
-              <DashboardShell>
-                <ErrorBoundary scope="active page" variant="section">
-                  {children}
-                </ErrorBoundary>
-              </DashboardShell>
+              <TooltipProvider delayDuration={300}>
+                <DashboardShell>
+                  <ErrorBoundary scope="active page" variant="section">
+                    {children}
+                  </ErrorBoundary>
+                </DashboardShell>
+              </TooltipProvider>
             </WalletProvider>
             <Toaster />
             <LevelUpModal />

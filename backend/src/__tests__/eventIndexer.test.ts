@@ -9,6 +9,7 @@ const mockGetScoreConfig = jest.fn(() => ({
   repaymentDelta: 15,
   defaultPenalty: 50,
 }));
+const mockUpdateUserScoresBulk = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
@@ -30,6 +31,10 @@ jest.unstable_mockModule("../services/notificationService.js", () => ({
 
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
   sorobanService: { getScoreConfig: mockGetScoreConfig },
+}));
+
+jest.unstable_mockModule("../services/scoresService.js", () => ({
+  updateUserScoresBulk: mockUpdateUserScoresBulk,
 }));
 
 jest.unstable_mockModule("../utils/logger.js", () => ({
@@ -126,7 +131,6 @@ describe("EventIndexer", () => {
     const borrowerRepaid = makeAddress();
     const borrowerDefaulted = makeAddress();
     const insertedLoanEvents: unknown[][] = [];
-    const scoreUpdates: unknown[][] = [];
 
     mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
       if (sql === "BEGIN" || sql === "COMMIT") {
@@ -136,11 +140,6 @@ describe("EventIndexer", () => {
       if (sql.includes("INSERT INTO loan_events")) {
         insertedLoanEvents.push(params);
         return { rows: [{ event_id: params[0] }], rowCount: 1 };
-      }
-
-      if (sql.includes("INSERT INTO scores")) {
-        scoreUpdates.push(params);
-        return { rows: [], rowCount: 1 };
       }
 
       return { rows: [], rowCount: 0 };
@@ -208,10 +207,13 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([
-      [borrowerRepaid, 515, 15],
-      [borrowerDefaulted, 450, -50],
-    ]);
+    expect(mockUpdateUserScoresBulk).toHaveBeenCalledTimes(1);
+    expect(mockUpdateUserScoresBulk).toHaveBeenCalledWith(
+      new Map([
+        [borrowerRepaid, 15],
+        [borrowerDefaulted, -50],
+      ]),
+    );
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
@@ -234,10 +236,6 @@ describe("EventIndexer", () => {
           rows: inserted ? [{ event_id: params[0] }] : [],
           rowCount: inserted ? 1 : 0,
         };
-      }
-
-      if (sql.includes("INSERT INTO scores")) {
-        return { rows: [], rowCount: 1 };
       }
 
       return { rows: [], rowCount: 0 };
@@ -269,6 +267,8 @@ describe("EventIndexer", () => {
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
     expect(mockCreateNotification).toHaveBeenCalledTimes(1);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(1);
+    expect(mockUpdateUserScoresBulk).toHaveBeenCalledTimes(1);
+    expect(mockUpdateUserScoresBulk).toHaveBeenCalledWith(new Map([[borrower, 15]]));
   });
 
   it("initializes missing indexer state and persists the last indexed ledger during polling", async () => {
@@ -279,22 +279,13 @@ describe("EventIndexer", () => {
         return { rows: [], rowCount: 0 };
       }
 
-      if (sql.includes("INSERT INTO indexer_state")) {
-        stateWrites.push(Number(params[0] ?? 0));
-        return { rows: [], rowCount: 1 };
+      if (sql.includes("INSERT INTO indexer_state") && params.length === 0) {
+        return { rows: [{ last_indexed_ledger: 0 }], rowCount: 1 };
       }
 
       if (sql.includes("UPDATE indexer_state")) {
         stateWrites.push(Number(params[0]));
         return { rows: [], rowCount: 1 };
-      }
-
-      if (sql === "BEGIN" || sql === "COMMIT") {
-        return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        return { rows: [{ event_id: params[0] }], rowCount: 1 };
       }
 
       return { rows: [], rowCount: 0 };
@@ -303,23 +294,26 @@ describe("EventIndexer", () => {
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",
       contractId: "CINDEXERTEST",
+      pollIntervalMs: 5,
+      batchSize: 50,
     });
 
-    (indexer as { running: boolean }).running = true;
-    (indexer as {
-      rpc: {
-        getLatestLedger: () => Promise<{ sequence: number }>;
-        getEvents: () => Promise<{ events: unknown[] }>;
-      };
-    }).rpc = {
-      getLatestLedger: jest.fn().mockResolvedValue({ sequence: 15 }),
-      getEvents: jest.fn().mockResolvedValue({
-        events: [makeRawEvent({ id: "evt-poll", ledger: 15, type: "LoanRequested" })],
-      }),
+    const processChunk = jest
+      .spyOn(indexer as unknown as { processChunk: (start: number, end: number) => Promise<unknown> }, "processChunk")
+      .mockResolvedValue({
+        lastProcessedLedger: 25,
+        fetchedEvents: 0,
+        insertedEvents: 0,
+      });
+
+    (indexer as { rpc: { getLatestLedger: () => Promise<{ sequence: number }> } }).rpc = {
+      getLatestLedger: jest.fn().mockResolvedValue({ sequence: 25 }),
     };
 
-    await (indexer as { pollOnce: () => Promise<void> }).pollOnce();
+    await indexer.start();
+    indexer.stop();
 
-    expect(stateWrites).toEqual([0, 15]);
+    expect(processChunk).toHaveBeenCalledWith(1, 25);
+    expect(stateWrites).toContain(25);
   });
 });

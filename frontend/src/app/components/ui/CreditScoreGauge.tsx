@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { ArrowUp, ArrowDown } from "lucide-react";
+import { FinancialTermTooltip } from "./tooltip";
+import { FINANCIAL_EXPLANATIONS } from "./financial-terms";
 
 interface CreditScoreGaugeProps {
   score: number;
@@ -119,7 +121,14 @@ export function CreditScoreGauge({
 
         {/* Center score display */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
-          <span className={`text-4xl font-bold ${band.color}`}>{score}</span>
+          <div className="flex flex-col items-center">
+            <span className={`text-4xl font-bold ${band.color}`}>{score}</span>
+            <FinancialTermTooltip
+              term="Credit Score"
+              explanation={FINANCIAL_EXPLANATIONS.CREDIT_SCORE}
+              className="text-[10px] uppercase tracking-wider font-bold text-zinc-500 mt-1"
+            />
+          </div>
         </div>
       </div>
 
@@ -143,8 +152,14 @@ export function CreditScoreGauge({
 
       {/* Tooltip / explanation */}
       <p className="max-w-xs text-center text-xs text-zinc-500 dark:text-zinc-400">
-        Your credit score ranges from {min} to {max}. Maintain on-time repayments and low
-        utilization to improve your score.
+        Your credit score ranges from {min} to {max}. Maintain on-time repayments and low{" "}
+        <FinancialTermTooltip
+          term="utilization"
+          explanation={FINANCIAL_EXPLANATIONS.UTILIZATION_RATE}
+          className="border-none p-0 h-auto font-medium text-zinc-600 dark:text-zinc-300"
+          icon={() => null} // Hide icon here to keep text flow clean
+        />{" "}
+        to improve your score.
       </p>
     </div>
   );
