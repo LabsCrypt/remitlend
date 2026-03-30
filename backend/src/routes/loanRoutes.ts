@@ -14,7 +14,11 @@ import {
   requireWalletOwnership,
 } from "../middleware/jwtAuth.js";
 import { requireLoanBorrowerAccess } from "../middleware/loanAccess.js";
-import { validate, validateBody, validateParams } from "../middleware/validation.js";
+import {
+  validate,
+  validateBody,
+  validateParams,
+} from "../middleware/validation.js";
 import { idempotencyMiddleware } from "../middleware/idempotency.js";
 import { borrowerParamSchema } from "../schemas/stellarSchemas.js";
 import {
@@ -161,7 +165,13 @@ router.get(
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/request", requireJwtAuth, validateBody(requestLoanSchema), idempotencyMiddleware, requestLoan);
+router.post(
+  "/request",
+  requireJwtAuth,
+  validateBody(requestLoanSchema),
+  idempotencyMiddleware,
+  requestLoan,
+);
 
 /**
  * @swagger
@@ -197,7 +207,13 @@ router.post("/request", requireJwtAuth, validateBody(requestLoanSchema), idempot
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/submit", requireJwtAuth, validateBody(submitTxSchema), idempotencyMiddleware, submitTransaction);
+router.post(
+  "/submit",
+  requireJwtAuth,
+  validateBody(submitTxSchema),
+  idempotencyMiddleware,
+  submitTransaction,
+);
 
 /**
  * @swagger

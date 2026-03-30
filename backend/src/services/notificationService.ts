@@ -44,7 +44,9 @@ class NotificationService {
    * Persists a new notification and pushes it to any active SSE subscribers
    * for that user.
    */
-  async createNotification(params: CreateNotificationParams): Promise<Notification> {
+  async createNotification(
+    params: CreateNotificationParams,
+  ): Promise<Notification> {
     const { userId, type, title, message, loanId } = params;
 
     const result = await query(
@@ -164,13 +166,19 @@ class NotificationService {
       );
       const deletedCount = result.rowCount ?? 0;
       if (deletedCount > 0) {
-        logger.info(`Notification cleanup completed: ${deletedCount} rows deleted`, {
-          retentionDays,
-        });
+        logger.info(
+          `Notification cleanup completed: ${deletedCount} rows deleted`,
+          {
+            retentionDays,
+          },
+        );
       }
       return deletedCount;
     } catch (error) {
-      logger.error("Error during notification cleanup", { error, retentionDays });
+      logger.error("Error during notification cleanup", {
+        error,
+        retentionDays,
+      });
       return 0;
     }
   }
@@ -202,7 +210,10 @@ let cleanupInterval: ReturnType<typeof setInterval> | undefined;
 export function startNotificationCleanupScheduler(): void {
   if (cleanupInterval) return;
 
-  const retentionDays = parseInt(process.env.NOTIFICATION_RETENTION_DAYS || "90", 10);
+  const retentionDays = parseInt(
+    process.env.NOTIFICATION_RETENTION_DAYS || "90",
+    10,
+  );
   const intervalMs = parseInt(
     process.env.NOTIFICATION_CLEANUP_INTERVAL_MS || String(24 * 60 * 60 * 1000), // Default: 24h
     10,

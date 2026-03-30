@@ -72,8 +72,10 @@ interface NotificationSeed {
 }
 
 const NOW = new Date("2026-03-26T12:00:00.000Z");
-const CONTRACT_ID = "CDDUMMYREMITLENDCONTRACT0000000000000000000000000000000000";
-const DEV_LENDER = "GDEVLENDERACCOUNT000000000000000000000000000000000000000000";
+const CONTRACT_ID =
+  "CDDUMMYREMITLENDCONTRACT0000000000000000000000000000000000";
+const DEV_LENDER =
+  "GDEVLENDERACCOUNT000000000000000000000000000000000000000000";
 const ACTIVE_TERM_LEDGERS = 17280;
 
 const devUsers: DevUser[] = [
@@ -128,16 +130,51 @@ const [aliceUser, bolaUser, chidiUser, daraUser] = devUsers as [
 ];
 
 const remittanceHistorySeeds: RemittanceSeed[] = [
-  { userId: aliceUser.userId, amount: 900, month: "January", status: "Completed" },
-  { userId: aliceUser.userId, amount: 950, month: "February", status: "Completed" },
-  { userId: aliceUser.userId, amount: 910, month: "March", status: "Completed" },
-  { userId: bolaUser.userId, amount: 600, month: "January", status: "Completed" },
+  {
+    userId: aliceUser.userId,
+    amount: 900,
+    month: "January",
+    status: "Completed",
+  },
+  {
+    userId: aliceUser.userId,
+    amount: 950,
+    month: "February",
+    status: "Completed",
+  },
+  {
+    userId: aliceUser.userId,
+    amount: 910,
+    month: "March",
+    status: "Completed",
+  },
+  {
+    userId: bolaUser.userId,
+    amount: 600,
+    month: "January",
+    status: "Completed",
+  },
   { userId: bolaUser.userId, amount: 625, month: "February", status: "Late" },
   { userId: bolaUser.userId, amount: 610, month: "March", status: "Completed" },
-  { userId: chidiUser.userId, amount: 420, month: "January", status: "Completed" },
-  { userId: chidiUser.userId, amount: 400, month: "February", status: "Missed" },
+  {
+    userId: chidiUser.userId,
+    amount: 420,
+    month: "January",
+    status: "Completed",
+  },
+  {
+    userId: chidiUser.userId,
+    amount: 400,
+    month: "February",
+    status: "Missed",
+  },
   { userId: chidiUser.userId, amount: 390, month: "March", status: "Late" },
-  { userId: daraUser.userId, amount: 500, month: "January", status: "Completed" },
+  {
+    userId: daraUser.userId,
+    amount: 500,
+    month: "January",
+    status: "Completed",
+  },
   { userId: daraUser.userId, amount: 0, month: "February", status: "Pending" },
 ];
 
@@ -375,7 +412,8 @@ const notificationSeeds: NotificationSeed[] = [
     userId: chidiUser.userId,
     type: "loan_defaulted",
     title: "Loan Defaulted",
-    message: "Loan #1003 has been marked defaulted after missed repayment windows.",
+    message:
+      "Loan #1003 has been marked defaulted after missed repayment windows.",
     loanId: 1003,
     read: false,
     createdAt: new Date("2026-03-16T14:05:00.000Z"),
@@ -682,7 +720,9 @@ const seedNotifications = async () => {
 const seedIndexerState = async () => {
   logger.info("Updating indexer_state...");
 
-  const lastSeededLedger = Math.max(...loanEventSeeds.map((event) => event.ledger));
+  const lastSeededLedger = Math.max(
+    ...loanEventSeeds.map((event) => event.ledger),
+  );
   const existing = await query(
     `SELECT id FROM indexer_state ORDER BY id DESC LIMIT 1`,
   );

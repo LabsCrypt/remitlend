@@ -12,7 +12,9 @@ process.env.INTERNAL_API_KEY = "test-internal-key";
 const mockQuery: jest.MockedFunction<
   (text: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
-const mockCacheGet = jest.fn<() => Promise<unknown | null>>().mockResolvedValue(null);
+const mockCacheGet = jest
+  .fn<() => Promise<unknown | null>>()
+  .mockResolvedValue(null);
 const mockCacheSet = jest.fn<() => Promise<void>>().mockResolvedValue();
 const mockCachePing = jest.fn<() => Promise<string>>().mockResolvedValue("ok");
 
@@ -78,8 +80,8 @@ describe("pagination and filtering", () => {
             next_payment_deadline: "2024-02-21T00:00:00.000Z",
             status: "active",
             full_count: 2,
-          }
-        ]
+          },
+        ],
       };
     });
 
@@ -216,7 +218,9 @@ describe("pagination and filtering", () => {
       });
 
     const response = await request(app)
-      .get("/api/indexer/events/recent?status=LoanDefaulted&limit=2&cursor=100&sort=-amount")
+      .get(
+        "/api/indexer/events/recent?status=LoanDefaulted&limit=2&cursor=100&sort=-amount",
+      )
       .set("x-api-key", process.env.INTERNAL_API_KEY as string);
 
     expect(response.status).toBe(200);

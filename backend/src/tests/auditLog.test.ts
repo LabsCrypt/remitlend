@@ -94,11 +94,11 @@ describe("Audit Log Middleware", () => {
   it("should identify actor from JWT if present", async () => {
     (req as any).user = {
       publicKey: "G-STUDENT-WALLET-ADDR",
-      role: "admin"
+      role: "admin",
     };
 
     await auditLog(req as Request, res as Response, next);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(mockedQuery).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO audit_logs"),
@@ -107,8 +107,8 @@ describe("Audit Log Middleware", () => {
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        expect.anything()
-      ])
+        expect.anything(),
+      ]),
     );
   });
 });

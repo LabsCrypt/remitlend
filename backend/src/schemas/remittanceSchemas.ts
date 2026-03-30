@@ -15,9 +15,7 @@ export const createRemittanceSchema = z.object({
       .positive("Amount must be greater than 0")
       .max(1_000_000, "Amount exceeds maximum limit")
       .describe("Amount to send"),
-    fromCurrency: z
-      .enum(["USDC", "EURC", "PHP"])
-      .describe("Source currency"),
+    fromCurrency: z.enum(["USDC", "EURC", "PHP"]).describe("Source currency"),
     toCurrency: z
       .enum(["USDC", "EURC", "PHP"])
       .describe("Destination currency"),
