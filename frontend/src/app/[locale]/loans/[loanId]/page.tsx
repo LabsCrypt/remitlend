@@ -17,6 +17,7 @@ function formatCurrency(value: number) {
 
 function formatDate(iso: string | undefined) {
   if (!iso) return "—";
+
   return new Date(iso).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -92,7 +93,9 @@ export default function LoanDetailsPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
           Borrower Portal
         </p>
-        <h1 className="mt-3 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Loan #{loanId}</h1>
+        <h1 className="mt-3 text-3xl font-bold text-zinc-900 dark:text-zinc-50">
+          Loan #{loanId}
+        </h1>
         <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
           Track repayment timing, lender terms, and the current outstanding balance for this loan.
         </p>
@@ -136,7 +139,8 @@ export default function LoanDetailsPage() {
                     Defaulted loan
                   </p>
                   <p className="mt-2 text-sm leading-6 text-amber-900/85 dark:text-amber-100/85">
-                    This loan has entered default. Review the recovery details below and contact support if you need a repayment plan review or want to raise a dispute.
+                    This loan has entered default. Review the recovery details below and contact
+                    support if you need a repayment plan review or want to raise a dispute.
                   </p>
                 </div>
               </div>
@@ -185,7 +189,9 @@ export default function LoanDetailsPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
         <article className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Repayment plan</h2>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Repayment plan
+          </h2>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             {[
@@ -256,14 +262,18 @@ export default function LoanDetailsPage() {
           )}
 
           <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
-            <div className={`rounded-2xl p-5 ${
-              isDefaulted
-                ? "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100"
-                : "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200"
-            }`}>
+            <div
+              className={`rounded-2xl p-5 ${
+                isDefaulted
+                  ? "bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100"
+                  : "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200"
+              }`}
+            >
               <div className="flex items-center gap-3">
                 <Wallet className="h-5 w-5" />
-                <h2 className="text-lg font-semibold">{isDefaulted ? "Recovery options" : "Next action"}</h2>
+                <h2 className="text-lg font-semibold">
+                  {isDefaulted ? "Recovery options" : "Next action"}
+                </h2>
               </div>
               <p className="mt-3 text-sm leading-6">
                 {isDefaulted

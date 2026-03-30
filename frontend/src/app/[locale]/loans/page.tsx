@@ -29,6 +29,7 @@ function getLoanDisplayStatus(status: string, nextPaymentDeadline: string, now: 
   if (status !== "active") {
     return status;
   }
+
   return new Date(nextPaymentDeadline).getTime() < now ? "defaulted" : "active";
 }
 
@@ -39,7 +40,9 @@ function getPenaltyFees(totalOwed: number, principal: number, accruedInterest: n
 export default function LoansPage() {
   const t = useTranslations("Loans");
   const locale = useLocale();
-  const [activeTab, setActiveTab] = useState<"all" | "active" | "repaid" | "defaulted">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "active" | "repaid" | "defaulted">(
+    "all",
+  );
   const [page, setPage] = useState(1);
   const [now] = useState(() => Date.now());
   const address = useWalletStore(selectWalletAddress);
@@ -184,9 +187,10 @@ export default function LoansPage() {
             <div className="space-y-3">
               {paginatedLoans.map((loan) => {
                 const isDefaulted = loan.displayStatus === "defaulted";
-                const seizureStatus = loan.status === "defaulted"
-                  ? "Collateral seizure review has started."
-                  : "Collateral remains locked while support reviews recovery options.";
+                const seizureStatus =
+                  loan.status === "defaulted"
+                    ? "Collateral seizure review has started."
+                    : "Collateral remains locked while support reviews recovery options.";
 
                 return (
                   <article
@@ -205,7 +209,9 @@ export default function LoansPage() {
                           </p>
                           <LoanStatusBadge status={loan.displayStatus} />
                         </div>
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">{loan.borrower}</p>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                          {loan.borrower}
+                        </p>
                       </div>
 
                       {isDefaulted ? (
@@ -219,7 +225,9 @@ export default function LoansPage() {
                                 Recovery options available
                               </p>
                               <p className="mt-1 text-sm text-amber-800/80 dark:text-amber-200/80">
-                                This loan is in default. Review the outstanding balance, confirm collateral status, and contact support to discuss repayment or dispute options.
+                                This loan is in default. Review the outstanding balance, confirm
+                                collateral status, and contact support to discuss repayment or
+                                dispute options.
                               </p>
                             </div>
                           </div>
@@ -257,7 +265,9 @@ export default function LoansPage() {
                             {formatCurrency(loan.totalOwed)}
                           </span>
                           <span className="text-zinc-600 dark:text-zinc-400">
-                            {t("due", { date: new Date(loan.nextPaymentDeadline).toLocaleDateString() })}
+                            {t("due", {
+                              date: new Date(loan.nextPaymentDeadline).toLocaleDateString(),
+                            })}
                           </span>
                         </div>
                       )}
