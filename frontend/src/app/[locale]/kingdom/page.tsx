@@ -1,10 +1,10 @@
 "use client";
 
-import { KingdomProgressWidget } from "../components/gamification/KingdomProgressWidget";
-import { AchievementsPanel } from "../components/gamification/AchievementsPanel";
-import { GamificationSettings } from "../components/gamification/GamificationSettings";
-import { useGamificationStore } from "../stores/useGamificationStore";
-import { Card } from "../components/ui/Card";
+import { KingdomProgressWidget } from "../../components/gamification/KingdomProgressWidget";
+import { AchievementsPanel } from "../../components/gamification/AchievementsPanel";
+import { GamificationSettings } from "../../components/gamification/GamificationSettings";
+import { useGamificationStore } from "../../stores/useGamificationStore";
+import { Card } from "../../components/ui/Card";
 import { Crown } from "lucide-react";
 
 export default function KingdomPage() {

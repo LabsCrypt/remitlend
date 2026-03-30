@@ -13,22 +13,23 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
-import { Skeleton } from "../components/ui/Skeleton";
-import { YieldEarningsChart } from "../components/charts/YieldEarningsChart";
+import { useLocale } from "next-intl";
+import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
+import { Skeleton } from "../../components/ui/Skeleton";
+import { YieldEarningsChart } from "../../components/charts/YieldEarningsChart";
 import {
   useDepositorPortfolio,
   useInvalidatePoolStats,
   useLoans,
   usePoolStats,
   useYieldHistory,
-} from "../hooks/useApi";
-import { LoanStatusBadge } from "../components/ui/LoanStatusBadge";
-import { DepositWithdrawSkeleton } from "../components/skeletons/DepositWithdrawSkeleton";
-import { OperationProgress } from "../components/ui/OperationProgress";
-import { useDepositOperation, useWithdrawalOperation } from "../hooks/useRepaymentOperation";
-import { selectWalletAddress, useWalletStore } from "../stores/useWalletStore";
-import { useSSE } from "../hooks/useSSE";
+} from "../../hooks/useApi";
+import { LoanStatusBadge } from "../../components/ui/LoanStatusBadge";
+import { DepositWithdrawSkeleton } from "../../components/skeletons/DepositWithdrawSkeleton";
+import { OperationProgress } from "../../components/ui/OperationProgress";
+import { useDepositOperation, useWithdrawalOperation } from "../../hooks/useRepaymentOperation";
+import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
+import { useSSE } from "../../hooks/useSSE";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -41,6 +42,7 @@ function formatPercent(value: number) {
 }
 
 export default function LendPage() {
+  const locale = useLocale();
   const [depositAmount, setDepositAmount] = useState("100");
   const [withdrawAmount, setWithdrawAmount] = useState("50");
   const address = useWalletStore(selectWalletAddress);
@@ -374,7 +376,7 @@ export default function LendPage() {
                       <LoanStatusBadge status={loan.status} />
                     </div>
                     <Link
-                      href={`/loans/${loan.id}`}
+                      href={`/${locale}/loans/${loan.id}`}
                       className="inline-flex items-center gap-2 rounded-full border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
                     >
                       View

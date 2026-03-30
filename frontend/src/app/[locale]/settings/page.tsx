@@ -13,13 +13,17 @@ import {
   LogOut,
   Key,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/Input";
-import { GamificationSettings } from "../components/gamification/GamificationSettings";
-import { ThemeToggle } from "../components/ui/ThemeToggle";
-import { useWalletStore, selectWalletAddress, selectWalletNetwork } from "../stores/useWalletStore";
-import { useUserStore, selectUser } from "../stores/useUserStore";
+import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { GamificationSettings } from "../../components/gamification/GamificationSettings";
+import { ThemeToggle } from "../../components/ui/ThemeToggle";
+import {
+  useWalletStore,
+  selectWalletAddress,
+  selectWalletNetwork,
+} from "../../stores/useWalletStore";
+import { useUserStore, selectUser } from "../../stores/useUserStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -150,6 +154,7 @@ function ProfileSection() {
           placeholder="e.g. Alice"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
+          required
         />
         <Input
           label="Email (optional)"
@@ -159,6 +164,10 @@ function ProfileSection() {
           onChange={(e) => setEmail(e.target.value)}
           helperText="Used for email notifications only. Never shared publicly."
         />
+
+        <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2">
+          <span className="text-red-600">*</span> Required field
+        </p>
 
         <Button variant="primary" onClick={handleSave} className="w-full sm:w-auto">
           {saved ? "Saved!" : "Save Profile"}

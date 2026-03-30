@@ -150,12 +150,18 @@ export function StepCollateralNFT({ data, onChange, onNext, onBack }: StepCollat
               checked={data.collateralConfirmed}
               onChange={(e) => onChange({ collateralConfirmed: e.target.checked })}
               className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-300 accent-indigo-600"
+              required
             />
             <span className="text-sm text-zinc-700 dark:text-zinc-300">
               I understand that my RemittanceNFT will be used as on-chain collateral for this loan.
-              I accept the terms and the consequences of default.
+              I accept the terms and the consequences of default.{" "}
+              <span className="text-red-600">*</span>
             </span>
           </label>
+
+          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2">
+            <span className="text-red-600">*</span> Required field
+          </p>
 
           <div className="flex gap-3">
             <Button variant="outline" onClick={onBack} className="w-full">

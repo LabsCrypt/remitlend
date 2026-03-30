@@ -1,6 +1,6 @@
 "use client";
 
-import { RouteErrorView } from "../components/global_ui/RouteErrorView";
+import { RouteErrorView } from "../../components/global_ui/RouteErrorView";
 
 export default function AnalyticsError({
   error,
