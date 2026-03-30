@@ -7,6 +7,9 @@ import {
   TransactionStatusTracker,
   type TransactionStatusState,
 } from "../../../components/ui/TransactionStatusTracker";
+import { TransactionPreviewModal } from "../../../components/transaction/TransactionPreviewModal";
+import { useTransactionPreview } from "../../../hooks/useTransactionPreview";
+import { formatLoanRepayment } from "../../../utils/transactionFormatter";
 import {
   mapTransactionError,
   type TransactionErrorDetails,
@@ -32,6 +35,7 @@ export default function RepayLoanPage() {
   const walletAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const toast = useContractToast();
+  const txPreview = useTransactionPreview();
 
   const [amount, setAmount] = useState("250");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -144,7 +148,15 @@ export default function RepayLoanPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    await runRepayment();
+    
+    const previewData = formatLoanRepayment({
+      loanId: parseInt(loanId),
+      amount: amountNumber,
+    });
+
+    txPreview.show(previewData, async () => {
+      await runRepayment();
+    });
   };
 
   const handleRetry = async () => {
@@ -191,7 +203,7 @@ export default function RepayLoanPage() {
         </div>
 
         <Button type="submit" className="w-full" isLoading={isSubmitting}>
-          Continue to confirmation
+          Review Repayment
         </Button>
       </form>
 
@@ -215,6 +227,16 @@ export default function RepayLoanPage() {
         }
         disabled={isSubmitting}
       />
+
+      {txPreview.data && (
+        <TransactionPreviewModal
+          isOpen={txPreview.isOpen}
+          onClose={txPreview.close}
+          onConfirm={txPreview.confirm}
+          data={txPreview.data}
+          isLoading={txPreview.isLoading || isSubmitting}
+        />
+      )}
     </section>
   );
 }
