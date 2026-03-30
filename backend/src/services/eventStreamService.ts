@@ -6,9 +6,9 @@ import logger from "../utils/logger.js";
 export interface LoanEventPayload {
   eventId: string;
   eventType: string;
-  loanId?: number;
+  loanId?: number | undefined;
   borrower: string;
-  amount?: string;
+  amount?: string | undefined;
   ledger: number;
   ledgerClosedAt: string;
   txHash: string;
@@ -35,6 +35,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 
 class EventStreamService {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  closeAll: any;
 
   startHeartbeat(): void {
     if (this.heartbeatTimer) {

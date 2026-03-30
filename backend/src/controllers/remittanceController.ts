@@ -2,8 +2,8 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { remittanceService } from "../services/remittanceService.js";
 import { AppError } from "../errors/AppError.js";
+import { parseCursorQueryParams } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
-import { getTxUrl } from "../utils/stellar.js";
 
 /**
  * POST /api/remittances - Create a new remittance
@@ -59,23 +59,23 @@ export const getRemittances = asyncHandler(
       throw AppError.unauthorized("Wallet address not found in request");
     }
 
-    const limit = Math.min(Math.max(parseInt((req.query.limit as string) || "20", 10), 1), 100);
-    const offset = Math.max(parseInt((req.query.offset as string) || "0", 10), 0);
+    const { limit, cursor } = parseCursorQueryParams(req);
     const status = (req.query.status as string | undefined);
 
     const result = await remittanceService.getRemittances(
       senderAddress,
       limit,
-      offset,
-      status
+      cursor,
+      status,
     );
 
     res.json({
       success: true,
       data: result.remittances,
-      pagination: {
+      page_info: {
         limit,
-        offset,
+        next_cursor: result.nextCursor,
+        has_next: result.nextCursor !== null,
         total: result.total,
       },
     });

@@ -8,18 +8,13 @@ import {
   type WebhookEventType,
 } from "../services/webhookService.js";
 import {
-  createPaginatedResponse,
-  getSortConfig,
+  createCursorPaginatedResponse,
+  parseCursorQueryParams,
   parseQueryParams,
 } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
+import { getStellarRpcUrl } from "../config/stellar.js";
 
-const EVENT_SORT_FIELDS = [
-  "event_type",
-  "amount",
-  "ledger",
-  "ledger_closed_at",
-] as const;
 
 const buildEventFilters = (
   req: Request,
@@ -75,6 +70,7 @@ const buildEventsCacheKey = (
     scope,
     String(resourceId),
     `limit:${req.query.limit ?? "default"}`,
+    `cursor:${req.query.cursor ?? "default"}`,
     `offset:${req.query.offset ?? "default"}`,
     `sort:${req.query.sort ?? "default"}`,
     `status:${req.query.status ?? req.query.eventType ?? "all"}`,
@@ -141,8 +137,18 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
  */
 export const getBorrowerEvents = async (req: Request, res: Response) => {
   try {
-    const { borrower } = req.params;
-    const { limit, offset, sort } = parseQueryParams(req);
+    const borrowerParam = req.params.borrower;
+    const borrower = Array.isArray(borrowerParam)
+      ? borrowerParam[0]
+      : borrowerParam;
+    if (!borrower) {
+      return res.status(400).json({
+        success: false,
+        message: "Borrower is required",
+      });
+    }
+
+    const { limit, cursor } = parseCursorQueryParams(req);
     const cacheKey = buildEventsCacheKey("borrower", borrower, req);
     const cachedData = await cacheService.get(cacheKey);
 
@@ -152,39 +158,44 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
     }
 
     const { params, whereClause } = buildEventFilters(req, [borrower], "WHERE borrower = $1");
-    const sortConfig = getSortConfig(
-      sort,
-      EVENT_SORT_FIELDS,
-      "ledger",
-      "DESC",
-    );
-
+    console.log("DEBUG getBorrowerEvents after filters", { params, whereClause });
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
+    const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
       SELECT event_id, event_type, loan_id, borrower, amount,
-             ledger, ledger_closed_at, tx_hash, created_at
+             ledger, ledger_closed_at, tx_hash, created_at, id
       FROM loan_events
       ${whereClause}
-      ORDER BY ${sortConfig.field} ${sortConfig.direction}
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      ${cursorClause}
+      ORDER BY id ASC
+      LIMIT $${params.length + 2}
     `;
+    console.log("DEBUG getBorrowerEvents query", { queryText, queryParams: [...params, cursorValue, limit + 1] });
 
     const [result, totalCount] = await Promise.all([
-      query(queryText, [...params, limit, offset]),
+      query(queryText, [...params, cursorValue, limit + 1]),
       query(
         `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
         params,
       ),
     ]);
 
-    const response = createPaginatedResponse(
+    console.log("DEBUG getBorrowerEvents after query", { result, totalCount });
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
+
+    const response = createCursorPaginatedResponse(
       {
         borrower,
-        events: result.rows,
+        events,
       },
       Number.parseInt(totalCount.rows[0].count, 10),
       limit,
-      offset,
-      result.rows.length,
+      events.length,
+      nextCursor,
+      Boolean(cursor),
     );
 
     await cacheService.set(cacheKey, response, 300);
@@ -203,8 +214,9 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
  */
 export const getLoanEvents = async (req: Request, res: Response) => {
   try {
-    const { loanId } = req.params;
-    const { limit, offset, sort } = parseQueryParams(req);
+    const loanIdParam = req.params.loanId;
+    const loanId = Array.isArray(loanIdParam) ? loanIdParam[0] : loanIdParam;
+    const { limit, cursor } = parseCursorQueryParams(req);
 
     if (!loanId) {
       return res.status(400).json({
@@ -213,7 +225,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = buildEventsCacheKey("loan", loanId, req);
+    const cacheKey = buildEventsCacheKey("loan", loanId as string, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
@@ -222,39 +234,41 @@ export const getLoanEvents = async (req: Request, res: Response) => {
     }
 
     const { params, whereClause } = buildEventFilters(req, [loanId], "WHERE loan_id = $1");
-    const sortConfig = getSortConfig(
-      sort,
-      EVENT_SORT_FIELDS,
-      "ledger",
-      "ASC",
-    );
-
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
+    const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
       SELECT event_id, event_type, loan_id, borrower, amount,
-             ledger, ledger_closed_at, tx_hash, created_at
+             ledger, ledger_closed_at, tx_hash, created_at, id
       FROM loan_events
       ${whereClause}
-      ORDER BY ${sortConfig.field} ${sortConfig.direction}
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      ${cursorClause}
+      ORDER BY id ASC
+      LIMIT $${params.length + 2}
     `;
 
     const [result, totalCount] = await Promise.all([
-      query(queryText, [...params, limit, offset]),
+      query(queryText, [...params, cursorValue, limit + 1]),
       query(
         `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
         params,
       ),
     ]);
 
-    const response = createPaginatedResponse(
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
+
+    const response = createCursorPaginatedResponse(
       {
         loanId: Number.parseInt(loanId, 10),
-        events: result.rows,
+        events,
       },
       Number.parseInt(totalCount.rows[0].count, 10),
       limit,
-      offset,
-      result.rows.length,
+      events.length,
+      nextCursor,
+      Boolean(cursor),
     );
 
     await cacheService.set(cacheKey, response, 300);
@@ -273,7 +287,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
  */
 export const getRecentEvents = async (req: Request, res: Response) => {
   try {
-    const { limit, offset, sort } = parseQueryParams(req);
+    const { limit, cursor } = parseCursorQueryParams(req);
     const cacheKey = buildEventsCacheKey("recent", "all", req);
     const cachedData = await cacheService.get(cacheKey);
 
@@ -283,38 +297,41 @@ export const getRecentEvents = async (req: Request, res: Response) => {
     }
 
     const { params, whereClause } = buildEventFilters(req, [], "");
-    const sortConfig = getSortConfig(
-      sort,
-      EVENT_SORT_FIELDS,
-      "ledger",
-      "DESC",
-    );
-
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
+    const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
       SELECT event_id, event_type, loan_id, borrower, amount,
-             ledger, ledger_closed_at, tx_hash, created_at
+             ledger, ledger_closed_at, tx_hash, created_at, id
       FROM loan_events
       ${whereClause}
-      ORDER BY ${sortConfig.field} ${sortConfig.direction}
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      ${cursorClause}
+      ORDER BY id ASC
+      LIMIT $${params.length + 2}
     `;
 
     const [result, totalCount] = await Promise.all([
-      query(queryText, [...params, limit, offset]),
+      query(queryText, [...params, cursorValue, limit + 1]),
       query(
         `SELECT COUNT(*) as count FROM loan_events ${whereClause}`,
         params,
       ),
     ]);
 
-    const response = createPaginatedResponse(
+    console.log("DEBUG getRecentEvents", { queryResult: result.rows, countResult: totalCount.rows });
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
+
+    const response = createCursorPaginatedResponse(
       {
-        events: result.rows,
+        events,
       },
       Number.parseInt(totalCount.rows[0].count, 10),
       limit,
-      offset,
-      result.rows.length,
+      events.length,
+      nextCursor,
+      Boolean(cursor),
     );
 
     await cacheService.set(cacheKey, response, 120);
@@ -525,8 +542,6 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
       });
     }
 
-    const rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
     const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
 
     if (!contractId) {
@@ -536,6 +551,7 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
       });
     }
 
+    const rpcUrl = getStellarRpcUrl();
     const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
     const indexer = new EventIndexer({
       rpcUrl,

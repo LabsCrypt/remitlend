@@ -12,6 +12,7 @@ import { Sentry } from "./config/sentry.js";
 dotenv.config();
 import pool from "./db/connection.js";
 import { cacheService } from "./services/cacheService.js";
+import { sorobanService } from "./services/sorobanService.js";
 import simulationRoutes from "./routes/simulationRoutes.js";
 import scoreRoutes from "./routes/scoreRoutes.js";
 import loanRoutes from "./routes/loanRoutes.js";
@@ -76,6 +77,7 @@ const corsOptions: cors.CorsOptions = {
     "Authorization",
     "x-api-key",
     "x-request-id",
+    "Idempotency-Key",
   ],
   credentials: true,
 };
@@ -94,19 +96,23 @@ app.get("/", (req: Request, res: Response) => {
 app.get(
   "/health",
   asyncHandler(async (_req: Request, res: Response) => {
-    const [databaseStatus, redisStatus] = await Promise.allSettled([
-      pool
-        .query("SELECT 1")
-        .then(() => "ok" as const)
-        .catch(() => "error" as const),
-      cacheService.ping(),
-    ]);
+    const [databaseStatus, redisStatus, sorobanStatus] =
+      await Promise.allSettled([
+        pool
+          .query("SELECT 1")
+          .then(() => "ok" as const)
+          .catch(() => "error" as const),
+        cacheService.ping(),
+        sorobanService.ping(),
+      ]);
 
     const checks = {
       api: "ok" as const,
       database:
         databaseStatus.status === "fulfilled" ? databaseStatus.value : "error",
       redis: redisStatus.status === "fulfilled" ? redisStatus.value : "error",
+      soroban_rpc:
+        sorobanStatus.status === "fulfilled" ? sorobanStatus.value : "error",
     };
 
     const allOk = Object.values(checks).every((c) => c === "ok");

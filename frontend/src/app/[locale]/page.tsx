@@ -15,8 +15,8 @@ import {
   useWalletStore,
   selectIsWalletConnected,
   selectWalletAddress,
-  type WalletStore,
 } from "../stores/useWalletStore";
+import { useWallet } from "../components/providers/WalletProvider";
 import {
   useLoans,
   useRemittances,
@@ -38,7 +38,7 @@ export default function Home() {
   const router = useRouter();
   const isConnected = useWalletStore(selectIsWalletConnected);
   const address = useWalletStore(selectWalletAddress);
-  const setConnected = useWalletStore((state: WalletStore) => state.setConnected);
+  const { connectWallet } = useWallet();
 
   const { data: loans, isLoading: loansLoading } = useLoans({ enabled: isConnected });
   const { data: remittances, isLoading: remittancesLoading } = useRemittances({
@@ -163,7 +163,7 @@ export default function Home() {
           </p>
           <button
             onClick={() => {
-              setConnected("0x123...abc", { chainId: 1, name: "Stellar", isSupported: true });
+              void connectWallet();
             }}
             className="mt-6 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20"
           >
@@ -276,6 +276,7 @@ export default function Home() {
                 {t("activity.title")}
               </h2>
               <button
+                onClick={() => router.push("/activity")}
                 className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 rounded px-2 py-1"
                 aria-label="View all recent activity"
               >

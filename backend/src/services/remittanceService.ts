@@ -2,6 +2,7 @@ import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
 import logger from "../utils/logger.js";
 import crypto from "crypto";
+import { getStellarNetworkPassphrase } from "../config/stellar.js";
 
 export interface CreateRemittancePayload {
   recipientAddress: string;
@@ -27,9 +28,6 @@ export interface Remittance {
   updatedAt: string;
 }
 
-const NETWORK_PASSPHRASE = process.env.STELLAR_NETWORK_PASSPHRASE ?? "Test StellarNetwork ; September 2015";
-const SERVER_URL = process.env.STELLAR_RPC_URL ?? "https://soroban-testnet.stellar.org:443";
-
 /**
  * Validates a Stellar public key format (56 chars, starts with G, base32)
  */
@@ -48,6 +46,8 @@ export const remittanceService = {
     const now = new Date().toISOString();
 
     try {
+      const networkPassphrase = getStellarNetworkPassphrase();
+
       // Validate recipient address format
       if (!isValidStellarAddress(payload.recipientAddress)) {
         throw AppError.badRequest("Invalid Stellar recipient address (must be 56 chars, start with G)");
@@ -68,7 +68,7 @@ export const remittanceService = {
           amount: payload.amount,
           asset: payload.fromCurrency,
           memo: payload.memo || "RemitLend Transfer",
-          network: NETWORK_PASSPHRASE,
+          network: networkPassphrase,
         })
       ).toString("base64");
 
@@ -130,9 +130,9 @@ export const remittanceService = {
   async getRemittances(
     userId: string,
     limit: number = 20,
-    offset: number = 0,
+    cursor: string | null = null,
     status?: string
-  ): Promise<{ remittances: Remittance[]; total: number }> {
+  ): Promise<{ remittances: Remittance[]; total: number; nextCursor: string | null }> {
     try {
       let whereClause = "sender_id = $1";
       let params: (string | number)[] = [userId];
@@ -142,12 +142,22 @@ export const remittanceService = {
         params.push(status);
       }
 
+      const cursorValue = cursor ? new Date(cursor) : null;
+      if (cursor && (Number.isNaN(cursorValue?.getTime ?? NaN) || !cursorValue)) {
+        throw AppError.badRequest("Invalid cursor");
+      }
+
+      if (cursorValue) {
+        whereClause += ` AND created_at < $${params.length + 1}`;
+        params.push(cursorValue.toISOString());
+      }
+
       const result = await query(
         `SELECT * FROM remittances 
          WHERE ${whereClause}
-         ORDER BY created_at DESC
-         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-        [...params, limit, offset]
+         ORDER BY created_at DESC, id DESC
+         LIMIT $${params.length + 1}`,
+        [...params, limit + 1]
       );
 
       const countResult = await query(
@@ -155,7 +165,10 @@ export const remittanceService = {
         params
       );
 
-      const remittances = result.rows.map((r) => ({
+      const hasNext = result.rows.length > limit;
+      const trimmed = hasNext ? result.rows.slice(0, limit) : result.rows;
+
+      const remittances = trimmed.map((r) => ({
         id: r.id,
         senderId: r.sender_id,
         recipientAddress: r.recipient_address,
@@ -170,9 +183,15 @@ export const remittanceService = {
         updatedAt: r.updated_at.toISOString(),
       }));
 
+      const lastRemittance = trimmed.length > 0 ? trimmed[trimmed.length - 1] : undefined;
+      const nextCursor = hasNext && lastRemittance
+        ? lastRemittance.created_at.toISOString()
+        : null;
+
       return {
         remittances,
         total: parseInt(countResult.rows[0]?.total || "0", 10),
+        nextCursor,
       };
     } catch (error) {
       logger.error("Error fetching remittances:", error);

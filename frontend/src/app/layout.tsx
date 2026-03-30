@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./[locale]/globals.css";
 import { QueryProvider } from "./components/providers/QueryProvider";
+import { WalletProvider } from "./components/providers/WalletProvider";
 import { DashboardShell } from "./components/global_ui/DashboardShell";
 import { Toaster } from "./components/ui/Toaster";
 import { LevelUpModal } from "./components/gamification/LevelUpModal";
@@ -45,11 +46,13 @@ export default async function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <NextIntlClientProvider locale="en" messages={messages}>
           <QueryProvider>
-            <DashboardShell>
-              <ErrorBoundary scope="active page" variant="section">
-                {children}
-              </ErrorBoundary>
-            </DashboardShell>
+            <WalletProvider>
+              <DashboardShell>
+                <ErrorBoundary scope="active page" variant="section">
+                  {children}
+                </ErrorBoundary>
+              </DashboardShell>
+            </WalletProvider>
             <Toaster />
             <LevelUpModal />
             <GlobalXPGain />

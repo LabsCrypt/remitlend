@@ -10,14 +10,14 @@ const REPLAY_LIMIT = 100;
 type DbEventRow = Record<string, unknown>;
 
 const mapLoanEventRow = (row: DbEventRow) => ({
-  eventId: row.event_id,
-  eventType: row.event_type,
-  loanId: row.loan_id,
-  borrower: row.borrower,
-  amount: row.amount,
-  ledger: row.ledger,
-  ledgerClosedAt: row.ledger_closed_at,
-  txHash: row.tx_hash,
+  eventId: String(row.event_id ?? ""),
+  eventType: String(row.event_type ?? ""),
+  loanId: row.loan_id !== undefined ? Number(row.loan_id) : undefined,
+  borrower: String(row.borrower ?? ""),
+  amount: row.amount !== undefined ? String(row.amount) : undefined,
+  ledger: Number(row.ledger ?? 0),
+  ledgerClosedAt: String(row.ledger_closed_at ?? ""),
+  txHash: String(row.tx_hash ?? ""),
 });
 
 const parseLastEventId = (req: Request): string | null => {

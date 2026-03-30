@@ -13,6 +13,7 @@ import {
   requireWalletParamMatchesJwt,
 } from "../middleware/jwtAuth.js";
 import { validate } from "../middleware/validation.js";
+import { idempotencyMiddleware } from "../middleware/idempotency.js";
 import { addressParamSchema } from "../schemas/stellarSchemas.js";
 
 const router = Router();
@@ -132,6 +133,7 @@ router.post(
   requireJwtAuth,
   requireLender,
   requireScopes("write:pool"),
+  idempotencyMiddleware,
   depositToPool,
 );
 
@@ -181,6 +183,7 @@ router.post(
   requireJwtAuth,
   requireLender,
   requireScopes("write:pool"),
+  idempotencyMiddleware,
   withdrawFromPool,
 );
 
@@ -224,6 +227,7 @@ router.post(
   requireJwtAuth,
   requireLender,
   requireScopes("write:pool"),
+  idempotencyMiddleware,
   submitPoolTransaction,
 );
 

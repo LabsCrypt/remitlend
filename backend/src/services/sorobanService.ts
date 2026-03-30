@@ -1,31 +1,33 @@
 import {
   BASE_FEE,
-  Networks,
   Operation,
   TransactionBuilder,
   nativeToScVal,
+  scValToNative,
   Address,
-  rpc,
   xdr,
   StrKey,
+  Keypair,
 } from "@stellar/stellar-sdk";
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
+import {
+  createSorobanRpcServer,
+  getStellarNetworkPassphrase,
+  getStellarRpcUrl,
+} from "../config/stellar.js";
 
 /**
  * Service for building and submitting Soroban contract transactions.
  * Handles the transaction lifecycle: build → (frontend signs) → submit.
  */
 class SorobanService {
-  private getRpcServer(): rpc.Server {
-    const rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
-    const allowHttp = rpcUrl.startsWith("http://");
-    return new rpc.Server(rpcUrl, { allowHttp });
+  private getRpcServer() {
+    return createSorobanRpcServer();
   }
 
   private getNetworkPassphrase(): string {
-    return process.env.STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
+    return getStellarNetworkPassphrase();
   }
 
   private getLoanManagerContractId(): string {
@@ -56,6 +58,36 @@ class SorobanService {
       );
     }
     return address;
+  }
+
+  private getRemittanceNftContractId(): string {
+    const contractId = process.env.REMITTANCE_NFT_CONTRACT_ID;
+    if (!contractId) {
+      throw AppError.internal(
+        "REMITTANCE_NFT_CONTRACT_ID is not configured",
+      );
+    }
+    return contractId;
+  }
+
+  private getScoreReadSourceKeypair(): Keypair {
+    const secret =
+      process.env.SCORE_RECONCILIATION_SOURCE_SECRET ??
+      process.env.LOAN_MANAGER_ADMIN_SECRET;
+
+    if (!secret) {
+      throw AppError.internal(
+        "A source secret is required for score reconciliation reads",
+      );
+    }
+
+    try {
+      return Keypair.fromSecret(secret);
+    } catch {
+      throw AppError.internal(
+        "The configured score reconciliation source secret is invalid",
+      );
+    }
   }
 
   /**
@@ -318,19 +350,29 @@ class SorobanService {
       }
     }
 
+    let rpcUrl: string;
+    try {
+      rpcUrl = getStellarRpcUrl();
+    } catch (err) {
+      throw AppError.internal(
+        err instanceof Error
+          ? err.message
+          : "Invalid Stellar RPC configuration",
+      );
+    }
+
     try {
       await this.getRpcServer().getHealth();
     } catch (err) {
       throw AppError.internal(
-        `Stellar RPC is unreachable at ${process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org"}: ${err instanceof Error ? err.message : String(err)}`,
+        `Stellar RPC is unreachable at ${rpcUrl}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
     logger.info("Soroban configuration validated", {
       loanManagerContractId: process.env.LOAN_MANAGER_CONTRACT_ID,
       lendingPoolContractId: process.env.LENDING_POOL_CONTRACT_ID,
-      rpcUrl:
-        process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org",
+      rpcUrl,
     });
   }
 
@@ -381,6 +423,74 @@ class SorobanService {
   }
 
   /**
+   * Reads the authoritative borrower score from the Remittance NFT contract.
+   * Uses a lightweight simulation because `get_score` is a read-only call.
+   */
+  async getOnChainCreditScore(userPublicKey: string): Promise<number> {
+    const server = this.getRpcServer();
+    const contractId = this.getRemittanceNftContractId();
+    const passphrase = this.getNetworkPassphrase();
+    const source = this.getScoreReadSourceKeypair();
+
+    const account = await server.getAccount(source.publicKey());
+    const userScVal = nativeToScVal(Address.fromString(userPublicKey), {
+      type: "address",
+    });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "get_score",
+          args: [userScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const simulation = await server.simulateTransaction(tx);
+    if ("error" in simulation) {
+      throw AppError.internal(
+        `Failed to simulate get_score for ${userPublicKey}: ${simulation.error}`,
+      );
+    }
+
+    const retval = simulation.result?.retval;
+    if (!retval) {
+      throw AppError.internal(
+        `No score returned by get_score for ${userPublicKey}`,
+      );
+    }
+
+    const nativeScore = scValToNative(retval);
+    const score = Number(nativeScore);
+    if (!Number.isFinite(score)) {
+      throw AppError.internal(
+        `Invalid on-chain score returned for ${userPublicKey}`,
+      );
+    }
+
+    return score;
+  }
+
+  /**
+   * Ping the Stellar RPC server to verify connectivity.
+   * Returns "ok" on success or "error" if unreachable.
+   */
+  async ping(): Promise<"ok" | "error"> {
+    try {
+      const server = this.getRpcServer();
+      await server.getHealth();
+      return "ok";
+    } catch {
+      return "error";
+    }
+  }
+
+  /**
    * Returns score adjustment constants for indexing.
    * Values are sourced from environment variables so they stay in sync
    * with the deployed RemittanceNFT contract constants without requiring
@@ -397,7 +507,7 @@ class SorobanService {
     );
     return { repaymentDelta, defaultPenalty };
   }
-
+  
 }
 
 export const sorobanService = new SorobanService();

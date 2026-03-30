@@ -41,6 +41,11 @@ pub fn late_fee_charged(env: &Env, loan_id: u32, fee_amount: i128) {
     env.events().publish(topics, fee_amount);
 }
 
+pub fn min_score_updated(env: &Env, old_score: u32, new_score: u32) {
+    env.events()
+        .publish((symbol_short!("MinScore"),), (old_score, new_score));
+}
+
 pub fn paused(env: &Env) {
     let topics = (Symbol::new(env, "Paused"),);
     env.events().publish(topics, ());
@@ -51,10 +56,10 @@ pub fn unpaused(env: &Env) {
     env.events().publish(topics, ());
 }
 
-pub fn min_score_updated(env: &Env, old_score: u32, new_score: u32) {
-    let topics = (Symbol::new(env, "MinScoreUpdated"),);
-    env.events().publish(topics, (old_score, new_score));
-}
+// pub fn min_score_updated(env: &Env, old_score: u32, new_score: u32) {
+//     let topics = (Symbol::new(env, "MinScoreUpdated"),);
+//     env.events().publish(topics, (old_score, new_score));
+// }
 
 pub fn interest_rate_updated(env: &Env, old_rate: u32, new_rate: u32) {
     let topics = (Symbol::new(env, "InterestRateUpdated"),);
@@ -79,6 +84,11 @@ pub fn term_limits_updated(env: &Env, min_term: u32, max_term: u32) {
 pub fn rate_oracle_updated(env: &Env, old_oracle: Option<Address>, new_oracle: Address) {
     let topics = (Symbol::new(env, "RateOracleUpdated"),);
     env.events().publish(topics, (old_oracle, new_oracle));
+}
+
+pub fn collateral_returned(env: &Env, borrower: Address, loan_id: u32, amount: i128) {
+    let topics = (Symbol::new(env, "CollateralReturned"), borrower, loan_id);
+    env.events().publish(topics, amount);
 }
 
 pub fn late_fee_rate_updated(env: &Env, admin: Address, old_rate: u32, new_rate: u32) {

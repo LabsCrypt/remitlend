@@ -1,7 +1,6 @@
 import {
   BASE_FEE,
   Keypair,
-  Networks,
   Operation,
   TransactionBuilder,
   nativeToScVal,
@@ -10,6 +9,10 @@ import {
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
+import {
+  createSorobanRpcServer,
+  getStellarNetworkPassphrase,
+} from "../config/stellar.js";
 
 /**
  * Mirrors `LoanManager::DEFAULT_TERM_LEDGERS` in `contracts/loan_manager/src/lib.rs`.
@@ -23,6 +26,7 @@ export interface DefaultCheckBatchResult {
   submitStatus?: string;
   txStatus?: string;
   error?: string;
+  timedOut?: boolean;
 }
 
 export interface DefaultCheckRunResult {
@@ -56,23 +60,25 @@ function sleep(ms: number): Promise<void> {
 }
 
 export class DefaultChecker {
-  private rpcUrl: string;
   private contractId: string;
   private termLedgers: number;
   private batchSize: number;
+  private batchTimeoutMs: number;
   private maxLoansPerRun: number;
   private pollAttempts: number;
   private pollSleepMs: number;
 
   constructor() {
-    this.rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
     this.contractId = process.env.LOAN_MANAGER_CONTRACT_ID || "";
     this.termLedgers = parsePositiveInt(
       process.env.LOAN_TERM_LEDGERS,
       DEFAULT_TERM_LEDGERS,
     );
     this.batchSize = parsePositiveInt(process.env.DEFAULT_CHECK_BATCH_SIZE, 25);
+    this.batchTimeoutMs = parsePositiveInt(
+      process.env.DEFAULT_CHECK_BATCH_TIMEOUT_MS,
+      5 * 60 * 1000,
+    );
     this.maxLoansPerRun = parsePositiveInt(
       process.env.DEFAULT_CHECK_MAX_LOANS_PER_RUN,
       500,
@@ -114,11 +120,8 @@ export class DefaultChecker {
       );
     }
 
-    const allowHttp = this.rpcUrl.startsWith("http://");
-    const server = new rpc.Server(this.rpcUrl, { allowHttp });
-
-    const passphrase =
-      process.env.STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
+    const server = createSorobanRpcServer();
+    const passphrase = getStellarNetworkPassphrase();
 
     return { signer, server, passphrase };
   }
@@ -301,6 +304,54 @@ export class DefaultChecker {
     };
   }
 
+  private async submitCheckDefaultsWithTimeout(
+    server: rpc.Server,
+    signer: Keypair,
+    passphrase: string,
+    loanIds: number[],
+  ): Promise<DefaultCheckBatchResult> {
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<DefaultCheckBatchResult>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        resolve({
+          loanIds,
+          timedOut: true,
+          error: `batch timed out after ${this.batchTimeoutMs}ms`,
+        });
+      }, this.batchTimeoutMs);
+      timeoutHandle.unref?.();
+    });
+
+    const submissionPromise: Promise<DefaultCheckBatchResult> = this.submitCheckDefaults(
+      server,
+      signer,
+      passphrase,
+      loanIds,
+    ).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        loanIds,
+        error: `default check batch failed: ${message}`,
+      } satisfies DefaultCheckBatchResult;
+    });
+
+    const result = await Promise.race([submissionPromise, timeoutPromise]);
+
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+
+    if (result.timedOut) {
+      logger.warn("Default check batch timed out", {
+        loanIds,
+        timeoutMs: this.batchTimeoutMs,
+      });
+    }
+
+    return result;
+  }
+
   /**
    * Runs default checks for either:
    * - explicit `loanIds` (validated + de-duped), or
@@ -331,6 +382,7 @@ export class DefaultChecker {
       currentLedger,
       termLedgers: this.termLedgers,
       batchSize: this.batchSize,
+      batchTimeoutMs: this.batchTimeoutMs,
       maxLoansPerRun: this.maxLoansPerRun,
       overdueCount: stats.overdueCount,
       oldestDueLedger: stats.oldestDueLedger,
@@ -342,7 +394,7 @@ export class DefaultChecker {
     const batches: DefaultCheckBatchResult[] = [];
     for (const batch of chunk(targetIds, this.batchSize)) {
       if (!batch.length) continue;
-      const result = await this.submitCheckDefaults(
+      const result = await this.submitCheckDefaultsWithTimeout(
         server,
         signer,
         passphrase,
@@ -357,6 +409,7 @@ export class DefaultChecker {
         submitStatus: result.submitStatus,
         txStatus: result.txStatus,
         error: result.error,
+        timedOut: result.timedOut,
       });
     }
 

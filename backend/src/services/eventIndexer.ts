@@ -1,14 +1,19 @@
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
-import { createRequestId, runWithRequestContext } from "../utils/requestContext.js";
+import {
+  createRequestId,
+  runWithRequestContext,
+} from "../utils/requestContext.js";
 import {
   type IndexedLoanEvent,
   type WebhookEventType,
   webhookService,
 } from "./webhookService.js";
 import { eventStreamService } from "./eventStreamService.js";
+import { notificationService, type NotificationType } from "./notificationService.js";
 import { sorobanService } from "./sorobanService.js";
+import { updateUserScoresBulk } from "./scoresService.js";
 
 interface SorobanRawEvent {
   id: string;
@@ -62,7 +67,10 @@ export class EventIndexer {
 
   constructor(config: EventIndexerConfig);
   constructor(rpcUrl: string, contractId: string);
-  constructor(configOrRpcUrl: EventIndexerConfig | string, contractId?: string) {
+  constructor(
+    configOrRpcUrl: EventIndexerConfig | string,
+    contractId?: string,
+  ) {
     if (typeof configOrRpcUrl === "string") {
       if (!contractId) {
         throw new Error("contractId is required when using rpcUrl constructor");
@@ -104,7 +112,10 @@ export class EventIndexer {
     return chunkResult.lastProcessedLedger;
   }
 
-  async reindexRange(fromLedger: number, toLedger: number): Promise<{
+  async reindexRange(
+    fromLedger: number,
+    toLedger: number,
+  ): Promise<{
     fromLedger: number;
     toLedger: number;
     fetchedEvents: number;
@@ -168,9 +179,11 @@ export class EventIndexer {
 
   private async getLatestLedgerSequence(): Promise<number> {
     try {
-      const latest = (await (this.rpc as unknown as {
-        getLatestLedger: () => Promise<Record<string, unknown>>;
-      }).getLatestLedger()) as Record<string, unknown>;
+      const latest = (await (
+        this.rpc as unknown as {
+          getLatestLedger: () => Promise<Record<string, unknown>>;
+        }
+      ).getLatestLedger()) as Record<string, unknown>;
 
       const candidate =
         latest.sequence ?? latest.sequenceNumber ?? latest.seq ?? latest.id;
@@ -325,7 +338,9 @@ export class EventIndexer {
     return result;
   }
 
-  private async storeEvents(events: SorobanRawEvent[]): Promise<StoreEventsResult> {
+  private async storeEvents(
+    events: SorobanRawEvent[],
+  ): Promise<StoreEventsResult> {
     const parsedEvents: LoanEvent[] = [];
 
     for (const event of events) {
@@ -349,6 +364,11 @@ export class EventIndexer {
 
     const insertedEvents: LoanEvent[] = [];
 
+    // Collect score deltas per user during the DB transaction to avoid N+1
+    // updates. After committing the inserted events we apply a single bulk
+    // upsert that adds the deltas and keeps scores bounded.
+    const scoreUpdates: Map<string, number> = new Map();
+
     await query("BEGIN", []);
     try {
       for (const event of parsedEvents) {
@@ -369,7 +389,7 @@ export class EventIndexer {
             term_ledgers
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          ON CONFLICT (event_id) DO NOTHING
+          ON CONFLICT DO NOTHING
           RETURNING event_id`,
           [
             event.eventId,
@@ -390,17 +410,40 @@ export class EventIndexer {
 
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
+
+          // aggregate score deltas per borrower; apply after the transaction
+          // to avoid issuing a query per event (N+1).
           if (event.eventType === "LoanRepaid") {
             const { repaymentDelta } = sorobanService.getScoreConfig();
-            await this.updateUserScore(event.borrower, repaymentDelta);
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) + repaymentDelta,
+              );
+            }
           } else if (event.eventType === "LoanDefaulted") {
             const { defaultPenalty } = sorobanService.getScoreConfig();
-            await this.updateUserScore(event.borrower, -defaultPenalty);
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
+              );
+            }
           }
         }
       }
 
       await query("COMMIT", []);
+      // apply batched score updates after the transaction commits
+      if (scoreUpdates.size > 0) {
+        try {
+          await updateUserScoresBulk(scoreUpdates);
+        } catch (err) {
+          logger.error("Failed to apply bulk user score updates", {
+            error: err,
+          });
+        }
+      }
     } catch (error) {
       await query("ROLLBACK", []);
       throw error;
@@ -545,11 +588,13 @@ export class EventIndexer {
         return;
     }
 
-    await query(
-      `INSERT INTO notifications (user_id, type, title, message, loan_id)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [event.borrower, type, title, message, event.loanId ?? null],
-    );
+    await notificationService.createNotification({
+      userId: event.borrower,
+      type: type as NotificationType,
+      title,
+      message,
+      loanId: event.loanId,
+    });
   }
 
   private decodeAddress(value: xdr.ScVal): string {
@@ -635,7 +680,9 @@ export class EventIndexer {
     }
   }
 
-  private decodeEventType(value: xdr.ScVal | undefined): WebhookEventType | null {
+  private decodeEventType(
+    value: xdr.ScVal | undefined,
+  ): WebhookEventType | null {
     if (!value) return null;
 
     try {
