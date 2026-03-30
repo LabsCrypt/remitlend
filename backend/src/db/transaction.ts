@@ -9,17 +9,27 @@ import logger from "../utils/logger.js";
 export async function withTransaction<T>(
   operations: (client: any) => Promise<T>
 ): Promise<T> {
-  const client = await getClient();
-  
+  let client;
+  try {
+    client = await getClient();
+  } catch (error) {
+    logger.error('Failed to acquire database client for transaction', { error });
+    throw new Error('Database connection failed');
+  }
+
+  if (!client) {
+    throw new Error('Database client is undefined');
+  }
+
   try {
     await client.query('BEGIN');
     logger.debug('Database transaction started');
-    
+
     const result = await operations(client);
-    
+
     await client.query('COMMIT');
     logger.debug('Database transaction committed');
-    
+
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
