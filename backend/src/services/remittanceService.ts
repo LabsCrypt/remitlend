@@ -6,10 +6,10 @@ import { getStellarNetworkPassphrase } from "../config/stellar.js";
 
 import {
   TransactionBuilder,
+  Networks,
   Operation,
   Account,
   Asset,
-  Memo,
 } from "@stellar/stellar-sdk";
 
 export interface CreateRemittancePayload {
@@ -70,23 +70,20 @@ export const remittanceService = {
         );
       }
 
-      const sourceAccount = new Account(payload.senderAddress, "0");
-      let transactionBuilder = new TransactionBuilder(sourceAccount, {
-        fee: "100",
-        networkPassphrase,
-      }).addOperation(
-        Operation.payment({
+      // TODO: Build transaction using Stellar SDK
+      // This placeholder will be replaced with actual XDR building logic
+      // For now, we store the transaction intent in the database
+      const xdr = Buffer.from(
+        JSON.stringify({
+          type: "payment",
+          sender: payload.senderAddress,
           destination: payload.recipientAddress,
-          asset: Asset.native(),
-          amount: payload.amount.toString(),
+          amount: payload.amount,
+          asset: payload.fromCurrency,
+          memo: payload.memo || "RemitLend Transfer",
+          network: networkPassphrase,
         }),
-      );
-
-      if (payload.memo) {
-        transactionBuilder = transactionBuilder.addMemo(Memo.text(payload.memo));
-      }
-
-      const xdr = transactionBuilder.setTimeout(30).build().toXDR();
+      ).toString("base64");
 
       const result = await query(
         `INSERT INTO remittances 
@@ -206,11 +203,12 @@ export const remittanceService = {
         hasNext && lastRemittance
           ? lastRemittance.created_at.toISOString()
           : null;
+      const last = trimmed[trimmed.length - 1];
 
       return {
         remittances,
         total: parseInt(countResult.rows[0]?.total || "0", 10),
-        nextCursor,
+        nextCursor: hasNext ? last.created_at.toISOString() : null,
       };
     } catch (error) {
       logger.error("Error fetching remittances:", error);
@@ -219,7 +217,10 @@ export const remittanceService = {
   },
 
   async getRemittance(id: string): Promise<Remittance> {
-    const result = await query("SELECT * FROM remittances WHERE id = $1", [id]);
+    try {
+      const result = await query("SELECT * FROM remittances WHERE id = $1", [
+        id,
+      ]);
 
     if (!result.rows[0]) throw AppError.notFound("Remittance not found");
 
@@ -245,32 +246,56 @@ export const remittanceService = {
     id: string,
     status: "processing" | "completed" | "failed",
     transactionHash?: string,
+    error?: string,
   ): Promise<Remittance> {
     const result = await query(
       `UPDATE remittances 
        SET status = $1, transaction_hash = $2, updated_at = $3
        WHERE id = $4
        RETURNING *`,
-      [status, transactionHash || null, new Date().toISOString(), id],
+      [status, transactionHash || null, new Date().toISOString(), id]
     );
 
     if (!result.rows[0]) throw AppError.notFound("Remittance not found");
 
     const r = result.rows[0];
 
-    return {
-      id: r.id,
-      senderId: r.sender_id,
-      recipientAddress: r.recipient_address,
-      amount: parseFloat(r.amount),
-      fromCurrency: r.from_currency,
-      toCurrency: r.to_currency,
-      memo: r.memo,
-      status: r.status,
-      transactionHash: r.transaction_hash,
-      xdr: r.xdr,
-      createdAt: r.created_at.toISOString(),
-      updatedAt: r.updated_at.toISOString(),
-    };
+      const result = await query(
+        `UPDATE remittances 
+         SET status = $1, transaction_hash = $2, updated_at = $3
+         WHERE id = $4
+         RETURNING *`,
+        [status, transactionHash || null, updateData.updated_at, id],
+      );
+
+      if (!result.rows[0]) {
+        throw AppError.notFound("Remittance not found");
+      }
+
+      const r = result.rows[0];
+
+      return {
+        id: r.id,
+        senderId: r.sender_id,
+        recipientAddress: r.recipient_address,
+        amount: parseFloat(r.amount),
+        fromCurrency: r.from_currency,
+        toCurrency: r.to_currency,
+        memo: r.memo,
+        status: r.status,
+        transactionHash: r.transaction_hash,
+        xdr: r.xdr,
+        createdAt: r.created_at.toISOString(),
+        updatedAt: r.updated_at.toISOString(),
+      };
+    } catch (error) {
+      logger.error("Error updating remittance:", error);
+
+      if (error instanceof AppError) {
+        throw error;
+      }
+
+      throw AppError.internal("Failed to update remittance");
+    }
   },
 };
