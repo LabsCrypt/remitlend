@@ -19,12 +19,11 @@ const { getPoolStats, getDepositorPortfolio } = await import(
 const flushAsync = async (): Promise<void> =>
   new Promise((resolve) => setImmediate(resolve));
 
-const createMockResponse = (): Response => {
-  const res: Partial<Response> = {};
-  res.status = jest.fn().mockReturnValue(res as Response);
-  res.json = jest.fn().mockReturnValue(res as Response);
-  return res as Response;
-};
+const createMockResponse = (): Response =>
+  ({
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+  }) as unknown as Response;
 
 describe("poolController asyncHandler wrapping", () => {
   beforeEach(() => {
