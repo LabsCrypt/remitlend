@@ -93,6 +93,37 @@ class CacheService {
   }
 
   /**
+   * Set a value only if the key does not exist (SET NX - Set if Not Exists).
+   * Used for distributed locking.
+   * @param key The cache key
+   * @param value The value to cache
+   * @param ttlSeconds The TTL in seconds
+   * @returns true if the key was set, false if the key already existed
+   */
+  async setNotExists(
+    key: string,
+    value: unknown,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    try {
+      await this.connect();
+      if (!this.isConnected) return false;
+
+      const client = this.getClient();
+      const stringValue = JSON.stringify(value);
+      // SET key value NX EX ttlSeconds
+      const result = await client.set(key, stringValue, {
+        NX: true,
+        EX: ttlSeconds,
+      });
+      return result === "OK";
+    } catch (error) {
+      logger.error(`Error setting NX cache for key ${key}`, { error });
+      return false;
+    }
+  }
+
+  /**
    * Delete a value from the cache.
    * @param key The cache key
    */

@@ -273,6 +273,66 @@ describe("EventIndexer", () => {
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores duplicate LoanApproved rows for the same loan and emits side effects once", async () => {
+    const borrower = makeAddress();
+    let approvedInsertCount = 0;
+
+    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql === "BEGIN" || sql === "COMMIT") {
+        return { rows: [], rowCount: 0 };
+      }
+
+      if (sql.includes("INSERT INTO loan_events")) {
+        if (params[1] === "LoanApproved" && params[2] === 42) {
+          approvedInsertCount += 1;
+          const inserted = approvedInsertCount === 1;
+          return {
+            rows: inserted ? [{ event_id: params[0] }] : [],
+            rowCount: inserted ? 1 : 0,
+          };
+        }
+
+        return { rows: [{ event_id: params[0] }], rowCount: 1 };
+      }
+
+      return { rows: [], rowCount: 0 };
+    });
+
+    const indexer = new EventIndexer({
+      rpcUrl: "https://rpc.test",
+      contractId: "CINDEXERTEST",
+    });
+
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
+        events: [
+          makeRawEvent({
+            id: "evt-approved-001",
+            ledger: 31,
+            type: "LoanApproved",
+            borrower,
+            loanId: 42,
+          }),
+          makeRawEvent({
+            id: "evt-approved-002",
+            ledger: 32,
+            type: "LoanApproved",
+            borrower,
+            loanId: 42,
+          }),
+        ],
+      }),
+    };
+
+    await indexer.processEvents(31, 32);
+
+    expect(approvedInsertCount).toBe(2);
+    expect(mockDispatch).toHaveBeenCalledTimes(1);
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+    expect(mockGetScoreConfig).not.toHaveBeenCalled();
+  });
+
   it("initializes missing indexer state and persists the last indexed ledger during polling", async () => {
     const stateWrites: number[] = [];
 

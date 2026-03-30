@@ -36,9 +36,7 @@ export async function withTransaction<T>(
     logger.error('Database transaction rolled back due to error:', error);
     throw error;
   } finally {
-    if (client) {
-      client.release();
-    }
+    client.release();
   }
 }
 
