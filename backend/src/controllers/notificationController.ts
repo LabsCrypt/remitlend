@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { notificationService } from "../services/notificationService.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { AppError } from "../errors/AppError.js";
+import { parseCappedLimit } from "../utils/queryHelpers.js";
 import logger from "../utils/logger.js";
 
 /**

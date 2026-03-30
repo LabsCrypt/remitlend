@@ -3,16 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
-import { Button } from "../components/ui/Button";
-import { Card, CardContent } from "../components/ui/Card";
-import { LoanApplicationWizard } from "../components/loan-wizard/LoanApplicationWizard";
-import { useCreditScore, useMinimumScore } from "../hooks/useApi";
-import { useToastStore } from "../stores/useToastStore";
+import { Button } from "../../components/ui/Button";
+import { Card, CardContent } from "../../components/ui/Card";
+import { LoanApplicationWizard } from "../../components/loan-wizard/LoanApplicationWizard";
+import { useCreditScore, useMinimumScore } from "../../hooks/useApi";
+import { useToastStore } from "../../stores/useToastStore";
 import {
   useWalletStore,
   selectWalletAddress,
   selectIsWalletConnected,
-} from "../stores/useWalletStore";
+} from "../../stores/useWalletStore";
 
 function getScoreBandMax(score: number): number {
   if (score >= 750) return 50_000;

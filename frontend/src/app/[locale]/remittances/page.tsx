@@ -18,10 +18,10 @@ import {
   selectIsWalletConnected,
   selectWalletAddress,
 } from "../stores/useWalletStore";
-import { usePaginatedRemittances, useRemittances, type Remittance } from "../hooks/useApi";
-import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
-import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
-import { Spinner } from "../components/global_ui/Spinner";
+import { useRemittances, type Remittance } from "../../hooks/useApi";
+import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/Card";
+import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
+import { Spinner } from "../../components/global_ui/Spinner";
 import Link from "next/link";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

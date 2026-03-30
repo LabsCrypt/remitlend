@@ -11,6 +11,7 @@ interface WalletProviderContextValue {
   disconnectWallet: () => void;
   refreshWallet: () => Promise<void>;
   isFreighterAvailable: boolean;
+  signTransaction: (unsignedTxXdr: string) => Promise<string>;
 }
 
 interface WalletProviderProps {
@@ -222,6 +223,29 @@ export function WalletProvider({ children }: WalletProviderProps) {
     disconnect();
   }
 
+  async function signTransaction(unsignedTxXdr: string): Promise<string> {
+    const api = await loadFreighterApi();
+    const network = useWalletStore.getState().network?.name ?? "TESTNET";
+
+    const result = await api.signTransaction(unsignedTxXdr, {
+      network: network as any,
+    });
+
+    if (typeof result === "string") {
+      return result;
+    }
+
+    if (result.error) {
+      throw new Error(normalizeWalletError(result.error));
+    }
+
+    if (result.signedTransaction) {
+      return result.signedTransaction;
+    }
+
+    throw new Error("Signing failed: No signed transaction returned.");
+  }
+
   async function refreshWallet() {
     if (!shouldAutoReconnect && !address) {
       return;
@@ -292,6 +316,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         disconnectWallet,
         refreshWallet,
         isFreighterAvailable,
+        signTransaction,
       }}
     >
       {children}

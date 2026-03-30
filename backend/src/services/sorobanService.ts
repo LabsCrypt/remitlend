@@ -179,21 +179,22 @@ class SorobanService {
    * Returns base64 XDR for the frontend to sign with the user's wallet.
    */
   async buildDepositTx(
-    depositorPublicKey: string,
+    providerPublicKey: string,
+    tokenAddress: string,
     amount: number,
   ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
     const server = this.getRpcServer();
     const contractId = this.getLendingPoolContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(depositorPublicKey);
+    const account = await server.getAccount(providerPublicKey);
 
     const providerScVal = nativeToScVal(
-      Address.fromString(depositorPublicKey),
+      Address.fromString(providerPublicKey),
       { type: "address" },
     );
     const tokenScVal = nativeToScVal(
-      Address.fromString(this.getPoolTokenAddress()),
+      Address.fromString(tokenAddress),
       { type: "address" },
     );
     const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
@@ -216,7 +217,8 @@ class SorobanService {
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built deposit transaction", {
-      depositor: depositorPublicKey,
+      provider: providerPublicKey,
+      token: tokenAddress,
       amount,
     });
 
@@ -229,21 +231,22 @@ class SorobanService {
    * Returns base64 XDR for the frontend to sign with the user's wallet.
    */
   async buildWithdrawTx(
-    depositorPublicKey: string,
+    providerPublicKey: string,
+    tokenAddress: string,
     shares: number,
   ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
     const server = this.getRpcServer();
     const contractId = this.getLendingPoolContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(depositorPublicKey);
+    const account = await server.getAccount(providerPublicKey);
 
     const providerScVal = nativeToScVal(
-      Address.fromString(depositorPublicKey),
+      Address.fromString(providerPublicKey),
       { type: "address" },
     );
     const tokenScVal = nativeToScVal(
-      Address.fromString(this.getPoolTokenAddress()),
+      Address.fromString(tokenAddress),
       { type: "address" },
     );
     const sharesScVal = nativeToScVal(BigInt(shares), { type: "i128" });
@@ -266,7 +269,8 @@ class SorobanService {
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built withdraw transaction", {
-      depositor: depositorPublicKey,
+      provider: providerPublicKey,
+      token: tokenAddress,
       shares,
     });
 

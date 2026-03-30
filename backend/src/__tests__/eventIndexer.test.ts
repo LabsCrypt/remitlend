@@ -19,6 +19,7 @@ const mockGetScoreConfig = jest.fn(() => ({
   repaymentDelta: 15,
   defaultPenalty: 50,
 }));
+const mockUpdateUserScoresBulk = jest.fn<(updates: Map<string, number>) => Promise<void>>().mockResolvedValue(undefined);
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
@@ -40,6 +41,10 @@ jest.unstable_mockModule("../services/notificationService.js", () => ({
 
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
   sorobanService: { getScoreConfig: mockGetScoreConfig },
+}));
+
+jest.unstable_mockModule("../services/scoresService.js", () => ({
+  updateUserScoresBulk: mockUpdateUserScoresBulk,
 }));
 
 jest.unstable_mockModule("../utils/logger.js", () => ({
@@ -167,6 +172,12 @@ describe("EventIndexer", () => {
         return { rows: [], rowCount: 0 };
       },
     );
+
+    mockUpdateUserScoresBulk.mockImplementation(async (updates: Map<string, number>) => {
+      for (const [userId, delta] of updates) {
+        scoreUpdates.push([userId, 500 + delta, delta]);
+      }
+    });
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",

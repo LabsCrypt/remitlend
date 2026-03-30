@@ -122,6 +122,7 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
                 onError(null);
               }}
               placeholder="1000"
+              required
               helperText={
                 data.maxAmount === 0
                   ? "Not eligible"
@@ -132,7 +133,7 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
             {/* Term */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Repayment Term
+                Repayment Term <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {TERM_OPTIONS.map((option) => (
@@ -158,6 +159,10 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
                 {error}
               </div>
             )}
+
+            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2">
+              <span className="text-red-600">*</span> Required field
+            </p>
 
             <Button onClick={handleContinue} className="w-full">
               Continue to Repayment Schedule

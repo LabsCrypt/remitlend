@@ -89,7 +89,7 @@ router.get(
 
 /**
  * @swagger
- * /pool/deposit:
+ * /pool/build-deposit:
  *   post:
  *     summary: Build an unsigned deposit transaction
  *     description: >
@@ -107,11 +107,15 @@ router.get(
  *             type: object
  *             required:
  *               - depositorPublicKey
+ *               - token
  *               - amount
  *             properties:
  *               depositorPublicKey:
  *                 type: string
  *                 description: Depositor's Stellar public key (must match JWT)
+ *               token:
+ *                 type: string
+ *                 description: Address of the token to deposit
  *               amount:
  *                 type: number
  *                 description: Amount to deposit
@@ -129,7 +133,7 @@ router.get(
  *         description: Missing or invalid Bearer token
  */
 router.post(
-  "/deposit",
+  "/build-deposit",
   requireJwtAuth,
   requireLender,
   requireScopes("write:pool"),
@@ -139,7 +143,7 @@ router.post(
 
 /**
  * @swagger
- * /pool/withdraw:
+ * /pool/build-withdraw:
  *   post:
  *     summary: Build an unsigned withdraw transaction
  *     description: >
@@ -157,11 +161,15 @@ router.post(
  *             type: object
  *             required:
  *               - depositorPublicKey
+ *               - token
  *               - amount
  *             properties:
  *               depositorPublicKey:
  *                 type: string
  *                 description: Depositor's Stellar public key (must match JWT)
+ *               token:
+ *                 type: string
+ *                 description: Address of the token to withdraw
  *               amount:
  *                 type: number
  *                 description: Amount (shares) to withdraw
@@ -179,7 +187,7 @@ router.post(
  *         description: Missing or invalid Bearer token
  */
 router.post(
-  "/withdraw",
+  "/build-withdraw",
   requireJwtAuth,
   requireLender,
   requireScopes("write:pool"),

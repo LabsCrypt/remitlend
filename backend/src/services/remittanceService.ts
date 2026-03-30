@@ -4,6 +4,14 @@ import logger from "../utils/logger.js";
 import crypto from "crypto";
 import { getStellarNetworkPassphrase } from "../config/stellar.js";
 
+import {
+  TransactionBuilder,
+  Operation,
+  Account,
+  Asset,
+  Memo,
+} from "@stellar/stellar-sdk";
+
 export interface CreateRemittancePayload {
   recipientAddress: string;
   amount: number;
@@ -29,7 +37,7 @@ export interface Remittance {
 }
 
 /**
- * Validates a Stellar public key format (56 chars, starts with G, base32)
+ * Validates a Stellar public key format
  */
 function isValidStellarAddress(address: string): boolean {
   if (!address || typeof address !== "string") return false;
@@ -50,7 +58,6 @@ export const remittanceService = {
     try {
       const networkPassphrase = getStellarNetworkPassphrase();
 
-      // Validate recipient address format
       if (!isValidStellarAddress(payload.recipientAddress)) {
         throw AppError.badRequest(
           "Invalid Stellar recipient address (must be 56 chars, start with G)",
@@ -63,22 +70,24 @@ export const remittanceService = {
         );
       }
 
-      // TODO: Build transaction using Stellar SDK
-      // This placeholder will be replaced with actual XDR building logic
-      // For now, we store the transaction intent in the database
-      const xdr = Buffer.from(
-        JSON.stringify({
-          type: "payment",
-          sender: payload.senderAddress,
+      const sourceAccount = new Account(payload.senderAddress, "0");
+      let transactionBuilder = new TransactionBuilder(sourceAccount, {
+        fee: "100",
+        networkPassphrase,
+      }).addOperation(
+        Operation.payment({
           destination: payload.recipientAddress,
-          amount: payload.amount,
-          asset: payload.fromCurrency,
-          memo: payload.memo || "RemitLend Transfer",
-          network: networkPassphrase,
+          asset: Asset.native(),
+          amount: payload.amount.toString(),
         }),
-      ).toString("base64");
+      );
 
-      // Store in database
+      if (payload.memo) {
+        transactionBuilder = transactionBuilder.addMemo(Memo.text(payload.memo));
+      }
+
+      const xdr = transactionBuilder.setTimeout(30).build().toXDR();
+
       const result = await query(
         `INSERT INTO remittances 
          (id, sender_id, recipient_address, amount, from_currency, to_currency, memo, status, xdr, created_at, updated_at)
@@ -122,17 +131,12 @@ export const remittanceService = {
     } catch (error) {
       logger.error("Error creating remittance:", error);
 
-      if (error instanceof AppError) {
-        throw error;
-      }
+      if (error instanceof AppError) throw error;
 
       throw AppError.internal("Failed to create remittance");
     }
   },
 
-  /**
-   * Get remittances for a user
-   */
   async getRemittances(
     userId: string,
     limit: number = 20,
@@ -214,105 +218,59 @@ export const remittanceService = {
     }
   },
 
-  /**
-   * Get a single remittance by ID
-   */
   async getRemittance(id: string): Promise<Remittance> {
-    try {
-      const result = await query("SELECT * FROM remittances WHERE id = $1", [
-        id,
-      ]);
+    const result = await query("SELECT * FROM remittances WHERE id = $1", [id]);
 
-      if (!result.rows[0]) {
-        throw AppError.notFound("Remittance not found");
-      }
+    if (!result.rows[0]) throw AppError.notFound("Remittance not found");
 
-      const r = result.rows[0];
+    const r = result.rows[0];
 
-      return {
-        id: r.id,
-        senderId: r.sender_id,
-        recipientAddress: r.recipient_address,
-        amount: parseFloat(r.amount),
-        fromCurrency: r.from_currency,
-        toCurrency: r.to_currency,
-        memo: r.memo,
-        status: r.status,
-        transactionHash: r.transaction_hash,
-        xdr: r.xdr,
-        createdAt: r.created_at.toISOString(),
-        updatedAt: r.updated_at.toISOString(),
-      };
-    } catch (error) {
-      logger.error("Error fetching remittance:", error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw AppError.internal("Failed to fetch remittance");
-    }
+    return {
+      id: r.id,
+      senderId: r.sender_id,
+      recipientAddress: r.recipient_address,
+      amount: parseFloat(r.amount),
+      fromCurrency: r.from_currency,
+      toCurrency: r.to_currency,
+      memo: r.memo,
+      status: r.status,
+      transactionHash: r.transaction_hash,
+      xdr: r.xdr,
+      createdAt: r.created_at.toISOString(),
+      updatedAt: r.updated_at.toISOString(),
+    };
   },
 
-  /**
-   * Update remittance status after transaction is submitted
-   */
   async updateRemittanceStatus(
     id: string,
     status: "processing" | "completed" | "failed",
     transactionHash?: string,
-    error?: string,
   ): Promise<Remittance> {
-    try {
-      const updateData: Record<string, unknown> = {
-        status,
-        updated_at: new Date().toISOString(),
-      };
+    const result = await query(
+      `UPDATE remittances 
+       SET status = $1, transaction_hash = $2, updated_at = $3
+       WHERE id = $4
+       RETURNING *`,
+      [status, transactionHash || null, new Date().toISOString(), id],
+    );
 
-      if (transactionHash) {
-        updateData.transaction_hash = transactionHash;
-      }
+    if (!result.rows[0]) throw AppError.notFound("Remittance not found");
 
-      if (error) {
-        updateData.error_message = error;
-      }
+    const r = result.rows[0];
 
-      const result = await query(
-        `UPDATE remittances 
-         SET status = $1, transaction_hash = $2, updated_at = $3
-         WHERE id = $4
-         RETURNING *`,
-        [status, transactionHash || null, updateData.updated_at, id],
-      );
-
-      if (!result.rows[0]) {
-        throw AppError.notFound("Remittance not found");
-      }
-
-      const r = result.rows[0];
-
-      return {
-        id: r.id,
-        senderId: r.sender_id,
-        recipientAddress: r.recipient_address,
-        amount: parseFloat(r.amount),
-        fromCurrency: r.from_currency,
-        toCurrency: r.to_currency,
-        memo: r.memo,
-        status: r.status,
-        transactionHash: r.transaction_hash,
-        xdr: r.xdr,
-        createdAt: r.created_at.toISOString(),
-        updatedAt: r.updated_at.toISOString(),
-      };
-    } catch (error) {
-      logger.error("Error updating remittance:", error);
-
-      if (error instanceof AppError) {
-        throw error;
-      }
-
-      throw AppError.internal("Failed to update remittance");
-    }
+    return {
+      id: r.id,
+      senderId: r.sender_id,
+      recipientAddress: r.recipient_address,
+      amount: parseFloat(r.amount),
+      fromCurrency: r.from_currency,
+      toCurrency: r.to_currency,
+      memo: r.memo,
+      status: r.status,
+      transactionHash: r.transaction_hash,
+      xdr: r.xdr,
+      createdAt: r.created_at.toISOString(),
+      updatedAt: r.updated_at.toISOString(),
+    };
   },
 };

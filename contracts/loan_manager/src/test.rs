@@ -1202,3 +1202,48 @@ fn test_set_default_window_below_minimum_rejected() {
     let result = manager.try_set_default_window_ledgers(&99);
     assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
 }
+
+#[test]
+fn test_rounding_dust_forgiveness_on_repayment() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    // Fund the lending pool so it has liquidity for the loan
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client.address, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1000);
+    manager.approve_loan(&loan_id);
+
+    // Make a partial repayment that leaves a small remaining balance
+    // Use 998 to leave 2 units remaining (which should trigger dust forgiveness)
+    manager.repay(&borrower, &loan_id, &998);
+
+    let loan = manager.get_loan(&loan_id);
+    let remaining_debt =
+        loan.amount - loan.principal_paid + loan.accrued_interest + loan.accrued_late_fee;
+
+    // Set minimum repayment amount higher than the remaining dust
+    manager.set_min_repayment_amount(&100);
+
+    // The remaining debt should be small (2 units or less) - this should trigger rounding dust forgiveness
+    assert!(
+        remaining_debt > 0 && remaining_debt <= 100,
+        "Remaining debt should be small but non-zero"
+    );
+
+    // This repayment should succeed despite being below minimum amount because it's rounding dust
+    manager.repay(&borrower, &loan_id, &remaining_debt);
+
+    let completed_loan = manager.get_loan(&loan_id);
+    assert_eq!(completed_loan.status, LoanStatus::Repaid);
+    assert_eq!(completed_loan.principal_paid, 1000);
+    assert_eq!(completed_loan.accrued_interest, 0);
+    assert_eq!(completed_loan.accrued_late_fee, 0);
+}

@@ -12,6 +12,7 @@ import {
   parseCursorQueryParams,
   parseQueryParams,
 } from "../utils/pagination.js";
+import { parseCappedLimit } from "../utils/queryHelpers.js";
 import logger from "../utils/logger.js";
 import { getStellarRpcUrl } from "../config/stellar.js";
 
@@ -488,7 +489,7 @@ export const deleteWebhookSubscription = async (
 export const getWebhookDeliveries = async (req: Request, res: Response) => {
   try {
     const subscriptionId = Number(req.params.id ?? req.params.subscriptionId);
-    const limit = Number(req.query.limit ?? 50);
+    const limit = parseCappedLimit(req, 50);
 
     if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) {
       return res.status(400).json({
@@ -497,12 +498,9 @@ export const getWebhookDeliveries = async (req: Request, res: Response) => {
       });
     }
 
-    const boundedLimit =
-      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
-
     const deliveries = await webhookService.getSubscriptionDeliveries(
       subscriptionId,
-      boundedLimit,
+      limit,
     );
 
     res.json({

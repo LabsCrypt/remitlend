@@ -85,7 +85,9 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
   stopScoreReconciliationScheduler();
   stopNotificationCleanupScheduler();
 
-  if (typeof (eventStreamService as any).closeAll === "function") {
+  
+  if (typeof (eventStreamService as any).closeAll === 'function') {
+     stopWebhookRetryProcessor();
     (eventStreamService as any).closeAll("Server shutting down");
   } else if (typeof eventStreamService.closeAllConnections === "function") {
     eventStreamService.closeAllConnections("Server shutting down");

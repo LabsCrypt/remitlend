@@ -104,7 +104,8 @@ function ToastCard({ toast }: { toast: ToastItem }) {
 }
 
 export function Toaster() {
-  const toasts = useToastStore((state) => state.toasts.slice(0, MAX_VISIBLE_TOASTS));
+  const allToasts = useToastStore((state) => state.toasts);
+  const toasts = allToasts.slice(0, MAX_VISIBLE_TOASTS);
 
   return (
     <div
