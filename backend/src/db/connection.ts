@@ -87,7 +87,7 @@ export const closePool = async () => {
   await pool.end();
 };
 
-export default pool;
+export { pool, pool as default };
 
 // Add drain method for graceful shutdown
 if (!(pool as any).drain) {

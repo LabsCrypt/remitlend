@@ -130,6 +130,7 @@ describe("EventIndexer", () => {
     const insertedLoanEvents: unknown[][] = [];
     const scoreUpdates: unknown[][] = [];
 
+    console.log("MOCK_QUERY_SETUP");
     mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
       if (sql === "BEGIN" || sql === "COMMIT") {
         return { rows: [], rowCount: 0 };
@@ -140,6 +141,7 @@ describe("EventIndexer", () => {
         return { rows: [{ event_id: params[0] }], rowCount: 1 };
       }
 
+        console.log("MOCK_QUERY_SCORES", { sql, params });
       if (sql.includes("INSERT INTO scores")) {
         scoreUpdates.push(params);
         return { rows: [], rowCount: 1 };
@@ -210,7 +212,10 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([[borrowerRepaid, 15, borrowerDefaulted, -50]]);
+    expect(scoreUpdates).toEqual([
+      [borrowerRepaid, 15],
+      [borrowerDefaulted, -50],
+    ]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
