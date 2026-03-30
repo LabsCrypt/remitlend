@@ -33,12 +33,12 @@ export function QueryProvider({ children }: QueryProviderProps) {
               const errorMessage = error instanceof Error ? error.message : String(error);
               // Safe check for browser environment
               const isOffline = typeof window !== 'undefined' && !navigator.onLine;
-              
+
               // Always retry on network errors or when offline
               if (isOffline || errorMessage.includes('Network') || errorMessage.includes('fetch')) {
-                return true; 
+                return true;
               }
-              
+
               // Standard retry for other transient errors (up to 3 times)
               return failureCount < 3;
             },
