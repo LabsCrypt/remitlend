@@ -50,11 +50,24 @@ describe("GET /api/score/:userId/breakdown", () => {
     // Mock the chain of queries in the breakdown endpoint
     mockedQuery
       .mockResolvedValueOnce({ rows: [{ current_score: 720 }] } as any) // Score
-      .mockResolvedValueOnce({ rows: [{ total_loans: "5", repaid_count: "4", defaulted_count: "0", total_repaid: "5000" }] } as any) // Stats
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            total_loans: "5",
+            repaid_count: "4",
+            defaulted_count: "0",
+            total_repaid: "5000",
+          },
+        ],
+      } as any) // Stats
       .mockResolvedValueOnce({ rows: [{ on_time: "3", late: "1" }] } as any) // Timing
       .mockResolvedValueOnce({ rows: [{ avg_ledgers: "17280" }] } as any) // Avg time
-      .mockResolvedValueOnce({ rows: [{ on_time: true }, { on_time: true }, { on_time: true }] } as any) // Streak
-      .mockResolvedValueOnce({ rows: [{ date: "2026-03-01", event: "LoanRepaid" }] } as any); // History
+      .mockResolvedValueOnce({
+        rows: [{ on_time: true }, { on_time: true }, { on_time: true }],
+      } as any) // Streak
+      .mockResolvedValueOnce({
+        rows: [{ date: "2026-03-01", event: "LoanRepaid" }],
+      } as any); // History
 
     const response = await request(app)
       .get("/api/score/user123/breakdown")

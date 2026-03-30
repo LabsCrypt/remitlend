@@ -54,8 +54,8 @@ export function StepRepaymentSchedule({
               <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
-                  Amortization schedule preview will appear here once the frontend is connected to
-                  a preview response for the selected loan terms.
+                  Amortization schedule preview will appear here once the frontend is connected to a
+                  preview response for the selected loan terms.
                 </p>
               </div>
             )}

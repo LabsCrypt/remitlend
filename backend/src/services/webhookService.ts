@@ -111,11 +111,10 @@ const RETRY_DELAYS_MS = [
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 export const getRetryDelayMs = (attemptNumber: number): number => {
-  const delayIndex = Math.min(
-    attemptNumber - 1,
-    RETRY_DELAYS_MS.length - 1,
+  const delayIndex = Math.min(attemptNumber - 1, RETRY_DELAYS_MS.length - 1);
+  return (
+    RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!
   );
-  return RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
 };
 
 export class WebhookService {
@@ -259,14 +258,17 @@ export class WebhookService {
             nextRetryAt: nextRetryTime,
           });
         } else {
-          logger.error("Webhook delivery permanently failed after max retries", {
-            deliveryId,
-            subscriptionId,
-            eventId,
-            attemptCount: newAttemptCount,
-            statusCode: response.status,
-            payload: body,
-          });
+          logger.error(
+            "Webhook delivery permanently failed after max retries",
+            {
+              deliveryId,
+              subscriptionId,
+              eventId,
+              attemptCount: newAttemptCount,
+              statusCode: response.status,
+              payload: body,
+            },
+          );
         }
       }
     } catch (error) {
@@ -299,16 +301,13 @@ export class WebhookService {
           nextRetryAt: nextRetryTime,
         });
       } else {
-        logger.error(
-          "Webhook delivery permanently failed after max retries",
-          {
-            deliveryId,
-            subscriptionId,
-            eventId,
-            attemptCount: newAttemptCount,
-            error,
-          },
-        );
+        logger.error("Webhook delivery permanently failed after max retries", {
+          deliveryId,
+          subscriptionId,
+          eventId,
+          attemptCount: newAttemptCount,
+          error,
+        });
       }
     }
   }
@@ -323,7 +322,11 @@ export class WebhookService {
       `INSERT INTO webhook_subscriptions (callback_url, event_types, secret, is_active)
        VALUES ($1, $2::jsonb, $3, true)
        RETURNING id, callback_url, event_types, secret, is_active, created_at, updated_at`,
-      [input.callbackUrl, JSON.stringify(input.eventTypes), input.secret ?? null],
+      [
+        input.callbackUrl,
+        JSON.stringify(input.eventTypes),
+        input.secret ?? null,
+      ],
     );
 
     return this.mapSubscriptionRow(result.rows[0] as Record<string, unknown>);
@@ -516,7 +519,9 @@ export class WebhookService {
     }
   }
 
-  private mapSubscriptionRow(row: Record<string, unknown>): WebhookSubscription {
+  private mapSubscriptionRow(
+    row: Record<string, unknown>,
+  ): WebhookSubscription {
     const secret =
       typeof row.secret === "string" && row.secret.length > 0
         ? row.secret

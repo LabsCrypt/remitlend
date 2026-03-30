@@ -164,7 +164,8 @@ export const ERROR_CODE_REGISTRY: Record<ErrorCode, ErrorCodeMetadata> = {
     code: ErrorCode.BORROWER_MISMATCH,
     message: "Borrower public key must match your authenticated wallet",
     httpStatus: 403,
-    description: "The borrower public key does not match the authenticated user",
+    description:
+      "The borrower public key does not match the authenticated user",
     suggestedAction: "Ensure the borrower public key matches your wallet",
   },
 

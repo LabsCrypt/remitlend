@@ -1,12 +1,20 @@
 import { jest } from "@jest/globals";
 import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 
-const mockQuery = jest.fn<
-  (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>
->();
-const mockDispatch = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockQuery =
+  jest.fn<
+    (
+      sql: string,
+      params?: unknown[],
+    ) => Promise<{ rows: unknown[]; rowCount: number }>
+  >();
+const mockDispatch = jest
+  .fn<() => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockBroadcast = jest.fn();
-const mockCreateNotification = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockCreateNotification = jest
+  .fn<() => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockGetScoreConfig = jest.fn(() => ({
   repaymentDelta: 15,
   defaultPenalty: 50,
@@ -44,7 +52,10 @@ jest.unstable_mockModule("../utils/logger.js", () => ({
 
 jest.unstable_mockModule("../utils/requestContext.js", () => ({
   createRequestId: () => "test-request",
-  runWithRequestContext: async (_requestId: string, callback: () => Promise<unknown>) => callback(),
+  runWithRequestContext: async (
+    _requestId: string,
+    callback: () => Promise<unknown>,
+  ) => callback(),
 }));
 
 const { EventIndexer } = await import("../services/eventIndexer.js");
@@ -103,7 +114,11 @@ function makeRawEvent(params: {
     case "LoanRepaid":
       return {
         ...base,
-        topic: [scSymbol("LoanRepaid"), scAddress(borrower), scU32(params.loanId ?? 1)],
+        topic: [
+          scSymbol("LoanRepaid"),
+          scAddress(borrower),
+          scU32(params.loanId ?? 1),
+        ],
         value: scI128(params.amount ?? 250),
       };
     case "LoanDefaulted":
@@ -130,26 +145,28 @@ describe("EventIndexer", () => {
     const insertedLoanEvents: unknown[][] = [];
     const scoreUpdates: unknown[][] = [];
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql === "BEGIN" || sql === "COMMIT") {
-        return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        insertedLoanEvents.push(params);
-        return { rows: [{ event_id: params[0] }], rowCount: 1 };
-      }
-
-      if (sql.includes("INSERT INTO scores")) {
-        // Handle batched updates - params come as [user1, delta1, user2, delta2, ...]
-        for (let i = 0; i < params.length; i += 2) {
-          scoreUpdates.push([params[i], params[i + 1]]);
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
         }
-        return { rows: [], rowCount: 1 };
-      }
 
-      return { rows: [], rowCount: 0 };
-    });
+        if (sql.includes("INSERT INTO loan_events")) {
+          insertedLoanEvents.push(params);
+          return { rows: [{ event_id: params[0] }], rowCount: 1 };
+        }
+
+        if (sql.includes("INSERT INTO scores")) {
+          // Handle batched updates - params come as [user1, delta1, user2, delta2, ...]
+          for (let i = 0; i < params.length; i += 2) {
+            scoreUpdates.push([params[i], params[i + 1]]);
+          }
+          return { rows: [], rowCount: 1 };
+        }
+
+        return { rows: [], rowCount: 0 };
+      },
+    );
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",
@@ -213,7 +230,10 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([[borrowerRepaid, 15, borrowerDefaulted, -50]]);
+    expect(scoreUpdates).toEqual([
+      [borrowerRepaid, 15],
+      [borrowerDefaulted, -50],
+    ]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
@@ -224,26 +244,28 @@ describe("EventIndexer", () => {
     const borrower = makeAddress();
     let insertCount = 0;
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql === "BEGIN" || sql === "COMMIT") {
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          insertCount += 1;
+          const inserted = insertCount === 1;
+          return {
+            rows: inserted ? [{ event_id: params[0] }] : [],
+            rowCount: inserted ? 1 : 0,
+          };
+        }
+
+        if (sql.includes("INSERT INTO scores")) {
+          return { rows: [], rowCount: 1 };
+        }
+
         return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        insertCount += 1;
-        const inserted = insertCount === 1;
-        return {
-          rows: inserted ? [{ event_id: params[0] }] : [],
-          rowCount: inserted ? 1 : 0,
-        };
-      }
-
-      if (sql.includes("INSERT INTO scores")) {
-        return { rows: [], rowCount: 1 };
-      }
-
-      return { rows: [], rowCount: 0 };
-    });
+      },
+    );
 
     const duplicateEvent = makeRawEvent({
       id: "evt-duplicate",
@@ -277,26 +299,28 @@ describe("EventIndexer", () => {
     const borrower = makeAddress();
     let approvedInsertCount = 0;
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql === "BEGIN" || sql === "COMMIT") {
-        return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        if (params[1] === "LoanApproved" && params[2] === 42) {
-          approvedInsertCount += 1;
-          const inserted = approvedInsertCount === 1;
-          return {
-            rows: inserted ? [{ event_id: params[0] }] : [],
-            rowCount: inserted ? 1 : 0,
-          };
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
         }
 
-        return { rows: [{ event_id: params[0] }], rowCount: 1 };
-      }
+        if (sql.includes("INSERT INTO loan_events")) {
+          if (params[1] === "LoanApproved" && params[2] === 42) {
+            approvedInsertCount += 1;
+            const inserted = approvedInsertCount === 1;
+            return {
+              rows: inserted ? [{ event_id: params[0] }] : [],
+              rowCount: inserted ? 1 : 0,
+            };
+          }
 
-      return { rows: [], rowCount: 0 };
-    });
+          return { rows: [{ event_id: params[0] }], rowCount: 1 };
+        }
+
+        return { rows: [], rowCount: 0 };
+      },
+    );
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",
@@ -336,31 +360,33 @@ describe("EventIndexer", () => {
   it("initializes missing indexer state and persists the last indexed ledger during polling", async () => {
     const stateWrites: number[] = [];
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes("SELECT last_indexed_ledger")) {
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql.includes("SELECT last_indexed_ledger")) {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO indexer_state")) {
+          stateWrites.push(Number(params[0] ?? 0));
+          return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.includes("UPDATE indexer_state")) {
+          stateWrites.push(Number(params[0]));
+          return { rows: [], rowCount: 1 };
+        }
+
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          return { rows: [{ event_id: params[0] }], rowCount: 1 };
+        }
+
         return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO indexer_state")) {
-        stateWrites.push(Number(params[0] ?? 0));
-        return { rows: [], rowCount: 1 };
-      }
-
-      if (sql.includes("UPDATE indexer_state")) {
-        stateWrites.push(Number(params[0]));
-        return { rows: [], rowCount: 1 };
-      }
-
-      if (sql === "BEGIN" || sql === "COMMIT") {
-        return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        return { rows: [{ event_id: params[0] }], rowCount: 1 };
-      }
-
-      return { rows: [], rowCount: 0 };
-    });
+      },
+    );
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",
@@ -368,15 +394,19 @@ describe("EventIndexer", () => {
     });
 
     (indexer as unknown as { running: boolean }).running = true;
-    (indexer as unknown as {
-      rpc: {
-        getLatestLedger: unknown;
-        getEvents: unknown;
-      };
-    }).rpc = {
+    (
+      indexer as unknown as {
+        rpc: {
+          getLatestLedger: unknown;
+          getEvents: unknown;
+        };
+      }
+    ).rpc = {
       getLatestLedger: async () => ({ sequence: 15 }),
       getEvents: async () => ({
-        events: [makeRawEvent({ id: "evt-poll", ledger: 15, type: "LoanRequested" })],
+        events: [
+          makeRawEvent({ id: "evt-poll", ledger: 15, type: "LoanRequested" }),
+        ],
       }),
     };
 

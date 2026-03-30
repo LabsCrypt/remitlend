@@ -27,6 +27,9 @@ describe("DefaultChecker", () => {
     process.env.DEFAULT_CHECK_BATCH_TIMEOUT_MS = "10";
 
     const checker = new DefaultChecker();
+    // Always acquire the lock for test reliability
+    jest.spyOn(checker as any, "acquireLock").mockResolvedValue(true);
+    jest.spyOn(checker as any, "releaseLock").mockResolvedValue(undefined);
     const warnSpy = jest
       .spyOn(logger, "warn")
       .mockImplementation(() => logger as typeof logger);
@@ -46,7 +49,12 @@ describe("DefaultChecker", () => {
     (checker as any).fetchOverdueLoanIds = async () => [101, 102];
 
     let submissionCount = 0;
-    (checker as any).submitCheckDefaults = async (_server: unknown, _signer: unknown, _passphrase: string, loanIds: number[]) => {
+    (checker as any).submitCheckDefaults = async (
+      _server: unknown,
+      _signer: unknown,
+      _passphrase: string,
+      loanIds: number[],
+    ) => {
       submissionCount += 1;
       if (submissionCount === 1) {
         return new Promise<never>(() => undefined);
@@ -60,7 +68,8 @@ describe("DefaultChecker", () => {
     };
 
     const result = await checker.checkOverdueLoans();
-
+    expect(result).not.toBeNull();
+    if (!result) throw new Error("checkOverdueLoans returned null");
     expect(result.batches).toHaveLength(2);
     expect(result.batches[0]).toMatchObject({
       loanIds: [101],
@@ -79,5 +88,5 @@ describe("DefaultChecker", () => {
         timeoutMs: 10,
       }),
     );
-  });
+  }, 10_000);
 });

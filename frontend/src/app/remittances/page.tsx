@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   SendHorizontal,
   Filter,
@@ -18,7 +18,7 @@ import {
   selectIsWalletConnected,
   selectWalletAddress,
 } from "../stores/useWalletStore";
-import { useRemittances, type Remittance } from "../hooks/useApi";
+import { usePaginatedRemittances, useRemittances, type Remittance } from "../hooks/useApi";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { Spinner } from "../components/global_ui/Spinner";
@@ -65,6 +65,16 @@ const STATUS_CONFIG: Record<
 };
 
 type StatusFilter = "all" | Remittance["status"];
+const ITEMS_PER_PAGE = 20;
+
+function getPageNumbers(currentPage: number, totalPages: number): number[] {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  return Array.from({ length: 5 }, (_, index) => start + index);
+}
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
 
@@ -119,6 +129,8 @@ export default function RemittancesPage() {
   const isConnected = useWalletStore(selectIsWalletConnected);
   const address = useWalletStore(selectWalletAddress);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [cursorByPage, setCursorByPage] = useState<Record<number, string | null>>({ 1: null });
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -127,12 +139,49 @@ export default function RemittancesPage() {
 
   const [currentTimestamp] = useState(() => Date.now());
 
-  const { data: remittances, isLoading, isError } = useRemittances({ enabled: isConnected });
+  const { data: remittances } = useRemittances({ enabled: isConnected });
+  const {
+    remittances: pageRemittances,
+    isLoading,
+    isError,
+    pageInfo,
+    total,
+    isFetching,
+  } = usePaginatedRemittances({
+    enabled: isConnected,
+    limit: ITEMS_PER_PAGE,
+    cursor: cursorByPage[currentPage] ?? null,
+    status: statusFilter,
+  });
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setCursorByPage({ 1: null });
+  }, [statusFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, dateFrom, dateTo, minAmount, maxAmount]);
+
+  useEffect(() => {
+    if (!pageInfo?.next_cursor) {
+      return;
+    }
+
+    setCursorByPage((prev) => {
+      if (prev[currentPage + 1] === pageInfo.next_cursor) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [currentPage + 1]: pageInfo.next_cursor,
+      };
+    });
+  }, [currentPage, pageInfo?.next_cursor]);
 
   const filtered = useMemo(() => {
-    if (!remittances) return [];
-    return remittances.filter((r) => {
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    return pageRemittances.filter((r) => {
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (
@@ -148,9 +197,7 @@ export default function RemittancesPage() {
       if (maxAmount && r.amount > parseFloat(maxAmount)) return false;
       return true;
     });
-  }, [remittances, statusFilter, searchQuery, dateFrom, dateTo, minAmount, maxAmount]);
-
-  // ... inside RemittancesPage component
+  }, [pageRemittances, searchQuery, dateFrom, dateTo, minAmount, maxAmount]);
 
   const stats = useMemo(() => {
     if (!remittances || remittances.length === 0) return null;
@@ -185,6 +232,9 @@ export default function RemittancesPage() {
 
   const isFiltered =
     statusFilter !== "all" || !!searchQuery || !!dateFrom || !!dateTo || !!minAmount || !!maxAmount;
+  const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
+  const visiblePageNumbers = getPageNumbers(currentPage, totalPages);
+  const canGoToNextPage = Boolean(pageInfo?.has_next && cursorByPage[currentPage + 1]);
 
   if (!isConnected) return <ConnectWalletPrompt />;
 
@@ -382,70 +432,115 @@ export default function RemittancesPage() {
           ) : filtered.length === 0 ? (
             <EmptyState filtered={isFiltered} />
           ) : (
-            <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden dark:border-zinc-800 dark:bg-zinc-950">
-              {/* Table header */}
-              <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
-                <span className="col-span-4 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Recipient
-                </span>
-                <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Amount
-                </span>
-                <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Currency
-                </span>
-                <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Date
-                </span>
-                <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Status
-                </span>
+            <div className="space-y-4">
+              <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden dark:border-zinc-800 dark:bg-zinc-950">
+                {/* Table header */}
+                <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                  <span className="col-span-4 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Recipient
+                  </span>
+                  <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Amount
+                  </span>
+                  <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Currency
+                  </span>
+                  <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Date
+                  </span>
+                  <span className="col-span-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Status
+                  </span>
+                </div>
+
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {filtered.map((r) => {
+                    const cfg = STATUS_CONFIG[r.status];
+                    const Icon = cfg.icon;
+                    return (
+                      <div
+                        key={r.id}
+                        className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors"
+                      >
+                        <div className="col-span-4 flex items-center gap-3 min-w-0">
+                          <div className="h-8 w-8 rounded-full bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
+                            <SendHorizontal className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                          </div>
+                          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate font-mono">
+                            {r.recipientAddress.slice(0, 8)}...{r.recipientAddress.slice(-6)}
+                          </span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                            {formatCurrency(r.amount)}
+                          </span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                            {r.fromCurrency} → {r.toCurrency}
+                          </span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                            {formatDate(r.createdAt)}
+                          </span>
+                        </div>
+                        <div className="col-span-2">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${cfg.className}`}
+                          >
+                            <Icon className="h-3 w-3" />
+                            {cfg.label}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {filtered.map((r) => {
-                  const cfg = STATUS_CONFIG[r.status];
-                  const Icon = cfg.icon;
-                  return (
-                    <div
-                      key={r.id}
-                      className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-zinc-50 dark:hover:bg-zinc-900/30 transition-colors"
+              {totalPages > 1 && (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    Showing page {currentPage} of {totalPages}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                      disabled={currentPage === 1 || isFetching}
+                      className="rounded-lg border border-zinc-300 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
                     >
-                      <div className="col-span-4 flex items-center gap-3 min-w-0">
-                        <div className="h-8 w-8 rounded-full bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
-                          <SendHorizontal className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                        </div>
-                        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate font-mono">
-                          {r.recipientAddress.slice(0, 8)}...{r.recipientAddress.slice(-6)}
-                        </span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                          {formatCurrency(r.amount)}
-                        </span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                          {r.fromCurrency} → {r.toCurrency}
-                        </span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                          {formatDate(r.createdAt)}
-                        </span>
-                      </div>
-                      <div className="col-span-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${cfg.className}`}
+                      Previous
+                    </button>
+                    {visiblePageNumbers.map((pageNumber) => {
+                      const isKnownPage =
+                        pageNumber === 1 || cursorByPage[pageNumber] !== undefined;
+
+                      return (
+                        <button
+                          key={pageNumber}
+                          onClick={() => setCurrentPage(pageNumber)}
+                          disabled={!isKnownPage || isFetching}
+                          className={`h-10 w-10 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                            currentPage === pageNumber
+                              ? "bg-indigo-600 text-white"
+                              : "border border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                          }`}
                         >
-                          <Icon className="h-3 w-3" />
-                          {cfg.label}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                          {pageNumber}
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                      disabled={!canGoToNextPage || isFetching}
+                      className="rounded-lg border border-zinc-300 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -454,7 +549,7 @@ export default function RemittancesPage() {
       {/* Footer count */}
       {!isLoading && !isError && filtered.length > 0 && (
         <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center">
-          Showing {filtered.length} of {remittances?.length ?? 0} remittances
+          Showing {filtered.length} of {total} remittances on the current page
         </p>
       )}
     </main>

@@ -10,7 +10,8 @@ jest.unstable_mockModule("../db/connection.js", () => ({
 
 // Use dynamic imports TO ENSURE mocks are applied BEFORE the module is loaded
 const { query } = await import("../db/connection.js");
-const { notificationService } = await import("../services/notificationService.js");
+const { notificationService } =
+  await import("../services/notificationService.js");
 
 const mockedQuery = query as jest.MockedFunction<typeof query>;
 
@@ -21,15 +22,16 @@ describe("Notification Cleanup Strategy", () => {
 
   it("should delete notifications older than the retention threshold", async () => {
     const retentionDays = 90;
-    
+
     // Mock the query result to simulate successful deletion of 2 rows
     mockedQuery.mockResolvedValue({ rowCount: 2 } as any);
 
-    const deletedCount = await notificationService.deleteOldNotifications(retentionDays);
+    const deletedCount =
+      await notificationService.deleteOldNotifications(retentionDays);
 
     expect(mockedQuery).toHaveBeenCalledWith(
       expect.stringContaining("DELETE FROM notifications"),
-      [retentionDays]
+      [retentionDays],
     );
     expect(deletedCount).toBe(2);
   });

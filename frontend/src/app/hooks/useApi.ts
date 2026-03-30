@@ -224,6 +224,31 @@ export interface LoanStats {
   overdueCount: number;
 }
 
+export interface CursorPageInfo {
+  limit: number;
+  count: number;
+  next_cursor: string | null;
+  has_previous: boolean;
+  has_next: boolean;
+}
+
+export interface RemittancesPageInfo extends CursorPageInfo {
+  total: number;
+}
+
+interface CursorPaginatedResponse<T> {
+  success: boolean;
+  data: T;
+  total_count: number | null;
+  page_info: CursorPageInfo;
+}
+
+interface PaginatedRemittancesResponse {
+  success: boolean;
+  data: Remittance[];
+  page_info: RemittancesPageInfo;
+}
+
 // ─── Loan hooks ───────────────────────────────────────────────────────────────
 
 /**
@@ -354,6 +379,43 @@ export function useRemittances(
     queryFn: () => apiFetch<Remittance[]>("/remittances"),
     ...options,
   });
+}
+
+export function usePaginatedRemittances({
+  cursor,
+  limit = 20,
+  status,
+  enabled,
+}: {
+  cursor?: string | null;
+  limit?: number;
+  status?: "all" | Remittance["status"];
+  enabled?: boolean;
+}) {
+  const query = useQuery<PaginatedRemittancesResponse>({
+    queryKey: ["remittances", "page", { cursor: cursor ?? null, limit, status: status ?? "all" }],
+    queryFn: async () => {
+      const searchParams = new URLSearchParams();
+      searchParams.set("limit", String(limit));
+      if (cursor) {
+        searchParams.set("cursor", cursor);
+      }
+      if (status && status !== "all") {
+        searchParams.set("status", status);
+      }
+
+      return apiFetch<PaginatedRemittancesResponse>(`/remittances?${searchParams.toString()}`);
+    },
+    enabled,
+    placeholderData: (previousData) => previousData,
+  });
+
+  return {
+    ...query,
+    remittances: query.data?.data ?? [],
+    pageInfo: query.data?.page_info,
+    total: query.data?.page_info.total ?? 0,
+  };
 }
 
 /**
@@ -588,6 +650,16 @@ interface BorrowerLoansApiResponse {
   data: { borrower: string; loans: BorrowerLoan[]; totalLoans: number };
 }
 
+interface BorrowerLoansCursorPayload {
+  borrower: string;
+  loans: Array<
+    Omit<BorrowerLoan, "id"> & {
+      id?: number;
+      loanId?: number;
+    }
+  >;
+}
+
 interface PoolApiResponse<T> {
   success: boolean;
   data: T;
@@ -627,6 +699,60 @@ export function useBorrowerLoans(borrowerAddress: string | undefined) {
   };
 
   return { ...query, loans, stats };
+}
+
+export function usePaginatedBorrowerLoans({
+  borrowerAddress,
+  cursor,
+  limit = 20,
+  status,
+  enabled,
+}: {
+  borrowerAddress: string | undefined;
+  cursor?: string | null;
+  limit?: number;
+  status?: "all" | "active" | "repaid" | "defaulted";
+  enabled?: boolean;
+}) {
+  const query = useQuery<CursorPaginatedResponse<BorrowerLoansCursorPayload>>({
+    queryKey: [
+      "borrowerLoans",
+      "page",
+      borrowerAddress ?? "",
+      { cursor: cursor ?? null, limit, status: status ?? "all" },
+    ],
+    queryFn: async () => {
+      const searchParams = new URLSearchParams();
+      searchParams.set("limit", String(limit));
+      if (cursor) {
+        searchParams.set("cursor", cursor);
+      }
+      if (status && status !== "all") {
+        searchParams.set("status", status);
+      }
+
+      return apiFetch<CursorPaginatedResponse<BorrowerLoansCursorPayload>>(
+        `/loans/borrower/${borrowerAddress}?${searchParams.toString()}`,
+      );
+    },
+    enabled: Boolean(borrowerAddress) && enabled !== false,
+    staleTime: 30_000,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const loans =
+    query.data?.data.loans.map((loan) => ({
+      ...loan,
+      id: loan.id ?? loan.loanId ?? 0,
+    })) ?? [];
+
+  return {
+    ...query,
+    loans,
+    borrower: query.data?.data.borrower,
+    total: query.data?.total_count ?? 0,
+    pageInfo: query.data?.page_info,
+  };
 }
 
 export function usePoolStats(options?: Omit<UseQueryOptions<PoolStats>, "queryKey" | "queryFn">) {

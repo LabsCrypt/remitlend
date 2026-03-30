@@ -11,7 +11,8 @@ describe("Loan config startup validation", () => {
   afterEach(() => {
     process.env.LOAN_MIN_SCORE = originalEnv.LOAN_MIN_SCORE;
     process.env.LOAN_MAX_AMOUNT = originalEnv.LOAN_MAX_AMOUNT;
-    process.env.LOAN_INTEREST_RATE_PERCENT = originalEnv.LOAN_INTEREST_RATE_PERCENT;
+    process.env.LOAN_INTEREST_RATE_PERCENT =
+      originalEnv.LOAN_INTEREST_RATE_PERCENT;
     process.env.CREDIT_SCORE_THRESHOLD = originalEnv.CREDIT_SCORE_THRESHOLD;
   });
 

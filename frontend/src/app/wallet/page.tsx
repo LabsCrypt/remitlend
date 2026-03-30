@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Wallet,
@@ -70,6 +70,13 @@ interface HorizonPayment {
   transaction_hash: string;
   created_at: string;
   source_account?: string;
+  paging_token?: string;
+}
+
+interface HorizonPaymentsPage {
+  payments: HorizonPayment[];
+  nextCursor: string | null;
+  hasNext: boolean;
 }
 
 // ─── Horizon data hooks ────────────────────────────────────────────────────────
@@ -88,16 +95,35 @@ function useHorizonBalances(address: string, horizonUrl: string) {
   });
 }
 
-function useHorizonPayments(address: string, horizonUrl: string) {
-  return useQuery<HorizonPayment[]>({
-    queryKey: ["horizon", "payments", address, horizonUrl],
+function useHorizonPaymentsPage(
+  address: string,
+  horizonUrl: string,
+  cursor: string | null,
+  limit: number,
+) {
+  return useQuery<HorizonPaymentsPage>({
+    queryKey: ["horizon", "payments", address, horizonUrl, cursor ?? null, limit],
     queryFn: async () => {
-      const res = await fetch(
-        `${horizonUrl}/accounts/${address}/payments?limit=20&order=desc&include_failed=false`,
-      );
+      const params = new URLSearchParams({
+        limit: String(limit),
+        order: "desc",
+        include_failed: "false",
+      });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+
+      const res = await fetch(`${horizonUrl}/accounts/${address}/payments?${params.toString()}`);
       if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
       const data = await res.json();
-      return (data._embedded?.records ?? []) as HorizonPayment[];
+      const payments = (data._embedded?.records ?? []) as HorizonPayment[];
+      const lastPayment = payments[payments.length - 1];
+
+      return {
+        payments,
+        nextCursor: lastPayment?.paging_token ?? null,
+        hasNext: payments.length === limit && Boolean(lastPayment?.paging_token),
+      };
     },
     staleTime: 30_000,
     retry: 2,
@@ -270,7 +296,47 @@ function TransactionHistoryCard({
   horizonUrl: string;
   explorerBase: string;
 }) {
-  const { data: payments, isLoading, isError } = useHorizonPayments(address, horizonUrl);
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [cursorByPage, setCursorByPage] = useState<Record<number, string | null>>({ 1: null });
+  const { data, isLoading, isError, isFetching } = useHorizonPaymentsPage(
+    address,
+    horizonUrl,
+    cursorByPage[currentPage] ?? null,
+    ITEMS_PER_PAGE,
+  );
+  const payments = data?.payments ?? [];
+  const hasNextPage = data?.hasNext ?? false;
+
+  useEffect(() => {
+    if (!data?.nextCursor) {
+      return;
+    }
+
+    setCursorByPage((prev) => {
+      if (prev[currentPage + 1] === data.nextCursor) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [currentPage + 1]: data.nextCursor,
+      };
+    });
+  }, [currentPage, data?.nextCursor]);
+
+  const visiblePages = useMemo(() => {
+    const knownPages = Object.keys(cursorByPage)
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+
+    if (hasNextPage && !knownPages.includes(currentPage + 1)) {
+      knownPages.push(currentPage + 1);
+    }
+
+    return knownPages;
+  }, [cursorByPage, currentPage, hasNextPage]);
 
   function isInflow(p: HorizonPayment): boolean {
     return p.to === address || (p.type === "create_account" && p.source_account !== address);
@@ -324,60 +390,104 @@ function TransactionHistoryCard({
             No transactions found.
           </p>
         ) : (
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {payments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between py-3 gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      isInflow(p)
-                        ? "bg-green-50 dark:bg-green-500/10"
-                        : "bg-zinc-50 dark:bg-zinc-900"
-                    }`}
-                  >
-                    {isInflow(p) ? (
-                      <ArrowDownLeft className="h-4 w-4 text-green-600 dark:text-green-400" />
-                    ) : (
-                      <ArrowUpRight className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 truncate capitalize">
-                      {paymentLabel(p)}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono truncate">
-                      {counterparty(p)}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0 flex items-center gap-2">
-                  <div>
-                    <p
-                      className={`text-sm font-bold ${
+          <div className="space-y-4">
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {payments.map((p) => (
+                <div key={p.id} className="flex items-center justify-between py-3 gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={`h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 ${
                         isInflow(p)
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-zinc-900 dark:text-zinc-50"
+                          ? "bg-green-50 dark:bg-green-500/10"
+                          : "bg-zinc-50 dark:bg-zinc-900"
                       }`}
                     >
-                      {isInflow(p) ? "+" : "-"}
-                      {paymentAmount(p)}
-                    </p>
-                    <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                      {formatDate(p.created_at)}
-                    </p>
+                      {isInflow(p) ? (
+                        <ArrowDownLeft className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <ArrowUpRight className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 truncate capitalize">
+                        {paymentLabel(p)}
+                      </p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono truncate">
+                        {counterparty(p)}
+                      </p>
+                    </div>
                   </div>
-                  <a
-                    href={`${explorerBase}/tx/${p.transaction_hash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                    title="View on Stellar Explorer"
+                  <div className="text-right flex-shrink-0 flex items-center gap-2">
+                    <div>
+                      <p
+                        className={`text-sm font-bold ${
+                          isInflow(p)
+                            ? "text-green-600 dark:text-green-400"
+                            : "text-zinc-900 dark:text-zinc-50"
+                        }`}
+                      >
+                        {isInflow(p) ? "+" : "-"}
+                        {paymentAmount(p)}
+                      </p>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                        {formatDate(p.created_at)}
+                      </p>
+                    </div>
+                    <a
+                      href={`${explorerBase}/tx/${p.transaction_hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      title="View on Stellar Explorer"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {visiblePages.length > 1 && (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">Page {currentPage}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    disabled={currentPage === 1 || isFetching}
+                    className="rounded-lg border border-zinc-300 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+                    Previous
+                  </button>
+                  {visiblePages.map((pageNumber) => {
+                    const isKnownPage = pageNumber === 1 || cursorByPage[pageNumber] !== undefined;
+
+                    return (
+                      <button
+                        key={pageNumber}
+                        onClick={() => setCurrentPage(pageNumber)}
+                        disabled={!isKnownPage || isFetching}
+                        className={`h-10 w-10 rounded-lg text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                          currentPage === pageNumber
+                            ? "bg-indigo-600 text-white"
+                            : "border border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage((page) => page + 1)}
+                    disabled={
+                      !hasNextPage || cursorByPage[currentPage + 1] === undefined || isFetching
+                    }
+                    className="rounded-lg border border-zinc-300 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
+                  >
+                    Next
+                  </button>
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </CardContent>

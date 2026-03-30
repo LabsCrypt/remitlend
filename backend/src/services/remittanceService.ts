@@ -41,7 +41,9 @@ export const remittanceService = {
   /**
    * Create a new remittance record and generate XDR
    */
-  async createRemittance(payload: CreateRemittancePayload): Promise<Remittance> {
+  async createRemittance(
+    payload: CreateRemittancePayload,
+  ): Promise<Remittance> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -50,11 +52,15 @@ export const remittanceService = {
 
       // Validate recipient address format
       if (!isValidStellarAddress(payload.recipientAddress)) {
-        throw AppError.badRequest("Invalid Stellar recipient address (must be 56 chars, start with G)");
+        throw AppError.badRequest(
+          "Invalid Stellar recipient address (must be 56 chars, start with G)",
+        );
       }
 
       if (!isValidStellarAddress(payload.senderAddress)) {
-        throw AppError.badRequest("Invalid Stellar sender address (must be 56 chars, start with G)");
+        throw AppError.badRequest(
+          "Invalid Stellar sender address (must be 56 chars, start with G)",
+        );
       }
 
       // TODO: Build transaction using Stellar SDK
@@ -69,7 +75,7 @@ export const remittanceService = {
           asset: payload.fromCurrency,
           memo: payload.memo || "RemitLend Transfer",
           network: networkPassphrase,
-        })
+        }),
       ).toString("base64");
 
       // Store in database
@@ -90,7 +96,7 @@ export const remittanceService = {
           xdr,
           now,
           now,
-        ]
+        ],
       );
 
       if (!result.rows[0]) {
@@ -131,8 +137,12 @@ export const remittanceService = {
     userId: string,
     limit: number = 20,
     cursor: string | null = null,
-    status?: string
-  ): Promise<{ remittances: Remittance[]; total: number; nextCursor: string | null }> {
+    status?: string,
+  ): Promise<{
+    remittances: Remittance[];
+    total: number;
+    nextCursor: string | null;
+  }> {
     try {
       let whereClause = "sender_id = $1";
       let params: (string | number)[] = [userId];
@@ -143,7 +153,10 @@ export const remittanceService = {
       }
 
       const cursorValue = cursor ? new Date(cursor) : null;
-      if (cursor && (Number.isNaN(cursorValue?.getTime ?? NaN) || !cursorValue)) {
+      if (
+        cursor &&
+        (Number.isNaN(cursorValue?.getTime ?? NaN) || !cursorValue)
+      ) {
         throw AppError.badRequest("Invalid cursor");
       }
 
@@ -157,12 +170,12 @@ export const remittanceService = {
          WHERE ${whereClause}
          ORDER BY created_at DESC, id DESC
          LIMIT $${params.length + 1}`,
-        [...params, limit + 1]
+        [...params, limit + 1],
       );
 
       const countResult = await query(
         `SELECT COUNT(*) as total FROM remittances WHERE ${whereClause}`,
-        params
+        params,
       );
 
       const hasNext = result.rows.length > limit;
@@ -183,10 +196,12 @@ export const remittanceService = {
         updatedAt: r.updated_at.toISOString(),
       }));
 
-      const lastRemittance = trimmed.length > 0 ? trimmed[trimmed.length - 1] : undefined;
-      const nextCursor = hasNext && lastRemittance
-        ? lastRemittance.created_at.toISOString()
-        : null;
+      const lastRemittance =
+        trimmed.length > 0 ? trimmed[trimmed.length - 1] : undefined;
+      const nextCursor =
+        hasNext && lastRemittance
+          ? lastRemittance.created_at.toISOString()
+          : null;
 
       return {
         remittances,
@@ -204,7 +219,9 @@ export const remittanceService = {
    */
   async getRemittance(id: string): Promise<Remittance> {
     try {
-      const result = await query("SELECT * FROM remittances WHERE id = $1", [id]);
+      const result = await query("SELECT * FROM remittances WHERE id = $1", [
+        id,
+      ]);
 
       if (!result.rows[0]) {
         throw AppError.notFound("Remittance not found");
@@ -244,7 +261,7 @@ export const remittanceService = {
     id: string,
     status: "processing" | "completed" | "failed",
     transactionHash?: string,
-    error?: string
+    error?: string,
   ): Promise<Remittance> {
     try {
       const updateData: Record<string, unknown> = {
@@ -265,7 +282,7 @@ export const remittanceService = {
          SET status = $1, transaction_hash = $2, updated_at = $3
          WHERE id = $4
          RETURNING *`,
-        [status, transactionHash || null, updateData.updated_at, id]
+        [status, transactionHash || null, updateData.updated_at, id],
       );
 
       if (!result.rows[0]) {

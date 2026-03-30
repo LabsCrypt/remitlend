@@ -224,7 +224,12 @@ class EventStreamService {
         for (const clientInfo of clients) {
           try {
             // Verify user identity before sending (fixes #471)
-            this.sendEvent(clientInfo.res, event, clientInfo.userKey, event.borrower);
+            this.sendEvent(
+              clientInfo.res,
+              event,
+              clientInfo.userKey,
+              event.borrower,
+            );
           } catch (err) {
             logger.error("SSE write error (borrower)", {
               borrower: event.borrower,
@@ -247,9 +252,9 @@ class EventStreamService {
       try {
         this.sendEvent(clientInfo.res, event);
       } catch (err) {
-        logger.error("SSE write error (admin)", { 
+        logger.error("SSE write error (admin)", {
           userKey: clientInfo.userKey,
-          err 
+          err,
         });
         adminsToRemove.push(clientInfo);
       }
@@ -295,18 +300,18 @@ class EventStreamService {
       try {
         clientInfo.res.write(shutdownPayload);
       } catch (err) {
-        logger.error("SSE shutdown write error", { 
+        logger.error("SSE shutdown write error", {
           userKey: clientInfo.userKey,
-          err 
+          err,
         });
       }
 
       try {
         clientInfo.res.end();
       } catch (err) {
-        logger.error("SSE shutdown close error", { 
+        logger.error("SSE shutdown close error", {
           userKey: clientInfo.userKey,
-          err 
+          err,
         });
       }
     }

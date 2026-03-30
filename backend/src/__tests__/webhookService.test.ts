@@ -13,9 +13,8 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   closePool: jest.fn(),
 }));
 
-const { WebhookService, getRetryDelayMs } = await import(
-  "../services/webhookService.js"
-);
+const { WebhookService, getRetryDelayMs } =
+  await import("../services/webhookService.js");
 
 describe("WebhookService", () => {
   const originalFetch = global.fetch;
@@ -42,7 +41,9 @@ describe("WebhookService", () => {
     const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     mockQuery
       .mockResolvedValueOnce({
-        rows: [{ id: 1, callback_url: "https://consumer.example", secret: null }],
+        rows: [
+          { id: 1, callback_url: "https://consumer.example", secret: null },
+        ],
       })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
