@@ -1023,6 +1023,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "extension_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "interest_paid"
                       },
                       "val": {
@@ -1096,6 +1104,7 @@
             },
             "ext": "v0"
           },
+          518400
           518400
         ]
       ],
