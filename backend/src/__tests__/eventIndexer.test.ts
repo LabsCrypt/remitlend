@@ -1,7 +1,9 @@
 import { jest } from "@jest/globals";
 import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 
-const mockQuery = jest.fn();
+const mockQuery = jest.fn<
+  (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>
+>();
 const mockDispatch = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const mockBroadcast = jest.fn();
 const mockCreateNotification = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -154,8 +156,8 @@ describe("EventIndexer", () => {
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }).rpc = {
-      getEvents: jest.fn().mockResolvedValue({
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
         events: [
           makeRawEvent({
             id: "evt-requested",
@@ -211,10 +213,7 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([
-      [borrowerRepaid, 15],
-      [borrowerDefaulted, -50],
-    ]);
+    expect(scoreUpdates).toEqual([[borrowerRepaid, 15, borrowerDefaulted, -50]]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
@@ -260,8 +259,8 @@ describe("EventIndexer", () => {
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { rpc: { getEvents: () => Promise<{ events: unknown[] }> } }).rpc = {
-      getEvents: jest.fn().mockResolvedValue({
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
         events: [duplicateEvent, duplicateEvent],
       }),
     };
@@ -272,6 +271,66 @@ describe("EventIndexer", () => {
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
     expect(mockCreateNotification).toHaveBeenCalledTimes(1);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores duplicate LoanApproved rows for the same loan and emits side effects once", async () => {
+    const borrower = makeAddress();
+    let approvedInsertCount = 0;
+
+    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql === "BEGIN" || sql === "COMMIT") {
+        return { rows: [], rowCount: 0 };
+      }
+
+      if (sql.includes("INSERT INTO loan_events")) {
+        if (params[1] === "LoanApproved" && params[2] === 42) {
+          approvedInsertCount += 1;
+          const inserted = approvedInsertCount === 1;
+          return {
+            rows: inserted ? [{ event_id: params[0] }] : [],
+            rowCount: inserted ? 1 : 0,
+          };
+        }
+
+        return { rows: [{ event_id: params[0] }], rowCount: 1 };
+      }
+
+      return { rows: [], rowCount: 0 };
+    });
+
+    const indexer = new EventIndexer({
+      rpcUrl: "https://rpc.test",
+      contractId: "CINDEXERTEST",
+    });
+
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
+        events: [
+          makeRawEvent({
+            id: "evt-approved-001",
+            ledger: 31,
+            type: "LoanApproved",
+            borrower,
+            loanId: 42,
+          }),
+          makeRawEvent({
+            id: "evt-approved-002",
+            ledger: 32,
+            type: "LoanApproved",
+            borrower,
+            loanId: 42,
+          }),
+        ],
+      }),
+    };
+
+    await indexer.processEvents(31, 32);
+
+    expect(approvedInsertCount).toBe(2);
+    expect(mockDispatch).toHaveBeenCalledTimes(1);
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+    expect(mockGetScoreConfig).not.toHaveBeenCalled();
   });
 
   it("initializes missing indexer state and persists the last indexed ledger during polling", async () => {
@@ -308,20 +367,20 @@ describe("EventIndexer", () => {
       contractId: "CINDEXERTEST",
     });
 
-    (indexer as { running: boolean }).running = true;
-    (indexer as {
+    (indexer as unknown as { running: boolean }).running = true;
+    (indexer as unknown as {
       rpc: {
-        getLatestLedger: () => Promise<{ sequence: number }>;
-        getEvents: () => Promise<{ events: unknown[] }>;
+        getLatestLedger: unknown;
+        getEvents: unknown;
       };
     }).rpc = {
-      getLatestLedger: jest.fn().mockResolvedValue({ sequence: 15 }),
-      getEvents: jest.fn().mockResolvedValue({
+      getLatestLedger: async () => ({ sequence: 15 }),
+      getEvents: async () => ({
         events: [makeRawEvent({ id: "evt-poll", ledger: 15, type: "LoanRequested" })],
       }),
     };
 
-    await (indexer as { pollOnce: () => Promise<void> }).pollOnce();
+    await (indexer as unknown as { pollOnce: () => Promise<void> }).pollOnce();
 
     expect(stateWrites).toEqual([0, 15]);
   });

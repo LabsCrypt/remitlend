@@ -48,26 +48,26 @@ describe("SorobanService.getScoreConfig()", () => {
 
   it("returns default repaymentDelta of 15 when env var is not set", () => {
     delete process.env.SCORE_REPAYMENT_DELTA;
-    const cfg = mockGetScoreConfig() as ScoreConfig;
-    expect(cfg.repaymentDelta).toBe(15);
+    const cfg = mockGetScoreConfig();
+    expect((cfg as any).repaymentDelta).toBe(15);
   });
 
   it("returns default defaultPenalty of 50 when env var is not set", () => {
     delete process.env.SCORE_DEFAULT_PENALTY;
-    const cfg = mockGetScoreConfig() as ScoreConfig;
-    expect(cfg.defaultPenalty).toBe(50);
+    const cfg = mockGetScoreConfig();
+    expect((cfg as any).defaultPenalty).toBe(50);
   });
 
   it("returns repaymentDelta from SCORE_REPAYMENT_DELTA env var", () => {
     process.env.SCORE_REPAYMENT_DELTA = "20";
-    const cfg = mockGetScoreConfig() as ScoreConfig;
-    expect(cfg.repaymentDelta).toBe(20);
+    const cfg = mockGetScoreConfig();
+    expect((cfg as any).repaymentDelta).toBe(20);
   });
 
   it("returns defaultPenalty from SCORE_DEFAULT_PENALTY env var", () => {
     process.env.SCORE_DEFAULT_PENALTY = "75";
-    const cfg = mockGetScoreConfig() as ScoreConfig;
-    expect(cfg.defaultPenalty).toBe(75);
+    const cfg = mockGetScoreConfig();
+    expect((cfg as any).defaultPenalty).toBe(75);
   });
 });
 
