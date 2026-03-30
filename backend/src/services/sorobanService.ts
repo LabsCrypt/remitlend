@@ -12,6 +12,7 @@ import { AppError } from "../errors/AppError.js";
 import {
   createSorobanRpcServer,
   getStellarNetworkPassphrase,
+  getStellarRpcUrl,
 } from "../config/stellar.js";
 
 /**
@@ -317,19 +318,29 @@ class SorobanService {
       }
     }
 
+    let rpcUrl: string;
+    try {
+      rpcUrl = getStellarRpcUrl();
+    } catch (err) {
+      throw AppError.internal(
+        err instanceof Error
+          ? err.message
+          : "Invalid Stellar RPC configuration",
+      );
+    }
+
     try {
       await this.getRpcServer().getHealth();
     } catch (err) {
       throw AppError.internal(
-        `Stellar RPC is unreachable at ${process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org"}: ${err instanceof Error ? err.message : String(err)}`,
+        `Stellar RPC is unreachable at ${rpcUrl}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
     logger.info("Soroban configuration validated", {
       loanManagerContractId: process.env.LOAN_MANAGER_CONTRACT_ID,
       lendingPoolContractId: process.env.LENDING_POOL_CONTRACT_ID,
-      rpcUrl:
-        process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org",
+      rpcUrl,
     });
   }
 
