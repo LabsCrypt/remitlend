@@ -12,11 +12,29 @@ process.env.INTERNAL_API_KEY = VALID_API_KEY;
 const mockQuery: jest.MockedFunction<
   (text: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
+
+// Create mock client for transaction support
+const mockRelease = jest.fn();
+const mockClient = {
+  query: mockQuery,
+  release: mockRelease,
+};
+
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
   query: mockQuery,
-  getClient: jest.fn(),
+  getClient: jest.fn().mockResolvedValue(mockClient),
   closePool: jest.fn(),
+}));
+
+// Mock CacheService to prevent Redis connections
+jest.unstable_mockModule("../services/cacheService.js", () => ({
+  cacheService: {
+    get: jest.fn<() => Promise<any>>().mockResolvedValue(null),
+    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
+  },
 }));
 
 // Mock sorobanService to avoid real Stellar RPC calls

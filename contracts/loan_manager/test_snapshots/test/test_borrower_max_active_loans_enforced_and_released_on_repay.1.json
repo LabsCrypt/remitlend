@@ -1264,6 +1264,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "extension_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "interest_paid"
                       },
                       "val": {
@@ -1439,6 +1447,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "extension_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "interest_paid"
                       },
                       "val": {
@@ -1607,6 +1623,14 @@
                     {
                       "key": {
                         "symbol": "due_date"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "extension_count"
                       },
                       "val": {
                         "u32": 0

@@ -16,11 +16,11 @@ export function ThemeToggle() {
     }
   }, [hydrated, initializeTheme]);
 
-  // Prevent hydration mismatch
+  // Prevent hydration mismatch and flash of unstyled icon
   if (!hydrated) {
     return (
-      <button className="p-2 text-zinc-500" aria-label="Toggle theme">
-        <Sun className="h-5 w-5" />
+      <button className="p-2 text-transparent" aria-hidden="true" disabled>
+        <div className="h-5 w-5" />
       </button>
     );
   }

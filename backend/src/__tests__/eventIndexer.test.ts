@@ -11,6 +11,7 @@ const mockGetScoreConfig = jest.fn(() => ({
   repaymentDelta: 15,
   defaultPenalty: 50,
 }));
+const mockUpdateUserScoresBulk = jest.fn<(updates: Map<string, number>) => Promise<void>>().mockResolvedValue(undefined);
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
@@ -32,6 +33,10 @@ jest.unstable_mockModule("../services/notificationService.js", () => ({
 
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
   sorobanService: { getScoreConfig: mockGetScoreConfig },
+}));
+
+jest.unstable_mockModule("../services/scoresService.js", () => ({
+  updateUserScoresBulk: mockUpdateUserScoresBulk,
 }));
 
 jest.unstable_mockModule("../utils/logger.js", () => ({
@@ -143,11 +148,20 @@ describe("EventIndexer", () => {
 
         console.log("MOCK_QUERY_SCORES", { sql, params });
       if (sql.includes("INSERT INTO scores")) {
-        scoreUpdates.push(params);
+        // Handle batched updates - params come as [user1, delta1, user2, delta2, ...]
+        for (let i = 0; i < params.length; i += 2) {
+          scoreUpdates.push([params[i], params[i + 1]]);
+        }
         return { rows: [], rowCount: 1 };
       }
 
       return { rows: [], rowCount: 0 };
+    });
+
+    mockUpdateUserScoresBulk.mockImplementation(async (updates: Map<string, number>) => {
+      for (const [userId, delta] of updates) {
+        scoreUpdates.push([userId, 500 + delta, delta]);
+      }
     });
 
     const indexer = new EventIndexer({

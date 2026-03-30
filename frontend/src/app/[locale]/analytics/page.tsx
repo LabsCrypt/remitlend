@@ -1,5 +1,5 @@
-import { FinancialPerformanceDashboard } from "../components/dashboards/FinancialPerformanceDashboard";
-import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
+import { FinancialPerformanceDashboard } from "../../components/dashboards/FinancialPerformanceDashboard";
+import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 
 export default function AnalyticsPage() {
   // In a real app, this would come from authentication context

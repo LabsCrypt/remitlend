@@ -13,17 +13,17 @@ import {
   ExternalLink,
   Globe,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
-import { Spinner } from "../components/global_ui/Spinner";
-import { TransactionsSkeleton } from "../components/skeletons/TransactionsSkeleton";
-import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
+import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
+import { Spinner } from "../../components/global_ui/Spinner";
+import { TransactionsSkeleton } from "../../components/skeletons/TransactionsSkeleton";
+import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 import {
   useWalletStore,
   selectWalletAddress,
   selectWalletNetwork,
   selectIsWalletConnected,
-} from "../stores/useWalletStore";
+} from "../../stores/useWalletStore";
 import Link from "next/link";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
