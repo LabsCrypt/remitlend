@@ -637,7 +637,10 @@ impl MultisigGovernance {
 
     #[ink(message)]
     pub fn approve_proposal(&mut self, proposal_id: u64) -> Result<(), String> {
-        let mut proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        let mut proposal = self
+            .proposals
+            .get(proposal_id)
+            .ok_or("Proposal not found")?;
         let current_ledger = Self::current_ledger();
 
         if current_ledger > proposal.expires_at {
@@ -655,7 +658,10 @@ impl MultisigGovernance {
 
     #[ink(message)]
     pub fn finalize_proposal(&mut self, proposal_id: u64) -> Result<(), String> {
-        let mut proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        let mut proposal = self
+            .proposals
+            .get(proposal_id)
+            .ok_or("Proposal not found")?;
         let current_ledger = Self::current_ledger();
 
         if current_ledger > proposal.expires_at {
@@ -674,7 +680,10 @@ impl MultisigGovernance {
 
     #[ink(message)]
     pub fn cancel_expired_proposal(&mut self, proposal_id: u64) -> Result<(), String> {
-        let proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        let proposal = self
+            .proposals
+            .get(proposal_id)
+            .ok_or("Proposal not found")?;
         let current_ledger = Self::current_ledger();
 
         if current_ledger <= proposal.expires_at {
