@@ -8,6 +8,7 @@ import { Toaster } from "./components/ui/Toaster";
 import { LevelUpModal } from "./components/gamification/LevelUpModal";
 import { GlobalXPGain } from "./components/global_ui/GlobalXPGain";
 import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";
+import { NetworkStatusBanner } from "./components/global_ui/NetworkStatusBanner";
 import { NextIntlClientProvider } from "next-intl";
 import { THEME_STORAGE_KEY } from "./lib/theme";
 
@@ -46,6 +47,7 @@ export default async function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <NextIntlClientProvider locale="en" messages={messages}>
           <QueryProvider>
+            <NetworkStatusBanner />
             <WalletProvider>
               <DashboardShell>
                 <ErrorBoundary scope="active page" variant="section">
