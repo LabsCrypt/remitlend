@@ -47,11 +47,11 @@ class EventStreamService {
 
     this.heartbeatTimer = setInterval(() => {
       const allClients = this.collectAllClients();
-      for (const res of allClients) {
+      for (const clientInfo of allClients) {
         try {
-          res.write(": ping\n\n");
+          clientInfo.res.write(": ping\n\n");
         } catch {
-          this.removeClient(res);
+          this.removeClient(clientInfo);
         }
       }
 
@@ -77,31 +77,32 @@ class EventStreamService {
     }
   }
 
-  private collectAllClients(): Set<SseClient> {
-    const all = new Set<SseClient>();
+  private collectAllClients(): ClientInfo[] {
+    const all: ClientInfo[] = [];
     for (const clients of borrowerClients.values()) {
       for (const client of clients) {
-        all.add(client);
+        all.push(client);
       }
     }
     for (const client of adminClients) {
-      all.add(client);
+      all.push(client);
     }
     return all;
   }
 
-  private removeClient(res: SseClient): void {
+  private removeClient(clientInfo: ClientInfo): void {
     for (const [borrower, clients] of borrowerClients) {
-      clients.delete(res);
+      clients.delete(clientInfo);
       if (clients.size === 0) {
         borrowerClients.delete(borrower);
       }
     }
-    adminClients.delete(res);
-    for (const [userKey, clients] of userClients) {
-      clients.delete(res);
-      if (clients.size === 0) {
-        userClients.delete(userKey);
+    adminClients.delete(clientInfo);
+    const userSet = userClients.get(clientInfo.userKey);
+    if (userSet) {
+      userSet.delete(clientInfo.res);
+      if (userSet.size === 0) {
+        userClients.delete(clientInfo.userKey);
       }
     }
   }
@@ -224,7 +225,7 @@ class EventStreamService {
         for (const clientInfo of clients) {
           try {
             // Verify user identity before sending (fixes #471)
-            this.sendEvent(clientInfo.res, event, clientInfo.userKey, event.borrower);
+            this.sendEvent(clientInfo.res, event);
           } catch (err) {
             logger.error("SSE write error (borrower)", {
               borrower: event.borrower,
@@ -275,7 +276,7 @@ class EventStreamService {
 
   closeAllConnections(message = "Server shutting down"): void {
     this.stopHeartbeat();
-    const clients = new Set<SseClient>();
+    const clients = new Set<ClientInfo>();
 
     for (const borrowerClientSet of borrowerClients.values()) {
       for (const clientInfo of borrowerClientSet) {

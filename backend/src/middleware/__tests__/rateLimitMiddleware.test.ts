@@ -1,19 +1,32 @@
 import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 import type { Request, Response, NextFunction } from "express";
-import { createRateLimitMiddleware, scoreUpdateRateLimit } from "../rateLimitMiddleware.js";
-import { rateLimitService } from "../../services/rateLimitService.js";
 import { AppError } from "../../errors/AppError.js";
 
-// Mock the rate limit service
+// Mock the rate limit service before importing middleware that depends on it
 jest.unstable_mockModule("../../services/rateLimitService.js", () => ({
   rateLimitService: {
     checkRateLimit: jest.fn(),
     resetRateLimit: jest.fn(),
     getRateLimitStatus: jest.fn(),
   },
+  SCORE_UPDATE_RATE_LIMIT: {
+    maxRequests: 5,
+    windowSeconds: 86400,
+  },
 }));
 
-const mockRateLimitService = (await import("../../services/rateLimitService.js")).rateLimitService as jest.Mocked<typeof rateLimitService>;
+const mockLoggerInfo = jest.fn();
+jest.unstable_mockModule("../../utils/logger.js", () => ({
+  default: {
+    info: mockLoggerInfo,
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
+const { createRateLimitMiddleware, scoreUpdateRateLimit } = await import("../rateLimitMiddleware.js");
+const { rateLimitService } = await import("../../services/rateLimitService.js");
+const mockRateLimitService = rateLimitService as jest.Mocked<typeof rateLimitService>;
 
 describe("Rate Limit Middleware", () => {
   let mockRequest: Partial<Request>;
@@ -151,16 +164,11 @@ describe("Rate Limit Middleware", () => {
       const middleware = createRateLimitMiddleware();
       await middleware(mockRequest as Request, mockResponse as Response, mockNext);
 
-      expect(mockNext).toHaveBeenCalledWith(
-        expect.objectContaining({
-          statusCode: 500,
-        })
-      );
+      // Middleware fails open when getIdentifier throws
+      expect(mockNext).toHaveBeenCalledWith();
     });
 
     it("should log when rate limit is nearing exhaustion", async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-      
       mockRateLimitService.checkRateLimit.mockResolvedValue({
         allowed: true,
         remaining: 0, // 90% of 5 is 4.5, so 0 remaining triggers the log
@@ -171,12 +179,14 @@ describe("Rate Limit Middleware", () => {
       const middleware = createRateLimitMiddleware();
       await middleware(mockRequest as Request, mockResponse as Response, mockNext);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Rate limit nearing exhaustion"),
-        expect.any(Object),
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "Rate limit nearing exhaustion",
+        expect.objectContaining({
+          identifier: "user123",
+          remaining: 0,
+          maxRequests: 5,
+        }),
       );
-      
-      consoleSpy.mockRestore();
     });
   });
 

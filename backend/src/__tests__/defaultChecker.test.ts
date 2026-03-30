@@ -31,6 +31,8 @@ describe("DefaultChecker", () => {
       .spyOn(logger, "warn")
       .mockImplementation(() => logger as typeof logger);
 
+    (checker as any).acquireLock = async () => true;
+    (checker as any).releaseLock = async () => undefined;
     (checker as any).assertConfigured = () => ({
       signer: {},
       server: {

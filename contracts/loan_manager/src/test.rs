@@ -1231,7 +1231,7 @@ fn test_rounding_dust_forgiveness_on_repayment() {
 
     // Fund the lending pool so it has liquidity for the loan
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_client.address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);

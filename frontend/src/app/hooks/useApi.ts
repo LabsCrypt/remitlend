@@ -797,7 +797,7 @@ export function useDepositToPool() {
   type DepositContext = { previousPoolStats: unknown; previousDepositor: unknown };
 
   return useMutation<
-    { txHash: string },
+    { unsignedTxXdr: string; networkPassphrase: string },
     Error,
     { amount: number; depositorAddress: string; token: string },
     DepositContext
@@ -867,7 +867,7 @@ export function useWithdrawFromPool() {
   type WithdrawContext = { previousPoolStats: unknown; previousDepositor: unknown };
 
   return useMutation<
-    { txHash: string },
+    { unsignedTxXdr: string; networkPassphrase: string },
     Error,
     { amount: number; depositorAddress: string; token: string },
     WithdrawContext

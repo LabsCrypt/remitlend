@@ -38,7 +38,7 @@ class CacheService {
   private async ensureConnected() {
     if (!this.isConnected) {
       try {
-        await this.client.connect();
+        await this.client!.connect();
         this.isConnected = true;
       } catch (err) {
         // Silently fail in tests if connection fails, but log in production
@@ -64,7 +64,7 @@ class CacheService {
     try {
       await this.ensureConnected();
       const stringValue = JSON.stringify(value);
-      await client.setEx(key, ttlSeconds, stringValue);
+      await this.client!.setEx(key, ttlSeconds, stringValue);
     } catch (error) {
       if (process.env.NODE_ENV !== "test") {
         logger.error(`Error setting cache for key ${key}`, { error });
@@ -80,7 +80,7 @@ class CacheService {
   async get<T>(key: string): Promise<T | null> {
     try {
       await this.ensureConnected();
-      const value = await this.client.get(key);
+      const value = await this.client!.get(key);
       if (!value) return null;
 
       return JSON.parse(value) as T;
@@ -106,13 +106,12 @@ class CacheService {
     ttlSeconds: number,
   ): Promise<boolean> {
     try {
-      await this.connect();
+      await this.ensureConnected();
       if (!this.isConnected) return false;
 
-      const client = this.getClient();
       const stringValue = JSON.stringify(value);
       // SET key value NX EX ttlSeconds
-      const result = await client.set(key, stringValue, {
+      const result = await this.client!.set(key, stringValue, {
         NX: true,
         EX: ttlSeconds,
       });
@@ -130,7 +129,7 @@ class CacheService {
   async delete(key: string): Promise<void> {
     try {
       await this.ensureConnected();
-      await this.client.del(key);
+      await this.client!.del(key);
     } catch (error) {
       if (process.env.NODE_ENV !== "test") {
         logger.error(`Error deleting cache for key ${key}`, { error });
@@ -145,9 +144,9 @@ class CacheService {
   async invalidatePattern(pattern: string): Promise<void> {
     try {
       await this.ensureConnected();
-      const keys = await this.client.keys(pattern);
+      const keys = await this.client!.keys(pattern);
       if (keys.length > 0) {
-        await client.del(keys);
+        await this.client!.del(keys);
       }
     } catch (error) {
       if (process.env.NODE_ENV !== "test") {
@@ -163,7 +162,7 @@ class CacheService {
   async ping(): Promise<"ok" | "error"> {
     try {
       await this.ensureConnected();
-      const reply = await this.client.ping();
+      const reply = await this.client!.ping();
       return reply === "PONG" ? "ok" : "error";
     } catch {
       return "error";

@@ -1,8 +1,6 @@
 import { jest, describe, it, expect, beforeEach } from "@jest/globals";
-import { rateLimitService, SCORE_UPDATE_RATE_LIMIT } from "../rateLimitService.js";
-import { cacheService } from "../cacheService.js";
 
-// Mock the cache service
+// Mock the cache service before importing modules that depend on it
 jest.unstable_mockModule("../cacheService.js", () => ({
   cacheService: {
     get: jest.fn(),
@@ -11,7 +9,9 @@ jest.unstable_mockModule("../cacheService.js", () => ({
   },
 }));
 
-const mockCacheService = (await import("../cacheService.js")).cacheService as jest.Mocked<typeof cacheService>;
+const { rateLimitService, SCORE_UPDATE_RATE_LIMIT } = await import("../rateLimitService.js");
+const { cacheService } = await import("../cacheService.js");
+const mockCacheService = cacheService as jest.Mocked<typeof cacheService>;
 
 describe("RateLimitService", () => {
   beforeEach(() => {
