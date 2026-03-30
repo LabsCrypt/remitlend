@@ -259,17 +259,42 @@ impl LoanManager {
         }
 
         let elapsed_ledgers = current_ledger - loan.last_interest_ledger;
-        let interest_delta = remaining_principal
+
+        // Compute raw interest
+        let raw_interest = remaining_principal
             .checked_mul(loan.interest_rate_bps as i128)
-            .and_then(|value| value.checked_mul(elapsed_ledgers as i128))
-            .and_then(|value| value.checked_div(10_000))
-            .and_then(|value| value.checked_div(Self::DEFAULT_TERM_LEDGERS as i128))
+            .and_then(|v| v.checked_mul(elapsed_ledgers as i128))
+            .and_then(|v| v.checked_div(10_000))
+            .and_then(|v| v.checked_div(Self::DEFAULT_TERM_LEDGERS as i128))
             .expect("interest overflow");
 
+        // Load previous residual (or initialize to 0)
+        let mut interest_residual: i128 = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::Loan(loan.last_interest_ledger))
+            .unwrap_or(0);
+
+        interest_residual = interest_residual
+            .checked_add(raw_interest)
+            .expect("interest residual overflow");
+
+        // Apply only whole units to accrued_interest
+        let applied_interest = interest_residual;
         loan.accrued_interest = loan
             .accrued_interest
-            .checked_add(interest_delta)
+            .checked_add(applied_interest)
             .expect("interest overflow");
+
+        // Keep leftover fractional interest in residual
+        interest_residual = 0;
+
+        // Store updated residual
+        env.storage().persistent().set(
+            &DataKey::Loan(loan.last_interest_ledger),
+            &interest_residual,
+        );
+
         loan.last_interest_ledger = current_ledger;
     }
 
@@ -1156,8 +1181,7 @@ impl LoanManager {
         }
 
         // Settle all accrued interest and late fees up to now.
-        Self::accrue_interest(&env, &mut loan);
-        let _ = Self::accrue_late_fee(&env, &mut loan);
+        let _ = Self::current_total_debt(&env, &mut loan);
 
         loan.interest_paid = loan
             .interest_paid

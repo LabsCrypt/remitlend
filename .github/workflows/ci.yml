@@ -44,31 +44,39 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-  contracts:
+    contracts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
      
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        # Use actions-rs/toolchain@v1 instead of dtolnay/rust-toolchain for reliability
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
+          override: true
+
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: contracts
+
       - name: Format check
         run: cargo fmt --all -- --check
         working-directory: contracts
+
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: contracts
+
       - name: Run tests
-        run: cargo test -- --test-threads=1
+        run: cargo test -- --test-threads=1 --nocapture
         working-directory: contracts
+
       - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+
       - name: Run coverage
         run: cargo tarpaulin --out Xml
         working-directory: contracts
