@@ -25,6 +25,10 @@ import {
   startNotificationCleanupScheduler,
   stopNotificationCleanupScheduler,
 } from "./services/notificationService.js";
+import {
+  startScoreReconciliationScheduler,
+  stopScoreReconciliationScheduler,
+} from "./services/scoreReconciliationService.js";
 import { sorobanService } from "./services/sorobanService.js";
 import { validateLoanConfig } from "./config/loanConfig.js";
 
@@ -57,6 +61,9 @@ const server = app.listen(port, () => {
 
   // Start webhook retry processor
   startWebhookRetryProcessor();
+
+  // Start scheduled score reconciliation against on-chain state
+  startScoreReconciliationScheduler();
   
   // Start periodic notification cleanup
   startNotificationCleanupScheduler();
@@ -74,6 +81,8 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
 
   stopIndexer();
   stopDefaultCheckerScheduler();
+  stopWebhookRetryProcessor();
+  stopScoreReconciliationScheduler();
   stopNotificationCleanupScheduler();
   
   if (typeof (eventStreamService as any).closeAll === 'function') {

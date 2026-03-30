@@ -60,14 +60,55 @@ interface RegisterWebhookInput {
   secret?: string;
 }
 
-// Retry configuration for webhook delivery
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getWebhookRequestTimeoutMs(): number {
+  return parsePositiveInt(process.env.WEBHOOK_REQUEST_TIMEOUT_MS, 30 * 1000);
+}
+
+async function postWebhook(
+  callbackUrl: string,
+  body: string,
+  signature: string | undefined,
+): Promise<Response> {
+  const timeoutMs = getWebhookRequestTimeoutMs();
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  timeoutHandle.unref?.();
+
+  try {
+    return await fetch(callbackUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(signature && { "x-remitlend-signature": signature }),
+      },
+      body,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Webhook request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+// Retry configuration for webhook delivery.
+// This yields retry attempts at ~5m, ~15m, and ~45m after a failed delivery,
+// for a total retry window a little over one hour after the initial attempt.
 const RETRY_DELAYS_MS = [
-  30 * 1000, // First retry after 30 seconds
-  2 * 60 * 1000, // Second retry after 2 minutes
-  10 * 60 * 1000, // Third retry after 10 minutes
+  5 * 60 * 1000,
+  15 * 60 * 1000,
+  45 * 60 * 1000,
 ] as const;
 
-const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1; // Initial attempt + 3 retries
+const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 export const getRetryDelayMs = (attemptNumber: number): number => {
   const delayIndex = Math.min(
@@ -151,14 +192,7 @@ export class WebhookService {
     let response: Response | null = null;
 
     try {
-      response = await fetch(callbackUrl, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(signature && { "x-remitlend-signature": signature }),
-        },
-        body,
-      });
+      response = await postWebhook(callbackUrl, body, signature);
 
       const successful = response.ok;
       const newAttemptCount = attemptCount + 1;
@@ -387,14 +421,7 @@ export class WebhookService {
       : undefined;
 
     try {
-      const response = await fetch(callbackUrl, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(signature && { "x-remitlend-signature": signature }),
-        },
-        body,
-      });
+      const response = await postWebhook(callbackUrl, body, signature);
 
       const successful = response.ok;
 
