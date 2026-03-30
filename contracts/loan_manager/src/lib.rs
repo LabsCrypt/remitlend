@@ -50,9 +50,10 @@ pub enum LoanError {
     InvalidRate = 15,
     InvalidTerm = 16,
     LoanPastDue = 17,
-    PoolPaused = 18,
-    NftPaused = 19,
-    InvalidConfiguration = 20,
+    NoProposedAdmin = 18,
+    PoolPaused = 19,
+    NftPaused = 20,
+    InvalidConfiguration = 21,
 }
 
 #[contracttype]
@@ -82,6 +83,9 @@ pub struct Loan {
     pub last_interest_ledger: u32,
     pub last_late_fee_ledger: u32,
     pub status: LoanStatus,
+    // How many extensions have been granted for this loan.
+    // Capped at MaxExtensions to prevent indefinite deferral.
+    pub extension_count: u32,
 }
 
 #[contracttype]
@@ -109,6 +113,7 @@ pub enum DataKey {
     GracePeriodLedgers,
     DefaultWindowLedgers,
     RateOracle,
+    ProposedAdmin,
 }
 
 #[contract]
@@ -146,6 +151,15 @@ impl LoanManager {
             Self::PERSISTENT_TTL_BUMP,
         );
     }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    // fn get_admin(env: &Env) -> Address {
+    //     env.storage()
+    //         .instance()
+    //         .get(&DataKey::Admin)
+    //         .expect("not initialized")
+    // }
 
     fn nft_contract(env: &Env) -> Address {
         Self::bump_instance_ttl(env);
@@ -543,6 +557,9 @@ impl LoanManager {
             .expect("token not set");
         let token_client = TokenClient::new(env, &token);
         token_client.transfer(&env.current_contract_address(), recipient, &collateral);
+
+        // Emit collateral returned event
+        events::collateral_returned(env, recipient.clone(), loan_id, collateral);
     }
 
     fn seize_collateral_internal(env: &Env, loan_id: u32) {
@@ -720,6 +737,7 @@ impl LoanManager {
             last_interest_ledger: 0,
             last_late_fee_ledger: 0,
             status: LoanStatus::Pending,
+            extension_count: 0,
         };
 
         env.storage()
@@ -904,6 +922,7 @@ impl LoanManager {
 
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
+        Self::bump_persistent_ttl(&env, &loan_key);
 
         if amount >= 100 {
             let nft_contract = Self::nft_contract(&env);
@@ -1026,7 +1045,11 @@ impl LoanManager {
             return Err(LoanError::LoanNotPending);
         }
 
+        // Return collateral if any was posted
+        Self::release_collateral_internal(&env, loan_id, &borrower);
+
         loan.status = LoanStatus::Cancelled;
+        loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
         events::loan_cancelled(&env, borrower, loan_id);
@@ -1050,7 +1073,11 @@ impl LoanManager {
             return Err(LoanError::LoanNotPending);
         }
 
+        // Return collateral if any was posted
+        Self::release_collateral_internal(&env, loan_id, &loan.borrower);
+
         loan.status = LoanStatus::Rejected;
+        loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
         events::loan_rejected(&env, loan_id, reason);
@@ -1543,6 +1570,38 @@ impl LoanManager {
             .instance()
             .get(&DataKey::MaxTermLedgers)
             .unwrap_or(Self::DEFAULT_TERM_LEDGERS)
+    }
+
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposedAdmin, &new_admin);
+        Self::bump_instance_ttl(&env);
+        env.events().publish(
+            (Symbol::new(&env, "AdminProposed"), current_admin),
+            new_admin,
+        );
+    }
+
+    pub fn accept_admin(env: Env) -> Result<(), LoanError> {
+        let proposed_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposedAdmin)
+            .ok_or(LoanError::NotInitialized)?;
+        proposed_admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Admin, &proposed_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+        env.events()
+            .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
+        Ok(())
     }
 
     pub fn pause(env: Env) {

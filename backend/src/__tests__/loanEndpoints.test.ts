@@ -227,6 +227,71 @@ describe("POST /api/loans/submit", () => {
   });
 });
 
+describe("GET /api/loans/:loanId", () => {
+  it("should return loan details for the authenticated borrower", async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [{ borrower: "GABC123" }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            event_type: "LoanRequested",
+            amount: "1000",
+            ledger: 10,
+            ledger_closed_at: "2025-01-01T00:00:00.000Z",
+            tx_hash: "request-tx",
+            interest_rate_bps: null,
+            term_ledgers: null,
+          },
+          {
+            event_type: "LoanApproved",
+            amount: null,
+            ledger: 20,
+            ledger_closed_at: "2025-01-02T00:00:00.000Z",
+            tx_hash: "approve-tx",
+            interest_rate_bps: 1200,
+            term_ledgers: 17280,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ last_indexed_ledger: 25 }],
+      });
+
+    const response = await request(app)
+      .get("/api/loans/123")
+      .set(bearer("GABC123"));
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.loanId).toBe("123");
+    expect(response.body.summary.principal).toBe(1000);
+  });
+
+  it("should return 403 when the loan belongs to another borrower", async () => {
+    mockedQuery.mockResolvedValueOnce({
+      rows: [{ borrower: "other-wallet" }],
+    });
+
+    const response = await request(app)
+      .get("/api/loans/123")
+      .set(bearer("GABC123"));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("should return 404 when the loan does not exist", async () => {
+    mockedQuery.mockResolvedValueOnce({
+      rows: [],
+    });
+
+    const response = await request(app)
+      .get("/api/loans/123")
+      .set(bearer("GABC123"));
+
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("GET /api/loans/:loanId/amortization-schedule", () => {
   it("should return amortization schedule for an approved loan", async () => {
     mockedQuery
@@ -317,7 +382,7 @@ describe("POST /api/loans/:loanId/repay", () => {
     expect(response.body.unsignedTxXdr).toBe("BBBB...repay-xdr");
   });
 
-  it("should return 404 when loan does not belong to user", async () => {
+  it("should return 403 when loan does not belong to user", async () => {
     mockedQuery.mockResolvedValueOnce({
       rows: [{ borrower: "other-wallet" }],
     });
@@ -327,7 +392,7 @@ describe("POST /api/loans/:loanId/repay", () => {
       .set(bearer("GABC123"))
       .send({ amount: 500, borrowerPublicKey: "GABC123" });
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(403);
   });
 
   it("should reject missing amount", async () => {

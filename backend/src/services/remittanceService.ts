@@ -2,6 +2,7 @@ import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
 import logger from "../utils/logger.js";
 import crypto from "crypto";
+import { getStellarNetworkPassphrase } from "../config/stellar.js";
 
 export interface CreateRemittancePayload {
   recipientAddress: string;
@@ -27,9 +28,6 @@ export interface Remittance {
   updatedAt: string;
 }
 
-const NETWORK_PASSPHRASE = process.env.STELLAR_NETWORK_PASSPHRASE ?? "Test StellarNetwork ; September 2015";
-const SERVER_URL = process.env.STELLAR_RPC_URL ?? "https://soroban-testnet.stellar.org:443";
-
 /**
  * Validates a Stellar public key format (56 chars, starts with G, base32)
  */
@@ -48,6 +46,8 @@ export const remittanceService = {
     const now = new Date().toISOString();
 
     try {
+      const networkPassphrase = getStellarNetworkPassphrase();
+
       // Validate recipient address format
       if (!isValidStellarAddress(payload.recipientAddress)) {
         throw AppError.badRequest("Invalid Stellar recipient address (must be 56 chars, start with G)");
@@ -68,7 +68,7 @@ export const remittanceService = {
           amount: payload.amount,
           asset: payload.fromCurrency,
           memo: payload.memo || "RemitLend Transfer",
-          network: NETWORK_PASSPHRASE,
+          network: networkPassphrase,
         })
       ).toString("base64");
 
@@ -144,7 +144,7 @@ export const remittanceService = {
 
       const cursorValue = cursor ? new Date(cursor) : null;
       if (cursor && (Number.isNaN(cursorValue?.getTime ?? NaN) || !cursorValue)) {
-        throw new AppError(400, "Invalid cursor", "INVALID_CURSOR");
+        throw AppError.badRequest("Invalid cursor");
       }
 
       if (cursorValue) {
