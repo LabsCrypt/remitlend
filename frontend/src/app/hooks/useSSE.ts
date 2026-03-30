@@ -25,7 +25,7 @@ interface UseSSEOptions<T> {
  * Connects to `url` and calls `onMessage` with each parsed JSON payload.
  * Automatically reconnects on error, backing off up to 30 s.
  * Returns the current connection status for UI indicators.
- * 
+ *
  * If `onPoll` is provided, it will be called every `pollingInterval` when the SSE stream is down.
  */
 export function useSSE<T = unknown>({
