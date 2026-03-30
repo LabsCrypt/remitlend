@@ -1,5 +1,6 @@
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { query } from "../db/connection.js";
+import { withTransaction } from "../db/transaction.js";
 import logger from "../utils/logger.js";
 import {
   createRequestId,
@@ -364,15 +365,13 @@ export class EventIndexer {
 
     const insertedEvents: LoanEvent[] = [];
 
-    // Collect score deltas per user during the DB transaction to avoid N+1
-    // updates. After committing the inserted events we apply a single bulk
-    // upsert that adds the deltas and keeps scores bounded.
+    // Collect score deltas per user while inserting events so inserts + score
+    // updates can commit atomically.
     const scoreUpdates: Map<string, number> = new Map();
 
-    await query("BEGIN", []);
-    try {
+    await withTransaction(async (client) => {
       for (const event of parsedEvents) {
-        const insertResult = await query(
+        const insertResult = await client.query(
           `INSERT INTO loan_events (
             event_id,
             event_type,
@@ -411,8 +410,8 @@ export class EventIndexer {
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
 
-          // aggregate score deltas per borrower; apply after the transaction
-          // to avoid issuing a query per event (N+1).
+          // Aggregate score deltas per borrower and apply in one bulk query to
+          // avoid issuing a query per event (N+1).
           if (event.eventType === "LoanRepaid") {
             const { repaymentDelta } = sorobanService.getScoreConfig();
             if (event.borrower) {
@@ -433,21 +432,10 @@ export class EventIndexer {
         }
       }
 
-      await query("COMMIT", []);
-      // apply batched score updates after the transaction commits
       if (scoreUpdates.size > 0) {
-        try {
-          await updateUserScoresBulk(scoreUpdates);
-        } catch (err) {
-          logger.error("Failed to apply bulk user score updates", {
-            error: err,
-          });
-        }
+        await updateUserScoresBulk(scoreUpdates, client);
       }
-    } catch (error) {
-      await query("ROLLBACK", []);
-      throw error;
-    }
+    });
 
     for (const event of insertedEvents) {
       webhookService.dispatch(event).catch((error) => {

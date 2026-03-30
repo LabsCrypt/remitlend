@@ -4,6 +4,7 @@ import { Address, Keypair, nativeToScVal } from "@stellar/stellar-sdk";
 const mockQuery = jest.fn<
   (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>
 >();
+const mockGetClient = jest.fn<() => Promise<{ query: typeof mockQuery; release: () => void }>>();
 const mockDispatch = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const mockBroadcast = jest.fn();
 const mockCreateNotification = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -14,7 +15,7 @@ const mockGetScoreConfig = jest.fn(() => ({
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
-  getClient: jest.fn(),
+  getClient: mockGetClient,
   closePool: jest.fn(),
 }));
 
@@ -36,6 +37,7 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 
 jest.unstable_mockModule("../utils/logger.js", () => ({
   default: {
+    debug: jest.fn(),
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
@@ -120,6 +122,10 @@ function makeRawEvent(params: {
 describe("EventIndexer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetClient.mockResolvedValue({
+      query: mockQuery,
+      release: jest.fn(),
+    });
   });
 
   it("parses the four core loan event types and triggers downstream side effects", async () => {
@@ -213,7 +219,10 @@ describe("EventIndexer", () => {
     expect(insertedLoanEvents[3]?.[2]).toBe(9);
     expect(insertedLoanEvents[3]?.[3]).toBe(borrowerDefaulted);
 
-    expect(scoreUpdates).toEqual([[borrowerRepaid, 15, borrowerDefaulted, -50]]);
+    expect(scoreUpdates).toEqual([
+      [borrowerRepaid, 15],
+      [borrowerDefaulted, -50],
+    ]);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(2);
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);

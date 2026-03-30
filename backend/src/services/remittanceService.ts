@@ -1,4 +1,5 @@
 import { query } from "../db/connection.js";
+import { withTransaction } from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
 import logger from "../utils/logger.js";
 import crypto from "crypto";
@@ -73,25 +74,27 @@ export const remittanceService = {
       ).toString("base64");
 
       // Store in database
-      const result = await query(
-        `INSERT INTO remittances 
-         (id, sender_id, recipient_address, amount, from_currency, to_currency, memo, status, xdr, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         RETURNING *`,
-        [
-          id,
-          payload.senderAddress,
-          payload.recipientAddress,
-          payload.amount,
-          payload.fromCurrency,
-          payload.toCurrency,
-          payload.memo || null,
-          "pending",
-          xdr,
-          now,
-          now,
-        ]
-      );
+      const result = await withTransaction(async (client) => {
+        return client.query(
+          `INSERT INTO remittances 
+           (id, sender_id, recipient_address, amount, from_currency, to_currency, memo, status, xdr, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            id,
+            payload.senderAddress,
+            payload.recipientAddress,
+            payload.amount,
+            payload.fromCurrency,
+            payload.toCurrency,
+            payload.memo || null,
+            "pending",
+            xdr,
+            now,
+            now,
+          ]
+        );
+      });
 
       if (!result.rows[0]) {
         throw AppError.internal("Failed to create remittance record");

@@ -1,6 +1,10 @@
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
 
+interface QueryableClient {
+  query: (text: string, params?: unknown[]) => Promise<unknown>;
+}
+
 /**
  * Apply multiple user score deltas in a single DB statement to avoid N+1
  * behavior. The `updates` map contains userId => delta (can be positive or
@@ -9,6 +13,7 @@ import logger from "../utils/logger.js";
  */
 export async function updateUserScoresBulk(
   updates: Map<string, number>,
+  client?: QueryableClient,
 ): Promise<void> {
   if (!updates || updates.size === 0) return;
 
@@ -40,7 +45,11 @@ export async function updateUserScoresBulk(
 	`;
 
   try {
-    await query(sql, params);
+    if (client) {
+      await client.query(sql, params);
+    } else {
+      await query(sql, params);
+    }
     logger.info("Applied bulk user score updates", {
       updatedCount: updates.size,
     });

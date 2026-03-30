@@ -16,12 +16,15 @@ const mockGetScoreConfig = jest.fn<() => ScoreConfig>().mockImplementation(() =>
 
 const mockQuery = jest.fn<() => Promise<{ rows: any[]; rowCount: number }>>()
   .mockResolvedValue({ rows: [], rowCount: 0 });
+const mockGetClient = jest.fn<
+  () => Promise<{ query: typeof mockQuery; release: () => void }>
+>();
 
 // All ESM mocks must be declared before any dynamic import
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
   query: mockQuery,
-  getClient: jest.fn(),
+  getClient: mockGetClient,
   closePool: jest.fn(),
 }));
 
@@ -109,6 +112,10 @@ describe("EventIndexer score delta wiring", () => {
   beforeEach(() => {
     mockGetScoreConfig.mockClear();
     mockQuery.mockReset().mockResolvedValue({ rows: [], rowCount: 0 });
+    mockGetClient.mockResolvedValue({
+      query: mockQuery,
+      release: jest.fn(),
+    });
   });
 
   it("calls sorobanService.getScoreConfig for LoanRepaid events", async () => {
