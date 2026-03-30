@@ -27,23 +27,12 @@ export function QueryProvider({ children }: QueryProviderProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5 * 60 * 1000, // 5 minutes: UI stays responsive with cached data
-            gcTime: 30 * 60 * 1000,   // 30 minutes: Keep data in memory even when inactive
-            retry: (failureCount, error: unknown) => {
-              // Safe check for browser environment
-              const isOffline = typeof window !== 'undefined' && !navigator.onLine;
-              
-              // Always retry on network errors (TypeError in fetch) or when offline
-              if (isOffline || error instanceof TypeError) {
-                return true; 
-              }
-              
-              // Standard retry for other transient errors (up to 3 times)
-              return failureCount < 3;
-            },
-            retryDelay: (attemptIndex) => Math.min(1000 * Math.pow(2, attemptIndex), 30000),
-            refetchOnWindowFocus: true, // Re-validate data when user returns to tab
-            refetchOnReconnect: 'always', // Force retry when connection returns
+            // Data is considered fresh for 60 seconds — avoids unnecessary refetches
+            staleTime: 60 * 1000,
+            // Retry failed requests once before showing an error
+            retry: 1,
+            // Refetch when the browser window regains focus
+            refetchOnWindowFocus: true,
           },
           mutations: {
             // Retry failed mutations once
