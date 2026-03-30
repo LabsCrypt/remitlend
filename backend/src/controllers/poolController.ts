@@ -57,6 +57,7 @@ export const getPoolStats = asyncHandler(async (_req: Request, res: Response) =>
       utilizationRate: parseFloat(utilizationRate.toFixed(4)),
       apy: ANNUAL_APY,
       activeLoansCount,
+      poolTokenAddress: process.env.POOL_TOKEN_ADDRESS,
     },
   });
 });
@@ -124,19 +125,20 @@ export const getDepositorPortfolio = asyncHandler(async (req: Request, res: Resp
 });
 
 /**
- * POST /api/pool/deposit
+ * POST /api/pool/build-deposit
  * Build an unsigned LendingPool deposit transaction.
  */
 export const depositToPool = asyncHandler(
   async (req: Request, res: Response) => {
-    const { depositorPublicKey, amount } = req.body as {
+    const { depositorPublicKey, token, amount } = req.body as {
       depositorPublicKey: string;
+      token: string;
       amount: number;
     };
 
-    if (!depositorPublicKey || !amount || amount <= 0) {
+    if (!depositorPublicKey || !token || !amount || amount <= 0) {
       throw AppError.badRequest(
-        "depositorPublicKey and a positive amount are required",
+        "depositorPublicKey, token, and a positive amount are required",
       );
     }
 
@@ -148,11 +150,13 @@ export const depositToPool = asyncHandler(
 
     const result = await sorobanService.buildDepositTx(
       depositorPublicKey,
+      token,
       amount,
     );
 
     logger.info("Deposit transaction built", {
       depositor: depositorPublicKey,
+      token,
       amount,
     });
 
@@ -165,19 +169,21 @@ export const depositToPool = asyncHandler(
 );
 
 /**
- * POST /api/pool/withdraw
+ * POST /api/pool/build-withdraw
  * Build an unsigned LendingPool withdraw transaction.
  */
 export const withdrawFromPool = asyncHandler(
   async (req: Request, res: Response) => {
-    const { depositorPublicKey, amount } = req.body as {
+    const { depositorPublicKey, token, amount } = req.body as {
       depositorPublicKey: string;
+      token: string;
       amount: number;
     };
 
-    if (!depositorPublicKey || !amount || amount <= 0) {
+    // Note: 'amount' here refers to shares to withdraw.
+    if (!depositorPublicKey || !token || !amount || amount <= 0) {
       throw AppError.badRequest(
-        "depositorPublicKey and a positive amount are required",
+        "depositorPublicKey, token, and a positive amount (shares) are required",
       );
     }
 
@@ -189,12 +195,14 @@ export const withdrawFromPool = asyncHandler(
 
     const result = await sorobanService.buildWithdrawTx(
       depositorPublicKey,
+      token,
       amount,
     );
 
     logger.info("Withdraw transaction built", {
       depositor: depositorPublicKey,
-      amount,
+      token,
+      shares: amount,
     });
 
     res.json({

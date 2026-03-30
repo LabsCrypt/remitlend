@@ -189,6 +189,7 @@ export interface PoolStats {
   utilizationRate: number;
   apy: number;
   activeLoansCount: number;
+  poolTokenAddress?: string;
 }
 
 export interface DepositorPortfolio {
@@ -798,13 +799,13 @@ export function useDepositToPool() {
   return useMutation<
     { txHash: string },
     Error,
-    { amount: number; depositorAddress: string },
+    { amount: number; depositorAddress: string; token: string },
     DepositContext
   >({
-    mutationFn: ({ amount, depositorAddress }) =>
-      apiFetch<{ txHash: string }>("/pool/deposit", {
+    mutationFn: ({ amount, depositorAddress, token }) =>
+      apiFetch<{ unsignedTxXdr: string; networkPassphrase: string }>("/pool/build-deposit", {
         method: "POST",
-        body: JSON.stringify({ amount, depositorAddress }),
+        body: JSON.stringify({ amount, depositorPublicKey: depositorAddress, token }),
       }),
 
     onMutate: async ({ amount, depositorAddress }) => {
@@ -868,13 +869,13 @@ export function useWithdrawFromPool() {
   return useMutation<
     { txHash: string },
     Error,
-    { amount: number; depositorAddress: string },
+    { amount: number; depositorAddress: string; token: string },
     WithdrawContext
   >({
-    mutationFn: ({ amount, depositorAddress }) =>
-      apiFetch<{ txHash: string }>("/pool/withdraw", {
+    mutationFn: ({ amount, depositorAddress, token }) =>
+      apiFetch<{ unsignedTxXdr: string; networkPassphrase: string }>("/pool/build-withdraw", {
         method: "POST",
-        body: JSON.stringify({ amount, depositorAddress }),
+        body: JSON.stringify({ amount, depositorPublicKey: depositorAddress, token }),
       }),
 
     onMutate: async ({ amount, depositorAddress }) => {
@@ -922,5 +923,15 @@ export function useWithdrawFromPool() {
       queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
       queryClient.invalidateQueries({ queryKey: queryKeys.pool.depositor(depositorAddress) });
     },
+  });
+}
+
+/**
+ * Submits a signed pool transaction to the Stellar network.
+ */
+export async function submitPoolTransaction(signedTxXdr: string) {
+  return apiFetch<{ txHash: string; status: string; resultXdr?: string }>("/pool/submit", {
+    method: "POST",
+    body: JSON.stringify({ signedTxXdr }),
   });
 }
