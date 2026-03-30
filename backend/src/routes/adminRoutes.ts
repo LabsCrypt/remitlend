@@ -20,6 +20,11 @@ const checkDefaultsBodySchema = z.object({
   loanIds: z.array(z.number().int().positive()).optional(),
 });
 
+const liquidateCollateralBodySchema = z.object({
+  loanId: z.number().int().positive(),
+  saleProceeds: z.number().int().nonnegative(),
+});
+
 /**
  * @swagger
  * /admin/check-defaults:
@@ -60,6 +65,57 @@ router.post(
   asyncHandler(async (req, res) => {
     const { loanIds } = req.body as z.infer<typeof checkDefaultsBodySchema>;
     const result = await defaultChecker.checkOverdueLoans(loanIds);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  }),
+);
+
+/**
+ * @swagger
+ * /admin/liquidate-collateral:
+ *   post:
+ *     summary: Trigger collateral liquidation for a defaulted loan (admin)
+ *     description: >
+ *       Submits `liquidate_collateral(loan_id, sale_proceeds)` to the LoanManager
+ *       contract. `sale_proceeds` is the realized off-chain auction/floor-sale amount
+ *       that should be settled into the lending pool.
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [loanId, saleProceeds]
+ *             properties:
+ *               loanId:
+ *                 type: integer
+ *               saleProceeds:
+ *                 type: integer
+ *                 minimum: 0
+ *     responses:
+ *       200:
+ *         description: Liquidation submission completed
+ */
+router.post(
+  "/liquidate-collateral",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  validateBody(liquidateCollateralBodySchema),
+  asyncHandler(async (req, res) => {
+    const { loanId, saleProceeds } = req.body as z.infer<
+      typeof liquidateCollateralBodySchema
+    >;
+    const result = await defaultChecker.liquidateCollateral(
+      loanId,
+      saleProceeds,
+    );
 
     res.json({
       success: true,
