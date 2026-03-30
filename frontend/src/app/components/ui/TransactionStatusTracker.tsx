@@ -5,11 +5,11 @@ import { Button } from "./Button";
 
 export type TransactionStatusState =
   | "idle"
-  | "signing"
-  | "submitting"
-  | "polling"
-  | "success"
-  | "error"
+  | "pending"
+  | "submitted"
+  | "confirming"
+  | "confirmed"
+  | "failed"
   | "cancelled";
 
 interface TransactionStatusTrackerProps {
@@ -22,17 +22,20 @@ interface TransactionStatusTrackerProps {
   onRetry?: () => void;
   onCancel?: () => void;
   disabled?: boolean;
+  estimatedWaitTime?: string;
+  showRecoveryLink?: boolean;
+  onRecovery?: () => void;
 }
 
 function getProgress(state: TransactionStatusState): number {
   switch (state) {
-    case "signing":
-      return 25;
-    case "submitting":
-      return 55;
-    case "polling":
-      return 85;
-    case "success":
+    case "pending":
+      return 10;
+    case "submitted":
+      return 40;
+    case "confirming":
+      return 70;
+    case "confirmed":
       return 100;
     default:
       return 0;
@@ -49,14 +52,17 @@ export function TransactionStatusTracker({
   onRetry,
   onCancel,
   disabled,
+  estimatedWaitTime,
+  showRecoveryLink,
+  onRecovery,
 }: TransactionStatusTrackerProps) {
   if (state === "idle") {
     return null;
   }
 
-  const isPending = state === "signing" || state === "submitting" || state === "polling";
-  const isError = state === "error";
-  const isSuccess = state === "success";
+  const isPending = state === "pending" || state === "submitted" || state === "confirming";
+  const isError = state === "failed";
+  const isSuccess = state === "confirmed";
   const isCancelled = state === "cancelled";
   const progress = getProgress(state);
 
@@ -107,6 +113,21 @@ export function TransactionStatusTracker({
           )}
 
           {guidance && <p className="text-xs text-zinc-600 dark:text-zinc-400">{guidance}</p>}
+
+          {estimatedWaitTime && isPending && (
+            <p className="text-xs text-zinc-500 dark:text-zinc-500">
+              Estimated wait: {estimatedWaitTime}
+            </p>
+          )}
+
+          {showRecoveryLink && (
+            <button
+              onClick={onRecovery}
+              className="text-xs text-amber-600 underline underline-offset-2 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+            >
+              Transaction stuck? Try recovery
+            </button>
+          )}
 
           <div className="flex flex-wrap gap-2 pt-1">
             {isPending && onCancel && (
