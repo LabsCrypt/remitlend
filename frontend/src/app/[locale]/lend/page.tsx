@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useLocale } from "next-intl";
 import {
   Activity,
   ArrowDownLeft,
@@ -13,10 +14,8 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { useLocale } from "next-intl";
 import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
-import { Skeleton } from "../../components/ui/Skeleton";
-import { YieldEarningsChart } from "../../components/charts/YieldEarningsChart";
+import { Skeleton, SkeletonChart } from "../../components/ui/Skeleton";
 import {
   useDepositorPortfolio,
   useInvalidatePoolStats,
@@ -30,6 +29,12 @@ import { OperationProgress } from "../../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
 import { useSSE } from "../../hooks/useSSE";
+
+const YieldEarningsChart = lazy(() =>
+  import("../../components/charts/YieldEarningsChart").then((m) => ({
+    default: m.YieldEarningsChart,
+  })),
+);
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -405,7 +410,9 @@ export default function LendPage() {
               <Skeleton className="h-[300px] w-full rounded-xl" />
             </div>
           ) : (
-            <YieldEarningsChart data={chartData} />
+            <Suspense fallback={<SkeletonChart />}>
+              <YieldEarningsChart data={chartData} />
+            </Suspense>
           )}
         </section>
       </ErrorBoundary>
