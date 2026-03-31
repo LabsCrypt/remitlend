@@ -17,7 +17,7 @@ const mockQuery: jest.MockedFunction<
 
 // Create mock client for transaction support
 const mockRelease = jest.fn();
-const mockClient = {
+const mockClient: any = {
   query: mockQuery,
   release: mockRelease,
 };
@@ -25,7 +25,7 @@ const mockClient = {
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
   query: mockQuery,
-  getClient: jest.fn().mockResolvedValue(mockClient),
+  getClient: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
   closePool: jest.fn(),
 }));
 
