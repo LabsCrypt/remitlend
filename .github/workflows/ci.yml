@@ -7,7 +7,28 @@ on:
     branches: [main]
 
 jobs:
+  supply-chain-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block compromised packages
+        run: |
+          echo "Scanning lockfiles for known malicious packages..."
+          BLOCKED="plain-crypto-js"
+          for lockfile in backend/package-lock.json frontend/package-lock.json scripts/package-lock.json; do
+            if [ -f "$lockfile" ] && grep -q "$BLOCKED" "$lockfile"; then
+              echo "::error::SUPPLY CHAIN ALERT: $lockfile contains $BLOCKED (confirmed malware)"
+              exit 1
+            fi
+          done
+          if grep -r '"axios": "1\.14\.' --include="package-lock.json" .; then
+            echo "::error::SUPPLY CHAIN ALERT: axios 1.14.x detected (compromised version)"
+            exit 1
+          fi
+          echo "No known malicious packages found."
+
   backend:
+    needs: supply-chain-audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +49,7 @@ jobs:
         working-directory: backend
 
   frontend:
+    needs: supply-chain-audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
