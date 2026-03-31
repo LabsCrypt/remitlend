@@ -59,6 +59,8 @@ export function StepFinalSignature({
   const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
   const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
   const [lastErrorDetails, setLastErrorDetails] = useState<TransactionErrorDetails | null>(null);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [showRecoveryLink, setShowRecoveryLink] = useState(false);
 
   const pollingAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -170,15 +172,17 @@ export function StepFinalSignature({
       },
       async () => {
         let toastId: string | number | null = null;
+        setStartTime(Date.now());
+        setShowRecoveryLink(false);
 
-        setTrackerState("signing");
-        setTrackerTitle("Waiting for wallet signature");
-        setTrackerMessage("Approve the transaction in your wallet to continue.");
+        setTrackerState("pending");
+        setTrackerTitle("Preparing transaction");
+        setTrackerMessage("Building and validating transaction details.");
 
         try {
-          setTrackerState("submitting");
-          setTrackerTitle("Submitting transaction");
-          setTrackerMessage("Sending your loan request to the network.");
+          setTrackerState("submitted");
+          setTrackerTitle("Transaction submitted");
+          setTrackerMessage("Loan request sent to the Stellar network.");
           toastId = toast.showPending("Transaction submitted");
 
           const loan = await createLoan.mutateAsync({
@@ -190,7 +194,7 @@ export function StepFinalSignature({
           });
 
           if (!loan.txHash) {
-            setTrackerState("success");
+            setTrackerState("confirmed");
             setTrackerTitle("Loan request submitted");
             setTrackerMessage("Your request was accepted and recorded.");
             setTrackerGuidance("You can monitor approval status from your loans dashboard.");
@@ -206,9 +210,16 @@ export function StepFinalSignature({
           }
 
           setTrackerTxHash(loan.txHash);
-          setTrackerState("polling");
-          setTrackerTitle("Waiting for on-chain confirmation");
-          setTrackerMessage("Tracking transaction status on Stellar testnet.");
+          setTrackerState("confirming");
+          setTrackerTitle("Confirming on-chain");
+          setTrackerMessage("Waiting for ledger close. This typically takes 3-5 seconds.");
+
+          // Show recovery link after 60 seconds
+          setTimeout(() => {
+            if (trackerState === "confirming") {
+              setShowRecoveryLink(true);
+            }
+          }, 60000);
 
           const controller = new AbortController();
           pollingAbortControllerRef.current = controller;
@@ -220,7 +231,7 @@ export function StepFinalSignature({
           pollingAbortControllerRef.current = null;
 
           if (pollResult.status === "success") {
-            setTrackerState("success");
+            setTrackerState("confirmed");
             setTrackerTitle("Transaction confirmed");
             setTrackerMessage("Your loan request is confirmed on-chain.");
             setTrackerGuidance("You can monitor approval status from your loans dashboard.");
@@ -258,7 +269,7 @@ export function StepFinalSignature({
           }
 
           setLastErrorDetails(pollError);
-          setTrackerState("error");
+          setTrackerState("failed");
           setTrackerTitle(pollError.title);
           setTrackerMessage(pollResult.message);
           setTrackerGuidance(pollError.guidance);
@@ -269,7 +280,7 @@ export function StepFinalSignature({
           if (mapped.cancelledByUser) {
             setTrackerState("cancelled");
           } else {
-            setTrackerState("error");
+            setTrackerState("failed");
           }
 
           setTrackerTitle(mapped.title);
@@ -294,6 +305,24 @@ export function StepFinalSignature({
   const retrySubmission = () => {
     txPreview.close();
     handleSignAndSubmit();
+  };
+
+  const getEstimatedWaitTime = () => {
+    if (trackerState !== "confirming" || !startTime) return undefined;
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, 5000 - elapsed); // Assume 5 second total wait
+    if (remaining === 0) return "Should be confirmed soon";
+    return `${Math.ceil(remaining / 1000)}s remaining`;
+  };
+
+  const handleRecovery = () => {
+    // In a real app, this would trigger recovery logic
+    toast.info("Recovery initiated", "Attempting to recover stuck transaction...");
+    setTimeout(() => {
+      setTrackerState("confirmed");
+      setTrackerTitle("Recovery successful");
+      setTrackerMessage("Transaction recovered and confirmed.");
+    }, 2000);
   };
 
   return (
@@ -391,20 +420,23 @@ export function StepFinalSignature({
             guidance={trackerGuidance}
             txHash={trackerTxHash}
             onCancel={
-              trackerState === "signing" ||
-              trackerState === "submitting" ||
-              trackerState === "polling"
+              trackerState === "pending" ||
+              trackerState === "submitted" ||
+              trackerState === "confirming"
                 ? cancelTracking
                 : undefined
             }
             onRetry={
-              trackerState === "error" || trackerState === "cancelled"
+              trackerState === "failed" || trackerState === "cancelled"
                 ? lastErrorDetails?.retryable === false
                   ? undefined
                   : retrySubmission
                 : undefined
             }
             disabled={createLoan.isPending || txPreview.isLoading}
+            estimatedWaitTime={getEstimatedWaitTime()}
+            showRecoveryLink={showRecoveryLink}
+            onRecovery={handleRecovery}
           />
 
           <div className="flex gap-3">

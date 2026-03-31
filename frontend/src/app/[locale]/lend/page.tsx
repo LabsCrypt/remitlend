@@ -30,6 +30,9 @@ import { OperationProgress } from "../../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
 import { useSSE } from "../../hooks/useSSE";
+import { TransactionPreviewModal } from "../../components/transaction/TransactionPreviewModal";
+import { useTransactionPreview } from "../../hooks/useTransactionPreview";
+import { formatDeposit, formatWithdraw } from "../../utils/transactionFormatter";
 
 const YieldEarningsChart = dynamic(
   () => import("../../components/charts/YieldEarningsChart").then((m) => m.YieldEarningsChart),
@@ -54,6 +57,7 @@ export default function LendPage() {
 
   const depositOp = useDepositOperation();
   const withdrawalOp = useWithdrawalOperation();
+  const txPreview = useTransactionPreview();
 
   const invalidatePoolStats = useInvalidatePoolStats();
   const sseUrl = address ? `${API_URL}/pool/events` : null;
@@ -69,13 +73,29 @@ export default function LendPage() {
   const handleDeposit = async () => {
     const amount = parseFloat(depositAmount);
     if (!address || isNaN(amount) || amount <= 0) return;
-    await depositOp.executeDeposit({ amount, depositorAddress: address });
+
+    const previewData = formatDeposit({
+      amount,
+      token: "USDC",
+    });
+
+    txPreview.show(previewData, async () => {
+      await depositOp.executeDeposit({ amount, depositorAddress: address });
+    });
   };
 
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount);
     if (!address || isNaN(amount) || amount <= 0) return;
-    await withdrawalOp.executeWithdrawal({ amount, depositorAddress: address });
+
+    const previewData = formatWithdraw({
+      amount,
+      token: "USDC",
+    });
+
+    txPreview.show(previewData, async () => {
+      await withdrawalOp.executeWithdrawal({ amount, depositorAddress: address });
+    });
   };
 
   const {
@@ -416,6 +436,16 @@ export default function LendPage() {
           )}
         </section>
       </ErrorBoundary>
+
+      {txPreview.data && (
+        <TransactionPreviewModal
+          isOpen={txPreview.isOpen}
+          onClose={txPreview.close}
+          onConfirm={txPreview.confirm}
+          data={txPreview.data}
+          isLoading={txPreview.isLoading || depositOp.isLoading || withdrawalOp.isLoading}
+        />
+      )}
     </main>
   );
 }

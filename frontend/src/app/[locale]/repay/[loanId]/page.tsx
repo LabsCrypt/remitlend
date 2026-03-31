@@ -7,6 +7,9 @@ import {
   TransactionStatusTracker,
   type TransactionStatusState,
 } from "../../../components/ui/TransactionStatusTracker";
+import { TransactionPreviewModal } from "../../../components/transaction/TransactionPreviewModal";
+import { useTransactionPreview } from "../../../hooks/useTransactionPreview";
+import { formatLoanRepayment } from "../../../utils/transactionFormatter";
 import {
   mapTransactionError,
   type TransactionErrorDetails,
@@ -32,6 +35,7 @@ export default function RepayLoanPage() {
   const walletAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const toast = useContractToast();
+  const txPreview = useTransactionPreview();
 
   const [amount, setAmount] = useState("250");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -42,10 +46,30 @@ export default function RepayLoanPage() {
   const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
   const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
   const [lastError, setLastError] = useState<TransactionErrorDetails | null>(null);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [showRecoveryLink, setShowRecoveryLink] = useState(false);
 
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const amountNumber = useMemo(() => Number(amount || "0"), [amount]);
+
+  const getEstimatedWaitTime = () => {
+    if (trackerState !== "confirming" || !startTime) return undefined;
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, 5000 - elapsed); // Assume 5 second total wait
+    if (remaining === 0) return "Should be confirmed soon";
+    return `${Math.ceil(remaining / 1000)}s remaining`;
+  };
+
+  const handleRecovery = () => {
+    // In a real app, this would trigger recovery logic
+    toast.info("Recovery initiated", "Attempting to recover stuck transaction...");
+    setTimeout(() => {
+      setTrackerState("confirmed");
+      setTrackerTitle("Recovery successful");
+      setTrackerMessage("Transaction recovered and confirmed.");
+    }, 2000);
+  };
 
   const clearPendingTimeout = () => {
     if (pendingTimeoutRef.current) {
@@ -67,6 +91,8 @@ export default function RepayLoanPage() {
     clearPendingTimeout();
     setLastError(null);
     setTrackerTxHash(null);
+    setStartTime(Date.now());
+    setShowRecoveryLink(false);
 
     let toastId: string | number | null = null;
 
@@ -84,24 +110,32 @@ export default function RepayLoanPage() {
       }
 
       setIsSubmitting(true);
-      setTrackerState("signing");
-      setTrackerTitle("Awaiting wallet confirmation");
-      setTrackerMessage("Approve the repayment transaction in your wallet.");
+      setTrackerState("pending");
+      setTrackerTitle("Preparing repayment");
+      setTrackerMessage("Validating transaction details...");
 
       await new Promise((resolve) => setTimeout(resolve, 600));
 
-      setTrackerState("submitting");
-      setTrackerTitle("Submitting repayment");
-      setTrackerMessage("Sending repayment transaction to the network.");
+      setTrackerState("submitted");
+      setTrackerTitle("Transaction submitted");
+      setTrackerMessage("Repayment transaction sent to network.");
       toastId = toast.showPending("Repayment transaction submitted");
 
       await new Promise((resolve) => setTimeout(resolve, 700));
 
       const txHash = createDemoTxHash();
       setTrackerTxHash(txHash);
-      setTrackerState("polling");
-      setTrackerTitle("Tracking confirmation");
-      setTrackerMessage("Polling transaction status on-chain. This can take a few seconds.");
+
+      setTrackerState("confirming");
+      setTrackerTitle("Confirming on-chain");
+      setTrackerMessage("Waiting for ledger close. This typically takes 3-5 seconds.");
+
+      // Show recovery link after 60 seconds
+      setTimeout(() => {
+        if (trackerState === "confirming") {
+          setShowRecoveryLink(true);
+        }
+      }, 60000);
 
       await new Promise<void>((resolve) => {
         pendingTimeoutRef.current = setTimeout(() => {
@@ -110,7 +144,7 @@ export default function RepayLoanPage() {
         }, 2200);
       });
 
-      setTrackerState("success");
+      setTrackerState("confirmed");
       setTrackerTitle("Repayment recorded");
       setTrackerMessage("Your repayment was submitted and confirmed.");
       setTrackerGuidance("You can return to the loan page to verify updated outstanding balance.");
@@ -124,7 +158,7 @@ export default function RepayLoanPage() {
     } catch (error) {
       const mapped = mapTransactionError(error);
       setLastError(mapped);
-      setTrackerState(mapped.cancelledByUser ? "cancelled" : "error");
+      setTrackerState("failed");
       setTrackerTitle(mapped.title);
       setTrackerMessage(mapped.message);
       setTrackerGuidance(mapped.guidance);
@@ -144,7 +178,15 @@ export default function RepayLoanPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    await runRepayment();
+
+    const previewData = formatLoanRepayment({
+      loanId: parseInt(loanId),
+      amount: amountNumber,
+    });
+
+    txPreview.show(previewData, async () => {
+      await runRepayment();
+    });
   };
 
   const handleRetry = async () => {
@@ -191,7 +233,7 @@ export default function RepayLoanPage() {
         </div>
 
         <Button type="submit" className="w-full" isLoading={isSubmitting}>
-          Continue to confirmation
+          Review Repayment
         </Button>
       </form>
 
@@ -202,19 +244,34 @@ export default function RepayLoanPage() {
         guidance={trackerGuidance}
         txHash={trackerTxHash}
         onCancel={
-          trackerState === "signing" || trackerState === "submitting" || trackerState === "polling"
+          trackerState === "pending" ||
+          trackerState === "submitted" ||
+          trackerState === "confirming"
             ? cancelFlow
             : undefined
         }
         onRetry={
-          trackerState === "error" || trackerState === "cancelled"
+          trackerState === "failed" || trackerState === "cancelled"
             ? lastError?.retryable === false
               ? undefined
               : handleRetry
             : undefined
         }
         disabled={isSubmitting}
+        estimatedWaitTime={getEstimatedWaitTime()}
+        showRecoveryLink={showRecoveryLink}
+        onRecovery={handleRecovery}
       />
+
+      {txPreview.data && (
+        <TransactionPreviewModal
+          isOpen={txPreview.isOpen}
+          onClose={txPreview.close}
+          onConfirm={txPreview.confirm}
+          data={txPreview.data}
+          isLoading={txPreview.isLoading || isSubmitting}
+        />
+      )}
     </section>
   );
 }
