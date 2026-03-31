@@ -73,13 +73,15 @@ await import("../db/connection.js");
 await import("../services/sorobanService.js");
 const { default: app } = await import("../app.js");
 
+
 const mockedQuery = mockQuery;
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,
 });
 
-afterEach(() => {
+beforeEach(() => {
+  mockedQuery.mockReset();
   jest.clearAllMocks();
 });
 
