@@ -198,4 +198,4 @@ We welcome contributions from developers of all skill levels! Please see our [CO
 
 ## 📄 License
 
-This project is licensed under the ISC License. See the `LICENSE` file for details.
+This project is licensed under the ISC License. See the `LICENSE` file for details..

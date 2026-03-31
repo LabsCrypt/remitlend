@@ -106,18 +106,24 @@ app.get(
         sorobanService.ping(),
       ]);
 
-    const checks = {
-      api: "ok" as const,
-      database:
-        databaseStatus.status === "fulfilled" ? databaseStatus.value : "error",
+    const dbChecks = {
+      database: databaseStatus.status === "fulfilled" ? databaseStatus.value : "error",
       redis: redisStatus.status === "fulfilled" ? redisStatus.value : "error",
-      soroban_rpc:
-        sorobanStatus.status === "fulfilled" ? sorobanStatus.value : "error",
     };
 
-    const allOk = Object.values(checks).every((c) => c === "ok");
-    res.status(allOk ? 200 : 503).json({
-      status: allOk ? "ok" : "degraded",
+    const checks = {
+      api: "ok" as const,
+      ...dbChecks,
+      soroban_rpc: sorobanStatus.status === "fulfilled" ? sorobanStatus.value : "error",
+    };
+
+    const coreOk = Object.values(dbChecks).every((c) => c === "ok");
+    const allOk =
+      coreOk &&
+      checks.soroban_rpc === "ok";
+
+    res.status(coreOk ? 200 : 503).json({
+      status: allOk ? "ok" : (coreOk ? "degraded" : "down"),
       checks,
       uptime: process.uptime(),
       timestamp: Date.now(),

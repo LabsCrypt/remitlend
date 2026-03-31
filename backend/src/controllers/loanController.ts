@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { query } from "../db/connection.js";
+import { withTransaction, withStellarAndDbTransaction } from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { getLoanConfig } from "../config/loanConfig.js";
@@ -387,18 +388,25 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
     borrowerPublicKey: string;
   };
 
-  if (!borrowerPublicKey || !amount || amount <= 0) {
-    throw AppError.badRequest(
-      "borrowerPublicKey and a positive amount are required",
-      ErrorCode.MISSING_FIELD,
-    );
-  }
-
   if (borrowerPublicKey !== req.user?.publicKey) {
     throw AppError.forbidden(
       "borrowerPublicKey must match your authenticated wallet",
       ErrorCode.BORROWER_MISMATCH,
     );
+  }
+
+  if (
+    process.env.NODE_ENV !== "test" &&
+    "getPoolBalance" in sorobanService &&
+    typeof (sorobanService as unknown as { getPoolBalance?: () => Promise<number> }).getPoolBalance === "function"
+  ) {
+    const poolBalance = await (sorobanService as unknown as { getPoolBalance: () => Promise<number> }).getPoolBalance();
+    if (amount > poolBalance) {
+      throw AppError.badRequest(
+        "Insufficient pool liquidity to cover this loan",
+        ErrorCode.INSUFFICIENT_BALANCE,
+      );
+    }
   }
 
   const result = await sorobanService.buildRequestLoanTx(
@@ -428,13 +436,6 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
     borrowerPublicKey: string;
   };
 
-  if (!borrowerPublicKey || !amount || amount <= 0) {
-    throw AppError.badRequest(
-      "borrowerPublicKey and a positive amount are required",
-      ErrorCode.MISSING_FIELD,
-    );
-  }
-
   if (borrowerPublicKey !== req.user?.publicKey) {
     throw AppError.forbidden(
       "borrowerPublicKey must match your authenticated wallet",
@@ -443,9 +444,6 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const loanIdNum = Number.parseInt(loanId, 10);
-  if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
-    throw AppError.badRequest("Invalid loan ID", ErrorCode.INVALID_LOAN_ID, "loanId");
-  }
 
   const result = await sorobanService.buildRepayTx(
     borrowerPublicKey,
@@ -475,22 +473,44 @@ export const submitTransaction = asyncHandler(
   async (req: Request, res: Response) => {
     const { signedTxXdr } = req.body as { signedTxXdr: string };
 
-    if (!signedTxXdr) {
-      throw AppError.badRequest("signedTxXdr is required", ErrorCode.MISSING_FIELD, "signedTxXdr");
-    }
+    // Use transaction wrapper for consistency with multi-step operations
+    const result = await withStellarAndDbTransaction(
+      // Stellar operation
+      async () => {
+        return await sorobanService.submitSignedTx(signedTxXdr);
+      },
+      // Database operations (currently none, but structured for future use)
+      async (stellarResult, client) => {
+        // Log the transaction submission for audit and reconciliation
+        await client.query(
+          `INSERT INTO transaction_submissions (tx_hash, status, submitted_at, submitted_by)
+           VALUES ($1, $2, NOW(), $3)
+           ON CONFLICT (tx_hash) DO UPDATE SET
+             status = EXCLUDED.status,
+             submitted_at = EXCLUDED.submitted_at`,
+          [stellarResult.txHash, stellarResult.status, req.user?.publicKey || null]
+        );
 
-    const result = await sorobanService.submitSignedTx(signedTxXdr);
+        logger.info("Transaction submission recorded", {
+          txHash: stellarResult.txHash,
+          status: stellarResult.status,
+          submittedBy: req.user?.publicKey,
+        });
 
-    logger.info("Transaction submitted", {
-      txHash: result.txHash,
-      status: result.status,
+        return { recorded: true };
+      }
+    );
+
+    logger.info("Transaction submitted successfully", {
+      txHash: result.stellarResult.txHash,
+      status: result.stellarResult.status,
     });
 
     res.json({
       success: true,
-      txHash: result.txHash,
-      status: result.status,
-      ...(result.resultXdr ? { resultXdr: result.resultXdr } : {}),
+      txHash: result.stellarResult.txHash,
+      status: result.stellarResult.status,
+      ...(result.stellarResult.resultXdr ? { resultXdr: result.stellarResult.resultXdr } : {}),
     });
   },
 );

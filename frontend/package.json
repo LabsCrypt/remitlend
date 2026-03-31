@@ -9,10 +9,12 @@
     "lint": "prettier --check .",
     "audit:a11y": "next build && npx axe-playwright",
     "format": "prettier --write .",
+    "test:e2e": "playwright test",
     "prepare": "husky"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.46.0",
+    "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^14.6.1",
     "@tanstack/react-query": "^5.95.2",
     "@tanstack/react-query-devtools": "^5.95.2",

@@ -335,7 +335,8 @@ export class EventIndexer {
       cursor = nextCursor;
     }
 
-    return result;
+    // Sort events by ledger to ensure consistent processing order
+    return result.sort((a, b) => Number(a.ledger) - Number(b.ledger));
   }
 
   private async storeEvents(

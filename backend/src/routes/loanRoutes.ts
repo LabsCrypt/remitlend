@@ -14,9 +14,15 @@ import {
   requireWalletOwnership,
 } from "../middleware/jwtAuth.js";
 import { requireLoanBorrowerAccess } from "../middleware/loanAccess.js";
-import { validate } from "../middleware/validation.js";
+import { validate, validateBody, validateParams } from "../middleware/validation.js";
 import { idempotencyMiddleware } from "../middleware/idempotency.js";
 import { borrowerParamSchema } from "../schemas/stellarSchemas.js";
+import {
+  requestLoanSchema,
+  repayLoanSchema,
+  repayLoanParamsSchema,
+  submitTxSchema,
+} from "../schemas/loanSchemas.js";
 
 const router = Router();
 
@@ -94,8 +100,10 @@ router.get(
  *               $ref: '#/components/schemas/LoanDetailsResponse'
  *       401:
  *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Loan exists but belongs to a different borrower
  *       404:
- *         description: Loan not found or not accessible
+ *         description: Loan not found
  */
 router.get(
   "/:loanId",
@@ -153,7 +161,7 @@ router.get(
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/request", requireJwtAuth, idempotencyMiddleware, requestLoan);
+router.post("/request", requireJwtAuth, validateBody(requestLoanSchema), idempotencyMiddleware, requestLoan);
 
 /**
  * @swagger
@@ -189,7 +197,7 @@ router.post("/request", requireJwtAuth, idempotencyMiddleware, requestLoan);
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/submit", requireJwtAuth, idempotencyMiddleware, submitTransaction);
+router.post("/submit", requireJwtAuth, validateBody(submitTxSchema), idempotencyMiddleware, submitTransaction);
 
 /**
  * @swagger
@@ -238,13 +246,17 @@ router.post("/submit", requireJwtAuth, idempotencyMiddleware, submitTransaction)
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Loan exists but belongs to a different borrower
  *       404:
- *         description: Loan not found or not accessible
+ *         description: Loan not found
  */
 router.post(
   "/:loanId/repay",
   requireJwtAuth,
   requireLoanBorrowerAccess,
+  validateParams(repayLoanParamsSchema),
+  validateBody(repayLoanSchema),
   idempotencyMiddleware,
   repayLoan,
 );
@@ -289,13 +301,17 @@ router.post(
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Loan exists but belongs to a different borrower
  *       404:
- *         description: Loan not found or not accessible
+ *         description: Loan not found
  */
 router.post(
   "/:loanId/submit",
   requireJwtAuth,
   requireLoanBorrowerAccess,
+  validateParams(repayLoanParamsSchema),
+  validateBody(submitTxSchema),
   idempotencyMiddleware,
   submitTransaction,
 );

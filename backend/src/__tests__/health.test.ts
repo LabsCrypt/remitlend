@@ -7,10 +7,17 @@ jest.unstable_mockModule("../db/connection.js", () => ({
     query: jest.fn<() => Promise<any>>().mockResolvedValue({ rows: [], rowCount: 0 }),
   },
   query: jest.fn<() => Promise<any>>().mockResolvedValue({ rows: [], rowCount: 0 }),
+  getClient: jest.fn(),
 }));
 
 jest.unstable_mockModule("../services/cacheService.js", () => ({
   cacheService: {
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
+  },
+}));
+
+jest.unstable_mockModule("../services/sorobanService.js", () => ({
+  sorobanService: {
     ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
   },
 }));

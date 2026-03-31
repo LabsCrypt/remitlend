@@ -4,15 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight, Home } from "lucide-react";
 
+const localeSegments = new Set(["en", "es", "tl"]);
+
 const segmentLabels: Record<string, string> = {
-  borrower: "Borrower Portal",
-  lender: "Lender Portal",
+  activity: "Activity",
+  analytics: "Analytics",
+  borrower: "Borrower",
+  dashboard: "Dashboard",
+  kingdom: "Kingdom",
   loans: "Loans",
-  lend: "Lender Portal",
+  lend: "Lend",
+  "request-loan": "Request Loan",
   remittances: "Remittances",
+  "send-remittance": "Send Remittance",
   wallet: "Wallet",
   settings: "Settings",
-  repay: "Repay",
+  repay: "Repayment",
+  "transaction-preview-demo": "Transaction Preview",
   "ui-demo": "UI Demo",
 };
 
@@ -35,6 +43,14 @@ function getSegmentLabel(segment: string) {
   return toTitleCase(segment);
 }
 
+function getContextualLabel(segment: string, previousSegment?: string, isLast = false) {
+  if (isLast && previousSegment && ["loans", "repay"].includes(previousSegment)) {
+    return `Loan #${segment}`;
+  }
+
+  return getSegmentLabel(segment);
+}
+
 export function Breadcrumbs() {
   const pathname = usePathname();
 
@@ -42,15 +58,26 @@ export function Breadcrumbs() {
     return null;
   }
 
-  const segments = pathname.split("/").filter(Boolean);
+  const allSegments = pathname.split("/").filter(Boolean);
+  const locale = allSegments[0] && localeSegments.has(allSegments[0]) ? allSegments[0] : null;
+  const segments = locale ? allSegments.slice(1) : allSegments;
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  const baseHref = locale ? `/${locale}` : "/";
   const items = segments.map((segment, index) => {
-    const href = `/${segments.slice(0, index + 1).join("/")}`;
+    const fullSegments = locale
+      ? [locale, ...segments.slice(0, index + 1)]
+      : segments.slice(0, index + 1);
+    const href = `/${fullSegments.join("/")}`;
     const isCurrent = index === segments.length - 1;
 
     return {
       href,
       isCurrent,
-      label: getSegmentLabel(segment),
+      label: getContextualLabel(segment, segments[index - 1], isCurrent),
     };
   });
 
@@ -62,11 +89,11 @@ export function Breadcrumbs() {
       <ol className="flex min-w-max items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
         <li>
           <Link
-            href="/"
+            href={baseHref}
             className="inline-flex items-center gap-2 rounded-full px-2 py-1 font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
           >
             <Home className="h-4 w-4" />
-            <span className="hidden sm:inline">Home</span>
+            <span className="hidden sm:inline">Dashboard</span>
           </Link>
         </li>
         {items.map((item) => (

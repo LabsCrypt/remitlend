@@ -175,8 +175,6 @@ export const submitRemittanceTransaction = asyncHandler(
         await remittanceService.updateRemittanceStatus(
           id,
           "failed",
-          undefined,
-          error instanceof Error ? error.message : "Unknown error"
         );
       }
 

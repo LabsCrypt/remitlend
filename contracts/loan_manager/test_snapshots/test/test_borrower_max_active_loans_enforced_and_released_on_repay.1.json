@@ -1264,6 +1264,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "extension_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "interest_paid"
                       },
                       "val": {
@@ -1279,6 +1287,17 @@
                       },
                       "val": {
                         "u32": 1200
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "interest_residual"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
@@ -1439,6 +1458,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "extension_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "interest_paid"
                       },
                       "val": {
@@ -1454,6 +1481,17 @@
                       },
                       "val": {
                         "u32": 1200
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "interest_residual"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
@@ -1614,6 +1652,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "extension_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "interest_paid"
                       },
                       "val": {
@@ -1629,6 +1675,17 @@
                       },
                       "val": {
                         "u32": 1200
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "interest_residual"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
@@ -1723,6 +1780,31 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "BorrowerLoans"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "u32": 1
+                            },
+                            {
+                              "u32": 2
+                            },
+                            {
+                              "u32": 3
+                            }
+                          ]
                         }
                       },
                       {
@@ -1857,7 +1939,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 2
+                          "u32": 3
                         }
                       }
                     ]

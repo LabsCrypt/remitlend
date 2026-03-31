@@ -3,15 +3,17 @@ import {
   Operation,
   TransactionBuilder,
   nativeToScVal,
+  scValToNative,
   Address,
-  xdr,
   StrKey,
+  Keypair,
 } from "@stellar/stellar-sdk";
 import logger from "../utils/logger.js";
 import { AppError } from "../errors/AppError.js";
 import {
   createSorobanRpcServer,
   getStellarNetworkPassphrase,
+  getStellarRpcUrl,
 } from "../config/stellar.js";
 
 function rpcCall<T>(promise: Promise<T>): Promise<T> {
@@ -30,6 +32,11 @@ function rpcCall<T>(promise: Promise<T>): Promise<T> {
 class SorobanService {
   private getRpcServer() {
     return createSorobanRpcServer();
+  }
+
+  async ping(): Promise<"ok" | "error"> {
+    const result = await this.healthCheck();
+    return result.connected ? "ok" : "error";
   }
 
   private getNetworkPassphrase(): string {
@@ -66,6 +73,36 @@ class SorobanService {
     return address;
   }
 
+  private getRemittanceNftContractId(): string {
+    const contractId = process.env.REMITTANCE_NFT_CONTRACT_ID;
+    if (!contractId) {
+      throw AppError.internal(
+        "REMITTANCE_NFT_CONTRACT_ID is not configured",
+      );
+    }
+    return contractId;
+  }
+
+  private getScoreReadSourceKeypair(): Keypair {
+    const secret =
+      process.env.SCORE_RECONCILIATION_SOURCE_SECRET ??
+      process.env.LOAN_MANAGER_ADMIN_SECRET;
+
+    if (!secret) {
+      throw AppError.internal(
+        "A source secret is required for score reconciliation reads",
+      );
+    }
+
+    try {
+      return Keypair.fromSecret(secret);
+    } catch {
+      throw AppError.internal(
+        "The configured score reconciliation source secret is invalid",
+      );
+    }
+  }
+
   /**
    * Builds an unsigned Soroban `request_loan(borrower, amount)` transaction.
    * Returns base64 XDR for the frontend to sign with the user's wallet.
@@ -80,10 +117,9 @@ class SorobanService {
 
     const account = await rpcCall(server.getAccount(borrowerPublicKey));
 
-    const borrowerScVal = nativeToScVal(
-      Address.fromString(borrowerPublicKey),
-      { type: "address" },
-    );
+    const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
+      type: "address",
+    });
     const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
 
     const tx = new TransactionBuilder(account, {
@@ -165,23 +201,22 @@ class SorobanService {
    * Returns base64 XDR for the frontend to sign with the user's wallet.
    */
   async buildDepositTx(
-    depositorPublicKey: string,
+    providerPublicKey: string,
+    tokenAddress: string,
     amount: number,
   ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
     const server = this.getRpcServer();
     const contractId = this.getLendingPoolContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await rpcCall(server.getAccount(depositorPublicKey));
+    const account = await server.getAccount(providerPublicKey);
 
-    const providerScVal = nativeToScVal(
-      Address.fromString(depositorPublicKey),
-      { type: "address" },
-    );
-    const tokenScVal = nativeToScVal(
-      Address.fromString(this.getPoolTokenAddress()),
-      { type: "address" },
-    );
+    const providerScVal = nativeToScVal(Address.fromString(providerPublicKey), {
+      type: "address",
+    });
+    const tokenScVal = nativeToScVal(Address.fromString(tokenAddress), {
+      type: "address",
+    });
     const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
 
     const tx = new TransactionBuilder(account, {
@@ -202,7 +237,8 @@ class SorobanService {
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built deposit transaction", {
-      depositor: depositorPublicKey,
+      provider: providerPublicKey,
+      token: tokenAddress,
       amount,
     });
 
@@ -215,21 +251,22 @@ class SorobanService {
    * Returns base64 XDR for the frontend to sign with the user's wallet.
    */
   async buildWithdrawTx(
-    depositorPublicKey: string,
+    providerPublicKey: string,
+    tokenAddress: string,
     shares: number,
   ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
     const server = this.getRpcServer();
     const contractId = this.getLendingPoolContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await rpcCall(server.getAccount(depositorPublicKey));
+    const account = await server.getAccount(providerPublicKey);
 
     const providerScVal = nativeToScVal(
-      Address.fromString(depositorPublicKey),
+      Address.fromString(providerPublicKey),
       { type: "address" },
     );
     const tokenScVal = nativeToScVal(
-      Address.fromString(this.getPoolTokenAddress()),
+      Address.fromString(tokenAddress),
       { type: "address" },
     );
     const sharesScVal = nativeToScVal(BigInt(shares), { type: "i128" });
@@ -252,7 +289,8 @@ class SorobanService {
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built withdraw transaction", {
-      depositor: depositorPublicKey,
+      provider: providerPublicKey,
+      token: tokenAddress,
       shares,
     });
 
@@ -312,7 +350,7 @@ class SorobanService {
     const contractChecks: Array<[string, string]> = [
       ["LOAN_MANAGER_CONTRACT_ID", process.env.LOAN_MANAGER_CONTRACT_ID ?? ""],
       ["LENDING_POOL_CONTRACT_ID", process.env.LENDING_POOL_CONTRACT_ID ?? ""],
-      ["POOL_TOKEN_ADDRESS",       process.env.POOL_TOKEN_ADDRESS       ?? ""],
+      ["POOL_TOKEN_ADDRESS", process.env.POOL_TOKEN_ADDRESS ?? ""],
     ];
 
     for (const [name, value] of contractChecks) {
@@ -326,19 +364,29 @@ class SorobanService {
       }
     }
 
+    let rpcUrl: string;
+    try {
+      rpcUrl = getStellarRpcUrl();
+    } catch (err) {
+      throw AppError.internal(
+        err instanceof Error
+          ? err.message
+          : "Invalid Stellar RPC configuration",
+      );
+    }
+
     try {
       await rpcCall(this.getRpcServer().getHealth());
     } catch (err) {
       throw AppError.internal(
-        `Stellar RPC is unreachable at ${process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org"}: ${err instanceof Error ? err.message : String(err)}`,
+        `Stellar RPC is unreachable at ${rpcUrl}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
     logger.info("Soroban configuration validated", {
       loanManagerContractId: process.env.LOAN_MANAGER_CONTRACT_ID,
       lendingPoolContractId: process.env.LENDING_POOL_CONTRACT_ID,
-      rpcUrl:
-        process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org",
+      rpcUrl,
     });
   }
 
@@ -384,21 +432,138 @@ class SorobanService {
     return {
       txHash,
       status: polled.status,
-      ...(resultXdr !== undefined ? { resultXdr } : {}),
+      ...(resultXdr ? { resultXdr } : {}),
     };
   }
+
+  /**
+   * Reads the authoritative borrower score from the Remittance NFT contract.
+   * Uses a lightweight simulation because `get_score` is a read-only call.
+   */
+  async getOnChainCreditScore(userPublicKey: string): Promise<number> {
+    const server = this.getRpcServer();
+    const contractId = this.getRemittanceNftContractId();
+    const passphrase = this.getNetworkPassphrase();
+    const source = this.getScoreReadSourceKeypair();
+
+    const account = await server.getAccount(source.publicKey());
+    const userScVal = nativeToScVal(Address.fromString(userPublicKey), {
+      type: "address",
+    });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "get_score",
+          args: [userScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const simulation = await server.simulateTransaction(tx);
+    if ("error" in simulation) {
+      throw AppError.internal(
+        `Failed to simulate get_score for ${userPublicKey}: ${simulation.error}`,
+      );
+    }
+
+    const retval = simulation.result?.retval;
+    if (!retval) {
+      throw AppError.internal(
+        `No score returned by get_score for ${userPublicKey}`,
+      );
+    }
+
+    const nativeScore = scValToNative(retval);
+    const score = Number(nativeScore);
+    if (!Number.isFinite(score)) {
+      throw AppError.internal(
+        `Invalid on-chain score returned for ${userPublicKey}`,
+      );
+    }
+
+    return score;
+  }
+
   /**
    * Ping the Stellar RPC server to verify connectivity.
-   * Returns "ok" on success or "error" if unreachable.
+   * Calls getLatestLedger() with a 5-second timeout.
    */
-  async ping(): Promise<"ok" | "error"> {
+  async healthCheck(): Promise<{ connected: boolean; latestLedger?: number; error?: string }> {
     try {
       const server = this.getRpcServer();
-      await rpcCall(server.getHealth());
-      return "ok";
-    } catch {
-      return "error";
+      const timeoutPromise = new Promise<{ connected: boolean; error: string }>((_, reject) =>
+        setTimeout(() => reject(new Error("RPC timeout")), 5000)
+      );
+      
+      const ledgerPromise = server.getLatestLedger().then((res) => ({
+        connected: true,
+        latestLedger: res.sequence,
+      }));
+
+      return await Promise.race([ledgerPromise, timeoutPromise]);
+    } catch (error) {
+      return {
+        connected: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
+  }
+
+  /**
+   * Reads the current available liquidity from the pool token.
+   * This calls the token's balance function for the lending pool contract.
+   */
+  async getPoolBalance(): Promise<number> {
+    const server = this.getRpcServer();
+    const tokenAddress = this.getPoolTokenAddress();
+    const poolId = this.getLendingPoolContractId();
+    const passphrase = this.getNetworkPassphrase();
+    const source = this.getScoreReadSourceKeypair(); // Re-use read-only keypair
+
+    const account = await server.getAccount(source.publicKey());
+    const poolScVal = nativeToScVal(Address.fromString(poolId), {
+      type: "address",
+    });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: tokenAddress,
+          function: "balance",
+          args: [poolScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const simulation = await server.simulateTransaction(tx);
+    if ("error" in simulation) {
+      throw AppError.internal(
+        `Failed to simulate pool balance: ${simulation.error}`,
+      );
+    }
+
+    const retval = simulation.result?.retval;
+    if (!retval) {
+      throw AppError.internal("No balance returned by pool token");
+    }
+
+    const nativeBalance = scValToNative(retval);
+    const balance = Number(nativeBalance);
+    if (!Number.isFinite(balance)) {
+      throw AppError.internal("Invalid on-chain balance returned");
+    }
+
+    return balance;
   }
 
   /**
@@ -408,17 +573,17 @@ class SorobanService {
    * a hardcoded value in application logic.
    */
   getScoreConfig(): { repaymentDelta: number; defaultPenalty: number } {
-    const repaymentDelta = parseInt(
+    const repaymentDelta = Number.parseInt(
       process.env.SCORE_REPAYMENT_DELTA ?? "15",
       10,
     );
-    const defaultPenalty = parseInt(
+    const defaultPenalty = Number.parseInt(
       process.env.SCORE_DEFAULT_PENALTY ?? "50",
       10,
     );
     return { repaymentDelta, defaultPenalty };
   }
-  
+
 }
 
 export const sorobanService = new SorobanService();

@@ -71,7 +71,6 @@ impl RemittanceNFT {
     pub const MAX_SCORE_HISTORY_ENTRIES: u32 = 50;
     const TRANSFER_COOLDOWN_LEDGERS: u32 = 17280;
     const MIN_CREDIT_SCORE: u32 = 300;
-    const MAX_CREDIT_SCORE: u32 = 850;
     pub const MAX_SCORE: u32 = 850;
 
     fn admin_key() -> soroban_sdk::Symbol {
@@ -509,23 +508,26 @@ impl RemittanceNFT {
         );
     }
 
-    pub fn apply_score_delta(env: Env, user: Address, delta: i32, minter: Option<Address>) {
-        Self::require_admin_or_authorized_minter(&env, minter)
-            .unwrap_or_else(|_| panic!("unauthorized minter"));
+    /// Update the history hash for a user's NFT.
+    pub fn apply_score_delta(
+        env: Env,
+        user: Address,
+        delta: i32,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
-            .unwrap_or_else(|| panic!("user does not have an NFT"));
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         let old_score = metadata.score as i64;
         let next_score = old_score + delta as i64;
-        let min_score = Self::MIN_CREDIT_SCORE as i64;
-        let max_score = Self::MAX_CREDIT_SCORE as i64;
-        let bounded_score = next_score.clamp(min_score, max_score);
+        let bounded_score = next_score.clamp(0, Self::MAX_SCORE as i64);
         let next_score_u32 = u32::try_from(bounded_score).expect("score overflow");
 
         if next_score_u32 == metadata.score {
-            return;
+            return Ok(());
         }
 
         let previous_score = metadata.score;
@@ -542,6 +544,7 @@ impl RemittanceNFT {
         );
         env.events()
             .publish((symbol_short!("ScoreUpd"), user), metadata.score);
+        Ok(())
     }
 
     /// Update the history hash for a user's NFT.
@@ -895,6 +898,18 @@ impl RemittanceNFT {
         env.events()
             .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
         Ok(())
+    }
+
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&Self::admin_key(), &new_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+
+        env.events()
+            .publish((Symbol::new(&env, "AdminTransferred"),), new_admin);
     }
 }
 

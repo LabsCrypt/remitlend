@@ -7,7 +7,7 @@ import {
 import { validate } from "../middleware/validation.js";
 import { getScoreSchema, updateScoreSchema } from "../schemas/scoreSchemas.js";
 import { requireApiKey } from "../middleware/auth.js";
-import { strictRateLimiter } from "../middleware/rateLimiter.js";
+import { scoreUpdateRateLimit } from "../middleware/rateLimitMiddleware.js";
 import {
   requireJwtAuth,
   requireScopes,
@@ -155,7 +155,7 @@ router.get(
 router.post(
   "/update",
   requireApiKey,
-  strictRateLimiter,
+  scoreUpdateRateLimit,
   validate(updateScoreSchema),
   updateScore,
 );

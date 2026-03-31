@@ -149,7 +149,7 @@ impl GovernanceContract {
     }
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let admin = Self::get_admin(&env);
+        let admin = Self::read_admin(&env);
         admin.require_auth();
 
         let old_version = Self::version(env.clone());
@@ -179,7 +179,7 @@ impl GovernanceContract {
         threshold: u32,
         delay_seconds: u64,
     ) {
-        let admin = Self::get_admin(&env);
+        let admin = Self::read_admin(&env);
         admin.require_auth();
 
         if let Some(pending) = env
@@ -388,7 +388,7 @@ impl GovernanceContract {
     /// Cancel a pending transfer. Only the current admin may do this.
     /// After cancellation the process must restart from propose_admin_transfer.
     pub fn cancel_admin_transfer(env: Env) {
-        let admin = Self::get_admin(&env);
+        let admin = Self::read_admin(&env);
         admin.require_auth();
 
         let mut pending: PendingTransfer = env
@@ -424,7 +424,7 @@ impl GovernanceContract {
         proposal_id: u32,
         reason: Option<soroban_sdk::String>,
     ) {
-        let admin = Self::get_admin(&env);
+        let admin = Self::read_admin(&env);
         admin.require_auth();
 
         let mut pending: PendingTransfer = env
@@ -501,7 +501,18 @@ impl GovernanceContract {
     // ── Views ─────────────────────────────────────────────────────────────────
 
     pub fn get_current_admin(env: Env) -> Address {
-        Self::get_admin(&env)
+        Self::read_admin(&env)
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        Self::read_admin(&env)
+    }
+
+    pub fn get_target(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&KEY_TARGET)
+            .expect("target contract not set")
     }
 
     pub fn get_pending_transfer(env: Env) -> PendingTransfer {
@@ -509,6 +520,10 @@ impl GovernanceContract {
             .instance()
             .get(&KEY_PENDING)
             .expect("no pending transfer (4004)")
+    }
+
+    pub fn get_pending(env: Env) -> Option<PendingTransfer> {
+        env.storage().instance().get(&KEY_PENDING)
     }
 
     pub fn has_pending_transfer(env: Env) -> bool {
@@ -554,7 +569,7 @@ impl GovernanceContract {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    fn get_admin(env: &Env) -> Address {
+    fn read_admin(env: &Env) -> Address {
         env.storage()
             .instance()
             .get(&KEY_ADMIN)

@@ -131,6 +131,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
               onChange={(e) => handleAmountChange(e.target.value)}
               error={error || undefined}
               leftIcon={<DollarSign className="h-4 w-4" />}
+              required
               helperText="Enter the amount you want to repay in USDC"
             />
 
@@ -150,7 +151,10 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
             </div>
           </div>
 
-          {/* Transaction Progress */}
+          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2">
+            <span className="text-red-600">*</span> Required field
+          </p>
+
           <OperationProgress transaction={repayment.transaction} type="repayment" />
 
           {/* Action Button */}

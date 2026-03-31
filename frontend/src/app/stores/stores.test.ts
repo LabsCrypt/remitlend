@@ -22,6 +22,7 @@ beforeEach(() => {
     balances: [],
     isLoadingBalances: false,
     error: null,
+    shouldAutoReconnect: false,
   });
   useUIStore.setState((state) => ({
     ...state,
@@ -94,7 +95,7 @@ describe("useUserStore", () => {
 // ─── useWalletStore ──────────────────────────────────────────────────────────
 
 describe("useWalletStore", () => {
-  const mockNetwork = { chainId: 1, name: "Ethereum", isSupported: true };
+  const mockNetwork = { chainId: 2, name: "TESTNET", isSupported: true };
 
   it("starts disconnected", () => {
     const { status, address } = useWalletStore.getState();
@@ -108,7 +109,8 @@ describe("useWalletStore", () => {
     const { status, address, network } = useWalletStore.getState();
     expect(status).toBe("connected");
     expect(address).toBe("0x123");
-    expect(network?.chainId).toBe(1);
+    expect(network?.chainId).toBe(2);
+    expect(useWalletStore.getState().shouldAutoReconnect).toBe(true);
   });
 
   it("disconnect resets to initial state", () => {
@@ -119,6 +121,7 @@ describe("useWalletStore", () => {
     expect(status).toBe("disconnected");
     expect(address).toBeNull();
     expect(balances).toHaveLength(0);
+    expect(useWalletStore.getState().shouldAutoReconnect).toBe(false);
   });
 
   it("setBalances stores balances and clears loading flag", () => {
