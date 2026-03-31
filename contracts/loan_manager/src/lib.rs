@@ -1192,7 +1192,6 @@ impl LoanManager {
         // Borrower must also sign.
         loan.borrower.require_auth();
 
-
         if loan.status != LoanStatus::Approved {
             return Err(LoanError::LoanNotActive);
         }
