@@ -68,6 +68,7 @@ function CopyButton({ value }: { value: string }) {
       onClick={handleCopy}
       className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
       title="Copy to clipboard"
+      aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
     >
       {copied ? <CheckCheck className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
     </button>
@@ -102,6 +103,7 @@ function Toggle({
         }`}
         role="switch"
         aria-checked={checked}
+        aria-label={label}
       >
         <span
           className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -393,6 +395,7 @@ function SecuritySection() {
               <button
                 onClick={() => setShowToken((v) => !v)}
                 className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                aria-label={showToken ? "Hide session token" : "Show session token"}
               >
                 {showToken ? "Hide" : "Show"}
               </button>

@@ -12,3 +12,4 @@ coverage
 *.log
 .idea
 create_issues.sh
+.claude

@@ -1,12 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { CreditScoreTrendChart, type CreditScoreDataPoint } from "../charts/CreditScoreTrendChart";
-import { YieldEarningsChart, type YieldDataPoint } from "../charts/YieldEarningsChart";
+import dynamic from "next/dynamic";
+import { Suspense, useState } from "react";
+import type { CreditScoreDataPoint } from "../charts/CreditScoreTrendChart";
+import type { YieldDataPoint } from "../charts/YieldEarningsChart";
+
+const CreditScoreTrendChart = dynamic(
+  () => import("../charts/CreditScoreTrendChart").then((m) => m.CreditScoreTrendChart),
+  { ssr: false, loading: () => <SkeletonChart /> },
+);
+
+const YieldEarningsChart = dynamic(
+  () => import("../charts/YieldEarningsChart").then((m) => m.YieldEarningsChart),
+  { ssr: false, loading: () => <SkeletonChart /> },
+);
 import { useCreditScoreHistory, useYieldHistory } from "@/app/hooks/useApi";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { AnalyticsSkeleton } from "../skeletons/AnalyticsSkeleton";
+import { SkeletonChart } from "../ui/Skeleton";
 import { RefreshCw } from "lucide-react";
 
 interface FinancialPerformanceDashboardProps {
@@ -170,7 +182,9 @@ export function FinancialPerformanceDashboard({
                 </div>
               </Card>
             ) : (
-              <CreditScoreTrendChart data={displayCreditScoreData} />
+              <Suspense fallback={<SkeletonChart />}>
+                <CreditScoreTrendChart data={displayCreditScoreData} />
+              </Suspense>
             )}
           </div>
         )}
@@ -188,7 +202,9 @@ export function FinancialPerformanceDashboard({
                 </div>
               </Card>
             ) : (
-              <YieldEarningsChart data={displayYieldData} />
+              <Suspense fallback={<SkeletonChart />}>
+                <YieldEarningsChart data={displayYieldData} />
+              </Suspense>
             )}
           </div>
         )}

@@ -26,7 +26,7 @@ describe("Idempotency Middleware", () => {
       statusCode: 200,
     };
     next = jest.fn();
-    
+
     // Mock cacheService explicitly for each test if needed
     // In ESM with Jest, mocking can be tricky, so we rely on manual mocks of the singleton instance if possible
     // or use jest.spyOn if the instance is exported.
@@ -40,9 +40,9 @@ describe("Idempotency Middleware", () => {
 
   it("should call next() if no Idempotency-Key is present", async () => {
     asMock(req.header).mockReturnValue(undefined);
-    
+
     await idempotencyMiddleware(req as Request, res as Response, next);
-    
+
     expect(next).toHaveBeenCalled();
     expect(cacheService.get).not.toHaveBeenCalled();
   });
@@ -51,7 +51,9 @@ describe("Idempotency Middleware", () => {
     const key = "test-key";
     const cachedResponse = { status: 201, body: { success: true } };
     asMock(req.header).mockReturnValue(key);
-    (cacheService.get as jest.Mock<() => Promise<any>>).mockResolvedValue(cachedResponse);
+    (cacheService.get as jest.Mock<() => Promise<any>>).mockResolvedValue(
+      cachedResponse,
+    );
 
     await idempotencyMiddleware(req as Request, res as Response, next);
 

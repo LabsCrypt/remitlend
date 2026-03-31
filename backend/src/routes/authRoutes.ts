@@ -96,7 +96,13 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/AuthLoginResponse'
  */
-router.post("/login", ipLoginRateLimiter, loginRateLimiter, validateBody(loginSchema), login);
+router.post(
+  "/login",
+  ipLoginRateLimiter,
+  loginRateLimiter,
+  validateBody(loginSchema),
+  login,
+);
 
 /**
  * @swagger

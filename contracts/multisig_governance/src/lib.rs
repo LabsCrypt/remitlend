@@ -211,6 +211,20 @@ impl GovernanceContract {
         if signers.len() > MAX_SIGNERS {
             panic!("signer list exceeds MAX_SIGNERS of 20 (4008)");
         }
+        // Ensure signer list contains unique addresses. Duplicates would allow
+        // the same key to be listed multiple times and potentially bypass
+        // the multi-signer threshold semantics. We build an explicit
+        // deduplicated `unique_signers` Vec that preserves order but rejects
+        // input lists containing duplicates.
+        let mut unique_signers: Vec<Address> = Vec::new(&env);
+        for s in signers.iter() {
+            if unique_signers.iter().any(|x| x == s) {
+                // Explicitly reject proposals containing duplicate signer
+                // entries to avoid any ambiguity in quorum semantics.
+                panic!("duplicate signer in signer list (4020)");
+            }
+            unique_signers.push_back(s.clone());
+        }
         if threshold < 1 {
             panic!("threshold must be >= 1 (4007)");
         }
@@ -237,7 +251,8 @@ impl GovernanceContract {
         let pending = PendingTransfer {
             id: proposal_id,
             proposed_admin: proposed_admin.clone(),
-            signers: signers.clone(),
+            // Store the deduplicated signer list.
+            signers: unique_signers.clone(),
             threshold,
             executable_after,
             approvals: Map::new(&env),

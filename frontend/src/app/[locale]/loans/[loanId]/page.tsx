@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronRight, Clock, Wallet } from "lucide-react";
 import { LoanDetailSkeleton } from "../../../components/skeletons/LoanDetailSkeleton";
-import { useLoan } from "../../../hooks/useApi";
+import { useLoan, useLoanAmortizationSchedule } from "../../../hooks/useApi";
+import { RepaymentScheduleTable } from "../../../components/loan-wizard/RepaymentScheduleTable";
 import { RepaymentProgress } from "../../../components/ui/RepaymentProgress";
 import { LoanTimeline } from "../../../components/ui/LoanTimeline";
 import { TxHashLink } from "../../../components/ui/TxHashLink";
@@ -32,6 +33,9 @@ export default function LoanDetailsPage() {
   const params = useParams<{ loanId: string }>();
   const loanId = params.loanId;
   const { data: loan, isLoading, isError } = useLoan(loanId);
+  const amortizationQuery = useLoanAmortizationSchedule(loanId, {
+    retry: false,
+  });
 
   if (isLoading) {
     return <LoanDetailSkeleton />;
@@ -161,6 +165,23 @@ export default function LoanDetailsPage() {
               <LoanTimeline events={loan.events} />
             </div>
           </div>
+
+          {amortizationQuery.data && (
+            <div className="mt-6">
+              <RepaymentScheduleTable
+                amortization={amortizationQuery.data}
+                title="Amortization Schedule"
+                description="See the principal, interest, and remaining balance for each repayment period."
+                compact
+              />
+            </div>
+          )}
+
+          {amortizationQuery.isError && (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+              Amortization schedule is unavailable for this loan right now.
+            </div>
+          )}
         </article>
 
         {/* Sidebar */}

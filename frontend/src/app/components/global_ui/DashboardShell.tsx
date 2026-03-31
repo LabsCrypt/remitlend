@@ -20,6 +20,12 @@ export function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 z-50 bg-white dark:bg-zinc-800 dark:text-white p-2 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      >
+        Skip to main content
+      </a>
       {/* Mobile Sidebar Backdrop */}
       {isSidebarOpen && (
         <div
@@ -43,7 +49,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
         <Header onMenuClick={() => setIsSidebarOpen(true)} />
 
         {/* Dynamic Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <Breadcrumbs />
             {children}

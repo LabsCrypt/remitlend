@@ -97,16 +97,25 @@ export const streamEvents = asyncHandler(
 
         if (replayEvents.rows.length > 0) {
           for (const row of replayEvents.rows) {
-            eventStreamService.sendEvent(res, mapLoanEventRow(row as DbEventRow));
+            eventStreamService.sendEvent(
+              res,
+              mapLoanEventRow(row as DbEventRow),
+            );
           }
         } else if (!lastEventId) {
-          res.write(`event: init\ndata: ${JSON.stringify({ type: "init", replayed: 0 })}\n\n`);
+          res.write(
+            `event: init\ndata: ${JSON.stringify({ type: "init", replayed: 0 })}\n\n`,
+          );
         }
       } catch (err) {
         logger.error("SSE replay fetch error", { borrower, lastEventId, err });
       }
 
-      unsubscribe = eventStreamService.subscribeBorrower(userKey, borrower, res);
+      unsubscribe = eventStreamService.subscribeBorrower(
+        userKey,
+        borrower,
+        res,
+      );
     } else {
       try {
         const replayEvents = await query(
@@ -123,7 +132,10 @@ export const streamEvents = asyncHandler(
 
         if (replayEvents.rows.length > 0) {
           for (const row of replayEvents.rows) {
-            eventStreamService.sendEvent(res, mapLoanEventRow(row as DbEventRow));
+            eventStreamService.sendEvent(
+              res,
+              mapLoanEventRow(row as DbEventRow),
+            );
           }
         }
       } catch (err) {
@@ -131,7 +143,9 @@ export const streamEvents = asyncHandler(
       }
 
       const counts = eventStreamService.getConnectionCount();
-      res.write(`event: init\ndata: ${JSON.stringify({ type: "init", connections: counts })}\n\n`);
+      res.write(
+        `event: init\ndata: ${JSON.stringify({ type: "init", connections: counts })}\n\n`,
+      );
       unsubscribe = eventStreamService.subscribeAll(userKey, res);
     }
 

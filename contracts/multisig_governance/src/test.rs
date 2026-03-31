@@ -190,6 +190,22 @@ fn propose_rejects_duplicate() {
 }
 
 #[test]
+#[should_panic(expected = "duplicate signer in signer list")]
+fn propose_rejects_duplicate_signer_address() {
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    // Duplicate the same address in the signer list
+    let signers = Vec::from_slice(&env, &[s.clone(), s.clone()]);
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &2,
+        &MIN_TIMELOCK_SECONDS,
+    );
+}
+
+#[test]
 fn approve_increments_count() {
     let (env, client, _, _) = setup();
     let s1 = Address::generate(&env);

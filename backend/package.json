@@ -69,5 +69,8 @@
     "typescript": "^5.9.3"
   },
   "eslintConfig": {},
-  "prettier": {}
+  "prettier": {},
+  "overrides": {
+    "axios": "1.13.5"
+  }
 }

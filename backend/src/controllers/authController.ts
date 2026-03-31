@@ -47,7 +47,11 @@ export const requestChallenge = (req: Request, res: Response): void => {
 
   if (!publicKey || typeof publicKey !== "string") {
     logAuthFailure(req, publicKey, "missing_public_key");
-    throw AppError.badRequest("Public key is required", ErrorCode.MISSING_FIELD, "publicKey");
+    throw AppError.badRequest(
+      "Public key is required",
+      ErrorCode.MISSING_FIELD,
+      "publicKey",
+    );
   }
 
   let challenge;
@@ -59,7 +63,11 @@ export const requestChallenge = (req: Request, res: Response): void => {
       error.message === "Invalid Stellar public key"
     ) {
       logAuthFailure(req, publicKey, "invalid_public_key");
-      throw AppError.badRequest("Invalid Stellar public key", ErrorCode.INVALID_PUBLIC_KEY, "publicKey");
+      throw AppError.badRequest(
+        "Invalid Stellar public key",
+        ErrorCode.INVALID_PUBLIC_KEY,
+        "publicKey",
+      );
     }
     throw error;
   }
@@ -75,35 +83,56 @@ export const login = (req: Request, res: Response): void => {
 
   if (!publicKey || typeof publicKey !== "string") {
     logAuthFailure(req, publicKey, "missing_public_key");
-    throw AppError.badRequest("Public key is required", ErrorCode.MISSING_FIELD, "publicKey");
+    throw AppError.badRequest(
+      "Public key is required",
+      ErrorCode.MISSING_FIELD,
+      "publicKey",
+    );
   }
 
   if (!message || typeof message !== "string") {
     logAuthFailure(req, publicKey, "missing_message");
-    throw AppError.badRequest("Message is required", ErrorCode.MISSING_FIELD, "message");
+    throw AppError.badRequest(
+      "Message is required",
+      ErrorCode.MISSING_FIELD,
+      "message",
+    );
   }
 
   if (!signature || typeof signature !== "string") {
     logAuthFailure(req, publicKey, "missing_signature");
-    throw AppError.badRequest("Signature is required", ErrorCode.MISSING_FIELD, "signature");
+    throw AppError.badRequest(
+      "Signature is required",
+      ErrorCode.MISSING_FIELD,
+      "signature",
+    );
   }
 
   const timestampMatch = message.match(/Timestamp: (\d+)/);
   if (!timestampMatch) {
     logAuthFailure(req, publicKey, "invalid_challenge_format");
-    throw AppError.badRequest("Invalid challenge message format", ErrorCode.INVALID_CHALLENGE);
+    throw AppError.badRequest(
+      "Invalid challenge message format",
+      ErrorCode.INVALID_CHALLENGE,
+    );
   }
 
   const timestamp = parseInt(timestampMatch[1]!, 10);
   if (!verifyChallengeTimestamp(timestamp)) {
     logAuthFailure(req, publicKey, "challenge_expired");
-    throw AppError.unauthorized("Challenge has expired", ErrorCode.CHALLENGE_EXPIRED);
+    throw AppError.unauthorized(
+      "Challenge has expired",
+      ErrorCode.CHALLENGE_EXPIRED,
+    );
   }
 
   const isValidSignature = verifySignature(publicKey, message, signature);
   if (!isValidSignature) {
     logAuthFailure(req, publicKey, "invalid_signature");
-    throw AppError.unauthorized("Invalid signature", ErrorCode.INVALID_SIGNATURE);
+    throw AppError.unauthorized(
+      "Invalid signature",
+      ErrorCode.INVALID_SIGNATURE,
+    );
   }
 
   const token = generateJwtToken(publicKey);

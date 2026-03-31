@@ -3,7 +3,10 @@
 
 import type { Request, Response, NextFunction } from "express";
 import { query } from "../db/connection.js";
-import { withTransaction, withStellarAndDbTransaction } from "../db/transaction.js";
+import {
+  withTransaction,
+  withStellarAndDbTransaction,
+} from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { getLoanConfig } from "../config/loanConfig.js";
@@ -220,6 +223,31 @@ const buildAmortizationSchedule = (
   };
 };
 
+export const previewLoanAmortizationSchedule = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { amount, termDays } = req.body as {
+      amount: number;
+      termDays: 30 | 60 | 90;
+    };
+
+    const loanConfig = getLoanConfig();
+    const interestRateBps = Math.round(loanConfig.interestRatePercent * 100);
+    const termLedgers = termDays * DEFAULT_TERM_LEDGERS;
+
+    const amortization = buildAmortizationSchedule(
+      amount,
+      interestRateBps,
+      termLedgers,
+      new Date(),
+    );
+
+    res.json({
+      success: true,
+      amortization,
+    });
+  },
+);
+
 /**
  * Get active loans for a borrower
  *
@@ -230,7 +258,6 @@ export const getBorrowerLoans = asyncHandler(
     const { borrower } = req.params;
     const { limit, cursor, sort, status, dateRange, amountRange } =
       parseCursorQueryParams(req);
-
 
     const currentLedger = await getLatestLedger();
 
@@ -307,7 +334,9 @@ export const getBorrowerLoans = asyncHandler(
     const result = await query(loansQuery, queryParams);
 
     const totalCount =
-      result.rows.length > 0 ? Number.parseInt(result.rows[0].full_count, 10) : 0;
+      result.rows.length > 0
+        ? Number.parseInt(result.rows[0].full_count, 10)
+        : 0;
 
     const hasNext = result.rows.length > limit;
     const trimmedRows = hasNext ? result.rows.slice(0, limit) : result.rows;
@@ -348,19 +377,21 @@ export const getBorrowerLoans = asyncHandler(
 /**
  * GET /api/loans/config
  */
-export const getLoanConfigEndpoint = asyncHandler(async (_req: Request, res: Response) => {
-  const loanConfig = getLoanConfig();
+export const getLoanConfigEndpoint = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const loanConfig = getLoanConfig();
 
-  res.json({
-    success: true,
-    data: {
-      minScore: loanConfig.minScore,
-      maxAmount: loanConfig.maxAmount,
-      interestRatePercent: loanConfig.interestRatePercent,
-      creditScoreThreshold: loanConfig.creditScoreThreshold,
-    },
-  });
-});
+    res.json({
+      success: true,
+      data: {
+        minScore: loanConfig.minScore,
+        maxAmount: loanConfig.maxAmount,
+        interestRatePercent: loanConfig.interestRatePercent,
+        creditScoreThreshold: loanConfig.creditScoreThreshold,
+      },
+    });
+  },
+);
 
 /**
  * Get detailed loan history and current stats
@@ -381,7 +412,11 @@ export const getLoanDetails = asyncHandler(
     );
 
     if (eventsResult.rows.length === 0) {
-      throw AppError.notFound("Loan not found", ErrorCode.LOAN_NOT_FOUND, "loanId");
+      throw AppError.notFound(
+        "Loan not found",
+        ErrorCode.LOAN_NOT_FOUND,
+        "loanId",
+      );
     }
 
     const events = eventsResult.rows;
@@ -481,20 +516,38 @@ export const getLoanAmortizationSchedule = asyncHandler(
     );
 
     if (eventsResult.rows.length === 0) {
-      throw AppError.notFound("Loan not found", ErrorCode.LOAN_NOT_FOUND, "loanId");
+      throw AppError.notFound(
+        "Loan not found",
+        ErrorCode.LOAN_NOT_FOUND,
+        "loanId",
+      );
     }
 
     const events = eventsResult.rows;
-    const requestEvent = events.find((event: any) => event.event_type === "LoanRequested");
-    const approvalEvent = events.find((event: any) => event.event_type === "LoanApproved");
+    const requestEvent = events.find(
+      (event: any) => event.event_type === "LoanRequested",
+    );
+    const approvalEvent = events.find(
+      (event: any) => event.event_type === "LoanApproved",
+    );
 
     if (!requestEvent || !approvalEvent || !requestEvent.amount) {
-      throw AppError.notFound("Loan not fully approved", ErrorCode.LOAN_NOT_FOUND, "loanId");
+      throw AppError.notFound(
+        "Loan not fully approved",
+        ErrorCode.LOAN_NOT_FOUND,
+        "loanId",
+      );
     }
 
     const principal = Number.parseFloat(String(requestEvent.amount));
-    const interestRateBps = Number.parseInt(String(approvalEvent.interest_rate_bps ?? DEFAULT_INTEREST_RATE_BPS), 10);
-    const termLedgers = Number.parseInt(String(approvalEvent.term_ledgers ?? DEFAULT_TERM_LEDGERS), 10);
+    const interestRateBps = Number.parseInt(
+      String(approvalEvent.interest_rate_bps ?? DEFAULT_INTEREST_RATE_BPS),
+      10,
+    );
+    const termLedgers = Number.parseInt(
+      String(approvalEvent.term_ledgers ?? DEFAULT_TERM_LEDGERS),
+      10,
+    );
 
     const approvedAt = approvalEvent.ledger_closed_at
       ? new Date(approvalEvent.ledger_closed_at)
@@ -534,9 +587,13 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
   if (
     process.env.NODE_ENV !== "test" &&
     "getPoolBalance" in sorobanService &&
-    typeof (sorobanService as unknown as { getPoolBalance?: () => Promise<number> }).getPoolBalance === "function"
+    typeof (
+      sorobanService as unknown as { getPoolBalance?: () => Promise<number> }
+    ).getPoolBalance === "function"
   ) {
-    const poolBalance = await (sorobanService as unknown as { getPoolBalance: () => Promise<number> }).getPoolBalance();
+    const poolBalance = await (
+      sorobanService as unknown as { getPoolBalance: () => Promise<number> }
+    ).getPoolBalance();
     if (amount > poolBalance) {
       throw AppError.badRequest(
         "Insufficient pool liquidity to cover this loan",
@@ -580,6 +637,13 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const loanIdNum = Number.parseInt(loanId, 10);
+  if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
+    throw AppError.badRequest(
+      "Invalid loan ID",
+      ErrorCode.INVALID_LOAN_ID,
+      "loanId",
+    );
+  }
 
   const result = await sorobanService.buildRepayTx(
     borrowerPublicKey,
@@ -609,6 +673,14 @@ export const submitTransaction = asyncHandler(
   async (req: Request, res: Response) => {
     const { signedTxXdr } = req.body as { signedTxXdr: string };
 
+    if (!signedTxXdr) {
+      throw AppError.badRequest(
+        "signedTxXdr is required",
+        ErrorCode.MISSING_FIELD,
+        "signedTxXdr",
+      );
+    }
+
     // Use transaction wrapper for consistency with multi-step operations
     const result = await withStellarAndDbTransaction(
       // Stellar operation
@@ -624,7 +696,11 @@ export const submitTransaction = asyncHandler(
            ON CONFLICT (tx_hash) DO UPDATE SET
              status = EXCLUDED.status,
              submitted_at = EXCLUDED.submitted_at`,
-          [stellarResult.txHash, stellarResult.status, req.user?.publicKey || null]
+          [
+            stellarResult.txHash,
+            stellarResult.status,
+            req.user?.publicKey || null,
+          ],
         );
 
         logger.info("Transaction submission recorded", {
@@ -634,7 +710,7 @@ export const submitTransaction = asyncHandler(
         });
 
         return { recorded: true };
-      }
+      },
     );
 
     logger.info("Transaction submitted successfully", {
@@ -646,7 +722,9 @@ export const submitTransaction = asyncHandler(
       success: true,
       txHash: result.stellarResult.txHash,
       status: result.stellarResult.status,
-      ...(result.stellarResult.resultXdr ? { resultXdr: result.stellarResult.resultXdr } : {}),
+      ...(result.stellarResult.resultXdr
+        ? { resultXdr: result.stellarResult.resultXdr }
+        : {}),
     });
   },
 );

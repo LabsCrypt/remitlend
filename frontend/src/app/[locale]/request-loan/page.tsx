@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Card, CardContent } from "../../components/ui/Card";
-import { LoanApplicationWizard } from "../../components/loan-wizard/LoanApplicationWizard";
+import { WizardSkeleton } from "../../components/skeletons/WizardSkeleton";
 import { useCreditScore, useMinimumScore } from "../../hooks/useApi";
 import { useToastStore } from "../../stores/useToastStore";
 import {
@@ -13,6 +14,14 @@ import {
   selectWalletAddress,
   selectIsWalletConnected,
 } from "../../stores/useWalletStore";
+
+const LoanApplicationWizard = dynamic(
+  () =>
+    import("../../components/loan-wizard/LoanApplicationWizard").then(
+      (m) => m.LoanApplicationWizard,
+    ),
+  { ssr: false, loading: () => <WizardSkeleton /> },
+);
 
 function getScoreBandMax(score: number): number {
   if (score >= 750) return 50_000;
@@ -197,12 +206,14 @@ export default function RequestLoanPage() {
             </p>
           </div>
 
-          <LoanApplicationWizard
-            borrowerAddress={borrowerAddress!}
-            creditScore={resolvedCreditScore}
-            maxAmount={maxAmount}
-            onSuccess={setSuccessLoanId}
-          />
+          <Suspense fallback={<WizardSkeleton />}>
+            <LoanApplicationWizard
+              borrowerAddress={borrowerAddress!}
+              creditScore={resolvedCreditScore}
+              maxAmount={maxAmount}
+              onSuccess={setSuccessLoanId}
+            />
+          </Suspense>
         </div>
       )}
     </main>

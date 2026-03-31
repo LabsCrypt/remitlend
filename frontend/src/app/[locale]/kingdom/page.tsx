@@ -1,11 +1,32 @@
 "use client";
 
-import { KingdomProgressWidget } from "../../components/gamification/KingdomProgressWidget";
-import { AchievementsPanel } from "../../components/gamification/AchievementsPanel";
-import { GamificationSettings } from "../../components/gamification/GamificationSettings";
+import { Crown } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Suspense } from "react";
 import { useGamificationStore } from "../../stores/useGamificationStore";
 import { Card } from "../../components/ui/Card";
-import { Crown } from "lucide-react";
+import { SkeletonCard } from "../../components/ui/Skeleton";
+
+const KingdomProgressWidget = dynamic(
+  () =>
+    import("../../components/gamification/KingdomProgressWidget").then(
+      (m) => m.KingdomProgressWidget,
+    ),
+  { ssr: false, loading: () => <SkeletonCard /> },
+);
+
+const AchievementsPanel = dynamic(
+  () => import("../../components/gamification/AchievementsPanel").then((m) => m.AchievementsPanel),
+  { ssr: false, loading: () => <SkeletonCard /> },
+);
+
+const GamificationSettings = dynamic(
+  () =>
+    import("../../components/gamification/GamificationSettings").then(
+      (m) => m.GamificationSettings,
+    ),
+  { ssr: false, loading: () => <SkeletonCard /> },
+);
 
 export default function KingdomPage() {
   const level = useGamificationStore((state) => state.level);
@@ -44,13 +65,19 @@ export default function KingdomPage() {
       </Card>
 
       {/* Progress widget */}
-      <KingdomProgressWidget />
+      <Suspense fallback={<SkeletonCard />}>
+        <KingdomProgressWidget />
+      </Suspense>
 
       {/* Achievements */}
-      <AchievementsPanel />
+      <Suspense fallback={<SkeletonCard />}>
+        <AchievementsPanel />
+      </Suspense>
 
       {/* Settings */}
-      <GamificationSettings />
+      <Suspense fallback={<SkeletonCard />}>
+        <GamificationSettings />
+      </Suspense>
     </main>
   );
 }

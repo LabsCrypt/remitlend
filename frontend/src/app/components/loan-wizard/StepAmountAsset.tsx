@@ -93,6 +93,7 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
                     type="button"
                     onClick={() => onChange({ asset: asset.value })}
                     className="flex items-center gap-3 rounded-lg border border-indigo-500 bg-indigo-50 px-4 py-3 text-left transition dark:bg-indigo-500/10"
+                    aria-pressed={data.asset === asset.value}
                   >
                     <span className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
                       {asset.value[0]}
@@ -146,6 +147,7 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
                         ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300"
                         : "border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
                     }`}
+                    aria-pressed={data.termDays === option.days}
                   >
                     {option.label}
                   </button>

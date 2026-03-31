@@ -8,9 +8,11 @@ describe("Environment Variable Validation", () => {
   let mockExit: any;
 
   beforeAll(() => {
-    mockExit = jest.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
-      throw new Error(`Process.exit called with ${code}`);
-    });
+    mockExit = jest
+      .spyOn(process, "exit")
+      .mockImplementation((code?: string | number | null | undefined) => {
+        throw new Error(`Process.exit called with ${code}`);
+      });
   });
 
   beforeEach(() => {

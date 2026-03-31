@@ -6,6 +6,7 @@ import { Button } from "../ui/Button";
 import { useBorrowerLoans } from "../../hooks/useApi";
 import { LoanList } from "./LoanList";
 import { formatCurrency, formatDate } from "./loanFormatters";
+import { Spinner } from "../global_ui/Spinner";
 
 type Filter = "all" | "active" | "overdue";
 
@@ -16,7 +17,7 @@ export function ActiveLoansTracker({ borrowerAddress }: { borrowerAddress: strin
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <Spinner size="lg" color="#2563eb" />
       </div>
     );
   }

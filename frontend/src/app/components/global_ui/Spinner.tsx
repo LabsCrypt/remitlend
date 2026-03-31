@@ -21,12 +21,12 @@ export const Spinner: FC<SpinnerProps> = ({
   size = "md",
   duration = 1,
   delayStep = 0.2,
-  label = "Loading…",
+  label = "Loading...",
 }) => {
   const numericSize = typeof size === "string" ? SIZE_MAP[size] : size;
   if (type === "spin") {
     return (
-      <div role="status" aria-label={label} className="inline-flex">
+      <div role="status" className="inline-flex">
         <div
           style={{
             width: numericSize + "px",
@@ -45,7 +45,7 @@ export const Spinner: FC<SpinnerProps> = ({
     );
   } else if (type === "double-spinner") {
     return (
-      <div role="status" aria-label={label} className="relative inline-block">
+      <div role="status" className="relative inline-block">
         {/* Outer Spinner */}
         <div
           style={{
@@ -83,7 +83,7 @@ export const Spinner: FC<SpinnerProps> = ({
   // Bounce Loader
   else {
     return (
-      <div role="status" aria-label={label} className="flex gap-2">
+      <div role="status" className="flex gap-2">
         {[0, 1, 2].map((i) => (
           <div
             key={i}

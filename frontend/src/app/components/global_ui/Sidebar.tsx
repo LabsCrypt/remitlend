@@ -15,6 +15,11 @@ import {
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { useTranslations, useLocale } from "next-intl";
+import {
+  useWalletStore,
+  selectWalletStatus,
+  selectWalletNetwork,
+} from "../../stores/useWalletStore";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -29,6 +34,10 @@ export function Sidebar({ onClose, className }: SidebarProps) {
   const pathname = usePathname();
   const t = useTranslations("Navigation");
   const locale = useLocale();
+
+  const status = useWalletStore(selectWalletStatus);
+  const network = useWalletStore(selectWalletNetwork);
+  const isConnected = status === "connected";
 
   const navItems = [
     { name: t("home"), href: `/${locale}`, icon: LayoutDashboard },
@@ -102,12 +111,17 @@ export function Sidebar({ onClose, className }: SidebarProps) {
       <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
         <div className="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-900">
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
-            System Status
+            Wallet Status
           </p>
           <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-green-500" />
+            <div
+              className={cn(
+                "h-2 w-2 rounded-full",
+                isConnected ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-700",
+              )}
+            />
             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              Mainnet Connected
+              {isConnected ? `${network?.name || "Connected"}` : "Disconnected"}
             </span>
           </div>
         </div>
