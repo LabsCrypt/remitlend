@@ -170,6 +170,6 @@ describe("RateLimitService", () => {
 
       expect(result.allowed).toBe(true);
       expect(result.remaining).toBe(5); // Reset to full limit
+      });
     });
   });
-});
