@@ -10,8 +10,8 @@ interface WalletProviderContextValue {
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
   refreshWallet: () => Promise<void>;
-  isFreighterAvailable: boolean;
   signTransaction: (unsignedTxXdr: string) => Promise<string>;
+  isFreighterAvailable: boolean;
 }
 
 interface WalletProviderProps {
@@ -42,6 +42,13 @@ const NETWORK_CHAIN_IDS: Record<string, number> = {
   TESTNET: 2,
   FUTURENET: 3,
   STANDALONE: 4,
+};
+
+const NETWORK_PASSPHRASES: Record<string, string> = {
+  PUBLIC: "Public Global Stellar Network ; October 2015",
+  TESTNET: "Test SDF Network ; September 2015",
+  FUTURENET: "Test SDF Future Network ; October 2022",
+  STANDALONE: "Standalone Network ; Separate from SDF",
 };
 
 function normalizeWalletError(error: unknown): string {
@@ -96,6 +103,7 @@ async function loadFreighterApi(): Promise<FreighterApi> {
 
 export function WalletProvider({ children }: WalletProviderProps) {
   const address = useWalletStore((state) => state.address);
+  const network = useWalletStore((state) => state.network);
   const shouldAutoReconnect = useWalletStore((state) => state.shouldAutoReconnect);
   const setConnected = useWalletStore((state) => state.setConnected);
   const disconnect = useWalletStore((state) => state.disconnect);
@@ -219,21 +227,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
     await syncWallet(true);
   }
 
-  function disconnectWallet() {
-    disconnect();
-  }
-
-  const NETWORK_PASSPHRASES: Record<string, string> = {
-    PUBLIC: "Public Global Stellar Network ; October 2015",
-    TESTNET: "Test SDF Network ; September 2015",
-    FUTURENET: "Test SDF Future Network ; October 2022",
-    STANDALONE: "Standalone Network ; Separate from SDF",
-  };
-
   async function signTransaction(unsignedTxXdr: string): Promise<string> {
     const api = await loadFreighterApi();
-    const networkName = useWalletStore.getState().network?.name ?? "TESTNET";
-    const networkPassphrase = NETWORK_PASSPHRASES[networkName] ?? NETWORK_PASSPHRASES.TESTNET;
+
+    const networkPassphrase =
+      NETWORK_PASSPHRASES[network?.name ?? "TESTNET"] || NETWORK_PASSPHRASES.TESTNET;
 
     const result = await api.signTransaction(unsignedTxXdr, {
       networkPassphrase,
@@ -243,7 +241,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       return result;
     }
 
-    if (result.error) {
+    if (result && typeof result === "object" && "error" in result) {
       throw new Error(normalizeWalletError(result.error));
     }
 
@@ -251,7 +249,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
       return result.signedTxXdr;
     }
 
-    throw new Error("Signing failed: No signed transaction returned.");
+  function disconnectWallet() {
+    disconnect();
   }
 
   async function refreshWallet() {
@@ -323,8 +322,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
         connectWallet,
         disconnectWallet,
         refreshWallet,
-        isFreighterAvailable,
         signTransaction,
+        isFreighterAvailable,
       }}
     >
       {children}
