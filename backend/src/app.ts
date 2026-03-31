@@ -23,13 +23,11 @@ import authRoutes from "./routes/authRoutes.js";
 import notificationsRoutes from "./routes/notificationsRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import remittanceRoutes from "./routes/remittanceRoutes.js";
-import swaggerUi from "swagger-ui-express";
-import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
-import { asyncHandler } from "./middleware/asyncHandler.js";
+import { asyncHandler } from "./utils/asyncHandler.js";
 import { AppError } from "./errors/AppError.js";
 const app = express();
 
@@ -191,7 +189,7 @@ if (process.env.NODE_ENV === "test") {
   );
 }
 
-app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 
 // ── 404 Catch-All ────────────────────────────────────────────────
 // Must be placed after all route definitions so that only truly

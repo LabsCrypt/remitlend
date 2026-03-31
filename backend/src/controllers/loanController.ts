@@ -1,11 +1,14 @@
-import type { Request, Response } from "express";
+
+
+
+import type { Request, Response, NextFunction } from "express";
 import { query } from "../db/connection.js";
 import {
   withTransaction,
   withStellarAndDbTransaction,
 } from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { getLoanConfig } from "../config/loanConfig.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { sorobanService } from "../services/sorobanService.js";
@@ -14,6 +17,113 @@ import {
   parseCursorQueryParams,
 } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
+
+// ─── Test/Dev Only ────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/loans (TEST/DEV ONLY)
+ * Creates a loan directly for test setup.
+ */
+export const createTestLoan = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { amount, term } = req.body;
+    const borrower = req.user?.publicKey || "test-borrower";
+
+    if (!amount || !term) {
+      res.status(400).json({ success: false, message: "amount and term required" });
+      return;
+    }
+
+    const loanResult = await query(
+      `INSERT INTO loan_events (borrower, event_type, amount, ledger, ledger_closed_at) VALUES ($1, 'LoanRequested', $2, NULL, NOW()) RETURNING loan_id`,
+      [borrower, amount],
+    );
+    const loanId = loanResult.rows[0].loan_id;
+
+    await query(
+      `INSERT INTO loan_events (loan_id, borrower, event_type, amount, interest_rate_bps, term_ledgers, ledger, ledger_closed_at) VALUES ($1, $2, 'LoanApproved', $3, 1200, $4, NULL, NOW())`,
+      [loanId, borrower, amount, term],
+    );
+
+    res.json({ success: true, id: loanId, loan: { id: loanId, amount, term, borrower } });
+  },
+);
+
+/**
+ * POST /api/loans/:loanId/mark-defaulted (TEST/DEV ONLY)
+ * Helper endpoint to mark a loan as defaulted for test setup.
+ */
+export const markLoanDefaulted = asyncHandler(
+  async (req: Request, res: Response) => {
+    const loanId = req.params.loanId as string;
+    const borrower = req.body.borrower || req.user?.publicKey || null;
+
+    const loanResult = await query(
+      `SELECT loan_id FROM loan_events WHERE loan_id = $1 LIMIT 1`,
+      [loanId],
+    );
+    if (loanResult.rows.length === 0) {
+      throw AppError.badRequest("Loan does not exist");
+    }
+
+    await query(
+      `INSERT INTO loan_events (loan_id, borrower, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'LoanDefaulted', NULL, NULL, NOW())`,
+      [loanId, borrower],
+    );
+
+    res.json({ success: true, message: "Loan marked as defaulted for test setup." });
+  },
+);
+
+/**
+ * POST /api/loans/:loanId/contest-default
+ * Allows a borrower to contest a defaulted loan, moving it to disputed status and logging the dispute.
+ */
+export const contestDefault = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const loanId = req.params.loanId as string;
+    const { reason } = req.body as { reason: string };
+    const borrower = req.user?.publicKey;
+
+    if (!reason || reason.trim().length < 5) {
+      throw AppError.badRequest("A valid reason for contesting is required.");
+    }
+    if (!borrower) {
+      throw AppError.unauthorized("Authentication required");
+    }
+
+    // Check loan exists and is defaulted
+    const loanResult = await query(
+      `SELECT loan_id FROM loan_events WHERE loan_id = $1 AND event_type = 'LoanDefaulted' LIMIT 1`,
+      [loanId],
+    );
+    if (loanResult.rows.length === 0) {
+      throw AppError.badRequest("Loan is not defaulted or does not exist");
+    }
+
+    // Insert dispute record and return disputeId
+    const disputeResult = await query(
+      `INSERT INTO loan_disputes (loan_id, borrower, reason, status) VALUES ($1, $2, $3, 'open') RETURNING id`,
+      [loanId, borrower, reason],
+    );
+
+    // Optionally: update loan status to 'disputed' in your loan status tracking (if applicable)
+    // If you have a loan status table/column, update it here. If only events, you may want to insert a new event:
+    await query(
+      `INSERT INTO loan_events (loan_id, borrower, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'LoanDisputed', NULL, NULL, NOW())`,
+      [loanId, borrower],
+    );
+
+    // TODO: Notify admins (e.g., via email, dashboard alert, etc.)
+    logger.info("Loan default contested", { loanId, borrower, reason });
+
+    res.json({
+      success: true,
+      disputeId: disputeResult.rows[0].id,
+      message: "Loan default contested. Admins will review your dispute.",
+    });
+  },
+);
 
 const LEDGER_CLOSE_SECONDS = 5;
 const DEFAULT_TERM_LEDGERS = 17280; // 1 day in ledgers
@@ -292,6 +402,7 @@ export const getLoanDetails = asyncHandler(
   async (req: Request, res: Response) => {
     const { loanId } = req.params;
 
+
     const eventsResult = await query(
       `SELECT event_type, amount, ledger, ledger_closed_at, tx_hash, interest_rate_bps, term_ledgers
        FROM loan_events
@@ -330,7 +441,31 @@ export const getLoanDetails = asyncHandler(
       approvalEvent?.interest_rate_bps || DEFAULT_INTEREST_RATE_BPS;
     const termLedgers = approvalEvent?.term_ledgers || DEFAULT_TERM_LEDGERS;
     const approvedLedger = approvalEvent?.ledger || 0;
-    const elapsedLedgers = Math.max(0, currentLedger - approvedLedger);
+
+    // Check for open dispute
+    const disputeResult = await query(
+      `SELECT created_at FROM loan_disputes WHERE loan_id = $1 AND status = 'open' ORDER BY created_at ASC LIMIT 1`,
+      [loanId],
+    );
+    let freezeLedger: number | null = null;
+    if (disputeResult.rows.length > 0) {
+      // Find the ledger closest to dispute creation
+      const disputeCreatedAt = new Date(disputeResult.rows[0].created_at);
+      // Find the ledger that closed just before or at disputeCreatedAt
+      const ledgerResult = await query(
+        `SELECT ledger, ledger_closed_at FROM loan_events WHERE loan_id = $1 AND ledger_closed_at <= $2 ORDER BY ledger_closed_at DESC LIMIT 1`,
+        [loanId, disputeCreatedAt],
+      );
+      freezeLedger = ledgerResult.rows.length > 0 ? ledgerResult.rows[0].ledger : null;
+    }
+
+    let elapsedLedgers: number;
+    if (freezeLedger !== null) {
+      elapsedLedgers = Math.max(0, freezeLedger - approvedLedger);
+    } else {
+      elapsedLedgers = Math.max(0, currentLedger - approvedLedger);
+    }
+
     const accruedInterest =
       (principal * rateBps * elapsedLedgers) / (10000 * termLedgers);
     const totalOwed = principal + accruedInterest - totalRepaid;
@@ -362,6 +497,7 @@ export const getLoanDetails = asyncHandler(
           timestamp: event.ledger_closed_at,
           tx: event.tx_hash,
         })),
+        disputeFrozen: freezeLedger !== null,
       },
     });
   },

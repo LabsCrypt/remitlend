@@ -1,7 +1,7 @@
 import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
-import { asyncHandler } from "./asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 /**
  * After `requireJwtAuth`, ensures `req.params.loanId` refers to a loan whose

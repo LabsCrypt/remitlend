@@ -17,7 +17,7 @@ const mockQuery: jest.MockedFunction<
 
 // Create mock client for transaction support
 const mockRelease = jest.fn();
-const mockClient = {
+const mockClient: any = {
   query: mockQuery,
   release: mockRelease,
 };
@@ -25,7 +25,7 @@ const mockClient = {
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
   query: mockQuery,
-  getClient: jest.fn().mockResolvedValue(mockClient),
+  getClient: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
   closePool: jest.fn(),
 }));
 
@@ -73,13 +73,15 @@ await import("../db/connection.js");
 await import("../services/sorobanService.js");
 const { default: app } = await import("../app.js");
 
+
 const mockedQuery = mockQuery;
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,
 });
 
-afterEach(() => {
+beforeEach(() => {
+  mockedQuery.mockReset();
   jest.clearAllMocks();
 });
 
@@ -243,7 +245,7 @@ describe("POST /api/loans/submit", () => {
 describe("GET /api/loans/:loanId", () => {
   it("should return loan details for the authenticated borrower", async () => {
     mockedQuery
-      .mockResolvedValueOnce({ rows: [{ borrower: TEST_BORROWER }] })
+      .mockResolvedValueOnce({ rows: [{ borrower: TEST_BORROWER }] }) // borrower check
       .mockResolvedValueOnce({
         rows: [
           {
@@ -265,10 +267,9 @@ describe("GET /api/loans/:loanId", () => {
             term_ledgers: 17280,
           },
         ],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ last_indexed_ledger: 25 }],
-      });
+      }) // loan events
+      .mockResolvedValueOnce({ rows: [{ last_indexed_ledger: 25 }] }) // getLatestLedger
+      .mockResolvedValueOnce({ rows: [] }); // loan_disputes (no open disputes)
 
     const response = await request(app)
       .get("/api/loans/123")

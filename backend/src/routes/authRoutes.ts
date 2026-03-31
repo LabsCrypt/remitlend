@@ -1,3 +1,4 @@
+import { registerTestUser } from "../controllers/authController.js";
 import { Router } from "express";
 import { z } from "zod";
 import {
@@ -14,7 +15,13 @@ import {
 import { requireJwtAuth } from "../middleware/jwtAuth.js";
 import { validateBody } from "../middleware/validation.js";
 
+
 const router = Router();
+
+// TEST/DEV ONLY: Register a test user
+if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
+  router.post("/register", registerTestUser);
+}
 
 const challengeSchema = z.object({
   publicKey: z.string().min(1, "Public key is required"),

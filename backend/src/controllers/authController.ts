@@ -1,4 +1,23 @@
-import type { Request, Response } from "express";
+/**
+ * POST /api/auth/register (TEST/DEV ONLY)
+ * Registers a test user with email and password. Returns a fake JWT.
+ */
+// Only import types once at the top
+import type { Request, Response, NextFunction } from "express";
+import { asyncHandler } from "../utils/asyncHandler.js";
+export const registerTestUser = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      res.status(400).json({ success: false, message: "Email and password required" });
+      return;
+    }
+    // In real app, insert user into DB. For test, just return a fake token.
+    // Use email as publicKey for test JWT.
+    const token = `test-jwt-for-${email}`;
+    res.json({ success: true, token });
+  }
+);
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import {

@@ -3,7 +3,7 @@ import { query } from "../db/connection.js";
 import { withStellarAndDbTransaction } from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { sorobanService } from "../services/sorobanService.js";
 import logger from "../utils/logger.js";
 

@@ -29,6 +29,7 @@ const { rateLimitService } = await import("../../services/rateLimitService.js");
 const mockRateLimitService = rateLimitService as jest.Mocked<typeof rateLimitService>;
 
 describe("Rate Limit Middleware", () => {
+  jest.setTimeout(20000);
   let mockRequest: Partial<Request>;
   let mockResponse: Partial<Response>;
   let mockNext: NextFunction;

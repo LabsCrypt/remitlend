@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireApiKey } from "../middleware/auth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
 import { validateBody } from "../middleware/validation.js";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { auditLog } from "../middleware/auditLog.js";
 import { defaultChecker } from "../services/defaultChecker.js";
 import {
@@ -15,60 +15,61 @@ import {
   reprocessQuarantinedEvents,
   reindexLedgerRange,
 } from "../controllers/indexerController.js";
+import { listLoanDisputes, resolveLoanDispute } from "../controllers/adminDisputeController.js";
 
 const router = Router();
 
-const checkDefaultsBodySchema = z.object({
-  loanIds: z.array(z.number().int().positive()).optional(),
-});
-
 /**
  * @swagger
- * /admin/check-defaults:
- *   post:
- *     summary: Trigger on-chain default checks (admin)
- *     description: >
- *       Submits `check_defaults` to the LoanManager contract for either a specific
- *       list of loan IDs, or (if omitted) all loans that appear overdue based on
- *       indexed `LoanApproved` ledgers.
+ * /admin/loan-disputes:
+ *   get:
+ *     summary: List open loan disputes
  *     tags: [Admin]
  *     security:
  *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: List of open disputes
+ *
+ * /admin/loan-disputes/{disputeId}/resolve:
+ *   post:
+ *     summary: Resolve a loan dispute (confirm or reverse default)
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: disputeId
+ *         required: true
+ *         schema:
+ *           type: integer
  *     requestBody:
- *       required: false
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - action
+ *               - resolution
  *             properties:
- *               loanIds:
- *                 type: array
- *                 items:
- *                   type: integer
+ *               action:
+ *                 type: string
+ *                 enum: [confirm, reverse]
+ *                 description: Action to take
+ *               resolution:
+ *                 type: string
+ *                 description: Reason for resolution
  *     responses:
  *       200:
- *         description: Default check run completed (see batch errors in payload)
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/DefaultCheckResponse'
+ *         description: Dispute resolved
  */
-router.post(
-  "/check-defaults",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  validateBody(checkDefaultsBodySchema),
-  asyncHandler(async (req, res) => {
-    const { loanIds } = req.body as z.infer<typeof checkDefaultsBodySchema>;
-    const result = await defaultChecker.checkOverdueLoans(loanIds);
+router.get("/loan-disputes", requireApiKey, listLoanDisputes);
+router.post("/loan-disputes/:disputeId/resolve", requireApiKey, resolveLoanDispute);
 
-    res.json({
-      success: true,
-      data: result,
-    });
-  }),
-);
+const checkDefaultsBodySchema = z.object({
+  loanIds: z.array(z.number().int().positive()).optional(),
+});
 
 /**
  * @swagger

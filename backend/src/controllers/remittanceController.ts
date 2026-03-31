@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { remittanceService } from "../services/remittanceService.js";
 import { AppError } from "../errors/AppError.js";
 import { parseCursorQueryParams } from "../utils/pagination.js";
