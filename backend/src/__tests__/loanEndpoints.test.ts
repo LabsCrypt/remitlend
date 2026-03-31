@@ -245,8 +245,7 @@ describe("POST /api/loans/submit", () => {
 describe("GET /api/loans/:loanId", () => {
   it("should return loan details for the authenticated borrower", async () => {
     mockedQuery
-      .mockResolvedValueOnce({ rows: [{ borrower: "GABC123" }] }) // borrower check
-      .mockResolvedValueOnce({ rows: [{ borrower: TEST_BORROWER }] })
+      .mockResolvedValueOnce({ rows: [{ borrower: TEST_BORROWER }] }) // borrower check
       .mockResolvedValueOnce({
         rows: [
           {
