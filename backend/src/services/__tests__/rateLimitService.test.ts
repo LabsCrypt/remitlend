@@ -16,7 +16,13 @@ beforeAll(async () => {
     },
   }));
 
-const mockCacheService = (await import("../cacheService.js")).cacheService as jest.Mocked<typeof cacheService>;
+  // Dynamically import after mocking
+  const imported = await import("../cacheService.js");
+  mockCacheService = imported.cacheService;
+  const svc = await import("../rateLimitService.js");
+  rateLimitService = svc.rateLimitService;
+  SCORE_UPDATE_RATE_LIMIT = svc.SCORE_UPDATE_RATE_LIMIT;
+});
 
 describe("RateLimitService", () => {
   jest.setTimeout(20000);
