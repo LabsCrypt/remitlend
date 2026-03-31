@@ -114,7 +114,7 @@ export function getStellarNetworkPassphrase(): string {
 
 const RPC_TIMEOUT_MS = 15_000;
 
-function fetchWithTimeout(
+export function fetchWithTimeout(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {

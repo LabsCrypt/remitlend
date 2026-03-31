@@ -374,7 +374,7 @@ class SorobanService {
     const polled = await rpcCall(server.pollTransaction(txHash, {
       attempts: 30,
       sleepStrategy: () => 1000,
-    });
+    }));
 
     const resultXdr =
       polled.status === "SUCCESS" && polled.resultXdr

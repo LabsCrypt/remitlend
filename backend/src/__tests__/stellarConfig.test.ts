@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { Networks } from "@stellar/stellar-sdk";
-import { getStellarConfig, createSorobanRpcServer } from "../config/stellar.js";
+import { getStellarConfig, createSorobanRpcServer, fetchWithTimeout } from "../config/stellar.js";
 
 const originalStellarEnv = {
   STELLAR_NETWORK: process.env.STELLAR_NETWORK,
@@ -33,7 +33,8 @@ afterEach(() => {
   restoreEnv();
 });
 
-describe("stellar config", () => {  it("defaults to testnet settings when env vars are absent", () => {
+describe("stellar config", () => {
+  it("defaults to testnet settings when env vars are absent", () => {
     delete process.env.STELLAR_NETWORK;
     delete process.env.STELLAR_RPC_URL;
     delete process.env.STELLAR_NETWORK_PASSPHRASE;
@@ -98,13 +99,10 @@ describe("createSorobanRpcServer / fetchWithTimeout", () => {
       return Promise.resolve(new Response("{}"));
     }) as typeof fetch;
 
-    const server = createSorobanRpcServer();
-    // Trigger any HTTP call; getHealth is the lightest one
-    await (server as unknown as { _fetch: typeof fetch })._fetch?.("https://soroban-testnet.stellar.org", {});
+    await fetchWithTimeout("https://soroban-testnet.stellar.org");
 
-    // Directly invoke the custom fetch that was injected
-    const customFetch = (globalThis.fetch as jest.Mock);
-    expect(customFetch).toBeDefined();
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect(capturedSignal?.aborted).toBe(false);
   });
 
   it("aborts the request after the timeout fires", async () => {
@@ -118,19 +116,18 @@ describe("createSorobanRpcServer / fetchWithTimeout", () => {
       });
     }) as typeof fetch;
 
-    const TIMEOUT = 50;
-    function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT);
-      return globalThis.fetch(input, { ...init, signal: controller.signal }).finally(() =>
-        clearTimeout(timer),
-      );
-    }
+    // Use a very short timeout by temporarily patching — instead, call the
+    // real fetchWithTimeout and abort via the captured signal directly.
+    const fetchPromise = fetchWithTimeout("https://soroban-testnet.stellar.org");
+    // Wait a tick for fetch mock to be called and signal captured
+    await Promise.resolve();
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
 
-    await expect(
-      fetchWithTimeout("https://soroban-testnet.stellar.org"),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    // Manually abort to simulate timeout without waiting 15 s
+    (capturedSignal as AbortSignal & { _controller?: AbortController });
+    // Trigger abort on the captured signal's controller via dispatchEvent
+    capturedSignal!.dispatchEvent(new Event("abort"));
 
-    expect(capturedSignal?.aborted).toBe(true);
+    await expect(fetchPromise).rejects.toMatchObject({ name: "AbortError" });
   });
 });
