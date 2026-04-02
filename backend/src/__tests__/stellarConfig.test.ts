@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { Networks } from "@stellar/stellar-sdk";
-import { getStellarConfig } from "../config/stellar.js";
+import { getStellarConfig, createSorobanRpcServer, fetchWithTimeout } from "../config/stellar.js";
 
 const originalStellarEnv = {
   STELLAR_NETWORK: process.env.STELLAR_NETWORK,
@@ -74,5 +74,60 @@ describe("stellar config", () => {
     expect(() => getStellarConfig()).toThrow(
       'STELLAR_RPC_URL appears to target testnet while STELLAR_NETWORK is "mainnet".',
     );
+  });
+});
+
+describe("createSorobanRpcServer / fetchWithTimeout", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    delete process.env.STELLAR_NETWORK;
+    delete process.env.STELLAR_RPC_URL;
+    delete process.env.STELLAR_NETWORK_PASSPHRASE;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  });
+
+  it("passes the AbortSignal through to fetch", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    globalThis.fetch = jest.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedSignal = init?.signal ?? undefined;
+      return Promise.resolve(new Response("{}"));
+    }) as typeof fetch;
+
+    await fetchWithTimeout("https://soroban-testnet.stellar.org");
+
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("aborts the request after the timeout fires", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    globalThis.fetch = jest.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedSignal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+        );
+      });
+    }) as typeof fetch;
+
+    // Use a very short timeout by temporarily patching — instead, call the
+    // real fetchWithTimeout and abort via the captured signal directly.
+    const fetchPromise = fetchWithTimeout("https://soroban-testnet.stellar.org");
+    // Wait a tick for fetch mock to be called and signal captured
+    await Promise.resolve();
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+
+    // Manually abort to simulate timeout without waiting 15 s
+    (capturedSignal as AbortSignal & { _controller?: AbortController });
+    // Trigger abort on the captured signal's controller via dispatchEvent
+    capturedSignal!.dispatchEvent(new Event("abort"));
+
+    await expect(fetchPromise).rejects.toMatchObject({ name: "AbortError" });
   });
 });

@@ -16,6 +16,15 @@ import {
   getStellarRpcUrl,
 } from "../config/stellar.js";
 
+function rpcCall<T>(promise: Promise<T>): Promise<T> {
+  return promise.catch((err: unknown) => {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw AppError.internal("Stellar RPC request timed out");
+    }
+    throw err;
+  });
+}
+
 /**
  * Service for building and submitting Soroban contract transactions.
  * Handles the transaction lifecycle: build → (frontend signs) → submit.
@@ -98,7 +107,7 @@ class SorobanService {
     const contractId = this.getLoanManagerContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(borrowerPublicKey);
+    const account = await rpcCall(server.getAccount(borrowerPublicKey));
 
     const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
       type: "address",
@@ -119,7 +128,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await rpcCall(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built request_loan transaction", {
@@ -143,7 +152,7 @@ class SorobanService {
     const contractId = this.getLoanManagerContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(borrowerPublicKey);
+    const account = await rpcCall(server.getAccount(borrowerPublicKey));
 
     const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
       type: "address",
@@ -165,7 +174,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await rpcCall(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built repay transaction", {
@@ -215,7 +224,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await rpcCall(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built deposit transaction", {
@@ -265,7 +274,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await rpcCall(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built withdraw transaction", {
@@ -290,7 +299,7 @@ class SorobanService {
     const contractId = this.getLoanManagerContractId();
     const passphrase = this.getNetworkPassphrase();
 
-    const account = await server.getAccount(adminPublicKey);
+    const account = await rpcCall(server.getAccount(adminPublicKey));
 
     const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
 
@@ -308,7 +317,7 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const prepared = await server.prepareTransaction(tx);
+    const prepared = await rpcCall(server.prepareTransaction(tx));
     const unsignedTxXdr = prepared.toXDR();
 
     logger.info("Built approve_loan transaction", {
@@ -356,7 +365,7 @@ class SorobanService {
     }
 
     try {
-      await this.getRpcServer().getHealth();
+      await rpcCall(this.getRpcServer().getHealth());
     } catch (err) {
       throw AppError.internal(
         `Stellar RPC is unreachable at ${rpcUrl}: ${err instanceof Error ? err.message : String(err)}`,
@@ -386,7 +395,7 @@ class SorobanService {
       this.getNetworkPassphrase(),
     );
 
-    const sendResult = await server.sendTransaction(tx);
+    const sendResult = await rpcCall(server.sendTransaction(tx));
     const txHash = sendResult.hash;
 
     if (!txHash) {
@@ -399,10 +408,10 @@ class SorobanService {
     });
 
     // Poll for final result
-    const polled = await server.pollTransaction(txHash, {
+    const polled = await rpcCall(server.pollTransaction(txHash, {
       attempts: 30,
       sleepStrategy: () => 1000,
-    });
+    }));
 
     const resultXdr =
       polled.status === "SUCCESS" && polled.resultXdr

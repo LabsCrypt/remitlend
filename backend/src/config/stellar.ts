@@ -112,8 +112,21 @@ export function getStellarNetworkPassphrase(): string {
   return getStellarConfig().networkPassphrase;
 }
 
+const RPC_TIMEOUT_MS = 15_000;
+
+export function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
 export function createSorobanRpcServer(): rpc.Server {
   const rpcUrl = getStellarRpcUrl();
   const allowHttp = rpcUrl.startsWith("http://");
-  return new rpc.Server(rpcUrl, { allowHttp });
+  return new rpc.Server(rpcUrl, { allowHttp, fetch: fetchWithTimeout });
 }
