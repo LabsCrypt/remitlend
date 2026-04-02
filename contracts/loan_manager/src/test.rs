@@ -963,6 +963,63 @@ fn test_late_fee_is_capped_at_quarter_principal() {
 }
 
 #[test]
+fn test_late_fee_does_not_accrue_after_principal_fully_repaid() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    manager.set_late_fee_rate(&500);
+    manager.set_grace_period_ledgers(&0);
+    env.ledger().set_sequence_number(1);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+
+    env.as_contract(&manager.address, || {
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
+        loan.principal_paid = loan.amount;
+        loan.interest_paid = 0;
+        loan.accrued_interest = 75;
+        loan.accrued_late_fee = 10;
+        loan.last_late_fee_ledger = loan.due_date;
+        env.storage().persistent().set(&loan_key, &loan);
+    });
+
+    env.ledger().set_sequence_number(due_date + 8_640);
+
+    let late_fee_delta = env.as_contract(&manager.address, || {
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
+        let accrued_before = loan.accrued_late_fee;
+
+        let delta = LoanManager::accrue_late_fee(&env, &mut loan);
+
+        assert_eq!(delta, 0);
+        assert_eq!(loan.accrued_late_fee, accrued_before);
+
+        env.storage().persistent().set(&loan_key, &loan);
+        delta
+    });
+
+    assert_eq!(late_fee_delta, 0);
+    let loan_after = manager.get_loan(&loan_id);
+    assert_eq!(loan_after.principal_paid, loan_after.amount);
+    assert_eq!(loan_after.accrued_interest, 75);
+    assert_eq!(loan_after.accrued_late_fee, 10);
+}
+
+#[test]
 fn test_deposit_collateral_and_auto_release_on_full_repayment() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
