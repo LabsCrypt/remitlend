@@ -24,6 +24,7 @@ interface WalletProviderContextValue {
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
   refreshWallet: () => Promise<void>;
+  signTransaction: (unsignedTxXdr: string) => Promise<string>;
   isFreighterAvailable: boolean;
   signTransaction: (unsignedTxXdr: string) => Promise<string>;
 }
@@ -56,6 +57,13 @@ const NETWORK_CHAIN_IDS: Record<string, number> = {
   TESTNET: 2,
   FUTURENET: 3,
   STANDALONE: 4,
+};
+
+const NETWORK_PASSPHRASES: Record<string, string> = {
+  PUBLIC: "Public Global Stellar Network ; October 2015",
+  TESTNET: "Test SDF Network ; September 2015",
+  FUTURENET: "Test SDF Future Network ; October 2022",
+  STANDALONE: "Standalone Network ; Separate from SDF",
 };
 
 function normalizeWalletError(error: unknown): string {
@@ -110,6 +118,7 @@ async function loadFreighterApi(): Promise<FreighterApi> {
 
 export function WalletProvider({ children }: WalletProviderProps) {
   const address = useWalletStore((state) => state.address);
+  const network = useWalletStore((state) => state.network);
   const shouldAutoReconnect = useWalletStore((state) => state.shouldAutoReconnect);
   const setConnected = useWalletStore((state) => state.setConnected);
   const disconnect = useWalletStore((state) => state.disconnect);
@@ -231,6 +240,29 @@ export function WalletProvider({ children }: WalletProviderProps) {
     await syncWallet(true);
   }
 
+  async function signTransaction(unsignedTxXdr: string): Promise<string> {
+    const api = await loadFreighterApi();
+
+    // Map the network name to the required passphrase string
+    const networkPassphrase =
+      NETWORK_PASSPHRASES[network?.name ?? "TESTNET"] || NETWORK_PASSPHRASES.TESTNET;
+
+    const result = await api.signTransaction(unsignedTxXdr, {
+      networkPassphrase,
+    });
+
+    if (typeof result === "string") {
+      return result;
+    }
+
+    // Handle potential error object returned by some versions of the API
+    if (result && typeof result === "object" && "error" in result) {
+      throw new Error(normalizeWalletError(result.error));
+    }
+
+    throw new Error("Failed to sign transaction or operation cancelled.");
+  }
+
   function disconnectWallet() {
     disconnect();
   }
@@ -335,6 +367,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         connectWallet,
         disconnectWallet,
         refreshWallet,
+        signTransaction,
         isFreighterAvailable,
         signTransaction,
       }}

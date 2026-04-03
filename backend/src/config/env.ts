@@ -29,8 +29,11 @@ export function validateEnvVars(): void {
   );
 
   if (missing.length > 0) {
-    const boldRed = (msg: string) => `\x1b[1;31m${msg}\x1b[0m`;
-    const bold = (msg: string) => `\x1b[1m${msg}\x1b[0m`;
+    const isTest = process.env.NODE_ENV === "test";
+    const useColor = process.stdout.isTTY && !isTest;
+
+    const boldRed = (msg: string) => useColor ? `\x1b[1;31m${msg}\x1b[0m` : msg;
+    const bold = (msg: string) => useColor ? `\x1b[1m${msg}\x1b[0m` : msg;
 
     const errorPrefix = boldRed("FATAL ERROR: Environment validation failed");
     const missingVarMsg = `Missing or empty required variables: ${bold(missing.join(", "))}`;
@@ -45,8 +48,12 @@ export function validateEnvVars(): void {
       node_env: process.env.NODE_ENV,
     });
 
-    // Stop execution immediately
-    process.exit(1);
+    if (isTest) {
+      throw new Error(`Environment validation failed: ${missing.join(", ")}`);
+    } else {
+      // Stop execution immediately in production/dev
+      process.exit(1);
+    }
   }
 
   logger.info("Environment variables validated successfully.");
