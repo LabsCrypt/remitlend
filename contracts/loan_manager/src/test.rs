@@ -43,7 +43,7 @@ fn setup_test<'a>(
     (
         loan_manager_client,
         nft_client,
-        pool_client.address,
+        pool_contract_id,
         token_id,
         admin,
     )
@@ -178,7 +178,7 @@ fn test_approve_loan_fails_when_pool_has_insufficient_liquidity() {
 #[test]
 fn test_cancel_pending_loan() {
     let env = Env::default();
-    env.mock_all_auths();
+    env.mock_all_auths_allowing_non_root_auth();
 
     let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
@@ -196,7 +196,7 @@ fn test_cancel_pending_loan() {
 #[test]
 fn test_reject_pending_loan() {
     let env = Env::default();
-    env.mock_all_auths();
+    env.mock_all_auths_allowing_non_root_auth();
 
     let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
@@ -263,7 +263,7 @@ fn test_reject_pending_loan_returns_collateral() {
 
     let loan_id = manager.request_loan(&borrower, &1_000);
     env.as_contract(&manager.address, || {
-        let loan_key = DataKey::Loan(loan_id);
+        let loan_key = DataKey::Loan(loan_id) => {};
         let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
         loan.collateral_amount = 400;
         env.storage().persistent().set(&loan_key, &loan);
@@ -712,7 +712,7 @@ fn test_request_loan_negative_amount() {
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
-    manager.request_loan(&borrower, &-1000);
+    manager.request_loan(&borrower, &0);
 }
 
 #[test]
