@@ -263,7 +263,7 @@ fn test_reject_pending_loan_returns_collateral() {
 
     let loan_id = manager.request_loan(&borrower, &1_000);
     env.as_contract(&manager.address, || {
-        let loan_key = DataKey::Loan(loan_id) => {};
+        let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
         loan.collateral_amount = 400;
         env.storage().persistent().set(&loan_key, &loan);
