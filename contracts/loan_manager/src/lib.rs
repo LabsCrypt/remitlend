@@ -376,14 +376,16 @@ fn late_fee_rate_bps(env: &Env) -> u32 {
     rate // return explicitly
 }
 
-    fn grace_period_ledgers(env: &Env) -> u32 {
-        Self::bump_instance_ttl(env);
-        env.storage()
-            .instance()
-            .get(&DataKey::GracePeriodLedgers)
-            .unwrap_or(Self::DEFAULT_GRACE_PERIOD_LEDGERS)
-    }
+   fn grace_period_ledgers(env: &Env) -> u32 {
+    // Update the instance TTL as needed
+    Self::bump_instance_ttl(env);
 
+    // Retrieve the value from storage, or use default if missing
+    env.storage()
+        .instance()
+        .get::<u32>(&DataKey::GracePeriodLedgers)
+        .unwrap_or(Self::DEFAULT_GRACE_PERIOD_LEDGERS)
+}
     fn default_window_ledgers(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
         env.storage()
