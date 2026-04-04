@@ -168,12 +168,13 @@ impl LoanManager {
 
     fn get_interest_residual(env: &Env, loan_id: u64) -> i128 {
     let residual_key = (symbol_short!("residual"), loan_id);
-    env.storage().instance().get(&key).unwrap_or(0)
+    let residual_key = DataKey::Residual(loan_id);
+    env.storage().instance().get(&residual_key).unwrap_or(0)
     }
 
     fn set_interest_residual(env: &Env, loan_id: u64, value: i128) {
         let residual_key = (symbol_short!("residual"), loan_id);
-        env.storage().instance().set(&key, &value);
+        env.storage().instance().set(&residual_key, &value);
     }
 
     fn nft_contract(env: &Env) -> Address {
@@ -336,7 +337,7 @@ let prev_residual: i128 = env
     .storage()
     .instance()
     .get(&residual_key)
-    .unwrap_or(0);
+    .unwrap_or(0i128);
 
 // combine
 let combined_residual = prev_residual + new_residual;
@@ -353,11 +354,14 @@ loan.accrued_interest = loan
     .expect("interest overflow");
 
 // store residual
+let residual_key = DataKey::Residual(loan_id);
+
 env.storage()
     .instance()
     .set(&residual_key, &final_residual);
     }
-
+    
+    #[allow(dead_code)]
     fn late_fee_rate_bps(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -506,7 +510,7 @@ env.storage()
     }
 
     fn current_total_debt(env: &Env, loan: &mut Loan) -> (i128, i128) {
-        Self::accrue_interest(env, loan_id, loan);
+        Self::accrue_interest(env, loan.id, loan);
         let late_fee_delta = Self::accrue_late_fee(env, loan);
         let total_debt = Self::remaining_principal(loan)
             .checked_add(loan.accrued_interest)
@@ -1286,7 +1290,7 @@ env.storage()
         }
 
         // Settle all accrued interest and late fees up to now.
-        Self::accrue_interest(&env, &mut loan);
+        Self::accrue_interest(&env, loan_id, &mut loan);
         let _ = Self::accrue_late_fee(&env, &mut loan);
 
         loan.interest_paid = loan
