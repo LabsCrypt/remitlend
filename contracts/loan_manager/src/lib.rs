@@ -362,13 +362,19 @@ env.storage()
     }
     
     #[allow(dead_code)]
-    fn late_fee_rate_bps(env: &Env) -> u32 {
-        Self::bump_instance_ttl(env);
-        env.storage()
-            .instance()
-            .get(&DataKey::LateFeeRateBps)
-            .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS)
-    }
+fn late_fee_rate_bps(env: &Env) -> u32 {
+    // Bump the instance TTL (side effect only)
+    Self::bump_instance_ttl(env);
+
+    // Get the stored late fee rate or use the default
+    let rate = env
+        .storage()
+        .instance()
+        .get(&DataKey::LateFeeRateBps)
+        .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS);
+
+    rate // return explicitly
+}
 
     fn grace_period_ledgers(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
