@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { usePWAInstall } from '../hooks/usePWAInstall';
-import { Smartphone, Download, X, Wifi, WifiOff } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { usePWAInstall } from "../hooks/usePWAInstall";
+import { Smartphone, Download, X, Wifi, WifiOff } from "lucide-react";
 
 interface PWAInstallPromptProps {
   onClose?: () => void;
@@ -41,9 +41,7 @@ export function PWAInstallPrompt({ onClose }: PWAInstallPromptProps) {
           </div>
 
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 text-sm">
-              Install RemitLend
-            </h3>
+            <h3 className="font-semibold text-gray-900 text-sm">Install RemitLend</h3>
             <p className="text-xs text-gray-600 mt-1">
               Get instant access and offline support by installing our app on your device.
             </p>
@@ -55,7 +53,7 @@ export function PWAInstallPrompt({ onClose }: PWAInstallPromptProps) {
                 className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Download className="w-3 h-3" />
-                {isInstalling ? 'Installing...' : 'Install'}
+                {isInstalling ? "Installing..." : "Install"}
               </button>
 
               <button
@@ -91,14 +89,14 @@ export function PWAStatusIndicator({ className }: PWAStatusIndicatorProps) {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     setIsOnline(navigator.onLine);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -108,16 +106,9 @@ export function PWAStatusIndicator({ className }: PWAStatusIndicatorProps) {
 
   return (
     <div className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs ${className}`}>
-      <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'
-        }`} />
-      <span className="text-gray-600">
-        {isOnline ? 'Online' : 'Offline'}
-      </span>
-      {isStandalone && (
-        <span className="text-green-600 font-medium">
-          • Installed
-        </span>
-      )}
+      <div className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-500" : "bg-red-500"}`} />
+      <span className="text-gray-600">{isOnline ? "Online" : "Offline"}</span>
+      {isStandalone && <span className="text-green-600 font-medium">• Installed</span>}
     </div>
   );
 }
@@ -131,7 +122,7 @@ export function PWABanner({ className }: PWABannerProps) {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    const dismissed = localStorage.getItem('pwa-banner-dismissed');
+    const dismissed = localStorage.getItem("pwa-banner-dismissed");
     if (dismissed) {
       setDismissed(true);
     }
@@ -142,7 +133,7 @@ export function PWABanner({ className }: PWABannerProps) {
   }
 
   const handleDismiss = () => {
-    localStorage.setItem('pwa-banner-dismissed', 'true');
+    localStorage.setItem("pwa-banner-dismissed", "true");
     setDismissed(true);
   };
 
@@ -157,15 +148,13 @@ export function PWABanner({ className }: PWABannerProps) {
             <p className="text-sm font-medium text-blue-900">
               Install RemitLend for a better experience
             </p>
-            <p className="text-xs text-blue-700">
-              Get offline access and instant launches
-            </p>
+            <p className="text-xs text-blue-700">Get offline access and instant launches</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => window.dispatchEvent(new Event('beforeinstallprompt'))}
+            onClick={() => window.dispatchEvent(new Event("beforeinstallprompt"))}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors"
           >
             Install App
