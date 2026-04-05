@@ -22,7 +22,7 @@ export class AppError extends Error {
 
   /* ── Factory Methods ─────────────────────────────────────────── */
 
-  static badRequest(message = "Bad request"): AppError {
+  static badRequest(message = "Bad request", _code?: string, _field?: string): AppError {
     return new AppError(message, 400);
   }
 
@@ -30,11 +30,11 @@ export class AppError extends Error {
     return new AppError(message, 401);
   }
 
-  static forbidden(message = "Forbidden"): AppError {
+  static forbidden(message = "Forbidden", _code?: string, _field?: string): AppError {
     return new AppError(message, 403);
   }
 
-  static notFound(message = "Not found"): AppError {
+  static notFound(message = "Not found", _code?: string, _field?: string): AppError {
     return new AppError(message, 404);
   }
 
