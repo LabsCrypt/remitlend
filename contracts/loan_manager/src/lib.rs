@@ -118,7 +118,7 @@ pub enum DataKey {
     DefaultWindowLedgers,
     RateOracle,
     ProposedAdmin,
-    InterestResidual(u64), 
+    InterestResidual(u64),
 }
 
 #[contract]
@@ -167,9 +167,9 @@ impl LoanManager {
     // }
 
     fn get_interest_residual(env: &Env, loan_id: u64) -> i128 {
-    let residual_key = (symbol_short!("residual"), loan_id);
-    let residual_key = DataKey::Residual(loan_id);
-    env.storage().instance().get(&residual_key).unwrap_or(0)
+        let residual_key = (symbol_short!("residual"), loan_id);
+        let residual_key = DataKey::Residual(loan_id);
+        env.storage().instance().get(&residual_key).unwrap_or(0)
     }
 
     fn set_interest_residual(env: &Env, loan_id: u64, value: i128) {
@@ -332,60 +332,54 @@ impl LoanManager {
         loan.accrued_interest += whole;
         Self::set_interest_residual(env, loan_id, remainder);
 
-// load previous residual
-let prev_residual: i128 = env
-    .storage()
-    .instance()
-    .get(&residual_key)
-    .unwrap_or(0i128);
+        // load previous residual
+        let prev_residual: i128 = env.storage().instance().get(&residual_key).unwrap_or(0i128);
 
-// combine
-let combined_residual = prev_residual + new_residual;
+        // combine
+        let combined_residual = prev_residual + new_residual;
 
-// split
-let additional_interest = combined_residual / PRECISION;
-let final_residual = combined_residual % PRECISION;
+        // split
+        let additional_interest = combined_residual / PRECISION;
+        let final_residual = combined_residual % PRECISION;
 
-// apply interest
-loan.accrued_interest = loan
-    .accrued_interest
-    .checked_add(interest_delta)
-    .and_then(|v| v.checked_add(additional_interest))
-    .expect("interest overflow");
+        // apply interest
+        loan.accrued_interest = loan
+            .accrued_interest
+            .checked_add(interest_delta)
+            .and_then(|v| v.checked_add(additional_interest))
+            .expect("interest overflow");
 
-// store residual
-let residual_key = DataKey::Residual(loan_id);
+        // store residual
+        let residual_key = DataKey::Residual(loan_id);
 
-env.storage()
-    .instance()
-    .set(&residual_key, &final_residual);
+        env.storage().instance().set(&residual_key, &final_residual);
     }
-    
+
     #[allow(dead_code)]
-fn late_fee_rate_bps(env: &Env) -> u32 {
-    // Bump the instance TTL (side effect only)
-    Self::bump_instance_ttl(env);
+    fn late_fee_rate_bps(env: &Env) -> u32 {
+        // Bump the instance TTL (side effect only)
+        Self::bump_instance_ttl(env);
 
-    // Get the stored late fee rate or use the default
-    let rate = env
-        .storage()
-        .instance()
-        .get(&DataKey::LateFeeRateBps)
-        .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS);
+        // Get the stored late fee rate or use the default
+        let rate = env
+            .storage()
+            .instance()
+            .get(&DataKey::LateFeeRateBps)
+            .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS);
 
-    rate // return explicitly
-}
+        rate // return explicitly
+    }
 
-   fn grace_period_ledgers(env: &Env) -> u32 {
-    // Update the instance TTL as needed
-    Self::bump_instance_ttl(env);
+    fn grace_period_ledgers(env: &Env) -> u32 {
+        // Update the instance TTL as needed
+        Self::bump_instance_ttl(env);
 
-    // Retrieve the value from storage, or use default if missing
-    env.storage()
-        .instance()
-        .get::<u32>(&DataKey::GracePeriodLedgers)
-        .unwrap_or(Self::DEFAULT_GRACE_PERIOD_LEDGERS)
-}
+        // Retrieve the value from storage, or use default if missing
+        env.storage()
+            .instance()
+            .get::<u32>(&DataKey::GracePeriodLedgers)
+            .unwrap_or(Self::DEFAULT_GRACE_PERIOD_LEDGERS)
+    }
     fn default_window_ledgers(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
         env.storage()
