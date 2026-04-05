@@ -4,6 +4,8 @@ use soroban_sdk::{
     BytesN, Env, String, Symbol, Vec,
 };
 
+const SCALE: i128 = 1_000_000;
+
 #[contractclient(name = "NftClient")]
 pub trait RemittanceNftInterface {
     fn get_score(env: Env, user: Address) -> u32;
@@ -117,6 +119,7 @@ pub enum DataKey {
     DefaultWindowLedgers,
     RateOracle,
     ProposedAdmin,
+    InterestResidual(u64),
 }
 
 #[contract]
@@ -163,6 +166,17 @@ impl LoanManager {
     //         .get(&DataKey::Admin)
     //         .expect("not initialized")
     // }
+
+    fn get_interest_residual(env: &Env, loan_id: u64) -> i128 {
+        let residual_key = (symbol_short!("residual"), loan_id);
+        let residual_key = DataKey::Residual(loan_id);
+        env.storage().instance().get(&residual_key).unwrap_or(0)
+    }
+
+    fn set_interest_residual(env: &Env, loan_id: u64, value: i128) {
+        let residual_key = (symbol_short!("residual"), loan_id);
+        env.storage().instance().set(&residual_key, &value);
+    }
 
     fn nft_contract(env: &Env) -> Address {
         Self::bump_instance_ttl(env);
@@ -273,7 +287,7 @@ impl LoanManager {
             .expect("principal paid exceeds amount")
     }
 
-    fn accrue_interest(env: &Env, loan: &mut Loan) {
+    fn accrue_interest(env: &Env, loan_id: u64, loan: &mut Loan) {
         if loan.status != LoanStatus::Approved {
             return;
         }
@@ -308,35 +322,65 @@ impl LoanManager {
         let new_residual = total_interest % PRECISION;
 
         // Add the previous residual to the new calculation
-        let combined_residual = loan.interest_residual + new_residual;
+        let mut residual = Self::get_interest_residual(env, loan_id);
+
+        let new_interest = 0; // calculated
+        let total = residual + new_interest;
+
+        let whole = total / SCALE;
+        let remainder = total % SCALE;
+
+        loan.accrued_interest += whole;
+        Self::set_interest_residual(env, loan_id, remainder);
+
+        // load previous residual
+        let prev_residual: i128 = env.storage().instance().get(&residual_key).unwrap_or(0i128);
+
+        // combine
+        let combined_residual = prev_residual + new_residual;
+
+        // split
         let additional_interest = combined_residual / PRECISION;
         let final_residual = combined_residual % PRECISION;
 
+        // apply interest
         loan.accrued_interest = loan
             .accrued_interest
             .checked_add(interest_delta)
             .and_then(|v| v.checked_add(additional_interest))
             .expect("interest overflow");
-        loan.interest_residual = final_residual;
-        loan.last_interest_ledger = current_ledger;
+
+        // store residual
+        let residual_key = DataKey::Residual(loan_id);
+
+        env.storage().instance().set(&residual_key, &final_residual);
     }
 
+    #[allow(dead_code)]
     fn late_fee_rate_bps(env: &Env) -> u32 {
+        // Bump the instance TTL (side effect only)
         Self::bump_instance_ttl(env);
-        env.storage()
+
+        // Get the stored late fee rate or use the default
+        let rate = env
+            .storage()
             .instance()
             .get(&DataKey::LateFeeRateBps)
-            .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS)
+            .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS);
+
+        rate // return explicitly
     }
 
     fn grace_period_ledgers(env: &Env) -> u32 {
+        // Update the instance TTL as needed
         Self::bump_instance_ttl(env);
+
+        // Retrieve the value from storage, or use default if missing
         env.storage()
             .instance()
-            .get(&DataKey::GracePeriodLedgers)
+            .get::<u32>(&DataKey::GracePeriodLedgers)
             .unwrap_or(Self::DEFAULT_GRACE_PERIOD_LEDGERS)
     }
-
     fn default_window_ledgers(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -469,7 +513,7 @@ impl LoanManager {
     }
 
     fn current_total_debt(env: &Env, loan: &mut Loan) -> (i128, i128) {
-        Self::accrue_interest(env, loan);
+        Self::accrue_interest(env, loan.id, loan);
         let late_fee_delta = Self::accrue_late_fee(env, loan);
         let total_debt = Self::remaining_principal(loan)
             .checked_add(loan.accrued_interest)
@@ -997,6 +1041,7 @@ impl LoanManager {
         if completed {
             loan.status = LoanStatus::Repaid;
             loan.collateral_amount = 0;
+            loan.interest_residual = 0;
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
             Self::release_collateral_internal(&env, loan_id, &loan.borrower);
         }
@@ -1272,7 +1317,7 @@ impl LoanManager {
         }
 
         // Settle all accrued interest and late fees up to now.
-        Self::accrue_interest(&env, &mut loan);
+        Self::accrue_interest(&env, loan_id, &mut loan);
         let _ = Self::accrue_late_fee(&env, &mut loan);
 
         loan.interest_paid = loan
@@ -1286,6 +1331,7 @@ impl LoanManager {
             .checked_add(loan.accrued_late_fee)
             .expect("overflow");
         loan.accrued_late_fee = 0;
+        loan.interest_residual = 0;
 
         // Adjust principal to new_amount.
         let remaining_principal = Self::remaining_principal(&loan);
@@ -1754,6 +1800,7 @@ impl LoanManager {
         }
 
         loan.status = LoanStatus::Defaulted;
+        loan.accrued_interest = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
@@ -1799,6 +1846,7 @@ impl LoanManager {
             }
 
             loan.status = LoanStatus::Defaulted;
+            loan.interest_residual = 0;
             env.storage().persistent().set(&loan_key, &loan);
             Self::bump_persistent_ttl(&env, &loan_key);
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
