@@ -1,0 +1,40 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#grad1)" />
+  
+  <!-- Globe/Money symbol -->
+  <g transform="translate(256, 256)">
+    <!-- Outer circle -->
+    <circle cx="0" cy="0" r="80" fill="none" stroke="white" stroke-width="8" />
+    
+    <!-- Meridian lines -->
+    <ellipse cx="0" cy="0" rx="80" ry="40" fill="none" stroke="white" stroke-width="6" />
+    <ellipse cx="0" cy="0" rx="40" ry="80" fill="none" stroke="white" stroke-width="6" />
+    
+    <!-- Dollar sign -->
+    <text x="0" y="20" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="white" text-anchor="middle">$</text>
+  </g>
+  
+  <!-- Small dots representing global network -->
+  <circle cx="100" cy="100" r="8" fill="url(#grad2)" opacity="0.8" />
+  <circle cx="412" cy="100" r="8" fill="url(#grad2)" opacity="0.8" />
+  <circle cx="100" cy="412" r="8" fill="url(#grad2)" opacity="0.8" />
+  <circle cx="412" cy="412" r="8" fill="url(#grad2)" opacity="0.8" />
+  
+  <!-- Connection lines -->
+  <line x1="100" y1="100" x2="200" y2="200" stroke="url(#grad2)" stroke-width="3" opacity="0.6" />
+  <line x1="412" y1="100" x2="312" y2="200" stroke="url(#grad2)" stroke-width="3" opacity="0.6" />
+  <line x1="100" y1="412" x2="200" y2="312" stroke="url(#grad2)" stroke-width="3" opacity="0.6" />
+  <line x1="412" y1="412" x2="312" y2="312" stroke="url(#grad2)" stroke-width="3" opacity="0.6" />
+</svg>

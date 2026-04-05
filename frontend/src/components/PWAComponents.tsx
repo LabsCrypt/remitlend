@@ -107,10 +107,9 @@ export function PWAStatusIndicator({ className }: PWAStatusIndicatorProps) {
   }
 
   return (
-    <div className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs ${className}`}>}
-      <div className={`w-2 h-2 rounded-full {$
-        isOnline ? 'bg-green-500' : 'bg-red-500'
-      }`} />
+    <div className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs ${className}`}>
+      <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'
+        }`} />
       <span className="text-gray-600">
         {isOnline ? 'Online' : 'Offline'}
       </span>
@@ -148,7 +147,7 @@ export function PWABanner({ className }: PWABannerProps) {
   };
 
   return (
-    <div className={`bg-blue-50 border-b border-blue-200 px-4 py-3 ${className}`}>}
+    <div className={`bg-blue-50 border-b border-blue-200 px-4 py-3 ${className}`}>
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">

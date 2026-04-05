@@ -16,7 +16,8 @@
     "migrate:create": "node-pg-migrate create",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
-    "seed": "tsx src/seed/index.ts"
+    "seed": "tsx src/seed/index.ts",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
   },
   "keywords": [],
   "author": "",
