@@ -3,11 +3,27 @@ import { jest } from "@jest/globals";
 
 // Setup mocks BEFORE importing the app
 const mockQuery = jest.fn();
+const mockRelease = jest.fn();
+const mockClient = {
+  query: mockQuery,
+  release: mockRelease,
+};
+
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
   query: mockQuery,
-  getClient: jest.fn(),
+  getClient: jest.fn().mockResolvedValue(mockClient),
   closePool: jest.fn(),
+}));
+
+// Mock CacheService to prevent Redis connections
+jest.unstable_mockModule("../services/cacheService.js", () => ({
+  cacheService: {
+    get: jest.fn<() => Promise<any>>().mockResolvedValue(null),
+    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
+  },
 }));
 
 // Use dynamic imports to ensure mocks are applied

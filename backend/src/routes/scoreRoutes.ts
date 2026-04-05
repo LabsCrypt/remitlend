@@ -7,7 +7,7 @@ import {
 import { validate } from "../middleware/validation.js";
 import { getScoreSchema, updateScoreSchema } from "../schemas/scoreSchemas.js";
 import { requireApiKey } from "../middleware/auth.js";
-import { strictRateLimiter } from "../middleware/rateLimiter.js";
+import { scoreUpdateRateLimit } from "../middleware/rateLimitMiddleware.js";
 import {
   requireJwtAuth,
   requireScopes,
@@ -87,47 +87,7 @@ router.get(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 userId:
- *                   type: string
- *                 score:
- *                   type: integer
- *                 band:
- *                   type: string
- *                 breakdown:
- *                   type: object
- *                   properties:
- *                     totalLoans:
- *                       type: integer
- *                     repaidOnTime:
- *                       type: integer
- *                     repaidLate:
- *                       type: integer
- *                     defaulted:
- *                       type: integer
- *                     totalRepaid:
- *                       type: number
- *                     averageRepaymentTime:
- *                       type: string
- *                     longestStreak:
- *                       type: integer
- *                     currentStreak:
- *                       type: integer
- *                 history:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       date:
- *                         type: string
- *                         format: date
- *                       score:
- *                         type: integer
- *                       event:
- *                         type: string
+ *               $ref: '#/components/schemas/ScoreBreakdownResponse'
  *       401:
  *         description: Missing or invalid Bearer token.
  *       403:
@@ -178,7 +138,7 @@ router.get(
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/UserScore'
+ *               $ref: '#/components/schemas/ScoreUpdateResponse'
  *       400:
  *         description: Validation error.
  *         content:
@@ -195,7 +155,7 @@ router.get(
 router.post(
   "/update",
   requireApiKey,
-  strictRateLimiter,
+  scoreUpdateRateLimit,
   validate(updateScoreSchema),
   updateScore,
 );

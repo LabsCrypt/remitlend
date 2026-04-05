@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import { notificationService } from "../services/notificationService.js";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError } from "../errors/AppError.js";
+import { parseCappedLimit } from "../utils/queryHelpers.js";
 import logger from "../utils/logger.js";
 
 /**
@@ -14,8 +15,7 @@ export const getNotifications = asyncHandler(
     const userId = req.user?.publicKey;
     if (!userId) throw AppError.unauthorized("Authentication required");
 
-    const rawLimit = parseInt((req.query.limit as string) ?? "50", 10);
-    const limit = Number.isFinite(rawLimit) ? Math.min(rawLimit, 100) : 50;
+    const limit = parseCappedLimit(req, 50);
 
     const [notifications, unreadCount] = await Promise.all([
       notificationService.getNotificationsForUser(userId, limit),

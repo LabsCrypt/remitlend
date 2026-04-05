@@ -14,11 +14,24 @@ import { twMerge } from "tailwind-merge";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { useWalletStore } from "../../stores/useWalletStore";
+import { useUserStore } from "../../stores/useUserStore";
 import { useGamificationStore } from "../../stores/useGamificationStore";
+import { useWallet } from "../providers/WalletProvider";
 import { useLoans, useRemittances } from "../../hooks/useApi";
+import { useContractToast } from "../../hooks/useContractToast";
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { useTranslations, useLocale } from "next-intl";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function truncateWalletAddress(address: string) {
+  if (address.length <= 10) {
+    return address;
+  }
+
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
 interface HeaderProps {
@@ -28,10 +41,14 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, className }: HeaderProps) {
   const router = useRouter();
+  const locale = useLocale();
+  const t = useTranslations("Navigation");
   const isConnected = useWalletStore((state) => state.status === "connected");
-  const setConnected = useWalletStore((state) => state.setConnected);
-  const disconnect = useWalletStore((state) => state.disconnect);
+  const walletAddress = useWalletStore((state) => state.address);
+  const { connectWallet, disconnectWallet } = useWallet();
+  const user = useUserStore((state) => state.user);
   const gamificationStore = useGamificationStore();
+  const toast = useContractToast();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -44,15 +61,15 @@ export function Header({ onMenuClick, className }: HeaderProps) {
 
   const pages = useMemo(
     () => [
-      { name: "Dashboard", href: "/" },
-      { name: "Loans", href: "/loans" },
-      { name: "Remittances", href: "/remittances" },
-      { name: "Lend", href: "/lend" },
-      { name: "Analytics", href: "/analytics" },
-      { name: "Wallet", href: "/wallet" },
-      { name: "Settings", href: "/settings" },
+      { name: t("dashboard"), href: `/${locale}` },
+      { name: t("loans"), href: `/${locale}/loans` },
+      { name: "Remittances", href: `/${locale}/remittances` },
+      { name: "Lend", href: `/${locale}/lend` },
+      { name: "Analytics", href: `/${locale}/analytics` },
+      { name: "Wallet", href: `/${locale}/wallet` },
+      { name: "Settings", href: `/${locale}/settings` },
     ],
-    [],
+    [locale, t],
   );
 
   const searchResults = useMemo(() => {
@@ -70,7 +87,8 @@ export function Header({ onMenuClick, className }: HeaderProps) {
     const loanResults = loans
       .filter(
         (loan) =>
-          loan.id.toLowerCase().includes(term) || loan.borrowerId.toLowerCase().includes(term),
+          loan.id.toString().toLowerCase().includes(term) ||
+          loan.borrowerId.toLowerCase().includes(term),
       )
       .slice(0, 5)
       .map((loan) => ({
@@ -78,7 +96,7 @@ export function Header({ onMenuClick, className }: HeaderProps) {
         title: `Loan #${loan.id}`,
         subtitle: loan.borrowerId,
         category: "Loans" as const,
-        href: `/loans/${loan.id}`,
+        href: `/${locale}/loans/${loan.id}`,
       }));
 
     const pageResults = pages
@@ -102,11 +120,11 @@ export function Header({ onMenuClick, className }: HeaderProps) {
         title: `Tx ${remittance.id.slice(0, 10)}...`,
         subtitle: `${remittance.amount} ${remittance.fromCurrency} to ${remittance.toCurrency}`,
         category: "Transactions" as const,
-        href: "/remittances",
+        href: `/${locale}/remittances`,
       }));
 
     return [...loanResults, ...pageResults, ...transactionResults];
-  }, [debouncedQuery, loans, pages, remittances]);
+  }, [debouncedQuery, loans, pages, remittances, locale]);
 
   const groupedResults = useMemo(() => {
     const categories: Array<"Loans" | "Pages" | "Transactions"> = [
@@ -200,14 +218,32 @@ export function Header({ onMenuClick, className }: HeaderProps) {
     }
   };
 
-  const handleWalletToggle = () => {
+  const handleWalletToggle = async () => {
     if (isConnected) {
-      disconnect();
-    } else {
-      setConnected("0x123...abc", { chainId: 1, name: "Stellar", isSupported: true });
+      disconnectWallet();
+      toast.info("Wallet disconnected", "Reconnect anytime to continue borrowing and lending.");
+      return;
+    }
+
+    try {
+      await connectWallet();
       gamificationStore.addXP(10, "Wallet connection");
+      toast.success("Wallet connected");
+    } catch (error) {
+      toast.error(
+        "Wallet connection failed",
+        error instanceof Error ? error.message : "Unable to connect to Freighter.",
+      );
     }
   };
+
+  const profileLabel = user?.email
+    ? user.email
+    : user?.walletAddress
+      ? truncateWalletAddress(user.walletAddress)
+      : walletAddress
+        ? truncateWalletAddress(walletAddress)
+        : "Connect Wallet";
 
   return (
     <header
@@ -218,15 +254,18 @@ export function Header({ onMenuClick, className }: HeaderProps) {
     >
       <div className="flex items-center gap-4 lg:gap-0">
         <button
+          type="button"
           onClick={onMenuClick}
-          className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden"
+          aria-label="Open navigation menu"
+          aria-haspopup="true"
+          className="p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 lg:hidden rounded-lg"
         >
-          <Menu className="h-6 w-6" />
+          <Menu className="h-6 w-6" aria-hidden="true" />
         </button>
 
         <div ref={wrapperRef} className="relative hidden lg:flex w-full max-w-xl">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-            <Search className="h-4 w-4 text-zinc-400" />
+            <Search className="h-4 w-4 text-zinc-400" aria-hidden="true" />
           </div>
           <input
             ref={inputRef}
@@ -239,12 +278,18 @@ export function Header({ onMenuClick, className }: HeaderProps) {
             }}
             onFocus={() => setIsOpen(true)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Search loans, pages, transactions..."
+            placeholder="Search loans, pages, transactions…"
+            aria-label="Search loans, pages, and transactions"
             role="combobox"
             aria-expanded={isOpen}
             aria-haspopup="listbox"
             aria-autocomplete="list"
             aria-controls="header-search-results"
+            aria-activedescendant={
+              isOpen && searchResults[activeIndex]
+                ? `search-result-${searchResults[activeIndex].id}`
+                : undefined
+            }
             className="block w-full rounded-full border border-zinc-200 bg-zinc-50 py-2 pl-10 pr-3 text-sm placeholder-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
           />
           <span className="pointer-events-none absolute inset-y-0 right-3 hidden items-center text-xs text-zinc-400 xl:flex">
@@ -279,6 +324,9 @@ export function Header({ onMenuClick, className }: HeaderProps) {
                       return (
                         <button
                           key={item.id}
+                          id={`search-result-${item.id}`}
+                          role="option"
+                          aria-selected={isActive}
                           onClick={() => handleSelect(item.href)}
                           className={cn(
                             "flex w-full items-start justify-between rounded-xl px-3 py-2 text-left transition",
@@ -303,19 +351,27 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
+        <div className="hidden sm:block">
+          <LanguageSwitcher />
+        </div>
+
         <button
+          type="button"
           onClick={handleWalletToggle}
+          aria-label={isConnected ? "Disconnect wallet" : "Connect wallet"}
           className="hidden sm:flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-500/20"
         >
-          <Wallet className="h-4 w-4" />
-          {isConnected ? "Disconnect" : "Connect Wallet"}
+          <Wallet className="h-4 w-4" aria-hidden="true" />
+          {isConnected && walletAddress ? truncateWalletAddress(walletAddress) : "Connect Wallet"}
         </button>
 
         <button
+          type="button"
           onClick={handleWalletToggle}
-          className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          aria-label={isConnected ? "Disconnect wallet" : "Connect wallet"}
+          className="sm:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900 rounded-lg"
         >
-          <Wallet className="h-5 w-5 text-indigo-600" />
+          <Wallet className="h-5 w-5 text-indigo-600" aria-hidden="true" />
         </button>
 
         <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
@@ -324,12 +380,18 @@ export function Header({ onMenuClick, className }: HeaderProps) {
 
         <NotificationDropdown />
 
-        <button className="flex items-center gap-2 rounded-full p-1 border border-zinc-200 hover:border-zinc-300 transition-colors dark:border-zinc-800 dark:hover:border-zinc-700">
+        <button
+          type="button"
+          aria-label={`Profile: ${profileLabel}`}
+          className="flex items-center gap-2 rounded-full p-1 border border-zinc-200 hover:border-zinc-300 transition-colors dark:border-zinc-800 dark:hover:border-zinc-700"
+        >
           <div className="h-7 w-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-            <User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+            <User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
           </div>
           <div className="hidden md:block pr-2">
-            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">John Doe</p>
+            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50" aria-hidden="true">
+              {profileLabel}
+            </p>
           </div>
         </button>
       </div>

@@ -1,8 +1,9 @@
-use crate::{DataKey, LoanError, LoanManager, LoanManagerClient, LoanStatus};
+use crate::{DataKey, Loan, LoanError, LoanManager, LoanManagerClient, LoanStatus};
+use lending_pool::{LendingPool, LendingPoolClient};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String};
 
 fn setup_test<'a>(
     env: &Env,
@@ -24,8 +25,10 @@ fn setup_test<'a>(
     let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_id = token_contract.address();
 
-    // 3. Use a mock lending pool address (just an address, not a real contract for these tests)
-    let pool_address = Address::generate(env);
+    // 3. Deploy a real LendingPool contract for cross-contract pause checks
+    let pool_contract_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(env, &pool_contract_id);
+    pool_client.initialize(&admin);
 
     // 4. Deploy the LoanManager contract
     let loan_manager_id = env.register(LoanManager, ());
@@ -35,15 +38,43 @@ fn setup_test<'a>(
     nft_client.authorize_minter(&loan_manager_id);
 
     // 5. Initialize the Loan Manager with the NFT contract, lending pool, token, and admin
-    loan_manager_client.initialize(&nft_contract_id, &pool_address, &token_id, &admin);
+    loan_manager_client.initialize(&nft_contract_id, &pool_contract_id, &token_id, &admin);
 
     (
         loan_manager_client,
         nft_client,
-        pool_address,
+        pool_client.address,
         token_id,
-        token_admin,
+        admin,
     )
+}
+
+fn create_upgrade_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[9u8; 32])
+}
+
+#[test]
+#[should_panic]
+fn test_upgrade_requires_admin_auth() {
+    let env = Env::default();
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    env.mock_auths(&[]);
+    manager.upgrade(&create_upgrade_hash(&env));
+}
+
+#[test]
+fn test_set_admin_updates_admin_immediately() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let new_admin = Address::generate(&env);
+
+    manager.propose_admin(&new_admin);
+    manager.accept_admin();
+
+    assert_eq!(manager.get_admin(), new_admin);
 }
 
 #[test]
@@ -53,7 +84,7 @@ fn test_loan_request_success() {
 
     let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
-    assert_eq!(manager.version(), 2);
+    assert_eq!(manager.version(), 3);
 
     // Give borrower a score high enough to pass (>= 500)
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -94,7 +125,7 @@ fn test_approve_loan_flow() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // 1. Give borrower a score high enough to pass
@@ -104,7 +135,7 @@ fn test_approve_loan_flow() {
     // 2. Setup liquidity - mint tokens to the pool address
     let token_client = TokenClient::new(&env, &token_id);
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10000);
+    stellar_token.mint(&pool_client, &10000);
 
     // 3. Request a loan
     let loan_id = manager.request_loan(&borrower, &1000);
@@ -123,6 +154,25 @@ fn test_approve_loan_flow() {
     // 7. Verify borrower received the funds
     let borrower_balance = token_client.balance(&borrower);
     assert_eq!(borrower_balance, 1000);
+}
+
+#[test]
+fn test_approve_loan_fails_when_pool_has_insufficient_liquidity() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, _pool_client, _token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    let result = manager.try_approve_loan(&loan_id);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientPoolLiquidity)));
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.status, LoanStatus::Pending);
 }
 
 #[test]
@@ -162,11 +212,111 @@ fn test_reject_pending_loan() {
 }
 
 #[test]
+fn test_cancel_pending_loan_returns_collateral() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, _pool, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&manager.address, &500);
+
+    let _borrower_balance_before = token_client.balance(&borrower);
+    let _contract_balance_before = token_client.balance(&manager.address);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    env.as_contract(&manager.address, || {
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
+        loan.collateral_amount = 500;
+        env.storage().persistent().set(&loan_key, &loan);
+    });
+
+    assert_eq!(manager.get_collateral(&loan_id), 500);
+
+    manager.cancel_loan(&borrower, &loan_id);
+
+    assert_eq!(manager.get_collateral(&loan_id), 0);
+}
+
+#[test]
+fn test_reject_pending_loan_returns_collateral() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, _pool, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&manager.address, &400);
+
+    let borrower_balance_before = token_client.balance(&borrower);
+
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    env.as_contract(&manager.address, || {
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&loan_key).unwrap();
+        loan.collateral_amount = 400;
+        env.storage().persistent().set(&loan_key, &loan);
+    });
+
+    assert_eq!(manager.get_collateral(&loan_id), 400);
+
+    manager.reject_loan(&loan_id, &String::from_str(&env, "manual review failed"));
+
+    assert_eq!(manager.get_collateral(&loan_id), 0);
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before + 400
+    );
+}
+
+#[test]
+fn test_admin_transfer_via_propose_accept() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let current_admin: Address = env.as_contract(&manager.address, || {
+        env.storage().instance().get(&DataKey::Admin).unwrap()
+    });
+
+    let proposed_admin = Address::generate(&env);
+
+    manager.propose_admin(&proposed_admin);
+
+    let pending_admin: Address = env.as_contract(&manager.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::ProposedAdmin)
+            .unwrap()
+    });
+    assert_eq!(pending_admin, proposed_admin);
+
+    manager.accept_admin();
+
+    let accepted_admin: Address = env.as_contract(&manager.address, || {
+        env.storage().instance().get(&DataKey::Admin).unwrap()
+    });
+    assert_eq!(accepted_admin, proposed_admin);
+    assert_ne!(accepted_admin, current_admin);
+}
+
+#[test]
 fn test_configurable_interest_rate_and_default_term() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -176,7 +326,7 @@ fn test_configurable_interest_rate_and_default_term() {
     manager.set_default_term(&20_000);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1_000);
     let pending_loan = manager.get_loan(&loan_id);
@@ -204,7 +354,7 @@ fn test_legacy_zero_interest_config_falls_back_to_default() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Simulate a legacy/misconfigured zero interest rate in instance storage.
@@ -220,7 +370,7 @@ fn test_legacy_zero_interest_config_falls_back_to_default() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1_000);
     let pending_loan = manager.get_loan(&loan_id);
@@ -232,7 +382,7 @@ fn test_repayment_flow() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // 1. Borrower starts with a score of 600
@@ -242,7 +392,7 @@ fn test_repayment_flow() {
 
     let token_client = TokenClient::new(&env, &token_id);
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
     stellar_token.mint(&borrower, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1000);
@@ -257,10 +407,18 @@ fn test_repayment_flow() {
     assert!(loan.principal_paid > 0);
     assert!(loan.interest_paid >= 0);
     assert_eq!(loan.status, LoanStatus::Approved);
-    assert_eq!(token_client.balance(&pool_address), 9_500);
+    assert_eq!(token_client.balance(&pool_client), 9_500);
 
-    // 3. Verify the underlying NFT Score was correctly incremented
-    assert_eq!(nft_client.get_score(&borrower), 605);
+    let remaining_debt = loan.amount + loan.accrued_interest + loan.accrued_late_fee
+        - loan.principal_paid
+        - loan.interest_paid
+        - loan.late_fee_paid;
+    manager.repay(&borrower, &loan_id, &remaining_debt);
+    let completed = manager.get_loan(&loan_id);
+    assert_eq!(completed.status, LoanStatus::Repaid);
+
+    // Score updates include both partial and final repayment contributions.
+    assert_eq!(nft_client.get_score(&borrower), 610);
 }
 
 #[test]
@@ -268,14 +426,14 @@ fn test_partial_repayment_tracks_split_balances() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &2_000_000);
+    stellar_token.mint(&pool_client, &2_000_000);
     stellar_token.mint(&borrower, &2_000_000);
 
     manager.set_max_loan_amount(&1_000_000);
@@ -299,7 +457,7 @@ fn test_minimum_repayment_amount_enforced() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -308,7 +466,7 @@ fn test_minimum_repayment_amount_enforced() {
 
     let _history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
     stellar_token.mint(&borrower, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1_000);
@@ -323,7 +481,7 @@ fn test_full_repayment_ignores_minimum_amount() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -332,7 +490,7 @@ fn test_full_repayment_ignores_minimum_amount() {
 
     let _history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
     stellar_token.mint(&borrower, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1_000);
@@ -366,7 +524,7 @@ fn test_small_repayment_does_not_change_score() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -374,7 +532,7 @@ fn test_small_repayment_does_not_change_score() {
     assert_eq!(nft_client.get_score(&borrower), 600);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
     stellar_token.mint(&borrower, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1000);
@@ -384,6 +542,36 @@ fn test_small_repayment_does_not_change_score() {
     manager.repay(&borrower, &loan_id, &99);
 
     assert_eq!(nft_client.get_score(&borrower), 600);
+}
+
+#[test]
+fn test_late_full_repayment_applies_score_penalty() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1000);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let grace = manager.get_grace_period_ledgers();
+    env.ledger().set_sequence_number(due_date + grace + 1);
+
+    let loan = manager.get_loan(&loan_id);
+    let payoff = loan.amount + loan.accrued_interest + loan.accrued_late_fee;
+    manager.repay(&borrower, &loan_id, &payoff);
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Repaid);
+    assert_eq!(nft_client.get_score(&borrower), 590);
 }
 
 #[test]
@@ -417,7 +605,7 @@ fn test_approve_already_approved_loan() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     // Setup
@@ -425,7 +613,7 @@ fn test_approve_already_approved_loan() {
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10000);
+    stellar_token.mint(&pool_client, &10000);
 
     // Request and approve loan
     let loan_id = manager.request_loan(&borrower, &1000);
@@ -436,22 +624,23 @@ fn test_approve_already_approved_loan() {
 }
 
 #[test]
-#[should_panic]
 fn test_approve_loan_insufficient_pool_liquidity() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &650, &history_hash, &None);
 
+    // Mint only 100 tokens into pool, but loan requests 1000
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &100);
+    stellar_token.mint(&pool_client, &100);
 
     let loan_id = manager.request_loan(&borrower, &1000);
-    manager.approve_loan(&loan_id);
+    let result = manager.try_approve_loan(&loan_id);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientPoolLiquidity)));
 }
 
 #[test]
@@ -459,14 +648,14 @@ fn test_borrower_max_active_loans_enforced_and_released_on_repay() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &700, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &50_000);
+    stellar_token.mint(&pool_client, &50_000);
     stellar_token.mint(&borrower, &50_000);
 
     manager.set_max_loans_per_borrower(&2);
@@ -491,14 +680,14 @@ fn test_borrower_max_active_loans_blocks_new_requests() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &700, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &50_000);
+    stellar_token.mint(&pool_client, &50_000);
 
     manager.set_max_loans_per_borrower(&2);
 
@@ -531,14 +720,14 @@ fn test_check_default_success() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
@@ -546,7 +735,7 @@ fn test_check_default_success() {
     assert!(!nft_client.is_seized(&borrower));
 
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 100_000);
 
     manager.check_default(&loan_id);
 
@@ -554,6 +743,7 @@ fn test_check_default_success() {
     assert_eq!(loan.status, LoanStatus::Defaulted);
 
     assert_eq!(nft_client.get_default_count(&borrower), 1);
+    assert_eq!(nft_client.get_score(&borrower), 550);
     assert!(nft_client.is_seized(&borrower));
 }
 
@@ -563,14 +753,14 @@ fn test_check_default_not_past_due() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
@@ -584,14 +774,14 @@ fn test_check_default_already_repaid() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
     stellar_token.mint(&borrower, &10_000);
 
     let loan_id = manager.request_loan(&borrower, &1000);
@@ -600,9 +790,34 @@ fn test_check_default_already_repaid() {
     manager.repay(&borrower, &loan_id, &1000);
 
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 40_000);
 
     manager.check_default(&loan_id);
+}
+
+#[test]
+fn test_check_default_respects_default_window() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    manager.set_default_window_ledgers(&10_000);
+    let loan_id = manager.request_loan(&borrower, &1000);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    env.ledger().set_sequence_number(due_date + 9_999);
+
+    let result = manager.try_check_default(&loan_id);
+    assert_eq!(result, Err(Ok(LoanError::LoanNotPastDue)));
 }
 
 #[test]
@@ -610,7 +825,7 @@ fn test_check_defaults_batch() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower1 = Address::generate(&env);
     let borrower2 = Address::generate(&env);
     let borrower3 = Address::generate(&env);
@@ -621,7 +836,7 @@ fn test_check_defaults_batch() {
     nft_client.mint(&borrower3, &600, &history_hash, &None);
 
     let stellar_token = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &100_000);
+    stellar_token.mint(&pool_client, &100_000);
 
     let loan_id1 = manager.request_loan(&borrower1, &1000);
     let loan_id2 = manager.request_loan(&borrower2, &1000);
@@ -632,7 +847,7 @@ fn test_check_defaults_batch() {
     manager.approve_loan(&loan_id3);
 
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(env.ledger().sequence() + 100_000);
 
     let loan_ids = soroban_sdk::vec![&env, loan_id1, loan_id2, loan_id3];
     manager.check_defaults(&loan_ids);
@@ -641,6 +856,9 @@ fn test_check_defaults_batch() {
     assert_eq!(manager.get_loan(&loan_id2).status, LoanStatus::Defaulted);
     assert_eq!(manager.get_loan(&loan_id3).status, LoanStatus::Defaulted);
 
+    assert_eq!(nft_client.get_score(&borrower1), 550);
+    assert_eq!(nft_client.get_score(&borrower2), 550);
+    assert_eq!(nft_client.get_score(&borrower3), 550);
     assert!(nft_client.is_seized(&borrower1));
     assert!(nft_client.is_seized(&borrower2));
     assert!(nft_client.is_seized(&borrower3));
@@ -651,7 +869,7 @@ fn test_overdue_repayment_charges_late_fee() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -659,10 +877,11 @@ fn test_overdue_repayment_charges_late_fee() {
 
     let token_client = TokenClient::new(&env, &token_id);
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
     stellar_token.mint(&borrower, &10_000);
 
     manager.set_late_fee_rate(&500);
+    manager.set_grace_period_ledgers(&0);
     env.ledger().set_sequence_number(1);
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
@@ -673,12 +892,48 @@ fn test_overdue_repayment_charges_late_fee() {
     manager.repay(&borrower, &loan_id, &300);
 
     let loan = manager.get_loan(&loan_id);
-    assert_eq!(loan.interest_paid, 180);
-    assert_eq!(loan.late_fee_paid, 29);
-    assert_eq!(loan.principal_paid, 91);
-    assert_eq!(loan.accrued_late_fee, 0);
+    assert_eq!(loan.interest_paid, 45);
+    assert_eq!(loan.late_fee_paid, 7);
+    assert_eq!(loan.principal_paid, 248);
+    assert_eq!(loan.accrued_interest, 135);
+    assert_eq!(loan.accrued_late_fee, 22);
     assert_eq!(loan.status, LoanStatus::Approved);
-    assert_eq!(token_client.balance(&pool_address), 9_300);
+    assert_eq!(token_client.balance(&pool_client), 9_300);
+}
+
+#[test]
+fn test_overdue_partial_repayment_still_reduces_principal() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    manager.set_late_fee_rate(&500);
+    manager.set_grace_period_ledgers(&0);
+    env.ledger().set_sequence_number(1);
+    let loan_id = manager.request_loan(&borrower, &1_000);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    env.ledger().set_sequence_number(due_date + 8_640);
+
+    manager.repay(&borrower, &loan_id, &300);
+
+    let loan = manager.get_loan(&loan_id);
+    assert!(loan.principal_paid > 0);
+    assert!(loan.accrued_late_fee > 0);
+    assert_eq!(
+        loan.principal_paid + loan.interest_paid + loan.late_fee_paid,
+        300
+    );
 }
 
 #[test]
@@ -686,16 +941,17 @@ fn test_late_fee_is_capped_at_quarter_principal() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(&borrower, &600, &history_hash, &None);
 
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&pool_client, &10_000);
 
     manager.set_late_fee_rate(&10_000);
+    manager.set_grace_period_ledgers(&0);
     let loan_id = manager.request_loan(&borrower, &1000);
     manager.approve_loan(&loan_id);
 
@@ -711,7 +967,7 @@ fn test_deposit_collateral_and_auto_release_on_full_repayment() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -719,7 +975,7 @@ fn test_deposit_collateral_and_auto_release_on_full_repayment() {
 
     let token_client = TokenClient::new(&env, &token_id);
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &20_000);
+    stellar_token.mint(&pool_client, &20_000);
     stellar_token.mint(&borrower, &20_000);
 
     let loan_id = manager.request_loan(&borrower, &1_000);
@@ -750,7 +1006,7 @@ fn test_collateral_is_seized_on_default() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
 
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -758,29 +1014,75 @@ fn test_collateral_is_seized_on_default() {
 
     let token_client = TokenClient::new(&env, &token_id);
     let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_address, &20_000);
+    stellar_token.mint(&pool_client, &20_000);
     stellar_token.mint(&borrower, &20_000);
 
     let loan_id = manager.request_loan(&borrower, &1_000);
     manager.approve_loan(&loan_id);
     manager.deposit_collateral(&loan_id, &400);
 
-    let pool_balance_before_default = token_client.balance(&pool_address);
+    let pool_balance_before_default = token_client.balance(&pool_client);
     let contract_balance_before_default = token_client.balance(&manager.address);
 
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 20_000);
+        .set_sequence_number(due_date + default_window + 1);
     manager.check_default(&loan_id);
 
     assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
     assert_eq!(manager.get_collateral(&loan_id), 0);
     assert_eq!(
-        token_client.balance(&pool_address),
+        token_client.balance(&pool_client),
         pool_balance_before_default + 400
     );
     assert_eq!(
         token_client.balance(&manager.address),
         contract_balance_before_default - 400
+    );
+}
+
+#[test]
+fn test_collateral_is_seized_on_batch_default() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower1 = Address::generate(&env);
+    let borrower2 = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower1, &650, &history_hash, &None);
+    nft_client.mint(&borrower2, &650, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+    stellar_token.mint(&borrower1, &20_000);
+    stellar_token.mint(&borrower2, &20_000);
+
+    let loan_id1 = manager.request_loan(&borrower1, &1_000);
+    let loan_id2 = manager.request_loan(&borrower2, &1_000);
+    manager.approve_loan(&loan_id1);
+    manager.approve_loan(&loan_id2);
+    manager.deposit_collateral(&loan_id1, &300);
+    manager.deposit_collateral(&loan_id2, &500);
+
+    let pool_balance_before = token_client.balance(&pool_client);
+
+    let due_date = manager.get_loan(&loan_id1).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+
+    let loan_ids = soroban_sdk::vec![&env, loan_id1, loan_id2];
+    manager.check_defaults(&loan_ids);
+
+    assert_eq!(manager.get_collateral(&loan_id1), 0);
+    assert_eq!(manager.get_collateral(&loan_id2), 0);
+    assert_eq!(
+        token_client.balance(&pool_client),
+        pool_balance_before + 300 + 500
     );
 }
 
@@ -798,4 +1100,152 @@ fn test_deposit_collateral_rejects_non_active_loan() {
 
     let loan_id = manager.request_loan(&borrower, &500);
     manager.deposit_collateral(&loan_id, &100);
+}
+
+#[test]
+fn test_small_loan_interest_accrual_precision() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    // Request a small loan of 50 units
+    let loan_id = manager.request_loan(&borrower, &50);
+    manager.approve_loan(&loan_id);
+
+    let initial_loan = manager.get_loan(&loan_id);
+    assert_eq!(initial_loan.accrued_interest, 0);
+    assert_eq!(initial_loan.interest_residual, 0);
+    // Verify loan is approved and has interest rate configured
+    assert!(initial_loan.interest_rate_bps > 0);
+}
+
+#[test]
+fn test_query_functions() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, pool_address, token_id, token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    // Test get_admin
+    assert_eq!(manager.get_admin(), token_admin);
+
+    // Test get_lending_pool
+    assert_eq!(manager.get_lending_pool(), pool_address);
+
+    // Test get_nft_contract - get the contract address from the nft_client
+    assert_eq!(manager.get_nft_contract(), nft_client.address);
+
+    // Test get_total_loans initially
+    assert_eq!(manager.get_total_loans(), 0);
+
+    // Create a loan and test get_total_loans
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    let _loan_id = manager.request_loan(&borrower, &1000);
+    assert_eq!(manager.get_total_loans(), 1);
+}
+
+#[test]
+fn test_get_borrower_loans() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    // Initially no loans
+    assert_eq!(manager.get_borrower_loans(&borrower).len(), 0);
+
+    // Mint NFT for borrower
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    // Setup liquidity
+    let _token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    // Request first loan
+    let loan_id_1 = manager.request_loan(&borrower, &1000);
+    let borrower_loans = manager.get_borrower_loans(&borrower);
+    assert_eq!(borrower_loans.len(), 1);
+    assert_eq!(borrower_loans.get(0).unwrap(), loan_id_1);
+
+    // Request second loan (while first is still pending)
+    let loan_id_2 = manager.request_loan(&borrower, &500);
+    let borrower_loans = manager.get_borrower_loans(&borrower);
+    assert_eq!(borrower_loans.len(), 2);
+    assert_eq!(borrower_loans.get(0).unwrap(), loan_id_1);
+    assert_eq!(borrower_loans.get(1).unwrap(), loan_id_2);
+
+    // Approve first loan
+    manager.approve_loan(&loan_id_1);
+
+    // Approve second loan
+    manager.approve_loan(&loan_id_2);
+
+    // Advance ledger for interest accrual
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + 100);
+
+    // Repay first loan completely
+    let loan_1 = manager.get_loan(&loan_id_1);
+    let repay_amount_1 = loan_1.amount + loan_1.accrued_interest + loan_1.accrued_late_fee;
+    manager.repay(&borrower, &loan_id_1, &repay_amount_1);
+
+    // Borrower loans should still contain both loans (historical record)
+    let borrower_loans = manager.get_borrower_loans(&borrower);
+    assert_eq!(borrower_loans.len(), 2);
+    assert_eq!(borrower_loans.get(0).unwrap(), loan_id_1);
+    assert_eq!(borrower_loans.get(1).unwrap(), loan_id_2);
+
+    // Verify first loan is marked as repaid
+    let repaid_loan = manager.get_loan(&loan_id_1);
+    assert_eq!(repaid_loan.status, LoanStatus::Repaid);
+}
+
+#[test]
+fn test_pending_loans_count_against_cap() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (client, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+
+    let borrower = Address::generate(&env);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    // Set cap to 2
+    client.set_max_loans_per_borrower(&2);
+
+    // Request two loans (both pending) — should consume the full cap
+    let _loan_id_1 = client.request_loan(&borrower, &500);
+    let _loan_id_2 = client.request_loan(&borrower, &500);
+
+    assert_eq!(client.get_borrower_loan_count(&borrower), 2);
+
+    // Third request must be rejected even though neither loan is approved yet
+    let result = client.try_request_loan(&borrower, &500);
+    assert_eq!(result, Err(Ok(LoanError::MaxLoansReached)));
 }

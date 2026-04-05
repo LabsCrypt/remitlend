@@ -1,11 +1,13 @@
 import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
-import { asyncHandler } from "./asyncHandler.js";
+import { ErrorCode } from "../errors/errorCodes.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 /**
  * After `requireJwtAuth`, ensures `req.params.loanId` refers to a loan whose
- * borrower matches the JWT `publicKey`. Returns 404 when the loan is missing
- * or the caller is not the borrower (avoid loan-id enumeration).
+ * borrower matches the JWT `publicKey`.
+ * Returns 404 when the loan is missing and 403 when it belongs to a different
+ * borrower.
  */
 export const requireLoanBorrowerAccess = asyncHandler(
   async (req, res, next) => {
@@ -25,8 +27,14 @@ export const requireLoanBorrowerAccess = asyncHandler(
     );
 
     const row = r.rows[0] as { borrower: string } | undefined;
-    if (!row || row.borrower !== pk) {
+    if (!row) {
       throw AppError.notFound("Loan not found");
+    }
+    if (row.borrower !== pk) {
+      throw AppError.forbidden(
+        "You are not authorized to access this loan",
+        ErrorCode.ACCESS_DENIED,
+      );
     }
 
     next();

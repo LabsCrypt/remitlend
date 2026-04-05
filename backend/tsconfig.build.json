@@ -1,4 +1,14 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "dist", "src/__tests__/**/*", "src/tests/**/*", "jest.config.ts"]
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/__tests__/**",
+    "jest.config.ts"
+  ]
 }

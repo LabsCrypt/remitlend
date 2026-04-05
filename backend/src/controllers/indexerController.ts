@@ -1,13 +1,177 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
+import { xdr } from "@stellar/stellar-sdk";
 import { query } from "../db/connection.js";
-import logger from "../utils/logger.js";
-import { EventIndexer } from "../services/eventIndexer.js";
+import {
+  EventIndexer,
+  type SorobanRawEvent,
+} from "../services/eventIndexer.js";
+import { cacheService } from "../services/cacheService.js";
 import {
   SUPPORTED_WEBHOOK_EVENT_TYPES,
   webhookService,
   type WebhookEventType,
 } from "../services/webhookService.js";
-import { cacheService } from "../services/cacheService.js";
+import {
+  createCursorPaginatedResponse,
+  parseCursorQueryParams,
+  parseQueryParams,
+} from "../utils/pagination.js";
+import { parseCappedLimit } from "../utils/queryHelpers.js";
+import logger from "../utils/logger.js";
+import { getStellarRpcUrl } from "../config/stellar.js";
+
+const buildEventFilters = (
+  req: Request,
+  baseParams: unknown[],
+  initialWhereClause: string,
+) => {
+  const { status, dateRange, amountRange } = parseQueryParams(req);
+  const params = [...baseParams];
+  let whereClause = initialWhereClause;
+
+  const appendCondition = (condition: string) => {
+    whereClause += whereClause.includes("WHERE")
+      ? ` AND ${condition}`
+      : ` WHERE ${condition}`;
+  };
+
+  const requestedStatus =
+    status && status !== "all"
+      ? status
+      : typeof req.query.eventType === "string"
+        ? req.query.eventType
+        : null;
+
+  if (requestedStatus) {
+    params.push(requestedStatus);
+    appendCondition(`event_type = $${params.length}`);
+  }
+
+  if (amountRange) {
+    params.push(amountRange.min, amountRange.max);
+    appendCondition(
+      `CAST(amount AS NUMERIC) BETWEEN $${params.length - 1} AND $${params.length}`,
+    );
+  }
+
+  if (dateRange) {
+    params.push(dateRange.start.toISOString(), dateRange.end.toISOString());
+    appendCondition(
+      `ledger_closed_at BETWEEN $${params.length - 1} AND $${params.length}`,
+    );
+  }
+
+  return { params, whereClause };
+};
+
+const buildEventsCacheKey = (
+  scope: string,
+  resourceId: string | number,
+  req: Request,
+) =>
+  [
+    "events",
+    scope,
+    String(resourceId),
+    `limit:${req.query.limit ?? "default"}`,
+    `cursor:${req.query.cursor ?? "default"}`,
+    `offset:${req.query.offset ?? "default"}`,
+    `sort:${req.query.sort ?? "default"}`,
+    `status:${req.query.status ?? req.query.eventType ?? "all"}`,
+    `date:${req.query.date_range ?? "all"}`,
+    `amount:${req.query.amount_range ?? "all"}`,
+  ].join(":");
+
+type QuarantineEventRow = {
+  id: number;
+  event_id: string;
+  ledger: number;
+  tx_hash: string;
+  contract_id: string;
+  raw_xdr: unknown;
+  error_message: string;
+  quarantined_at: string;
+};
+
+const buildIndexerFromConfig = (): EventIndexer => {
+  const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
+
+  if (!contractId) {
+    throw new Error("LOAN_MANAGER_CONTRACT_ID is not configured");
+  }
+
+  const rpcUrl = getStellarRpcUrl();
+  const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
+
+  return new EventIndexer({
+    rpcUrl,
+    contractId,
+    pollIntervalMs: 30_000,
+    batchSize,
+  });
+};
+
+const decodeQuarantinedRawEvent = (
+  row: QuarantineEventRow,
+): SorobanRawEvent | null => {
+  const raw = row.raw_xdr;
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const candidate = raw as {
+    id?: unknown;
+    topics?: unknown;
+    value?: unknown;
+    ledger?: unknown;
+    ledgerClosedAt?: unknown;
+    txHash?: unknown;
+    contractId?: unknown;
+  };
+
+  if (!Array.isArray(candidate.topics) || typeof candidate.value !== "string") {
+    return null;
+  }
+
+  const topics = candidate.topics.filter(
+    (topic): topic is string => typeof topic === "string",
+  );
+
+  if (topics.length !== candidate.topics.length) {
+    return null;
+  }
+
+  try {
+    const topicValues = topics.map((topic) => xdr.ScVal.fromXDR(topic, "base64"));
+    const value = xdr.ScVal.fromXDR(candidate.value, "base64");
+    const ledgerClosedAt =
+      typeof candidate.ledgerClosedAt === "string"
+        ? candidate.ledgerClosedAt
+        : row.quarantined_at;
+
+    return {
+      id: row.event_id,
+      pagingToken: String(row.ledger),
+      topic: topicValues,
+      value,
+      ledger: row.ledger,
+      ledgerClosedAt,
+      txHash:
+        typeof candidate.txHash === "string" ? candidate.txHash : row.tx_hash,
+      contractId:
+        typeof candidate.contractId === "string"
+          ? candidate.contractId
+          : row.contract_id,
+    };
+  } catch (error) {
+    logger.warn("Failed to decode quarantined raw event", {
+      quarantineId: row.id,
+      eventId: row.event_id,
+      error,
+    });
+    return null;
+  }
+};
 
 /**
  * Get indexer status
@@ -27,15 +191,12 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
     }
 
     const state = result.rows[0];
-
-    // Get event counts
     const eventCounts = await query(
-      `SELECT event_type, COUNT(*) as count 
-       FROM loan_events 
+      `SELECT event_type, COUNT(*) as count
+       FROM loan_events
        GROUP BY event_type`,
       [],
     );
-
     const totalEvents = await query(
       "SELECT COUNT(*) as total FROM loan_events",
       [],
@@ -47,10 +208,10 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
         lastIndexedLedger: state.last_indexed_ledger,
         lastIndexedCursor: state.last_indexed_cursor,
         lastUpdated: state.updated_at,
-        totalEvents: parseInt(totalEvents.rows[0].total),
+        totalEvents: Number.parseInt(totalEvents.rows[0].total, 10),
         eventsByType: eventCounts.rows.reduce(
           (acc, row) => {
-            acc[row.event_type] = parseInt(row.count);
+            acc[row.event_type] = Number.parseInt(row.count, 10);
             return acc;
           },
           {} as Record<string, number>,
@@ -71,50 +232,76 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
  */
 export const getBorrowerEvents = async (req: Request, res: Response) => {
   try {
-    const { borrower } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
+    const borrowerParam = req.params.borrower;
+    const borrower = Array.isArray(borrowerParam)
+      ? borrowerParam[0]
+      : borrowerParam;
+    if (!borrower) {
+      return res.status(400).json({
+        success: false,
+        message: "Borrower is required",
+      });
+    }
 
-    const cacheKey = `events:borrower:${borrower}:limit:${limit}:offset:${offset}`;
+    const { limit, cursor } = parseCursorQueryParams(req);
+    const cacheKey = buildEventsCacheKey("borrower", borrower, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
-      res.json({
-        success: true,
-        data: cachedData,
-      });
+      res.json(cachedData);
       return;
     }
 
-    const result = await query(
-      `SELECT event_id, event_type, loan_id, borrower, amount, 
-              ledger, ledger_closed_at, tx_hash, created_at
-       FROM loan_events
-       WHERE borrower = $1
-       ORDER BY ledger DESC
-       LIMIT $2 OFFSET $3`,
-      [borrower, limit, offset],
-    );
-
-    const total = await query(
-      "SELECT COUNT(*) as count FROM loan_events WHERE borrower = $1",
+    const { params, whereClause } = buildEventFilters(
+      req,
       [borrower],
+      "WHERE borrower = $1",
+    );
+    logger.debug("getBorrowerEvents after filters", {
+      params,
+      whereClause,
+    });
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
+    const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount,
+             ledger, ledger_closed_at, tx_hash, created_at, id
+      FROM loan_events
+      ${whereClause}
+      ${cursorClause}
+      ORDER BY id ASC
+      LIMIT $${params.length + 2}
+    `;
+    logger.debug("getBorrowerEvents query", {
+      queryText,
+      queryParams: [...params, cursorValue, limit + 1],
+    });
+
+    const [result, totalCount] = await Promise.all([
+      query(queryText, [...params, cursorValue, limit + 1]),
+      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
+    ]);
+
+    logger.debug("getBorrowerEvents after query", { result, totalCount });
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
+
+    const response = createCursorPaginatedResponse(
+      {
+        borrower,
+        events,
+      },
+      Number.parseInt(totalCount.rows[0].count, 10),
+      limit,
+      events.length,
+      nextCursor,
+      Boolean(cursor),
     );
 
-    const data = {
-      events: result.rows,
-      pagination: {
-        total: parseInt(total.rows[0].count),
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
-      },
-    };
-
-    await cacheService.set(cacheKey, data, 300); // 5 minutes TTL
-
-    res.json({
-      success: true,
-      data,
-    });
+    await cacheService.set(cacheKey, response, 300);
+    res.json(response);
   } catch (error) {
     logger.error("Failed to get borrower events", { error });
     res.status(500).json({
@@ -129,7 +316,9 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
  */
 export const getLoanEvents = async (req: Request, res: Response) => {
   try {
-    const { loanId } = req.params;
+    const loanIdParam = req.params.loanId;
+    const loanId = Array.isArray(loanIdParam) ? loanIdParam[0] : loanIdParam;
+    const { limit, cursor } = parseCursorQueryParams(req);
 
     if (!loanId) {
       return res.status(400).json({
@@ -138,37 +327,55 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = `events:loan:${loanId}`;
+    const cacheKey = buildEventsCacheKey("loan", loanId as string, req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
-      res.json({
-        success: true,
-        data: cachedData,
-      });
+      res.json(cachedData);
       return;
     }
 
-    const result = await query(
-      `SELECT event_id, event_type, loan_id, borrower, amount, 
-              ledger, ledger_closed_at, tx_hash, created_at
-       FROM loan_events
-       WHERE loan_id = $1
-       ORDER BY ledger ASC`,
+    const { params, whereClause } = buildEventFilters(
+      req,
       [loanId],
+      "WHERE loan_id = $1",
+    );
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
+    const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount,
+             ledger, ledger_closed_at, tx_hash, created_at, id
+      FROM loan_events
+      ${whereClause}
+      ${cursorClause}
+      ORDER BY id ASC
+      LIMIT $${params.length + 2}
+    `;
+
+    const [result, totalCount] = await Promise.all([
+      query(queryText, [...params, cursorValue, limit + 1]),
+      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
+    ]);
+
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
+
+    const response = createCursorPaginatedResponse(
+      {
+        loanId: Number.parseInt(loanId, 10),
+        events,
+      },
+      Number.parseInt(totalCount.rows[0].count, 10),
+      limit,
+      events.length,
+      nextCursor,
+      Boolean(cursor),
     );
 
-    const data = {
-      loanId: parseInt(loanId as string),
-      events: result.rows,
-    };
-
-    await cacheService.set(cacheKey, data, 300); // 5 minutes TTL
-
-    res.json({
-      success: true,
-      data,
-    });
+    await cacheService.set(cacheKey, response, 300);
+    res.json(response);
   } catch (error) {
     logger.error("Failed to get loan events", { error });
     res.status(500).json({
@@ -183,47 +390,55 @@ export const getLoanEvents = async (req: Request, res: Response) => {
  */
 export const getRecentEvents = async (req: Request, res: Response) => {
   try {
-    const { limit = 20, eventType } = req.query;
-
-    const cacheKey = `events:recent:limit:${limit}:type:${eventType || "all"}`;
+    const { limit, cursor } = parseCursorQueryParams(req);
+    const cacheKey = buildEventsCacheKey("recent", "all", req);
     const cachedData = await cacheService.get(cacheKey);
 
     if (cachedData) {
-      res.json({
-        success: true,
-        data: cachedData,
-      });
+      res.json(cachedData);
       return;
     }
 
-    let queryText = `
-      SELECT event_id, event_type, loan_id, borrower, amount, 
-             ledger, ledger_closed_at, tx_hash, created_at
+    const { params, whereClause } = buildEventFilters(req, [], "");
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
+    const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
+    const queryText = `
+      SELECT event_id, event_type, loan_id, borrower, amount,
+             ledger, ledger_closed_at, tx_hash, created_at, id
       FROM loan_events
+      ${whereClause}
+      ${cursorClause}
+      ORDER BY id ASC
+      LIMIT $${params.length + 2}
     `;
 
-    const params: unknown[] = [];
+    const [result, totalCount] = await Promise.all([
+      query(queryText, [...params, cursorValue, limit + 1]),
+      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
+    ]);
 
-    if (eventType) {
-      queryText += " WHERE event_type = $1";
-      params.push(eventType);
-    }
-
-    queryText += ` ORDER BY ledger DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
-
-    const result = await query(queryText, params);
-
-    const data = {
-      events: result.rows,
-    };
-
-    await cacheService.set(cacheKey, data, 120); // 2 minutes TTL for recent events
-
-    res.json({
-      success: true,
-      data,
+    logger.debug("getRecentEvents", {
+      queryResult: result.rows,
+      countResult: totalCount.rows,
     });
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
+
+    const response = createCursorPaginatedResponse(
+      {
+        events,
+      },
+      Number.parseInt(totalCount.rows[0].count, 10),
+      limit,
+      events.length,
+      nextCursor,
+      Boolean(cursor),
+    );
+
+    await cacheService.set(cacheKey, response, 120);
+    res.json(response);
   } catch (error) {
     logger.error("Failed to get recent events", { error });
     res.status(500).json({
@@ -369,7 +584,7 @@ export const deleteWebhookSubscription = async (
 export const getWebhookDeliveries = async (req: Request, res: Response) => {
   try {
     const subscriptionId = Number(req.params.id ?? req.params.subscriptionId);
-    const limit = Number(req.query.limit ?? 50);
+    const limit = parseCappedLimit(req, 50);
 
     if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) {
       return res.status(400).json({
@@ -378,12 +593,9 @@ export const getWebhookDeliveries = async (req: Request, res: Response) => {
       });
     }
 
-    const boundedLimit =
-      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
-
     const deliveries = await webhookService.getSubscriptionDeliveries(
       subscriptionId,
-      boundedLimit,
+      limit,
     );
 
     res.json({
@@ -430,24 +642,16 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
       });
     }
 
-    const rpcUrl =
-      process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
-    const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
-
-    if (!contractId) {
+    let indexer: EventIndexer;
+    try {
+      indexer = buildIndexerFromConfig();
+    } catch (error) {
+      logger.error("Failed to initialize indexer for reindex", { error });
       return res.status(500).json({
         success: false,
-        message: "LOAN_MANAGER_CONTRACT_ID is not configured",
+        message: "Indexer is not configured",
       });
     }
-
-    const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
-    const indexer = new EventIndexer({
-      rpcUrl,
-      contractId,
-      pollIntervalMs: 30_000,
-      batchSize,
-    });
 
     const result = await indexer.reindexRange(fromLedger, toLedger);
 
@@ -460,6 +664,160 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: "Failed to reindex ledger range",
+    });
+  }
+};
+
+export const listQuarantinedEvents = async (req: Request, res: Response) => {
+  try {
+    const { limit, cursor } = parseCursorQueryParams(req);
+    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
+
+    if (cursor && (!Number.isInteger(cursorValue) || (cursorValue ?? 0) <= 0)) {
+      return res.status(400).json({
+        success: false,
+        message: "cursor must be a positive integer",
+      });
+    }
+
+    const [result, countResult] = await Promise.all([
+      query(
+        `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
+         FROM quarantine_events
+         WHERE ($1::int IS NULL OR id > $1)
+         ORDER BY id ASC
+         LIMIT $2`,
+        [cursorValue, limit + 1],
+      ),
+      query("SELECT COUNT(*)::int AS count FROM quarantine_events", []),
+    ]);
+
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
+    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
+
+    const response = createCursorPaginatedResponse(
+      {
+        events,
+      },
+      Number(countResult.rows[0]?.count ?? 0),
+      limit,
+      events.length,
+      nextCursor,
+      Boolean(cursor),
+    );
+
+    res.json(response);
+  } catch (error) {
+    logger.error("Failed to list quarantined events", { error });
+    res.status(500).json({
+      success: false,
+      message: "Failed to list quarantined events",
+    });
+  }
+};
+
+export const reprocessQuarantinedEvents = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { ids, limit } = req.body as {
+      ids?: unknown;
+      limit?: unknown;
+    };
+
+    const parsedIds = Array.isArray(ids)
+      ? ids.filter((id): id is number => Number.isInteger(id) && id > 0)
+      : undefined;
+
+    if (Array.isArray(ids) && (!parsedIds || parsedIds.length !== ids.length)) {
+      return res.status(400).json({
+        success: false,
+        message: "ids must be an array of positive integers",
+      });
+    }
+
+    const parsedLimit =
+      typeof limit === "number" && Number.isInteger(limit) && limit > 0
+        ? Math.min(limit, 500)
+        : 50;
+
+    const rowsResult = parsedIds && parsedIds.length > 0
+      ? await query(
+          `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
+           FROM quarantine_events
+           WHERE id = ANY($1::int[])
+           ORDER BY id ASC`,
+          [parsedIds],
+        )
+      : await query(
+          `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
+           FROM quarantine_events
+           ORDER BY id ASC
+           LIMIT $1`,
+          [parsedLimit],
+        );
+
+    const rows = rowsResult.rows as QuarantineEventRow[];
+
+    let indexer: EventIndexer;
+    try {
+      indexer = buildIndexerFromConfig();
+    } catch (error) {
+      logger.error("Failed to initialize indexer for quarantine reprocess", {
+        error,
+      });
+      return res.status(500).json({
+        success: false,
+        message: "Indexer is not configured",
+      });
+    }
+
+    let deleted = 0;
+    let failed = 0;
+
+    for (const row of rows) {
+      try {
+        const rawEvent = decodeQuarantinedRawEvent(row);
+        if (!rawEvent || !indexer.isEventParseable(rawEvent)) {
+          failed += 1;
+          continue;
+        }
+
+        await indexer.ingestRawEvents([rawEvent]);
+        await query("DELETE FROM quarantine_events WHERE id = $1", [row.id]);
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        logger.warn("Failed to reprocess quarantined event", {
+          quarantineId: row.id,
+          eventId: row.event_id,
+          error,
+        });
+      }
+    }
+
+    const remainingResult = await query(
+      "SELECT COUNT(*)::int AS count FROM quarantine_events",
+      [],
+    );
+
+    res.json({
+      success: true,
+      data: {
+        requested: rows.length,
+        reprocessed: deleted,
+        failed,
+        remaining: Number(remainingResult.rows[0]?.count ?? 0),
+      },
+    });
+  } catch (error) {
+    logger.error("Failed to reprocess quarantined events", { error });
+    res.status(500).json({
+      success: false,
+      message: "Failed to reprocess quarantined events",
     });
   }
 };

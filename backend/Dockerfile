@@ -8,10 +8,10 @@ COPY package*.json ./
 RUN npm ci
 
 # Copy source and compile
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.build.json ./
 COPY migrations ./migrations
 COPY src ./src
-RUN npm run build
+RUN npx tsc -p tsconfig.build.json
 
 # Production Stage
 FROM node:22-alpine AS production

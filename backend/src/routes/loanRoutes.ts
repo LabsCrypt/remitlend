@@ -1,7 +1,13 @@
+import { createTestLoan } from "../controllers/loanController.js";
+import { markLoanDefaulted } from "../controllers/loanController.js";
+import { contestDefault } from "../controllers/loanController.js";
 import { Router } from "express";
 import {
+  getLoanConfigEndpoint,
   getBorrowerLoans,
   getLoanDetails,
+  getLoanAmortizationSchedule,
+  previewLoanAmortizationSchedule,
   requestLoan,
   repayLoan,
   submitTransaction,
@@ -12,10 +18,109 @@ import {
   requireWalletOwnership,
 } from "../middleware/jwtAuth.js";
 import { requireLoanBorrowerAccess } from "../middleware/loanAccess.js";
-import { validate } from "../middleware/validation.js";
+import {
+  validate,
+  validateBody,
+  validateParams,
+} from "../middleware/validation.js";
+import { idempotencyMiddleware } from "../middleware/idempotency.js";
 import { borrowerParamSchema } from "../schemas/stellarSchemas.js";
+import {
+  previewAmortizationSchema,
+  requestLoanSchema,
+  repayLoanSchema,
+  repayLoanParamsSchema,
+  submitTxSchema,
+} from "../schemas/loanSchemas.js";
+
+
+
+
 
 const router = Router();
+
+// TEST/DEV ONLY: Create a loan directly for test setup
+if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
+  router.post("/", requireJwtAuth, createTestLoan);
+}
+
+// TEST/DEV ONLY: Mark a loan as defaulted for test setup
+if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
+  router.post(
+    "/:loanId/mark-defaulted",
+    requireJwtAuth,
+    requireLoanBorrowerAccess,
+    markLoanDefaulted,
+  );
+}
+
+// TEST/DEV ONLY: Mark a loan as defaulted for test setup
+if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
+  router.post(
+    "/:loanId/mark-defaulted",
+    requireJwtAuth,
+    requireLoanBorrowerAccess,
+    markLoanDefaulted,
+  );
+}
+
+
+router.get("/config", getLoanConfigEndpoint);
+
+router.post(
+  "/amortization-preview",
+  requireJwtAuth,
+  validateBody(previewAmortizationSchema),
+  previewLoanAmortizationSchedule,
+);
+
+/**
+ * @swagger
+ * /loans/{loanId}/contest-default:
+ *   post:
+ *     summary: Contest a defaulted loan
+ *     description: >
+ *       Allows a borrower to contest a defaulted loan, moving it to disputed status and logging the dispute.
+ *     tags: [Loans]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: loanId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Loan ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - reason
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 description: Reason for contesting the default
+ *     responses:
+ *       200:
+ *         description: Dispute submitted successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Loan exists but belongs to a different borrower
+ *       404:
+ *         description: Loan not found
+ */
+router.post(
+  "/:loanId/contest-default",
+  requireJwtAuth,
+  requireLoanBorrowerAccess,
+  contestDefault,
+);
 
 /**
  * @swagger
@@ -44,6 +149,10 @@ const router = Router();
  *     responses:
  *       200:
  *         description: Loans retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BorrowerLoansResponse'
  *       401:
  *         description: Missing or invalid Bearer token
  *       403:
@@ -79,10 +188,16 @@ router.get(
  *     responses:
  *       200:
  *         description: Loan details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LoanDetailsResponse'
  *       401:
  *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Loan exists but belongs to a different borrower
  *       404:
- *         description: Loan not found or not accessible
+ *         description: Loan not found
  */
 router.get(
   "/:loanId",
@@ -90,6 +205,14 @@ router.get(
   requireScopes("read:loans"),
   requireLoanBorrowerAccess,
   getLoanDetails,
+);
+
+router.get(
+  "/:loanId/amortization-schedule",
+  requireJwtAuth,
+  requireScopes("read:loans"),
+  requireLoanBorrowerAccess,
+  getLoanAmortizationSchedule,
 );
 
 /**
@@ -126,20 +249,19 @@ router.get(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 unsignedTxXdr:
- *                   type: string
- *                 networkPassphrase:
- *                   type: string
+ *               $ref: '#/components/schemas/UnsignedTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/request", requireJwtAuth, requestLoan);
+router.post(
+  "/request",
+  requireJwtAuth,
+  validateBody(requestLoanSchema),
+  idempotencyMiddleware,
+  requestLoan,
+);
 
 /**
  * @swagger
@@ -169,20 +291,19 @@ router.post("/request", requireJwtAuth, requestLoan);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 txHash:
- *                   type: string
- *                 status:
- *                   type: string
+ *               $ref: '#/components/schemas/SubmittedTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/submit", requireJwtAuth, submitTransaction);
+router.post(
+  "/submit",
+  requireJwtAuth,
+  validateBody(submitTxSchema),
+  idempotencyMiddleware,
+  submitTransaction,
+);
 
 /**
  * @swagger
@@ -226,27 +347,23 @@ router.post("/submit", requireJwtAuth, submitTransaction);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 loanId:
- *                   type: integer
- *                 unsignedTxXdr:
- *                   type: string
- *                 networkPassphrase:
- *                   type: string
+ *               $ref: '#/components/schemas/RepayTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Loan exists but belongs to a different borrower
  *       404:
- *         description: Loan not found or not accessible
+ *         description: Loan not found
  */
 router.post(
   "/:loanId/repay",
   requireJwtAuth,
   requireLoanBorrowerAccess,
+  validateParams(repayLoanParamsSchema),
+  validateBody(repayLoanSchema),
+  idempotencyMiddleware,
   repayLoan,
 );
 
@@ -282,17 +399,26 @@ router.post(
  *     responses:
  *       200:
  *         description: Transaction submitted and result returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SubmittedTransactionResponse'
  *       400:
  *         description: Validation error
  *       401:
  *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Loan exists but belongs to a different borrower
  *       404:
- *         description: Loan not found or not accessible
+ *         description: Loan not found
  */
 router.post(
   "/:loanId/submit",
   requireJwtAuth,
   requireLoanBorrowerAccess,
+  validateParams(repayLoanParamsSchema),
+  validateBody(submitTxSchema),
+  idempotencyMiddleware,
   submitTransaction,
 );
 

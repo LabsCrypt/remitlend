@@ -1,8 +1,11 @@
 #![no_std]
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol,
+    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, Symbol,
 };
+
+mod events;
+use events::*;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -14,38 +17,38 @@ pub enum PoolError {
     PoolSizeExceeded = 5,
     InsufficientBalance = 6,
     InsufficientLiquidity = 7,
-    NoYieldAvailable = 8,
     InvalidMaxPoolSize = 9,
     NoProposedAdmin = 10,
 }
 
 /// Storage keys.
 ///
-/// Deposit, RewardDebt and ClaimableYield are now keyed by (provider, token)
-/// so that one pool contract can manage multiple token liquidity pools.
-/// All aggregate counters (TotalDeposits, AccYieldPerDeposit, etc.) are
-/// similarly keyed by token.
+/// v2 replaces the accumulator-style keys (Deposit, RewardDebt, ClaimableYield,
+/// AccYieldPerDeposit, UnclaimedYieldPool) with a share-based (LP-token) model.
+/// Yield is now implicit in the exchange rate between shares and underlying
+/// assets — no separate accumulation or claim step is required.
+///
+/// All per-token keys carry the token address so one contract instance can
+/// serve multiple token liquidity pools.
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
-    /// (provider, token) → deposited balance
-    Deposit(Address, Address),
     Admin,
     Paused,
-    /// (provider, token) → reward-debt index snapshot
-    RewardDebt(Address, Address),
-    /// (provider, token) → claimable yield accumulated
-    ClaimableYield(Address, Address),
+    WithdrawalCooldown,
     /// token → max pool size cap (0 = unlimited)
     MaxPoolSize(Address),
-    /// token → total deposits across all providers
+    /// token → total LP shares outstanding across all providers
+    TotalShares(Address),
+    /// (provider, token) → LP shares held
+    Shares(Address, Address),
+    /// (provider, token) → ledger sequence of the most recent deposit
+    DepositTimestamp(Address, Address),
+    /// token → total principal deposited (net of withdrawals); used for
+    /// utilisation stats and the MaxPoolSize cap
     TotalDeposits(Address),
     /// token → number of active depositors
     DepositorCount(Address),
-    /// token → accumulated yield-per-deposit index (scaled)
-    AccYieldPerDeposit(Address),
-    /// token → total unclaimed yield in pool
-    UnclaimedYieldPool(Address),
     ProposedAdmin,
     Version,
 }
@@ -54,8 +57,12 @@ pub enum DataKey {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PoolStats {
     pub total_deposits: i128,
+    pub total_shares: i128,
     pub pool_token_balance: i128,
     pub depositor_count: u32,
+    /// Fraction of tracked principal currently out on loan, in basis points.
+    /// Only positive when active loans have reduced pool_balance below
+    /// total_deposits.
     pub utilization_bps: u32,
 }
 
@@ -68,8 +75,10 @@ impl LendingPool {
     const INSTANCE_TTL_BUMP: u32 = 518400;
     const PERSISTENT_TTL_THRESHOLD: u32 = 17280;
     const PERSISTENT_TTL_BUMP: u32 = 518400;
-    const CURRENT_VERSION: u32 = 2;
-    const YIELD_SCALE: i128 = 1_000_000_000;
+    const CURRENT_VERSION: u32 = 3;
+    const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
+
+    // ── TTL helpers ───────────────────────────────────────────────────────
 
     fn bump_instance_ttl(env: &Env) {
         env.storage()
@@ -85,6 +94,8 @@ impl LendingPool {
         );
     }
 
+    // ── Storage accessors ─────────────────────────────────────────────────
+
     fn admin(env: &Env) -> Address {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -93,150 +104,57 @@ impl LendingPool {
             .expect("not initialized")
     }
 
-    fn pool_balance(env: &Env, token: &Address) -> i128 {
-        let token_client = TokenClient::new(env, token);
-        token_client.balance(&env.current_contract_address())
+    fn read_pool_balance(env: &Env, token: &Address) -> i128 {
+        TokenClient::new(env, token).balance(&env.current_contract_address())
     }
 
     fn total_deposits(env: &Env, token: &Address) -> i128 {
         Self::bump_instance_ttl(env);
-        let key = DataKey::TotalDeposits(token.clone());
-        env.storage().instance().get(&key).unwrap_or(0)
-    }
-
-    fn acc_yield_per_deposit(env: &Env, token: &Address) -> i128 {
-        Self::bump_instance_ttl(env);
-        let key = DataKey::AccYieldPerDeposit(token.clone());
-        env.storage().instance().get(&key).unwrap_or(0)
-    }
-
-    fn unclaimed_yield_pool(env: &Env, token: &Address) -> i128 {
-        Self::bump_instance_ttl(env);
-        let key = DataKey::UnclaimedYieldPool(token.clone());
-        env.storage().instance().get(&key).unwrap_or(0)
-    }
-
-    fn read_deposit(env: &Env, provider: &Address, token: &Address) -> i128 {
-        let key = DataKey::Deposit(provider.clone(), token.clone());
-        let balance = env.storage().persistent().get(&key).unwrap_or(0);
-        if balance > 0 {
-            Self::bump_persistent_ttl(env, &key);
-        }
-        balance
-    }
-
-    fn read_reward_debt(env: &Env, provider: &Address, token: &Address) -> i128 {
-        let key = DataKey::RewardDebt(provider.clone(), token.clone());
-        let debt = env.storage().persistent().get(&key).unwrap_or(0);
-        if debt != 0 {
-            Self::bump_persistent_ttl(env, &key);
-        }
-        debt
-    }
-
-    fn read_claimable_yield(env: &Env, provider: &Address, token: &Address) -> i128 {
-        let key = DataKey::ClaimableYield(provider.clone(), token.clone());
-        let claimable = env.storage().persistent().get(&key).unwrap_or(0);
-        if claimable > 0 {
-            Self::bump_persistent_ttl(env, &key);
-        }
-        claimable
-    }
-
-    fn write_reward_debt(env: &Env, provider: &Address, token: &Address, amount: i128) {
-        let key = DataKey::RewardDebt(provider.clone(), token.clone());
-        if amount == 0 {
-            env.storage().persistent().remove(&key);
-            return;
-        }
-        env.storage().persistent().set(&key, &amount);
-        Self::bump_persistent_ttl(env, &key);
-    }
-
-    fn write_claimable_yield(env: &Env, provider: &Address, token: &Address, amount: i128) {
-        let key = DataKey::ClaimableYield(provider.clone(), token.clone());
-        if amount == 0 {
-            env.storage().persistent().remove(&key);
-            return;
-        }
-        env.storage().persistent().set(&key, &amount);
-        Self::bump_persistent_ttl(env, &key);
-    }
-
-    fn sync_yield(env: &Env, token: &Address) {
-        let total_deposits = Self::total_deposits(env, token);
-        if total_deposits <= 0 {
-            return;
-        }
-
-        let pool_balance = Self::pool_balance(env, token);
-        let current_excess = if pool_balance > total_deposits {
-            pool_balance - total_deposits
-        } else {
-            0
-        };
-        let accounted_yield = Self::unclaimed_yield_pool(env, token);
-
-        if current_excess <= accounted_yield {
-            return;
-        }
-
-        let new_yield = current_excess
-            .checked_sub(accounted_yield)
-            .expect("yield underflow");
-        let increment = new_yield
-            .checked_mul(Self::YIELD_SCALE)
-            .and_then(|value| value.checked_div(total_deposits))
-            .expect("yield index overflow");
-
-        if increment == 0 {
-            return;
-        }
-
-        let next_index = Self::acc_yield_per_deposit(env, token)
-            .checked_add(increment)
-            .expect("yield index overflow");
-        let next_unclaimed = accounted_yield
-            .checked_add(new_yield)
-            .expect("yield pool overflow");
-
-        let acc_key = DataKey::AccYieldPerDeposit(token.clone());
-        let unclaimed_key = DataKey::UnclaimedYieldPool(token.clone());
-        env.storage().instance().set(&acc_key, &next_index);
         env.storage()
             .instance()
-            .set(&unclaimed_key, &next_unclaimed);
-        Self::bump_instance_ttl(env);
-
-        env.events().publish(
-            (Symbol::new(env, "YieldSynced"),),
-            (new_yield, total_deposits, next_index),
-        );
+            .get(&DataKey::TotalDeposits(token.clone()))
+            .unwrap_or(0)
     }
 
-    fn harvest_provider(env: &Env, provider: &Address, token: &Address) {
-        let deposit = Self::read_deposit(env, provider, token);
-        if deposit <= 0 {
-            return;
+    fn total_shares(env: &Env, token: &Address) -> i128 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalShares(token.clone()))
+            .unwrap_or(0)
+    }
+
+    fn read_shares(env: &Env, provider: &Address, token: &Address) -> i128 {
+        let key = DataKey::Shares(provider.clone(), token.clone());
+        let shares: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        if shares > 0 {
+            Self::bump_persistent_ttl(env, &key);
         }
+        shares
+    }
 
-        let accrued = deposit
-            .checked_mul(Self::acc_yield_per_deposit(env, token))
-            .and_then(|value| value.checked_div(Self::YIELD_SCALE))
-            .expect("yield accrual overflow");
-        let reward_debt = Self::read_reward_debt(env, provider, token);
-        let pending = accrued
-            .checked_sub(reward_debt)
-            .expect("reward debt exceeds accrued yield");
-
-        if pending > 0 {
-            let claimable = Self::read_claimable_yield(env, provider, token)
-                .checked_add(pending)
-                .expect("claimable yield overflow");
-            Self::write_claimable_yield(env, provider, token, claimable);
+    fn read_deposit_timestamp(env: &Env, provider: &Address, token: &Address) -> Option<u32> {
+        let key = DataKey::DepositTimestamp(provider.clone(), token.clone());
+        let deposit_ledger: Option<u32> = env.storage().persistent().get(&key);
+        if deposit_ledger.is_some() {
+            Self::bump_persistent_ttl(env, &key);
         }
+        deposit_ledger
+    }
 
-        Self::write_reward_debt(env, provider, token, accrued);
+    fn read_depositor_count(env: &Env, token: &Address) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::DepositorCount(token.clone()))
+            .unwrap_or(0)
+    }
+
+    fn withdrawal_cooldown(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::WithdrawalCooldown)
+            .unwrap_or(Self::DEFAULT_WITHDRAWAL_COOLDOWN)
     }
 
     fn assert_not_paused(env: &Env) -> Result<(), PoolError> {
@@ -252,10 +170,126 @@ impl LendingPool {
         Ok(())
     }
 
-    fn read_depositor_count(env: &Env, token: &Address) -> u32 {
-        let key = DataKey::DepositorCount(token.clone());
-        env.storage().instance().get(&key).unwrap_or(0)
+    // ── Share / asset math ────────────────────────────────────────────────
+
+    /// LP shares to mint for `amount` of deposited assets.
+    ///
+    /// The first depositor always receives a 1-for-1 allocation.  Subsequent
+    /// depositors receive `amount * total_shares / total_assets_before` so
+    /// that the exchange rate is preserved and existing holders are not
+    /// diluted.
+    fn calc_shares_to_mint(
+        amount: i128,
+        total_assets_before: i128,
+        cur_total_shares: i128,
+    ) -> i128 {
+        if cur_total_shares == 0 || total_assets_before == 0 {
+            amount
+        } else {
+            amount
+                .checked_mul(cur_total_shares)
+                .and_then(|v| v.checked_div(total_assets_before))
+                .expect("share mint overflow")
+        }
     }
+
+    /// Underlying assets redeemable for `shares` given current pool state.
+    ///
+    /// Returns `shares * total_assets / total_shares`, which automatically
+    /// includes any yield that has accumulated since the shares were minted.
+    fn calc_assets_to_redeem(shares: i128, total_assets: i128, cur_total_shares: i128) -> i128 {
+        shares
+            .checked_mul(total_assets)
+            .and_then(|v| v.checked_div(cur_total_shares))
+            .expect("share redeem overflow")
+    }
+
+    fn assert_withdrawal_cooldown_elapsed(env: &Env, provider: &Address, token: &Address) {
+        let cooldown = Self::withdrawal_cooldown(env);
+        if cooldown == 0 {
+            return;
+        }
+
+        let Some(deposit_ledger) = Self::read_deposit_timestamp(env, provider, token) else {
+            return;
+        };
+
+        let current_ledger = env.ledger().sequence();
+        if current_ledger < deposit_ledger.saturating_add(cooldown) {
+            panic!("withdrawal_cooldown_active");
+        }
+    }
+
+    fn redeem_shares(
+        env: &Env,
+        provider: &Address,
+        token: &Address,
+        shares: i128,
+    ) -> Result<(), PoolError> {
+        if shares <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        let cur_shares = Self::read_shares(env, provider, token);
+        if cur_shares < shares {
+            return Err(PoolError::InsufficientBalance);
+        }
+
+        let cur_total_shares = Self::total_shares(env, token);
+        let total_assets = Self::read_pool_balance(env, token);
+        let assets_to_return = Self::calc_assets_to_redeem(shares, total_assets, cur_total_shares);
+
+        if assets_to_return <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        TokenClient::new(env, token).transfer(
+            &env.current_contract_address(),
+            provider,
+            &assets_to_return,
+        );
+
+        let share_key = DataKey::Shares(provider.clone(), token.clone());
+        let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
+        let remaining = cur_shares.checked_sub(shares).expect("share underflow");
+        if remaining == 0 {
+            env.storage().persistent().remove(&share_key);
+            env.storage().persistent().remove(&deposit_key);
+            let count = Self::read_depositor_count(env, token);
+            env.storage().instance().set(
+                &DataKey::DepositorCount(token.clone()),
+                &count.saturating_sub(1),
+            );
+        } else {
+            env.storage().persistent().set(&share_key, &remaining);
+            Self::bump_persistent_ttl(env, &share_key);
+            Self::bump_persistent_ttl(env, &deposit_key);
+        }
+
+        let new_total_shares = cur_total_shares
+            .checked_sub(shares)
+            .expect("total shares underflow");
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalShares(token.clone()), &new_total_shares);
+
+        let new_total_deposits = Self::total_deposits(env, token).saturating_sub(assets_to_return);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
+
+        Self::bump_instance_ttl(env);
+        withdraw(
+            env,
+            provider.clone(),
+            token.clone(),
+            assets_to_return,
+            shares,
+        );
+        Ok(())
+    }
+
+    // ── Admin / lifecycle ─────────────────────────────────────────────────
 
     pub fn initialize(env: Env, admin: Address) -> Result<(), PoolError> {
         if env.storage().instance().has(&DataKey::Admin) {
@@ -263,6 +297,10 @@ impl LendingPool {
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
+        env.storage().instance().set(
+            &DataKey::WithdrawalCooldown,
+            &Self::DEFAULT_WITHDRAWAL_COOLDOWN,
+        );
         env.storage()
             .instance()
             .set(&DataKey::Version, &Self::CURRENT_VERSION);
@@ -281,34 +319,76 @@ impl LendingPool {
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         Self::admin(&env).require_auth();
+        let old_version = Self::version(env.clone());
+        let new_version = old_version.saturating_add(1);
+        env.storage()
+            .instance()
+            .set(&DataKey::Version, &new_version);
+        env.events().publish(
+            (Symbol::new(&env, "ContractUpgraded"),),
+            (old_version, new_version),
+        );
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     pub fn set_max_pool_size(env: Env, token: Address, max: i128) -> Result<(), PoolError> {
-        let admin = Self::admin(&env);
-        admin.require_auth();
-
+        Self::admin(&env).require_auth();
         if max < 0 {
             return Err(PoolError::InvalidMaxPoolSize);
         }
-        let key = DataKey::MaxPoolSize(token.clone());
-        env.storage().instance().set(&key, &max);
-        Self::bump_instance_ttl(&env);
-        env.events().publish((symbol_short!("MaxPool"), token), max);
 
+        let old_max = Self::get_max_pool_size(env.clone(), token.clone());
+
+        env.storage()
+            .instance()
+            .set(&DataKey::MaxPoolSize(token.clone()), &max);
+        Self::bump_instance_ttl(&env);
+
+        deposit_cap_updated(&env, token, old_max, max);
         Ok(())
+    }
+
+    pub fn set_withdrawal_cooldown(env: Env, ledgers: u32) {
+        Self::admin(&env).require_auth();
+
+        let old_cooldown = Self::get_withdrawal_cooldown(env.clone());
+
+        env.storage()
+            .instance()
+            .set(&DataKey::WithdrawalCooldown, &ledgers);
+        Self::bump_instance_ttl(&env);
+
+        withdrawal_cooldown_updated(&env, old_cooldown, ledgers);
     }
 
     pub fn get_max_pool_size(env: Env, token: Address) -> i128 {
         Self::bump_instance_ttl(&env);
-        let key = DataKey::MaxPoolSize(token);
-        env.storage().instance().get(&key).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::MaxPoolSize(token))
+            .unwrap_or(0)
     }
 
     pub fn get_total_deposits(env: Env, token: Address) -> i128 {
         Self::total_deposits(&env, &token)
     }
 
+    pub fn get_total_shares(env: Env, token: Address) -> i128 {
+        Self::total_shares(&env, &token)
+    }
+
+    pub fn get_withdrawal_cooldown(env: Env) -> u32 {
+        Self::withdrawal_cooldown(&env)
+    }
+
+    // ── Core pool operations ──────────────────────────────────────────────
+
+    /// Deposit `amount` of `token` and receive LP shares in return.
+    ///
+    /// Shares are minted proportional to the current exchange rate so that
+    /// existing depositors are not diluted.  Any yield already present in the
+    /// pool is captured in the share price at the point of deposit, not
+    /// credited to the new depositor.
     pub fn deposit(
         env: Env,
         provider: Address,
@@ -322,8 +402,12 @@ impl LendingPool {
             return Err(PoolError::InvalidAmount);
         }
 
-        let max_key = DataKey::MaxPoolSize(token.clone());
-        let max: i128 = env.storage().instance().get(&max_key).unwrap_or(0);
+        // MaxPoolSize cap uses tracked principal, not pool balance.
+        let max: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MaxPoolSize(token.clone()))
+            .unwrap_or(0);
         if max > 0 {
             let total = Self::total_deposits(&env, &token);
             if total.checked_add(amount).expect("overflow") > max {
@@ -331,172 +415,166 @@ impl LendingPool {
             }
         }
 
-        Self::sync_yield(&env, &token);
-        Self::harvest_provider(&env, &provider, &token);
+        // Snapshot pool state *before* the transfer so the share price
+        // reflects the pre-deposit pool composition.
+        let total_assets_before = Self::read_pool_balance(&env, &token);
+        let cur_total_shares = Self::total_shares(&env, &token);
 
-        let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&provider, &env.current_contract_address(), &amount);
-
-        let deposit_key = DataKey::Deposit(provider.clone(), token.clone());
-        let current_balance = Self::read_deposit(&env, &provider, &token);
-
-        if current_balance == 0 {
-            let count = Self::read_depositor_count(&env, &token);
-            let count_key = DataKey::DepositorCount(token.clone());
-            env.storage().instance().set(&count_key, &(count + 1));
+        let shares_to_mint =
+            Self::calc_shares_to_mint(amount, total_assets_before, cur_total_shares);
+        if shares_to_mint <= 0 {
+            return Err(PoolError::InvalidAmount);
         }
 
-        let next_balance = current_balance
-            .checked_add(amount)
-            .expect("deposit overflow");
-        env.storage().persistent().set(&deposit_key, &next_balance);
+        TokenClient::new(&env, &token).transfer(
+            &provider,
+            &env.current_contract_address(),
+            &amount,
+        );
+
+        // Track new depositors.
+        let existing_shares = Self::read_shares(&env, &provider, &token);
+        if existing_shares == 0 {
+            let count = Self::read_depositor_count(&env, &token);
+            env.storage()
+                .instance()
+                .set(&DataKey::DepositorCount(token.clone()), &(count + 1));
+        }
+
+        let new_shares = existing_shares
+            .checked_add(shares_to_mint)
+            .expect("shares overflow");
+        let share_key = DataKey::Shares(provider.clone(), token.clone());
+        env.storage().persistent().set(&share_key, &new_shares);
+        Self::bump_persistent_ttl(&env, &share_key);
+        let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
+        let current_ledger = env.ledger().sequence();
+        env.storage()
+            .persistent()
+            .set(&deposit_key, &current_ledger);
         Self::bump_persistent_ttl(&env, &deposit_key);
 
-        let total_deposits_key = DataKey::TotalDeposits(token.clone());
-        let total_deposits = Self::total_deposits(&env, &token)
+        let new_total_shares = cur_total_shares
+            .checked_add(shares_to_mint)
+            .expect("total shares overflow");
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalShares(token.clone()), &new_total_shares);
+
+        let new_total_deposits = Self::total_deposits(&env, &token)
             .checked_add(amount)
             .expect("total deposits overflow");
         env.storage()
             .instance()
-            .set(&total_deposits_key, &total_deposits);
+            .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
+
         Self::bump_instance_ttl(&env);
-
-        let reward_debt = next_balance
-            .checked_mul(Self::acc_yield_per_deposit(&env, &token))
-            .and_then(|value| value.checked_div(Self::YIELD_SCALE))
-            .expect("reward debt overflow");
-        Self::write_reward_debt(&env, &provider, &token, reward_debt);
-        env.events()
-            .publish((symbol_short!("Deposit"), provider, token), amount);
-
+        deposit(
+            &env,
+            provider.clone(),
+            token.clone(),
+            amount,
+            shares_to_mint,
+        );
         Ok(())
     }
 
-    pub fn get_deposit(env: Env, provider: Address, token: Address) -> i128 {
-        Self::read_deposit(&env, &provider, &token)
+    /// Returns `(shares, current_asset_value)` for `provider` in the `token` pool.
+    ///
+    /// Net yield = `current_asset_value - original_deposit`.  Since original
+    /// deposit amounts are not stored per-depositor, callers derive yield by
+    /// comparing `current_asset_value` against their own recorded cost basis.
+    pub fn get_depositor_yield(env: Env, provider: Address, token: Address) -> (i128, i128) {
+        let shares = Self::read_shares(&env, &provider, &token);
+        if shares == 0 {
+            return (0, 0);
+        }
+        let cur_total_shares = Self::total_shares(&env, &token);
+        if cur_total_shares == 0 {
+            return (shares, 0);
+        }
+        let asset_value = Self::calc_assets_to_redeem(
+            shares,
+            Self::read_pool_balance(&env, &token),
+            cur_total_shares,
+        );
+        (shares, asset_value)
     }
 
+    /// Underlying asset value of `provider`'s LP shares (principal + yield).
+    pub fn get_deposit(env: Env, provider: Address, token: Address) -> i128 {
+        let shares = Self::read_shares(&env, &provider, &token);
+        if shares == 0 {
+            return 0;
+        }
+        let cur_total_shares = Self::total_shares(&env, &token);
+        if cur_total_shares == 0 {
+            return 0;
+        }
+        Self::calc_assets_to_redeem(
+            shares,
+            Self::read_pool_balance(&env, &token),
+            cur_total_shares,
+        )
+    }
+
+    /// Raw LP share balance for `provider` in the `token` pool.
+    pub fn get_shares(env: Env, provider: Address, token: Address) -> i128 {
+        Self::read_shares(&env, &provider, &token)
+    }
+
+    /// Burn `shares` LP tokens and receive the proportional underlying assets.
+    ///
+    /// The redemption value is `shares * pool_balance / total_shares`, which
+    /// automatically includes any interest that has been repaid to the pool
+    /// since the shares were minted — no separate claim step is required.
     pub fn withdraw(
         env: Env,
         provider: Address,
         token: Address,
-        amount: i128,
+        shares: i128,
     ) -> Result<(), PoolError> {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
-
-        if amount <= 0 {
-            return Err(PoolError::InvalidAmount);
-        }
-
-        Self::sync_yield(&env, &token);
-        Self::harvest_provider(&env, &provider, &token);
-
-        let deposit_key = DataKey::Deposit(provider.clone(), token.clone());
-        let current_balance = Self::read_deposit(&env, &provider, &token);
-        if current_balance < amount {
-            return Err(PoolError::InsufficientBalance);
-        }
-        let token_client = TokenClient::new(&env, &token);
-        let pool_address = env.current_contract_address();
-        let pool_balance = token_client.balance(&pool_address);
-        if pool_balance < amount {
-            return Err(PoolError::InsufficientLiquidity);
-        }
-        let remaining_pool_balance = pool_balance
-            .checked_sub(amount)
-            .expect("withdraw underflow");
-        if remaining_pool_balance < Self::unclaimed_yield_pool(&env, &token) {
-            return Err(PoolError::InsufficientLiquidity);
-        }
-        token_client.transfer(&pool_address, &provider, &amount);
-
-        let new_balance = current_balance
-            .checked_sub(amount)
-            .expect("withdraw underflow");
-        if new_balance == 0 {
-            env.storage().persistent().remove(&deposit_key);
-            env.storage()
-                .persistent()
-                .remove(&DataKey::RewardDebt(provider.clone(), token.clone()));
-
-            let count = Self::read_depositor_count(&env, &token);
-            let count_key = DataKey::DepositorCount(token.clone());
-            env.storage()
-                .instance()
-                .set(&count_key, &count.saturating_sub(1));
-        } else {
-            env.storage().persistent().set(&deposit_key, &new_balance);
-            Self::bump_persistent_ttl(&env, &deposit_key);
-            let reward_debt = new_balance
-                .checked_mul(Self::acc_yield_per_deposit(&env, &token))
-                .and_then(|value| value.checked_div(Self::YIELD_SCALE))
-                .expect("reward debt overflow");
-            Self::write_reward_debt(&env, &provider, &token, reward_debt);
-        }
-
-        let total_deposits_key = DataKey::TotalDeposits(token.clone());
-        let total_deposits = Self::total_deposits(&env, &token)
-            .checked_sub(amount)
-            .expect("total deposits underflow");
-        env.storage()
-            .instance()
-            .set(&total_deposits_key, &total_deposits);
-        Self::bump_instance_ttl(&env);
-
-        env.events()
-            .publish((symbol_short!("Withdraw"), provider, token), amount);
-
-        Ok(())
+        Self::assert_withdrawal_cooldown_elapsed(&env, &provider, &token);
+        Self::redeem_shares(&env, &provider, &token, shares)
     }
 
-    pub fn claim_yield(env: Env, provider: Address, token: Address) -> Result<(), PoolError> {
+    pub fn emergency_withdraw(
+        env: Env,
+        provider: Address,
+        token: Address,
+        shares: i128,
+    ) -> Result<(), PoolError> {
         provider.require_auth();
-        Self::assert_not_paused(&env)?;
+        Self::redeem_shares(&env, &provider, &token, shares)
+    }
 
-        Self::sync_yield(&env, &token);
-        Self::harvest_provider(&env, &provider, &token);
+    // ── Queries ───────────────────────────────────────────────────────────
 
-        let claimable = Self::read_claimable_yield(&env, &provider, &token);
-        if claimable <= 0 {
-            env.events().publish(
-                (Symbol::new(&env, "YieldClaimFailed"), provider),
-                Symbol::new(&env, "NoYieldAvailable"),
-            );
-            return Ok(());
-        }
-
-        let pool_balance = Self::pool_balance(&env, &token);
+    pub fn get_pool_stats(env: Env, token: Address) -> PoolStats {
         let total_deposits = Self::total_deposits(&env, &token);
-        let available_yield = if pool_balance > total_deposits {
-            pool_balance - total_deposits
+        let total_shares = Self::total_shares(&env, &token);
+        let pool_token_balance = Self::read_pool_balance(&env, &token);
+
+        // Utilisation: portion of tracked principal currently out on loan.
+        let utilization_bps = if total_deposits > 0 && pool_token_balance < total_deposits {
+            let borrowed = total_deposits - pool_token_balance;
+            ((borrowed * 10_000) / total_deposits) as u32
         } else {
             0
         };
-        if available_yield < claimable {
-            return Err(PoolError::InsufficientLiquidity);
+
+        PoolStats {
+            total_deposits,
+            total_shares,
+            pool_token_balance,
+            depositor_count: Self::read_depositor_count(&env, &token),
+            utilization_bps,
         }
-
-        let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&env.current_contract_address(), &provider, &claimable);
-
-        Self::write_claimable_yield(&env, &provider, &token, 0);
-        let unclaimed_key = DataKey::UnclaimedYieldPool(token.clone());
-        let remaining_unclaimed = Self::unclaimed_yield_pool(&env, &token)
-            .checked_sub(claimable)
-            .expect("unclaimed yield underflow");
-        env.storage()
-            .instance()
-            .set(&unclaimed_key, &remaining_unclaimed);
-        Self::bump_instance_ttl(&env);
-
-        env.events().publish(
-            (Symbol::new(&env, "YieldClaimed"), provider, token),
-            claimable,
-        );
-
-        Ok(())
     }
+
+    // ── Admin governance ──────────────────────────────────────────────────
 
     pub fn propose_admin(env: Env, new_admin: Address) {
         let current_admin = Self::admin(&env);
@@ -506,10 +584,8 @@ impl LendingPool {
             .instance()
             .set(&DataKey::ProposedAdmin, &new_admin);
         Self::bump_instance_ttl(&env);
-        env.events().publish(
-            (Symbol::new(&env, "AdminProposed"), current_admin),
-            new_admin,
-        );
+
+        admin_proposed(&env, current_admin.clone(), new_admin.clone());
     }
 
     pub fn accept_admin(env: Env) -> Result<(), PoolError> {
@@ -525,47 +601,48 @@ impl LendingPool {
             .set(&DataKey::Admin, &proposed_admin);
         env.storage().instance().remove(&DataKey::ProposedAdmin);
         Self::bump_instance_ttl(&env);
-        env.events()
-            .publish((Symbol::new(&env, "AdminTransferred"),), proposed_admin);
 
+        admin_transferred(&env, proposed_admin.clone());
         Ok(())
+    }
+
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+
+        admin_transferred(&env, new_admin);
     }
 
     pub fn pause(env: Env) {
         Self::admin(&env).require_auth();
-
         env.storage().instance().set(&DataKey::Paused, &true);
         Self::bump_instance_ttl(&env);
-        env.events().publish((symbol_short!("Paused"),), ());
+
+        pool_paused(&env);
     }
 
     pub fn unpause(env: Env) {
         Self::admin(&env).require_auth();
-
         env.storage().instance().set(&DataKey::Paused, &false);
         Self::bump_instance_ttl(&env);
-        env.events().publish((symbol_short!("Unpaused"),), ());
+
+        pool_unpaused(&env);
     }
 
-    pub fn get_pool_stats(env: Env, token: Address) -> PoolStats {
-        let total_deposits = Self::total_deposits(&env, &token);
-        let token_client = TokenClient::new(&env, &token);
-        let pool_token_balance = token_client.balance(&env.current_contract_address());
+    pub fn is_paused(env: Env) -> bool {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
 
-        let utilization_bps = if total_deposits > 0 {
-            let borrowed = total_deposits - pool_token_balance;
-            let borrowed_bps = (borrowed * 10000) / total_deposits;
-            borrowed_bps as u32
-        } else {
-            0
-        };
-
-        PoolStats {
-            total_deposits,
-            pool_token_balance,
-            depositor_count: Self::read_depositor_count(&env, &token),
-            utilization_bps,
-        }
+    pub fn pool_balance(env: Env, token: Address) -> i128 {
+        Self::read_pool_balance(&env, &token)
     }
 }
 

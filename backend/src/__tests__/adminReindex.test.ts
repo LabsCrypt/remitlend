@@ -24,4 +24,20 @@ describe("Admin reindex endpoint", () => {
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
   });
+
+  it("rejects quarantine list requests without API key", async () => {
+    const response = await request(app).get("/api/admin/quarantine-events");
+
+    expect(response.status).toBe(401);
+  });
+
+  it("validates reprocess payload ids", async () => {
+    const response = await request(app)
+      .post("/api/admin/quarantine-events/reprocess")
+      .set("x-api-key", apiKey)
+      .send({ ids: [1, "bad-id"] });
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+  });
 });

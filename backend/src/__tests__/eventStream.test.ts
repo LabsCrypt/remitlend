@@ -30,6 +30,7 @@ const bearer = (publicKey: string) => ({
 
 afterEach(() => {
   jest.clearAllMocks();
+  eventStreamService.reset();
 });
 
 afterAll(() => {
@@ -44,6 +45,23 @@ describe("GET /api/events/stream", () => {
   it("should reject unauthenticated SSE requests", async () => {
     const response = await request(app).get("/api/events/stream");
     expect(response.status).toBe(401);
+  });
+
+  it("should reject token passed in query string", async () => {
+    const token = generateJwtToken("GQUERYTOKENUSER");
+    const response = await request(app).get(
+      `/api/events/stream?token=${token}`,
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it("should reject borrower stream access for a different wallet", async () => {
+    const response = await request(app)
+      .get("/api/events/stream?borrower=GOTHERWALLET")
+      .set(bearer("GOWNERWALLET"));
+
+    expect(response.status).toBe(403);
   });
 });
 
@@ -88,6 +106,7 @@ describe("EventStreamService", () => {
 
     const unsubscribe = eventStreamService.subscribeBorrower(
       "testUser",
+      "testUser",
       mockRes,
     );
     const counts = eventStreamService.getConnectionCount();
@@ -103,7 +122,7 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeAll(mockRes);
+    const unsubscribe = eventStreamService.subscribeAll("adminUser", mockRes);
     const counts = eventStreamService.getConnectionCount();
     expect(counts.admin).toBeGreaterThanOrEqual(1);
 
@@ -116,6 +135,7 @@ describe("EventStreamService", () => {
     } as unknown as import("express").Response;
 
     const unsubscribe = eventStreamService.subscribeBorrower(
+      "BORROWER1",
       "BORROWER1",
       mockRes,
     );
@@ -130,8 +150,12 @@ describe("EventStreamService", () => {
     });
 
     expect(mockRes.write).toHaveBeenCalledTimes(1);
-    const writtenData = (mockRes.write as jest.Mock).mock
-      .calls[0]?.[0] as string;
+    const writtenData = (mockRes.write as jest.Mock).mock.calls[0]?.[0] as
+      | string
+      | undefined;
+    expect(writtenData).toBeDefined();
+    expect(writtenData).toContain("id: evt-1");
+    expect(writtenData).toContain("event: loan-event");
     expect(writtenData).toContain("LoanRepaid");
 
     unsubscribe();
@@ -142,7 +166,7 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeAll(mockRes);
+    const unsubscribe = eventStreamService.subscribeAll("adminUser", mockRes);
 
     eventStreamService.broadcast({
       eventId: "evt-2",
@@ -155,6 +179,13 @@ describe("EventStreamService", () => {
 
     expect(mockRes.write).toHaveBeenCalledTimes(1);
 
+    const writtenData = (mockRes.write as jest.Mock).mock.calls[0]?.[0] as
+      | string
+      | undefined;
+    expect(writtenData).toBeDefined();
+    expect(writtenData).toContain("id: evt-2");
+    expect(writtenData).toContain("event: loan-event");
+
     unsubscribe();
   });
 
@@ -164,6 +195,7 @@ describe("EventStreamService", () => {
     } as unknown as import("express").Response;
 
     const unsubscribe = eventStreamService.subscribeBorrower(
+      "BORROWER_A",
       "BORROWER_A",
       mockRes,
     );
@@ -180,5 +212,89 @@ describe("EventStreamService", () => {
     expect(mockRes.write).not.toHaveBeenCalled();
 
     unsubscribe();
+  });
+
+  it("should enforce a maximum of three connections per user", () => {
+    const createMockResponse = () =>
+      ({
+        write: jest.fn(),
+      }) as unknown as import("express").Response;
+
+    expect(eventStreamService.canOpenConnection("BORROWER_LIMIT")).toBe(true);
+
+    const unsubscribers = [
+      eventStreamService.subscribeBorrower(
+        "BORROWER_LIMIT",
+        "BORROWER_LIMIT",
+        createMockResponse(),
+      ),
+      eventStreamService.subscribeBorrower(
+        "BORROWER_LIMIT",
+        "BORROWER_LIMIT",
+        createMockResponse(),
+      ),
+      eventStreamService.subscribeBorrower(
+        "BORROWER_LIMIT",
+        "BORROWER_LIMIT",
+        createMockResponse(),
+      ),
+    ];
+
+    expect(eventStreamService.getUserConnectionCount("BORROWER_LIMIT")).toBe(3);
+    expect(eventStreamService.canOpenConnection("BORROWER_LIMIT")).toBe(false);
+
+    unsubscribers.forEach((unsubscribe) => unsubscribe());
+  });
+
+  it("should close active SSE connections with a shutdown event", () => {
+    const borrowerRes = {
+      write: jest.fn(),
+      end: jest.fn(),
+    } as unknown as import("express").Response;
+    const adminRes = {
+      write: jest.fn(),
+      end: jest.fn(),
+    } as unknown as import("express").Response;
+
+    eventStreamService.subscribeBorrower("BORROWER1", "BORROWER1", borrowerRes);
+    eventStreamService.subscribeAll("ADMIN1", adminRes);
+
+    eventStreamService.closeAllConnections("Server shutting down");
+
+    expect(borrowerRes.write).toHaveBeenCalledWith(
+      expect.stringContaining("event: shutdown"),
+    );
+    expect(adminRes.write).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"shutdown"'),
+    );
+    expect(borrowerRes.end).toHaveBeenCalledTimes(1);
+    expect(adminRes.end).toHaveBeenCalledTimes(1);
+    expect(eventStreamService.getConnectionCount().total).toBe(0);
+  });
+
+  it("should emit replay-compatible SSE event payload from sendEvent", () => {
+    const mockRes = {
+      write: jest.fn(),
+    } as unknown as import("express").Response;
+
+    eventStreamService.sendEvent(mockRes, {
+      eventId: "evt-99",
+      eventType: "LoanRequested",
+      borrower: "GBORROWER",
+      ledger: 999,
+      ledgerClosedAt: "2026-03-09T00:00:00Z",
+      txHash: "xyz999",
+    });
+
+    expect(mockRes.write).toHaveBeenCalledTimes(1);
+    expect(mockRes.write).toHaveBeenCalledWith(
+      expect.stringContaining("id: evt-99"),
+    );
+    expect(mockRes.write).toHaveBeenCalledWith(
+      expect.stringContaining("event: loan-event"),
+    );
+    expect(mockRes.write).toHaveBeenCalledWith(
+      expect.stringContaining("LoanRequested"),
+    );
   });
 });

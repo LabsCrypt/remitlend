@@ -7,7 +7,28 @@ on:
     branches: [main]
 
 jobs:
+  supply-chain-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block compromised packages
+        run: |
+          echo "Scanning lockfiles for known malicious packages..."
+          BLOCKED="plain-crypto-js"
+          for lockfile in backend/package-lock.json frontend/package-lock.json scripts/package-lock.json; do
+            if [ -f "$lockfile" ] && grep -q "$BLOCKED" "$lockfile"; then
+              echo "::error::SUPPLY CHAIN ALERT: $lockfile contains $BLOCKED (confirmed malware)"
+              exit 1
+            fi
+          done
+          if grep -r '"axios": "1\.14\.' --include="package-lock.json" .; then
+            echo "::error::SUPPLY CHAIN ALERT: axios 1.14.x detected (compromised version)"
+            exit 1
+          fi
+          echo "No known malicious packages found."
+
   backend:
+    needs: supply-chain-audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,11 +41,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: backend
+      - name: Type check
+        run: npm run typecheck
+        working-directory: backend
       - name: Run tests
         run: npm test
         working-directory: backend
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://user:pass@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test_jwt_secret
+          STELLAR_RPC_URL: https://rpc.test.invalid
+          STELLAR_NETWORK_PASSPHRASE: Test SDF Network ; September 2015
+          LOAN_MANAGER_CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          LENDING_POOL_CONTRACT_ID: CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+          POOL_TOKEN_ADDRESS: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+          LOAN_MANAGER_ADMIN_SECRET: test_admin_secret
+          INTERNAL_API_KEY: test_internal_api_key
+          FRONTEND_URL: https://frontend.example.com
 
   frontend:
+    needs: supply-chain-audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +71,7 @@ jobs:
         with:
           node-version: 20
           cache: "npm"
-          cache-dependency-path: frontend/package.json
+          cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
@@ -52,6 +90,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
@@ -64,7 +103,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: contracts
       - name: Run tests
-        run: cargo test
+        run: cargo test -- --test-threads=1
         working-directory: contracts
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin

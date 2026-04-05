@@ -107,6 +107,7 @@ The repository is organized as a monorepo containing three core packages:
    ```bash
    npm run migrate:up
    ```
+   Migration scripts use the colon form (`migrate:up` / `migrate:down`), which is the standard npm convention.
 
 5. **Run development server:**
    ```bash
@@ -197,4 +198,4 @@ We welcome contributions from developers of all skill levels! Please see our [CO
 
 ## 📄 License
 
-This project is licensed under the ISC License. See the `LICENSE` file for details.
+This project is licensed under the ISC License. See the `LICENSE` file for details..

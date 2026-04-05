@@ -4,7 +4,7 @@ import logger from "../utils/logger.js";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 class CacheService {
-  private client: RedisClientType;
+  private client: RedisClientType | undefined;
   private isConnected: boolean = false;
 
   constructor() {
@@ -13,7 +13,10 @@ class CacheService {
     });
 
     this.client.on("error", (err) => {
-      logger.error("Redis Client Error", err);
+      // In tests, we don't want to spam the console with ECONNREFUSED if Redis isn't running
+      if (process.env.NODE_ENV !== "test" || err.code !== "ECONNREFUSED") {
+        logger.error("Redis Client Error", err);
+      }
       this.isConnected = false;
     });
 
@@ -23,18 +26,27 @@ class CacheService {
     });
 
     this.client.on("reconnecting", () => {
-      logger.info("Redis Client Reconnecting");
+      // Only log reconnecting in non-test environments to keep test output clean
+      if (process.env.NODE_ENV !== "test") {
+        logger.info("Redis Client Reconnecting");
+      }
     });
 
-    // Attempt to connect immediately. If it fails it will reconnect in the background.
-    this.connect().catch((err) => {
-      logger.error("Initial Redis connection failed", err);
-    });
+    // Connection is now lazy-loaded on first request to avoid side effects on import.
   }
 
-  private async connect() {
+  private async ensureConnected() {
     if (!this.isConnected) {
-      await this.client.connect();
+      try {
+        await this.client!.connect();
+        this.isConnected = true;
+      } catch (err) {
+        // Silently fail in tests if connection fails, but log in production
+        if (process.env.NODE_ENV !== "test") {
+          logger.error("Failed to connect to Redis", err);
+        }
+        throw err;
+      }
     }
   }
 
@@ -50,12 +62,13 @@ class CacheService {
     ttlSeconds: number = 300,
   ): Promise<void> {
     try {
-      if (!this.isConnected) return;
-
+      await this.ensureConnected();
       const stringValue = JSON.stringify(value);
-      await this.client.setEx(key, ttlSeconds, stringValue);
+      await this.client!.setEx(key, ttlSeconds, stringValue);
     } catch (error) {
-      logger.error(`Error setting cache for key ${key}`, { error });
+      if (process.env.NODE_ENV !== "test") {
+        logger.error(`Error setting cache for key ${key}`, { error });
+      }
     }
   }
 
@@ -66,15 +79,46 @@ class CacheService {
    */
   async get<T>(key: string): Promise<T | null> {
     try {
-      if (!this.isConnected) return null;
-
-      const value = await this.client.get(key);
+      await this.ensureConnected();
+      const value = await this.client!.get(key);
       if (!value) return null;
 
       return JSON.parse(value) as T;
     } catch (error) {
-      logger.error(`Error getting cache for key ${key}`, { error });
+      if (process.env.NODE_ENV !== "test") {
+        logger.error(`Error getting cache for key ${key}`, { error });
+      }
       return null;
+    }
+  }
+
+  /**
+   * Set a value only if the key does not exist (SET NX - Set if Not Exists).
+   * Used for distributed locking.
+   * @param key The cache key
+   * @param value The value to cache
+   * @param ttlSeconds The TTL in seconds
+   * @returns true if the key was set, false if the key already existed
+   */
+  async setNotExists(
+    key: string,
+    value: unknown,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    try {
+      await this.ensureConnected();
+      if (!this.isConnected) return false;
+
+      const stringValue = JSON.stringify(value);
+      // SET key value NX EX ttlSeconds
+      const result = await this.client!.set(key, stringValue, {
+        NX: true,
+        EX: ttlSeconds,
+      });
+      return result === "OK";
+    } catch (error) {
+      logger.error(`Error setting NX cache for key ${key}`, { error });
+      return false;
     }
   }
 
@@ -84,10 +128,12 @@ class CacheService {
    */
   async delete(key: string): Promise<void> {
     try {
-      if (!this.isConnected) return;
-      await this.client.del(key);
+      await this.ensureConnected();
+      await this.client!.del(key);
     } catch (error) {
-      logger.error(`Error deleting cache for key ${key}`, { error });
+      if (process.env.NODE_ENV !== "test") {
+        logger.error(`Error deleting cache for key ${key}`, { error });
+      }
     }
   }
 
@@ -97,13 +143,15 @@ class CacheService {
    */
   async invalidatePattern(pattern: string): Promise<void> {
     try {
-      if (!this.isConnected) return;
-      const keys = await this.client.keys(pattern);
+      await this.ensureConnected();
+      const keys = await this.client!.keys(pattern);
       if (keys.length > 0) {
-        await this.client.del(keys);
+        await this.client!.del(keys);
       }
     } catch (error) {
-      logger.error(`Error invalidating pattern ${pattern}`, { error });
+      if (process.env.NODE_ENV !== "test") {
+        logger.error(`Error invalidating pattern ${pattern}`, { error });
+      }
     }
   }
 
@@ -113,8 +161,8 @@ class CacheService {
    */
   async ping(): Promise<"ok" | "error"> {
     try {
-      if (!this.isConnected) return "error";
-      const reply = await this.client.ping();
+      await this.ensureConnected();
+      const reply = await this.client!.ping();
       return reply === "PONG" ? "ok" : "error";
     } catch {
       return "error";
@@ -122,7 +170,7 @@ class CacheService {
   }
 
   async close(): Promise<void> {
-    if (this.isConnected) {
+    if (this.isConnected && this.client) {
       await this.client.quit();
       this.isConnected = false;
     }
