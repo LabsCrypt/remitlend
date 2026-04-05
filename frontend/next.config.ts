@@ -1,6 +1,7 @@
 import createNextIntlPlugin from "next-intl/plugin";
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import withPWA from "next-pwa";
 
 const withNextIntl = createNextIntlPlugin("./i18n.config.ts");
 
