@@ -106,6 +106,7 @@ pub struct ProposalCancelledEvent {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct TransferApprovedEvent {
+    pub proposal_id: u32,
     pub signer: Address,
     pub approvals_so_far: u32,
     pub threshold: u32,
@@ -308,8 +309,9 @@ impl GovernanceContract {
         env.storage().instance().set(&KEY_PENDING, &pending);
 
         env.events().publish(
-            (symbol_short!("GovAppr"), signer.clone()),
+            (Symbol::new(&env, "ProposalApproved"),),
             TransferApprovedEvent {
+                proposal_id: pending.id,
                 signer,
                 approvals_so_far,
                 threshold,

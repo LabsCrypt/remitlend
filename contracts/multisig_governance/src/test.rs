@@ -620,3 +620,133 @@ fn propose_rejects_too_many_signers() {
     }
     client.propose_admin_transfer(&Address::generate(&env), &addrs, &1, &MIN_TIMELOCK_SECONDS);
 }
+
+#[test]
+#[should_panic(expected = "threshold must be >= 1")]
+fn propose_rejects_zero_threshold() {
+    let (env, client, _, _) = setup();
+    let signers = Vec::from_slice(&env, &[Address::generate(&env)]);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &0,
+        &MIN_TIMELOCK_SECONDS,
+    );
+}
+
+#[test]
+fn propose_succeeds_after_cancelled_proposal() {
+    // Covers the branch: pending exists but status != Active
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    client.cancel_admin_transfer();
+
+    set_ts(&env, 1000 + REPROPOSAL_COOLDOWN_SECONDS + 1);
+    let proposed2 = Address::generate(&env);
+    client.propose_admin_transfer(&proposed2, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    assert_eq!(client.get_pending_transfer().proposed_admin, proposed2);
+}
+
+#[test]
+fn cancel_already_cancelled_is_noop() {
+    // Covers the early return in cancel_admin_transfer when already Cancelled
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    let proposal_id = client.get_pending_transfer().id;
+    client.emergency_cancel_proposal(&proposal_id, &None);
+
+    // cancel_admin_transfer on an already-cancelled proposal should return early
+    client.cancel_admin_transfer();
+    assert!(!client.has_pending_transfer());
+}
+
+#[test]
+fn emergency_cancel_already_cancelled_is_noop() {
+    // Covers the early return in emergency_cancel_proposal when already Cancelled
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    let proposal_id = client.get_pending_transfer().id;
+    client.emergency_cancel_proposal(&proposal_id, &None);
+
+    // Second call should be a no-op (early return)
+    client.emergency_cancel_proposal(&proposal_id, &None);
+    assert!(!client.has_pending_transfer());
+}
+
+#[test]
+#[should_panic(expected = "proposal ID mismatch")]
+fn emergency_cancel_wrong_id_panics() {
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    client.emergency_cancel_proposal(&9999, &None);
+}
+
+#[test]
+#[should_panic(expected = "proposal is not active")]
+fn expire_cancelled_proposal_panics() {
+    let (env, client, _, _) = setup();
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(
+        &Address::generate(&env),
+        &signers,
+        &1,
+        &MIN_TIMELOCK_SECONDS,
+    );
+    let proposal_id = client.get_pending_transfer().id;
+    client.emergency_cancel_proposal(&proposal_id, &None);
+
+    set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS + 1);
+    client.expire_proposal(&Address::generate(&env));
+}
+
+#[test]
+fn timelock_remaining_returns_zero_with_no_pending() {
+    // Covers the None branch in get_timelock_remaining
+    let (_env, client, _, _) = setup();
+    assert_eq!(client.get_timelock_remaining(), 0);
+}
+
+#[test]
+fn has_pending_transfer_false_with_no_proposal() {
+    let (_env, client, _, _) = setup();
+    assert!(!client.has_pending_transfer());
+}
