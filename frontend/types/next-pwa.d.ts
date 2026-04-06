@@ -1,4 +1,4 @@
-declare module 'next-pwa' {
+declare module "next-pwa" {
   interface PWAConfig {
     dest?: string;
     disable?: boolean;
@@ -6,7 +6,7 @@ declare module 'next-pwa' {
     skipWaiting?: boolean;
     runtimeCaching?: any[];
   }
-  
+
   function withPWA(pwaConfig: PWAConfig): (nextConfig: any) => any;
   export = withPWA;
 }
