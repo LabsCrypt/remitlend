@@ -1,24 +1,15 @@
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
-import {
-  createRequestId,
-  runWithRequestContext,
-} from "../utils/requestContext.js";
+import { createRequestId, runWithRequestContext } from "../utils/requestContext.js";
 import {
   type IndexedLoanEvent,
   type WebhookEventType,
   webhookService,
 } from "./webhookService.js";
 import { eventStreamService } from "./eventStreamService.js";
-import {
-  notificationService,
-  type NotificationType,
-} from "./notificationService.js";
-import { sorobanService } from "./sorobanService.js";
-import { updateUserScoresBulk } from "./scoresService.js";
 
-export interface SorobanRawEvent {
+interface SorobanRawEvent {
   id: string;
   pagingToken: string;
   topic: xdr.ScVal[];
@@ -65,24 +56,12 @@ export class EventIndexer {
   private readonly contractId: string;
   private readonly pollIntervalMs: number;
   private readonly batchSize: number;
-  private readonly quarantineAlertThreshold: number;
-  private lastObservedQuarantineCount = 0;
   private running = false;
   private pollTimeout: NodeJS.Timeout | null = null;
 
   constructor(config: EventIndexerConfig);
   constructor(rpcUrl: string, contractId: string);
-  constructor(
-    configOrRpcUrl: EventIndexerConfig | string,
-    contractId?: string,
-  ) {
-    const thresholdRaw = Number.parseInt(
-      process.env.QUARANTINE_ALERT_THRESHOLD ?? "25",
-      10,
-    );
-    this.quarantineAlertThreshold =
-      Number.isFinite(thresholdRaw) && thresholdRaw > 0 ? thresholdRaw : 25;
-
+  constructor(configOrRpcUrl: EventIndexerConfig | string, contractId?: string) {
     if (typeof configOrRpcUrl === "string") {
       if (!contractId) {
         throw new Error("contractId is required when using rpcUrl constructor");
@@ -98,18 +77,6 @@ export class EventIndexer {
     this.contractId = configOrRpcUrl.contractId;
     this.pollIntervalMs = configOrRpcUrl.pollIntervalMs ?? 30_000;
     this.batchSize = configOrRpcUrl.batchSize ?? 100;
-  }
-
-  async ingestRawEvents(events: SorobanRawEvent[]): Promise<StoreEventsResult> {
-    return this.storeEvents(events);
-  }
-
-  isEventParseable(event: SorobanRawEvent): boolean {
-    try {
-      return this.parseEvent(event) !== null;
-    } catch {
-      return false;
-    }
   }
 
   async start(): Promise<void> {
@@ -136,10 +103,7 @@ export class EventIndexer {
     return chunkResult.lastProcessedLedger;
   }
 
-  async reindexRange(
-    fromLedger: number,
-    toLedger: number,
-  ): Promise<{
+  async reindexRange(fromLedger: number, toLedger: number): Promise<{
     fromLedger: number;
     toLedger: number;
     fetchedEvents: number;
@@ -203,11 +167,9 @@ export class EventIndexer {
 
   private async getLatestLedgerSequence(): Promise<number> {
     try {
-      const latest = (await (
-        this.rpc as unknown as {
-          getLatestLedger: () => Promise<Record<string, unknown>>;
-        }
-      ).getLatestLedger()) as Record<string, unknown>;
+      const latest = (await (this.rpc as unknown as {
+        getLatestLedger: () => Promise<Record<string, unknown>>;
+      }).getLatestLedger()) as Record<string, unknown>;
 
       const candidate =
         latest.sequence ?? latest.sequenceNumber ?? latest.seq ?? latest.id;
@@ -359,15 +321,11 @@ export class EventIndexer {
       cursor = nextCursor;
     }
 
-    // Sort events by ledger to ensure consistent processing order
-    return result.sort((a, b) => Number(a.ledger) - Number(b.ledger));
+    return result;
   }
 
-  private async storeEvents(
-    events: SorobanRawEvent[],
-  ): Promise<StoreEventsResult> {
+  private async storeEvents(events: SorobanRawEvent[]): Promise<StoreEventsResult> {
     const parsedEvents: LoanEvent[] = [];
-    let quarantineAttempts = 0;
 
     for (const event of events) {
       try {
@@ -380,13 +338,7 @@ export class EventIndexer {
           eventId: event.id,
           error,
         });
-        quarantineAttempts += 1;
-        await this.quarantineEvent(event, error);
       }
-    }
-
-    if (quarantineAttempts > 0) {
-      await this.logQuarantineGrowth(quarantineAttempts);
     }
 
     if (parsedEvents.length === 0) {
@@ -394,11 +346,6 @@ export class EventIndexer {
     }
 
     const insertedEvents: LoanEvent[] = [];
-
-    // Collect score deltas per user during the DB transaction to avoid N+1
-    // updates. After committing the inserted events we apply a single bulk
-    // upsert that adds the deltas and keeps scores bounded.
-    const scoreUpdates: Map<string, number> = new Map();
 
     await query("BEGIN", []);
     try {
@@ -441,40 +388,15 @@ export class EventIndexer {
 
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
-
-          // aggregate score deltas per borrower; apply after the transaction
-          // to avoid issuing a query per event (N+1).
           if (event.eventType === "LoanRepaid") {
-            const { repaymentDelta } = sorobanService.getScoreConfig();
-            if (event.borrower) {
-              scoreUpdates.set(
-                event.borrower,
-                (scoreUpdates.get(event.borrower) ?? 0) + repaymentDelta,
-              );
-            }
+            await this.updateUserScore(event.borrower, 15);
           } else if (event.eventType === "LoanDefaulted") {
-            const { defaultPenalty } = sorobanService.getScoreConfig();
-            if (event.borrower) {
-              scoreUpdates.set(
-                event.borrower,
-                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
-              );
-            }
+            await this.updateUserScore(event.borrower, -50);
           }
         }
       }
 
       await query("COMMIT", []);
-      // apply batched score updates after the transaction commits
-      if (scoreUpdates.size > 0) {
-        try {
-          await updateUserScoresBulk(scoreUpdates);
-        } catch (err) {
-          logger.error("Failed to apply bulk user score updates", {
-            error: err,
-          });
-        }
-      }
     } catch (error) {
       await query("ROLLBACK", []);
       throw error;
@@ -530,7 +452,6 @@ export class EventIndexer {
       if (!event.topic[1]) return null;
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
-      borrower = this.decodeAddress(event.value);
       interestRateBps = 1200;
       termLedgers = 17280;
     } else if (type === "LoanRepaid") {
@@ -619,33 +540,19 @@ export class EventIndexer {
         return;
     }
 
-    await notificationService.createNotification({
-      userId: event.borrower,
-      type: type as NotificationType,
-      title,
-      message,
-      loanId: event.loanId,
-    });
+    await query(
+      `INSERT INTO notifications (user_id, type, title, message, loan_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [event.borrower, type, title, message, event.loanId ?? null],
+    );
   }
 
   private decodeAddress(value: xdr.ScVal): string {
-    const native = scValToNative(value);
-    if (typeof native !== "string") {
-      throw new Error(
-        `Expected address string, got ${typeof native}: ${String(native)}`,
-      );
-    }
-    return native;
+    return scValToNative(value).toString();
   }
 
   private decodeAmount(value: xdr.ScVal): string {
-    const native = scValToNative(value);
-    if (typeof native !== "bigint" && typeof native !== "number") {
-      throw new Error(
-        `Expected numeric amount, got ${typeof native}: ${String(native)}`,
-      );
-    }
-    return native.toString();
+    return scValToNative(value).toString();
   }
 
   private decodeLoanId(value: xdr.ScVal): number | undefined {
@@ -656,99 +563,7 @@ export class EventIndexer {
     }
   }
 
-  private async quarantineEvent(
-    event: SorobanRawEvent,
-    error: unknown,
-  ): Promise<void> {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    let rawTopics: string[] = [];
-    let rawValue = "";
-    try {
-      rawTopics = event.topic.map((t) => t.toXDR("base64"));
-      rawValue = event.value.toXDR("base64");
-    } catch {
-      // XDR serialisation itself failed; store empty strings so the row is
-      // still inserted and the error_message captures the original failure.
-    }
-
-    const rawXdr = {
-      id: event.id,
-      topics: rawTopics,
-      value: rawValue,
-      ledger: event.ledger,
-      ledgerClosedAt: event.ledgerClosedAt,
-      txHash: event.txHash,
-      contractId: event.contractId,
-    };
-
-    logger.warn("Quarantining malformed event", {
-      eventId: event.id,
-      ledger: event.ledger,
-      txHash: event.txHash,
-      rawXdr,
-      error: errorMessage,
-    });
-
-    try {
-      await query(
-        `INSERT INTO quarantine_events (event_id, ledger, tx_hash, contract_id, raw_xdr, error_message)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (event_id) DO NOTHING`,
-        [
-          event.id,
-          event.ledger,
-          event.txHash,
-          event.contractId,
-          JSON.stringify(rawXdr),
-          errorMessage,
-        ],
-      );
-    } catch (dbError) {
-      logger.error("Failed to quarantine malformed event", {
-        eventId: event.id,
-        dbError,
-      });
-    }
-  }
-
-  private async logQuarantineGrowth(newlyQuarantined: number): Promise<void> {
-    try {
-      const result = await query(
-        "SELECT COUNT(*)::int AS count FROM quarantine_events",
-        [],
-      );
-      const totalCount = Number(result.rows[0]?.count ?? 0);
-      const previousCount = this.lastObservedQuarantineCount;
-
-      if (totalCount > previousCount) {
-        logger.warn("Quarantine event count increased", {
-          previousCount,
-          totalCount,
-          delta: totalCount - previousCount,
-          newlyQuarantined,
-        });
-
-        if (
-          previousCount < this.quarantineAlertThreshold &&
-          totalCount >= this.quarantineAlertThreshold
-        ) {
-          logger.error("Quarantine event count exceeded alert threshold", {
-            threshold: this.quarantineAlertThreshold,
-            totalCount,
-          });
-        }
-      }
-
-      this.lastObservedQuarantineCount = Math.max(previousCount, totalCount);
-    } catch (error) {
-      logger.error("Failed to check quarantine event count", { error });
-    }
-  }
-
-  private decodeEventType(
-    value: xdr.ScVal | undefined,
-  ): WebhookEventType | null {
+  private decodeEventType(value: xdr.ScVal | undefined): WebhookEventType | null {
     if (!value) return null;
 
     try {

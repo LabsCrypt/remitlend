@@ -12,7 +12,6 @@ import { Sentry } from "./config/sentry.js";
 dotenv.config();
 import pool from "./db/connection.js";
 import { cacheService } from "./services/cacheService.js";
-import { sorobanService } from "./services/sorobanService.js";
 import simulationRoutes from "./routes/simulationRoutes.js";
 import scoreRoutes from "./routes/scoreRoutes.js";
 import loanRoutes from "./routes/loanRoutes.js";
@@ -21,29 +20,19 @@ import indexerRoutes from "./routes/indexerRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import notificationsRoutes from "./routes/notificationsRoutes.js";
-import externalNotificationsRoutes from "./routes/externalNotificationRoutes.js";
+import externalNotificationRoutes from "./routes/externalNotificationRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
-import remittanceRoutes from "./routes/remittanceRoutes.js";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
-import { asyncHandler } from "./utils/asyncHandler.js";
+import { asyncHandler } from "./middleware/asyncHandler.js";
 import { AppError } from "./errors/AppError.js";
 const app = express();
 
 const isProduction = process.env.NODE_ENV === "production";
-const configuredFrontendUrl = process.env.FRONTEND_URL?.trim();
-// `CORS_ALLOWED_ORIGINS` is retained as a migration fallback while `FRONTEND_URL`
-// becomes the primary documented config for the frontend origin.
-const additionalAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-  : [];
-const allowedOrigins = new Set(
-  [configuredFrontendUrl, ...additionalAllowedOrigins].filter(
-    (origin): origin is string => Boolean(origin),
-  ),
-);
 
 app.use(
   helmet({
@@ -59,33 +48,28 @@ app.use(
     },
     strictTransportSecurity: isProduction
       ? {
-          maxAge: 31536000,
-          includeSubDomains: true,
-          preload: true,
-        }
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true,
+      }
       : false,
   }),
 );
 
+const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
+  : [];
+
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    if (!origin) {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      origin.startsWith("http://localhost:")
+    ) {
       return callback(null, true);
     }
-
-    if (allowedOrigins.has(origin)) {
-      return callback(null, true);
-    }
-
-    if (!isProduction) {
-      return callback(null, true);
-    }
-
-    return callback(
-      AppError.forbidden(
-        "Origin is not allowed by CORS policy",
-      ),
-    );
+    return callback(new Error("Not allowed by CORS"));
   },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: [
@@ -93,7 +77,6 @@ const corsOptions: cors.CorsOptions = {
     "Authorization",
     "x-api-key",
     "x-request-id",
-    "Idempotency-Key",
   ],
   credentials: true,
 };
@@ -112,32 +95,24 @@ app.get("/", (req: Request, res: Response) => {
 app.get(
   "/health",
   asyncHandler(async (_req: Request, res: Response) => {
-    const [databaseStatus, redisStatus, sorobanStatus] =
-      await Promise.allSettled([
-        pool
-          .query("SELECT 1")
-          .then(() => "ok" as const)
-          .catch(() => "error" as const),
-        cacheService.ping(),
-        sorobanService.ping(),
-      ]);
-
-    const dbChecks = {
-      database: databaseStatus.status === "fulfilled" ? databaseStatus.value : "error",
-      redis: redisStatus.status === "fulfilled" ? redisStatus.value : "error",
-    };
+    const [databaseStatus, redisStatus] = await Promise.allSettled([
+      pool
+        .query("SELECT 1")
+        .then(() => "ok" as const)
+        .catch(() => "error" as const),
+      cacheService.ping(),
+    ]);
 
     const checks = {
       api: "ok" as const,
-      ...dbChecks,
-      soroban_rpc: sorobanStatus.status === "fulfilled" ? sorobanStatus.value : "error",
+      database:
+        databaseStatus.status === "fulfilled" ? databaseStatus.value : "error",
+      redis: redisStatus.status === "fulfilled" ? redisStatus.value : "error",
     };
 
-    const coreOk = Object.values(dbChecks).every((c) => c === "ok");
-    const allOk = coreOk && checks.soroban_rpc === "ok";
-
-    res.status(coreOk ? 200 : 503).json({
-      status: allOk ? "ok" : (coreOk ? "degraded" : "down"),
+    const allOk = Object.values(checks).every((c) => c === "ok");
+    res.status(allOk ? 200 : 503).json({
+      status: allOk ? "ok" : "degraded",
       checks,
       uptime: process.uptime(),
       timestamp: Date.now(),
@@ -145,7 +120,6 @@ app.get(
   }),
 );
 
-// Legacy routes (deprecated, maintained for backward compatibility)
 app.use("/api", simulationRoutes);
 app.use("/api/score", scoreRoutes);
 app.use("/api/loans", loanRoutes);
@@ -154,18 +128,8 @@ app.use("/api/indexer", indexerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/notifications", notificationsRoutes);
-app.use("/api/external-notifications", externalNotificationsRoutes);
+app.use("/api/external-notifications", externalNotificationRoutes);
 app.use("/api/events", eventRoutes);
-app.use("/api/remittances", remittanceRoutes);
-
-// Versioned API routes (v1 - current)
-app.use("/api/v1", simulationRoutes);
-app.use("/api/v1/score", scoreRoutes);
-app.use("/api/v1/loans", loanRoutes);
-app.use("/api/v1/indexer", indexerRoutes);
-app.use("/api/v1/admin", adminRoutes);
-app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/remittances", remittanceRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────
 // Only exposed in test environment to verify centralized error handling.
@@ -191,7 +155,7 @@ if (process.env.NODE_ENV === "test") {
   );
 }
 
-
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ── 404 Catch-All ────────────────────────────────────────────────
 // Must be placed after all route definitions so that only truly

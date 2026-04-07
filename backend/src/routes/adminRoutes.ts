@@ -3,73 +3,64 @@ import { z } from "zod";
 import { requireApiKey } from "../middleware/auth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
 import { validateBody } from "../middleware/validation.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { auditLog } from "../middleware/auditLog.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 import { defaultChecker } from "../services/defaultChecker.js";
 import {
   createWebhookSubscription,
   deleteWebhookSubscription,
   getWebhookDeliveries,
-  listQuarantinedEvents,
   listWebhookSubscriptions,
-  reprocessQuarantinedEvents,
   reindexLedgerRange,
 } from "../controllers/indexerController.js";
-import { listLoanDisputes, resolveLoanDispute } from "../controllers/adminDisputeController.js";
 
 const router = Router();
-
-/**
- * @swagger
- * /admin/loan-disputes:
- *   get:
- *     summary: List open loan disputes
- *     tags: [Admin]
- *     security:
- *       - ApiKeyAuth: []
- *     responses:
- *       200:
- *         description: List of open disputes
- *
- * /admin/loan-disputes/{disputeId}/resolve:
- *   post:
- *     summary: Resolve a loan dispute (confirm or reverse default)
- *     tags: [Admin]
- *     security:
- *       - ApiKeyAuth: []
- *     parameters:
- *       - in: path
- *         name: disputeId
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - action
- *               - resolution
- *             properties:
- *               action:
- *                 type: string
- *                 enum: [confirm, reverse]
- *                 description: Action to take
- *               resolution:
- *                 type: string
- *                 description: Reason for resolution
- *     responses:
- *       200:
- *         description: Dispute resolved
- */
-router.get("/loan-disputes", requireApiKey, listLoanDisputes);
-router.post("/loan-disputes/:disputeId/resolve", requireApiKey, resolveLoanDispute);
 
 const checkDefaultsBodySchema = z.object({
   loanIds: z.array(z.number().int().positive()).optional(),
 });
+
+/**
+ * @swagger
+ * /admin/check-defaults:
+ *   post:
+ *     summary: Trigger on-chain default checks (admin)
+ *     description: >
+ *       Submits `check_defaults` to the LoanManager contract for either a specific
+ *       list of loan IDs, or (if omitted) all loans that appear overdue based on
+ *       indexed `LoanApproved` ledgers.
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               loanIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *     responses:
+ *       200:
+ *         description: Default check run completed (see batch errors in payload)
+ */
+router.post(
+  "/check-defaults",
+  requireApiKey,
+  strictRateLimiter,
+  validateBody(checkDefaultsBodySchema),
+  asyncHandler(async (req, res) => {
+    const { loanIds } = req.body as z.infer<typeof checkDefaultsBodySchema>;
+    const result = await defaultChecker.checkOverdueLoans(loanIds);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  }),
+);
 
 /**
  * @swagger
@@ -93,78 +84,8 @@ const checkDefaultsBodySchema = z.object({
  *     responses:
  *       200:
  *         description: Reindex completed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ReindexResponse'
  */
-router.post(
-  "/reindex",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  reindexLedgerRange,
-);
-
-/**
- * @swagger
- * /admin/quarantine-events:
- *   get:
- *     summary: List quarantined indexer events
- *     tags: [Admin]
- *     security:
- *       - ApiKeyAuth: []
- *     parameters:
- *       - in: query
- *         name: limit
- *         required: false
- *         schema:
- *           type: integer
- *           default: 50
- *       - in: query
- *         name: cursor
- *         required: false
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Quarantined events retrieved
- */
-router.get("/quarantine-events", requireApiKey, listQuarantinedEvents);
-
-/**
- * @swagger
- * /admin/quarantine-events/reprocess:
- *   post:
- *     summary: Reprocess quarantined indexer events
- *     tags: [Admin]
- *     security:
- *       - ApiKeyAuth: []
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               ids:
- *                 type: array
- *                 items:
- *                   type: integer
- *               limit:
- *                 type: integer
- *                 default: 50
- *     responses:
- *       200:
- *         description: Reprocess attempt completed
- */
-router.post(
-  "/quarantine-events/reprocess",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  reprocessQuarantinedEvents,
-);
+router.post("/reindex", requireApiKey, strictRateLimiter, reindexLedgerRange);
 
 /**
  * @swagger
@@ -193,10 +114,6 @@ router.post(
  *     responses:
  *       201:
  *         description: Subscription created
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/WebhookSubscriptionResponse'
  *   get:
  *     summary: List webhook subscriptions
  *     tags: [Admin]
@@ -205,18 +122,8 @@ router.post(
  *     responses:
  *       200:
  *         description: List of subscriptions
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/WebhookSubscriptionListResponse'
  */
-router.post(
-  "/webhooks",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  createWebhookSubscription,
-);
+router.post("/webhooks", requireApiKey, strictRateLimiter, createWebhookSubscription);
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
 
 /**
@@ -236,18 +143,8 @@ router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
  *     responses:
  *       200:
  *         description: Subscription deleted
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessMessageResponse'
  */
-router.delete(
-  "/webhooks/:id",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  deleteWebhookSubscription,
-);
+router.delete("/webhooks/:id", requireApiKey, strictRateLimiter, deleteWebhookSubscription);
 
 /**
  * @swagger
@@ -272,10 +169,6 @@ router.delete(
  *     responses:
  *       200:
  *         description: Delivery history returned
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get("/webhooks/:id/deliveries", requireApiKey, getWebhookDeliveries);
 
