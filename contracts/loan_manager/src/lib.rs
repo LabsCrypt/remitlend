@@ -119,6 +119,7 @@ pub enum DataKey {
     RateOracle,
     ProposedAdmin,
     InterestResidual(u64),
+    Residual(u64),
 }
 
 #[contract]
@@ -167,10 +168,13 @@ impl LoanManager {
     // }
 
     fn get_interest_residual(env: &Env, loan_id: u64) -> i128 {
-        let residual_key = (symbol_short!("residual"), loan_id);
-        let residual_key = DataKey::Residual(loan_id);
-        env.storage().instance().get(&residual_key).unwrap_or(0)
-    }
+    let residual_key = (symbol_short!("residual"), loan_id);
+
+    env.storage()
+        .instance()
+        .get(&residual_key)
+        .unwrap_or(0i128)
+}
 
     fn set_interest_residual(env: &Env, loan_id: u64, value: i128) {
         let residual_key = (symbol_short!("residual"), loan_id);
@@ -321,7 +325,7 @@ impl LoanManager {
         let new_residual = total_interest % PRECISION;
 
         // Add the previous residual to the new calculation
-        let mut residual = Self::get_interest_residual(env, loan_id);
+        let residual = Self::get_interest_residual(env, loan_id);
 
         let new_interest = 0; // calculated
         let total = residual + new_interest;
@@ -333,6 +337,7 @@ impl LoanManager {
         Self::set_interest_residual(env, loan_id, remainder);
 
         // load previous residual
+        let residual_key = (symbol_short!("residual"), loan_id);
         let prev_residual: i128 = env.storage().instance().get(&residual_key).unwrap_or(0i128);
 
         // combine
@@ -361,13 +366,11 @@ impl LoanManager {
         Self::bump_instance_ttl(env);
 
         // Get the stored late fee rate or use the default
-        let rate = env
-            .storage()
-            .instance()
-            .get(&DataKey::LateFeeRateBps)
-            .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS);
-
-        rate // return explicitly
+        env
+    .storage()
+    .instance()
+    .get(&DataKey::LateFeeRateBps)
+    .unwrap_or(Self::DEFAULT_LATE_FEE_RATE_BPS) // return explicitly
     }
 
     fn grace_period_ledgers(env: &Env) -> u32 {
@@ -377,7 +380,7 @@ impl LoanManager {
         // Retrieve the value from storage, or use default if missing
         env.storage()
             .instance()
-            .get::<u32>(&DataKey::GracePeriodLedgers)
+            .get::<_, u32>(&DataKey::GracePeriodLedgers)
             .unwrap_or(Self::DEFAULT_GRACE_PERIOD_LEDGERS)
     }
     fn default_window_ledgers(env: &Env) -> u32 {
@@ -511,16 +514,17 @@ impl LoanManager {
         charged_fee
     }
 
-    fn current_total_debt(env: &Env, loan: &mut Loan) -> (i128, i128) {
-        Self::accrue_interest(env, loan.id, loan);
-        let late_fee_delta = Self::accrue_late_fee(env, loan);
-        let total_debt = Self::remaining_principal(loan)
-            .checked_add(loan.accrued_interest)
-            .and_then(|value| value.checked_add(loan.accrued_late_fee))
-            .expect("debt overflow");
-        (total_debt, late_fee_delta)
-    }
+   fn current_total_debt(env: &Env, loan_id: u64, loan: &mut Loan) -> (i128, i128) {
+    Self::accrue_interest(env, loan_id, loan);
+    let late_fee_delta = Self::accrue_late_fee(env, loan);
 
+    let total_debt = Self::remaining_principal(loan)
+        .checked_add(loan.accrued_interest)
+        .and_then(|value| value.checked_add(loan.accrued_late_fee))
+        .expect("debt overflow");
+
+    (total_debt, late_fee_delta)
+}
     /// Split a repayment across principal, interest, and late fees based on
     /// each component's share of the current total debt. This avoids a strict
     /// waterfall where a borrower can repeatedly clear one bucket first while
@@ -914,7 +918,7 @@ impl LoanManager {
             .get(&loan_key)
             .ok_or(LoanError::LoanNotFound)?;
         Self::bump_persistent_ttl(&env, &loan_key);
-        let _ = Self::current_total_debt(&env, &mut loan);
+        let _ = Self::current_total_debt(&env, loan_id.into(), &mut loan);
         Ok(loan)
     }
 
@@ -954,7 +958,7 @@ impl LoanManager {
             return Err(LoanError::LoanPastDue);
         }
 
-        let (total_debt, late_fee_delta) = Self::current_total_debt(&env, &mut loan);
+        let (total_debt, late_fee_delta) = Self::current_total_debt(&env, loan_id.into(), &mut loan);
         if amount > total_debt {
             return Err(LoanError::RepaymentExceedsDebt);
         }
@@ -1292,7 +1296,7 @@ impl LoanManager {
         }
 
         // Settle all accrued interest and late fees up to now.
-        Self::accrue_interest(&env, loan_id, &mut loan);
+        Self::accrue_interest(&env, loan_id.into(), &mut loan);
         let _ = Self::accrue_late_fee(&env, &mut loan);
 
         loan.interest_paid = loan
