@@ -956,13 +956,11 @@ impl LoanManager {
             .expect("default window overflow");
         if current_ledger > default_ends {
             return Err(LoanError::LoanPastDue);
-        }
-
-        let (total_debt, late_fee_delta) = Self::current_total_debt(&env, loan_id.into(), &mut loan);
+                }
+        let total_debt = Self::current_total_debt(&env, loan_id.into(), &mut loan);
         if amount > total_debt {
             return Err(LoanError::RepaymentExceedsDebt);
         }
-
         let min_repayment_amount = Self::min_repayment_amount(&env);
 
         // Allow below-minimum repayment only when it fully clears the remaining debt
