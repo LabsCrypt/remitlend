@@ -1306,3 +1306,33 @@ fn test_admin_remint_clears_seized_flag() {
 
     assert!(!client.is_seized(&user));
 }
+
+#[test]
+fn test_burn_clears_transfer_cooldown() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    env.ledger().set_sequence_number(100);
+
+    client.initialize(&admin);
+    client.mint(&from, &500, &create_test_hash(&env, 40), &None);
+
+    // Transfer sets a cooldown on the destination
+    client.transfer(&from, &to, &None);
+    assert!(client.get_transfer_cooldown_remaining(&to) > 0);
+
+    // Burn should clear the cooldown
+    client.burn(&to, &None);
+    assert_eq!(client.get_transfer_cooldown_remaining(&to), 0);
+
+    // After remint the cooldown must not resurface
+    client.approve_remint(&to);
+    client.admin_remint(&to, &300, &create_test_hash(&env, 41));
+    assert_eq!(client.get_transfer_cooldown_remaining(&to), 0);
+}
