@@ -117,6 +117,7 @@ pub enum DataKey {
     DefaultWindowLedgers,
     RateOracle,
     ProposedAdmin,
+    TotalOutstanding,
 }
 
 #[contract]
@@ -399,6 +400,23 @@ impl LoanManager {
         let next_count = current_count - 1;
         env.storage().persistent().set(&key, &next_count);
         Self::bump_persistent_ttl(env, &key);
+    }
+
+    fn total_outstanding(env: &Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalOutstanding)
+            .unwrap_or(0i128)
+    }
+
+    fn add_outstanding(env: &Env, amount: i128) {
+        let next = Self::total_outstanding(env).checked_add(amount).expect("outstanding overflow");
+        env.storage().instance().set(&DataKey::TotalOutstanding, &next);
+    }
+
+    fn sub_outstanding(env: &Env, amount: i128) {
+        let next = Self::total_outstanding(env).saturating_sub(amount);
+        env.storage().instance().set(&DataKey::TotalOutstanding, &next);
     }
 
     fn accrue_late_fee(env: &Env, loan: &mut Loan) -> i128 {
@@ -844,7 +862,8 @@ impl LoanManager {
             .expect("token not set");
         let pool_client = PoolClient::new(&env, &lending_pool);
         let pool_balance = pool_client.pool_balance(&token);
-        if pool_balance < loan.amount {
+        let available = pool_balance.saturating_sub(Self::total_outstanding(&env));
+        if available < loan.amount {
             return Err(LoanError::InsufficientPoolLiquidity);
         }
 
@@ -861,6 +880,7 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
         let token_client = TokenClient::new(&env, &token);
 
+        Self::add_outstanding(&env, loan.amount);
         token_client.transfer(&lending_pool, &loan.borrower, &loan.amount);
 
         events::loan_approved(&env, loan_id, loan.borrower.clone());
@@ -997,6 +1017,7 @@ impl LoanManager {
         if completed {
             loan.status = LoanStatus::Repaid;
             loan.collateral_amount = 0;
+            Self::sub_outstanding(&env, loan.amount);
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
             Self::release_collateral_internal(&env, loan_id, &loan.borrower);
         }
@@ -1756,6 +1777,7 @@ impl LoanManager {
         loan.status = LoanStatus::Defaulted;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
+        Self::sub_outstanding(&env, loan.amount);
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
         Self::seize_collateral_internal(&env, loan_id);
 
@@ -1801,6 +1823,7 @@ impl LoanManager {
             loan.status = LoanStatus::Defaulted;
             env.storage().persistent().set(&loan_key, &loan);
             Self::bump_persistent_ttl(&env, &loan_key);
+            Self::sub_outstanding(&env, loan.amount);
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
             Self::seize_collateral_internal(&env, loan_id);
 

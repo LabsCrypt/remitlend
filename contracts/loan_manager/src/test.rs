@@ -1249,3 +1249,33 @@ fn test_pending_loans_count_against_cap() {
     let result = client.try_request_loan(&borrower, &500);
     assert_eq!(result, Err(Ok(LoanError::MaxLoansReached)));
 }
+
+#[test]
+fn test_concurrent_approvals_exceeding_pool_capacity_blocked() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower1 = Address::generate(&env);
+    let borrower2 = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower1, &600, &history_hash, &None);
+    nft_client.mint(&borrower2, &600, &history_hash, &None);
+
+    // Pool has 10_000; two loans of 6_000 each would exceed capacity
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    let loan_id1 = manager.request_loan(&borrower1, &6_000);
+    let loan_id2 = manager.request_loan(&borrower2, &6_000);
+
+    // First approval succeeds
+    manager.approve_loan(&loan_id1);
+    assert_eq!(manager.get_loan(&loan_id1).status, LoanStatus::Approved);
+
+    // Second approval must fail: only 4_000 available, 6_000 requested
+    let result = manager.try_approve_loan(&loan_id2);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientPoolLiquidity)));
+    assert_eq!(manager.get_loan(&loan_id2).status, LoanStatus::Pending);
+}
