@@ -29,7 +29,13 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
   const badge =
     variant === "detailed"
       ? {
-          label: isDefaulted ? "Defaulted" : isOverdue ? "Overdue" : isUrgent ? "Due Soon" : "On Track",
+          label: isDefaulted
+            ? "Defaulted"
+            : isOverdue
+              ? "Overdue"
+              : isUrgent
+                ? "Due Soon"
+                : "On Track",
           className: isDefaulted
             ? "bg-red-900 text-white"
             : isOverdue
@@ -41,7 +47,13 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
       : null;
 
   // ── Deadline colours ───────────────────────────────────────────────────────
-  const deadlineBg = isDefaulted ? "bg-red-900/20" : isOverdue ? "bg-red-50" : isUrgent ? "bg-yellow-50" : "bg-gray-50";
+  const deadlineBg = isDefaulted
+    ? "bg-red-900/20"
+    : isOverdue
+      ? "bg-red-50"
+      : isUrgent
+        ? "bg-yellow-50"
+        : "bg-gray-50";
   const deadlineTextColor = isDefaulted
     ? "text-red-900"
     : isOverdue

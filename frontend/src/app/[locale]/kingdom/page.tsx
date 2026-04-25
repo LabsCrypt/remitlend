@@ -19,7 +19,10 @@ const KingdomProgressWidget = dynamic(
 );
 
 const AchievementsPanel = dynamic(
-  () => import("../../components/gamification/AchievementsPanel").then((m) => m.AchievementsPanel),
+  () =>
+    import("../../components/gamification/AchievementsPanel").then(
+      (m) => m.AchievementsPanel,
+    ),
   { ssr: false, loading: () => <AchievementsSkeleton /> },
 );
 
@@ -50,7 +53,9 @@ export default function KingdomPage() {
       </header>
 
       {/* Welcome card */}
-      <Card className="bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 border-purple-200 dark:border-purple-800">
+      <Card
+        className="bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 border-purple-200 dark:border-purple-800"
+      >
         <div className="p-6">
           <div className="flex items-center justify-between">
             <div>
