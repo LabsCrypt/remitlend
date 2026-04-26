@@ -21,6 +21,8 @@ const pool = new Pool({
   idleTimeoutMillis,
 });
 
+let isShuttingDown = false;
+
 // Periodic pool health metrics logging
 const metricsInterval = setInterval(() => {
   logger.info("DB Pool Metrics", {
@@ -83,6 +85,9 @@ const checkExhaustion = () => {
 };
 
 export const query = async (text: string, params?: unknown[]) => {
+  if (isShuttingDown) {
+    throw new Error("Database pool is shutting down");
+  }
   checkExhaustion();
   return withRetry(async () => {
     const start = Date.now();
@@ -98,6 +103,9 @@ export const query = async (text: string, params?: unknown[]) => {
 };
 
 export const getClient = async () => {
+  if (isShuttingDown) {
+    throw new Error("Database pool is shutting down");
+  }
   checkExhaustion();
   return withRetry(async () => {
     const client = await pool.connect();
@@ -105,16 +113,26 @@ export const getClient = async () => {
   });
 };
 
-export const closePool = async () => {
+const waitForPoolToDrain = async (timeoutMs: number): Promise<void> => {
+  const startedAt = Date.now();
+
+  while (pool.totalCount > 0 && pool.totalCount !== pool.idleCount) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error(
+        `Timed out waiting for pool to drain active clients after ${timeoutMs}ms`,
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+};
+
+export const closePool = async (options?: { timeoutMs?: number }) => {
+  const timeoutMs = options?.timeoutMs ?? 10_000;
+  isShuttingDown = true;
   clearInterval(metricsInterval);
+  await waitForPoolToDrain(timeoutMs);
   await pool.end();
 };
 
 export default pool;
-
-// Add drain method for graceful shutdown
-if (!(pool as any).drain) {
-  (pool as any).drain = async () => {
-    await pool.end();
-  };
-}

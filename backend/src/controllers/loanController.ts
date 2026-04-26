@@ -1,6 +1,3 @@
-
-
-
 import type { Request, Response, NextFunction } from "express";
 import { query } from "../db/connection.js";
 import {
@@ -30,7 +27,9 @@ export const createTestLoan = asyncHandler(
     const borrower = req.user?.publicKey || "test-borrower";
 
     if (!amount || !term) {
-      res.status(400).json({ success: false, message: "amount and term required" });
+      res
+        .status(400)
+        .json({ success: false, message: "amount and term required" });
       return;
     }
 
@@ -45,7 +44,11 @@ export const createTestLoan = asyncHandler(
       [loanId, borrower, amount, term],
     );
 
-    res.json({ success: true, id: loanId, loan: { id: loanId, amount, term, borrower } });
+    res.json({
+      success: true,
+      id: loanId,
+      loan: { id: loanId, amount, term, borrower },
+    });
   },
 );
 
@@ -71,7 +74,10 @@ export const markLoanDefaulted = asyncHandler(
       [loanId, borrower],
     );
 
-    res.json({ success: true, message: "Loan marked as defaulted for test setup." });
+    res.json({
+      success: true,
+      message: "Loan marked as defaulted for test setup.",
+    });
   },
 );
 
@@ -402,12 +408,11 @@ export const getLoanDetails = asyncHandler(
   async (req: Request, res: Response) => {
     const { loanId } = req.params;
 
-
     const eventsResult = await query(
-      `SELECT event_type, amount, ledger, ledger_closed_at, tx_hash, interest_rate_bps, term_ledgers
+      `SELECT id, event_type, amount, ledger, ledger_closed_at, tx_hash, interest_rate_bps, term_ledgers
        FROM loan_events
-       WHERE loan_id = $1
-       ORDER BY ledger_closed_at ASC`,
+        WHERE loan_id = $1
+        ORDER BY ledger_closed_at ASC, ledger ASC, id ASC`,
       [loanId],
     );
 
@@ -424,9 +429,19 @@ export const getLoanDetails = asyncHandler(
     const requestEvent = events.find(
       (event: any) => event.event_type === "LoanRequested",
     );
-    const approvalEvent = events.find(
+    const approvalEvents = events.filter(
       (event: any) => event.event_type === "LoanApproved",
     );
+    if (approvalEvents.length > 1) {
+      logger.warn("Duplicate LoanApproved events detected for loan", {
+        loanId,
+        duplicateCount: approvalEvents.length,
+      });
+    }
+    const approvalEvent =
+      approvalEvents.length > 0
+        ? approvalEvents[approvalEvents.length - 1]
+        : undefined;
     const repaymentEvents = events.filter(
       (event: any) => event.event_type === "LoanRepaid",
     );
@@ -456,7 +471,8 @@ export const getLoanDetails = asyncHandler(
         `SELECT ledger, ledger_closed_at FROM loan_events WHERE loan_id = $1 AND ledger_closed_at <= $2 ORDER BY ledger_closed_at DESC LIMIT 1`,
         [loanId, disputeCreatedAt],
       );
-      freezeLedger = ledgerResult.rows.length > 0 ? ledgerResult.rows[0].ledger : null;
+      freezeLedger =
+        ledgerResult.rows.length > 0 ? ledgerResult.rows[0].ledger : null;
     }
 
     let elapsedLedgers: number;
@@ -508,10 +524,10 @@ export const getLoanAmortizationSchedule = asyncHandler(
     const { loanId } = req.params;
 
     const eventsResult = await query(
-      `SELECT event_type, amount, ledger_closed_at, interest_rate_bps, term_ledgers
+      `SELECT id, event_type, amount, ledger, ledger_closed_at, interest_rate_bps, term_ledgers
        FROM loan_events
-       WHERE loan_id = $1
-       ORDER BY ledger_closed_at ASC`,
+        WHERE loan_id = $1
+        ORDER BY ledger_closed_at ASC, ledger ASC, id ASC`,
       [loanId],
     );
 
@@ -527,9 +543,13 @@ export const getLoanAmortizationSchedule = asyncHandler(
     const requestEvent = events.find(
       (event: any) => event.event_type === "LoanRequested",
     );
-    const approvalEvent = events.find(
+    const approvalEvents = events.filter(
       (event: any) => event.event_type === "LoanApproved",
     );
+    const approvalEvent =
+      approvalEvents.length > 0
+        ? approvalEvents[approvalEvents.length - 1]
+        : undefined;
 
     if (!requestEvent || !approvalEvent || !requestEvent.amount) {
       throw AppError.notFound(

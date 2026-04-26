@@ -50,9 +50,9 @@ export const startIndexer = (): void => {
 /**
  * Stop the event indexer
  */
-export const stopIndexer = (): void => {
+export const stopIndexer = async (): Promise<void> => {
   if (indexerInstance) {
-    indexerInstance.stop();
+    await indexerInstance.stop();
     indexerInstance = null;
     logger.info("Event indexer stopped");
   }

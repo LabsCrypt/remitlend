@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Stellar address regex (56 chars, starts with G, base32)
-const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{54}$/;
+const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{55}$/;
 
 // Schema for POST /remittances
 export const createRemittanceSchema = z.object({
