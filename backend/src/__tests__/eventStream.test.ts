@@ -104,7 +104,7 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeBorrower(
+    const unsubscribe = eventStreamService.subscribeAddress(
       "testUser",
       "testUser",
       mockRes,
@@ -134,7 +134,7 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeBorrower(
+    const unsubscribe = eventStreamService.subscribeAddress(
       "BORROWER1",
       "BORROWER1",
       mockRes,
@@ -143,7 +143,7 @@ describe("EventStreamService", () => {
     eventStreamService.broadcast({
       eventId: "evt-1",
       eventType: "LoanRepaid",
-      borrower: "BORROWER1",
+      address: "BORROWER1",
       ledger: 1000,
       ledgerClosedAt: "2026-03-01T00:00:00Z",
       txHash: "abc123",
@@ -171,7 +171,7 @@ describe("EventStreamService", () => {
     eventStreamService.broadcast({
       eventId: "evt-2",
       eventType: "LoanApproved",
-      borrower: "SOMEONE",
+      address: "SOMEONE",
       ledger: 2000,
       ledgerClosedAt: "2026-03-02T00:00:00Z",
       txHash: "def456",
@@ -194,7 +194,7 @@ describe("EventStreamService", () => {
       write: jest.fn(),
     } as unknown as import("express").Response;
 
-    const unsubscribe = eventStreamService.subscribeBorrower(
+    const unsubscribe = eventStreamService.subscribeAddress(
       "BORROWER_A",
       "BORROWER_A",
       mockRes,
@@ -203,7 +203,7 @@ describe("EventStreamService", () => {
     eventStreamService.broadcast({
       eventId: "evt-3",
       eventType: "LoanRepaid",
-      borrower: "BORROWER_B",
+      address: "BORROWER_B",
       ledger: 3000,
       ledgerClosedAt: "2026-03-03T00:00:00Z",
       txHash: "ghi789",
@@ -223,17 +223,17 @@ describe("EventStreamService", () => {
     expect(eventStreamService.canOpenConnection("BORROWER_LIMIT")).toBe(true);
 
     const unsubscribers = [
-      eventStreamService.subscribeBorrower(
+      eventStreamService.subscribeAddress(
         "BORROWER_LIMIT",
         "BORROWER_LIMIT",
         createMockResponse(),
       ),
-      eventStreamService.subscribeBorrower(
+      eventStreamService.subscribeAddress(
         "BORROWER_LIMIT",
         "BORROWER_LIMIT",
         createMockResponse(),
       ),
-      eventStreamService.subscribeBorrower(
+      eventStreamService.subscribeAddress(
         "BORROWER_LIMIT",
         "BORROWER_LIMIT",
         createMockResponse(),
@@ -256,7 +256,7 @@ describe("EventStreamService", () => {
       end: jest.fn(),
     } as unknown as import("express").Response;
 
-    eventStreamService.subscribeBorrower("BORROWER1", "BORROWER1", borrowerRes);
+    eventStreamService.subscribeAddress("BORROWER1", "BORROWER1", borrowerRes);
     eventStreamService.subscribeAll("ADMIN1", adminRes);
 
     eventStreamService.closeAllConnections("Server shutting down");
@@ -280,7 +280,7 @@ describe("EventStreamService", () => {
     eventStreamService.sendEvent(mockRes, {
       eventId: "evt-99",
       eventType: "LoanRequested",
-      borrower: "GBORROWER",
+      address: "GBORROWER",
       ledger: 999,
       ledgerClosedAt: "2026-03-09T00:00:00Z",
       txHash: "xyz999",

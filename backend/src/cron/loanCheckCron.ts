@@ -15,11 +15,11 @@ export function startLoanDueCheckCron() {
       // Find loans where a repayment is due in the next 24 hours
       // This is a simplified query; in a real app, you'd check against a repayment schedule table
       const result = await query(`
-        SELECT le.loan_id, le.borrower, le.amount
-        FROM loan_events le
+        SELECT le.loan_id, le.address, le.amount
+        FROM contract_events le
         WHERE le.event_type = 'LoanApproved'
           AND NOT EXISTS (
-            SELECT 1 FROM loan_events re 
+            SELECT 1 FROM contract_events re 
             WHERE re.loan_id = le.loan_id AND re.event_type = 'LoanRepaid'
           )
           AND le.ledger_closed_at < NOW() - INTERVAL '30 days' -- Simplified due logic
@@ -27,7 +27,7 @@ export function startLoanDueCheckCron() {
 
       for (const loan of result.rows) {
         await notificationService.createNotification({
-          userId: loan.borrower,
+          userId: loan.address,
           type: "repayment_due",
           title: "Repayment Due Soon",
           message: `Your repayment for loan #${loan.loan_id} of ${loan.amount} is due.`,

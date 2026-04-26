@@ -12,7 +12,7 @@ export async function getInactiveBorrowers() {
   const result = await query(`
     SELECT b.id, b.score, MAX(e.ledger_closed_at) AS last_repayment
     FROM borrowers b
-    LEFT JOIN loan_events e ON b.id = e.borrower AND e.event_type = 'LoanRepaid'
+    LEFT JOIN contract_events e ON b.id = e.address AND e.event_type = 'LoanRepaid'
     GROUP BY b.id, b.score
     HAVING MAX(e.ledger_closed_at) IS NULL OR MAX(e.ledger_closed_at) < NOW() - INTERVAL '1 month'
   `);

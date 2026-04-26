@@ -12,7 +12,7 @@ describe("Integration: EventIndexer end-to-end", () => {
       return;
     }
 
-    await query("DELETE FROM loan_events");
+    await query("DELETE FROM contract_events");
     await query("DELETE FROM indexer_state");
     await query("INSERT INTO indexer_state (last_indexed_ledger) VALUES (0)");
   });
@@ -22,11 +22,11 @@ describe("Integration: EventIndexer end-to-end", () => {
       return;
     }
 
-    await query("DELETE FROM loan_events");
+    await query("DELETE FROM contract_events");
     await query("DELETE FROM indexer_state");
   });
 
-  it("should ingest LoanApproved event and persist it to loan_events", async () => {
+  it("should ingest LoanApproved event and persist it to contract_events", async () => {
     if (!runIntegration) {
       console.warn(
         "Skipping integration test because RUN_INDEXER_INTEGRATION != true",
@@ -81,14 +81,14 @@ describe("Integration: EventIndexer end-to-end", () => {
     expect(chunkResult.insertedEvents).toBe(1);
 
     const rows = await query(
-      "SELECT * FROM loan_events WHERE event_type = $1",
+      "SELECT * FROM contract_events WHERE event_type = $1",
       ["LoanApproved"],
     );
     expect(rows.rows.length).toBe(1);
 
     const row = rows.rows[0];
     expect(row.loan_id).toBe(loanId);
-    expect(row.borrower).toBe(borrowerAddress);
+    expect(row.address).toBe(borrowerAddress);
     expect(row.tx_hash).toBe("txhash-integration-001");
 
     expect(dispatchSpy).toHaveBeenCalledTimes(1);

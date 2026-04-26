@@ -21,7 +21,7 @@ export const getPoolStats = asyncHandler(
         COALESCE(SUM(CASE WHEN event_type = 'Deposit' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
           - COALESCE(SUM(CASE WHEN event_type = 'Withdraw' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
         AS total_deposits
-      FROM loan_events
+      FROM contract_events
       WHERE event_type IN ('Deposit', 'Withdraw')
     `),
       query(`
@@ -32,7 +32,7 @@ export const getPoolStats = asyncHandler(
         COALESCE(SUM(CASE WHEN event_type = 'LoanApproved' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
           - COALESCE(SUM(CASE WHEN event_type = 'LoanRepaid' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
         AS total_outstanding
-      FROM loan_events
+      FROM contract_events
       WHERE event_type IN ('LoanApproved', 'LoanRepaid')
     `),
     ]);
@@ -81,9 +81,9 @@ export const getDepositorPortfolio = asyncHandler(
           - COALESCE(SUM(CASE WHEN event_type = 'Withdraw' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
         AS deposit_amount,
         MIN(CASE WHEN event_type = 'Deposit' THEN ledger_closed_at END) AS first_deposit_at
-      FROM loan_events
+      FROM contract_events
       WHERE event_type IN ('Deposit', 'Withdraw')
-        AND borrower = $1
+        AND address = $1
       `,
         [address],
       ),
@@ -92,7 +92,7 @@ export const getDepositorPortfolio = asyncHandler(
         COALESCE(SUM(CASE WHEN event_type = 'Deposit' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
           - COALESCE(SUM(CASE WHEN event_type = 'Withdraw' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
         AS pool_total
-      FROM loan_events
+      FROM contract_events
       WHERE event_type IN ('Deposit', 'Withdraw')
     `),
     ]);

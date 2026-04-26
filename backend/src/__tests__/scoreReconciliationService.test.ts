@@ -78,9 +78,9 @@ describe("scoreReconciliationService", () => {
 
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { borrower: "GBORROWER1", current_score: 700 },
-        { borrower: "GBORROWER2", current_score: 600 },
-        { borrower: "GBORROWER3", current_score: null },
+        { address: "GBORROWER1", current_score: 700 },
+        { address: "GBORROWER2", current_score: 600 },
+        { address: "GBORROWER3", current_score: null },
       ],
     });
 
@@ -103,13 +103,13 @@ describe("scoreReconciliationService", () => {
     });
     expect(result.divergences).toEqual([
       {
-        borrower: "GBORROWER2",
+        address: "GBORROWER2",
         dbScore: 600,
         contractScore: 660,
         absoluteDifference: 60,
       },
       {
-        borrower: "GBORROWER3",
+        address: "GBORROWER3",
         dbScore: null,
         contractScore: 620,
         absoluteDifference: null,

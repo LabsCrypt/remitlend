@@ -86,25 +86,25 @@ class ScoreReconciliationService {
     const result = await query(
       `
       WITH active_loans AS (
-        SELECT approved.loan_id, approved.borrower
-        FROM loan_events approved
+        SELECT approved.loan_id, approved.address
+        FROM contract_events approved
         WHERE approved.event_type = 'LoanApproved'
           AND approved.loan_id IS NOT NULL
-          AND approved.borrower IS NOT NULL
-          AND approved.borrower <> ''
+          AND approved.address IS NOT NULL
+          AND approved.address <> ''
           AND NOT EXISTS (
             SELECT 1
-            FROM loan_events e
+            FROM contract_events e
             WHERE e.loan_id = approved.loan_id
               AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
           )
       )
       SELECT DISTINCT
-        a.borrower,
+        a.address,
         s.current_score
       FROM active_loans a
-      LEFT JOIN scores s ON s.user_id = a.borrower
-      ORDER BY a.borrower ASC
+      LEFT JOIN scores s ON s.user_id = a.address
+      ORDER BY a.address ASC
       LIMIT $1
       `,
       [this.getMaxBorrowersPerRun()],
@@ -112,12 +112,12 @@ class ScoreReconciliationService {
 
     return result.rows.map((row) => {
       const record = row as {
-        borrower?: string;
+        address?: string;
         current_score?: number | string | null;
       };
 
       return {
-        borrower: String(record.borrower ?? ""),
+        borrower: String(record.address ?? ""),
         dbScore:
           record.current_score === null || record.current_score === undefined
             ? null

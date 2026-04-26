@@ -94,10 +94,15 @@ type QuarantineEventRow = {
 };
 
 const buildIndexerFromConfig = (): EventIndexer => {
-  const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
+  const contractIds = [
+    process.env.LOAN_MANAGER_CONTRACT_ID,
+    process.env.LENDING_POOL_CONTRACT_ID,
+    process.env.REMITTANCE_NFT_CONTRACT_ID,
+    process.env.GOVERNANCE_CONTRACT_ID,
+  ].filter((id): id is string => Boolean(id && id.trim().length > 0));
 
-  if (!contractId) {
-    throw new Error("LOAN_MANAGER_CONTRACT_ID is not configured");
+  if (contractIds.length === 0) {
+    throw new Error("No contract IDs are configured");
   }
 
   const rpcUrl = getStellarRpcUrl();
@@ -105,7 +110,7 @@ const buildIndexerFromConfig = (): EventIndexer => {
 
   return new EventIndexer({
     rpcUrl,
-    contractId,
+    contractIds,
     pollIntervalMs: 30_000,
     batchSize,
   });
@@ -193,12 +198,12 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
     const state = result.rows[0];
     const eventCounts = await query(
       `SELECT event_type, COUNT(*) as count
-       FROM loan_events
+       FROM contract_events
        GROUP BY event_type`,
       [],
     );
     const totalEvents = await query(
-      "SELECT COUNT(*) as total FROM loan_events",
+      "SELECT COUNT(*) as total FROM contract_events",
       [],
     );
 
@@ -255,7 +260,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
     const { params, whereClause } = buildEventFilters(
       req,
       [borrower],
-      "WHERE borrower = $1",
+      "WHERE address = $1",
     );
     logger.debug("getBorrowerEvents after filters", {
       params,
@@ -264,9 +269,9 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
     const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
     const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
-      SELECT event_id, event_type, loan_id, borrower, amount,
+      SELECT event_id, event_type, loan_id, address, amount,
              ledger, ledger_closed_at, tx_hash, created_at, id
-      FROM loan_events
+      FROM contract_events
       ${whereClause}
       ${cursorClause}
       ORDER BY id ASC
@@ -279,7 +284,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
+      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
     ]);
 
     logger.debug("getBorrowerEvents after query", { result, totalCount });
@@ -290,7 +295,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
 
     const response = createCursorPaginatedResponse(
       {
-        borrower,
+        address: borrower,
         events,
       },
       Number.parseInt(totalCount.rows[0].count, 10),
@@ -343,9 +348,9 @@ export const getLoanEvents = async (req: Request, res: Response) => {
     const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
     const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
-      SELECT event_id, event_type, loan_id, borrower, amount,
+      SELECT event_id, event_type, loan_id, address, amount,
              ledger, ledger_closed_at, tx_hash, created_at, id
-      FROM loan_events
+      FROM contract_events
       ${whereClause}
       ${cursorClause}
       ORDER BY id ASC
@@ -354,7 +359,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
+      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
     ]);
 
     const hasNext = result.rows.length > limit;
@@ -403,9 +408,9 @@ export const getRecentEvents = async (req: Request, res: Response) => {
     const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
     const cursorClause = `${whereClause.trim().length ? "AND" : "WHERE"} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
     const queryText = `
-      SELECT event_id, event_type, loan_id, borrower, amount,
+      SELECT event_id, event_type, loan_id, address, amount,
              ledger, ledger_closed_at, tx_hash, created_at, id
-      FROM loan_events
+      FROM contract_events
       ${whereClause}
       ${cursorClause}
       ORDER BY id ASC
@@ -414,7 +419,7 @@ export const getRecentEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM loan_events ${whereClause}`, params),
+      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
     ]);
 
     logger.debug("getRecentEvents", {

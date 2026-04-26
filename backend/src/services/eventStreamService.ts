@@ -7,7 +7,7 @@ export interface LoanEventPayload {
   eventId: string;
   eventType: string;
   loanId?: number | undefined;
-  borrower: string;
+  address?: string | undefined;
   amount?: string | undefined;
   ledger: number;
   ledgerClosedAt: string;
@@ -151,34 +151,34 @@ class EventStreamService {
    * Registers an SSE client for a specific borrower's events.
    * Returns an unsubscribe function for cleanup on disconnect.
    */
-  subscribeBorrower(
+  subscribeAddress(
     userKey: string,
-    borrower: string,
+    address: string,
     res: SseClient,
   ): () => void {
-    if (!borrowerClients.has(borrower)) {
-      borrowerClients.set(borrower, new Set());
+    if (!borrowerClients.has(address)) {
+      borrowerClients.set(address, new Set());
     }
     const clientInfo: ClientInfo = { res, userKey };
-    borrowerClients.get(borrower)!.add(clientInfo);
+    borrowerClients.get(address)!.add(clientInfo);
     this.registerUserClient(userKey, res);
     this.startHeartbeat();
 
     logger.info("SSE client subscribed to borrower events", {
-      borrower,
+      address,
       userKey,
       activeConnections: this.getUserConnectionCount(userKey),
     });
 
     return () => {
-      borrowerClients.get(borrower)?.delete(clientInfo);
-      if (borrowerClients.get(borrower)?.size === 0) {
-        borrowerClients.delete(borrower);
+      borrowerClients.get(address)?.delete(clientInfo);
+      if (borrowerClients.get(address)?.size === 0) {
+        borrowerClients.delete(address);
       }
       this.unregisterUserClient(userKey, res);
       this.stopHeartbeatIfEmpty();
-      logger.info("SSE client unsubscribed from borrower events", {
-        borrower,
+      logger.info("SSE client unsubscribed from address events", {
+        address,
         userKey,
         activeConnections: this.getUserConnectionCount(userKey),
       });
@@ -217,9 +217,9 @@ class EventStreamService {
    * - All admin clients
    */
   broadcast(event: LoanEventPayload): void {
-    // Push to borrower-specific clients with user identity verification
-    if (event.borrower) {
-      const clients = borrowerClients.get(event.borrower);
+    // Push to address-specific clients with user identity verification
+    if (event.address) {
+      const clients = borrowerClients.get(event.address);
       if (clients?.size) {
         const clientsToRemove: ClientInfo[] = [];
         for (const clientInfo of clients) {
@@ -227,8 +227,8 @@ class EventStreamService {
             // Verify user identity before sending (fixes #471)
             this.sendEvent(clientInfo.res, event);
           } catch (err) {
-            logger.error("SSE write error (borrower)", {
-              borrower: event.borrower,
+            logger.error("SSE write error (address)", {
+              address: event.address,
               userKey: clientInfo.userKey,
               err,
             });

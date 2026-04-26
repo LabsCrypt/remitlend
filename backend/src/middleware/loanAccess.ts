@@ -28,15 +28,15 @@ export const requireLoanBorrowerAccess = asyncHandler(
     }
 
     const r = await query(
-      `SELECT borrower FROM loan_events WHERE loan_id = $1 LIMIT 1`,
+      `SELECT address FROM contract_events WHERE loan_id = $1 LIMIT 1`,
       [loanId],
     );
 
-    const row = r.rows[0] as { borrower: string } | undefined;
+    const row = r.rows[0] as { address: string } | undefined;
     if (!row) {
       throw AppError.notFound("Loan not found");
     }
-    if (row.borrower !== pk) {
+    if (row.address !== pk) {
       throw AppError.forbidden(
         "You are not authorized to access this loan",
         ErrorCode.ACCESS_DENIED,
@@ -66,15 +66,15 @@ export const requireLoanOwnership = asyncHandler(async (req, res, next) => {
   }
 
   const r = await query(
-    `SELECT borrower FROM loan_events WHERE loan_id = $1 LIMIT 1`,
+    `SELECT address FROM contract_events WHERE loan_id = $1 LIMIT 1`,
     [loanId],
   );
 
-  const row = r.rows[0] as { borrower: string } | undefined;
+  const row = r.rows[0] as { address: string } | undefined;
   if (!row) {
     throw AppError.notFound("Loan not found");
   }
-  if (row.borrower !== pk) {
+  if (row.address !== pk) {
     throw AppError.forbidden(
       "You are not authorized to access this loan",
       ErrorCode.ACCESS_DENIED,

@@ -70,15 +70,15 @@ beforeAll(async () => {
   authToken = mintToken();
 
   mockQuery.mockReset();
-  // [1] INSERT loan_events LoanRequested  RETURNING loan_id
-  // [2] INSERT loan_events LoanApproved
-  // [3] requireLoanBorrowerAccess: SELECT borrower FROM loan_events WHERE loan_id = 42
-  // [4] markLoanDefaulted: SELECT loan_id FROM loan_events (existence check)
-  // [5] markLoanDefaulted: INSERT loan_events LoanDefaulted
+  // [1] INSERT contract_events LoanRequested  RETURNING loan_id
+  // [2] INSERT contract_events LoanApproved
+  // [3] requireLoanBorrowerAccess: SELECT address FROM contract_events WHERE loan_id = 42
+  // [4] markLoanDefaulted: SELECT loan_id FROM contract_events (existence check)
+  // [5] markLoanDefaulted: INSERT contract_events LoanDefaulted
   mockQuery
     .mockResolvedValueOnce(dbRows([{ loan_id: LOAN_ID }]))
     .mockResolvedValueOnce(dbOk())
-    .mockResolvedValueOnce(dbRows([{ borrower: TEST_PUBLIC_KEY }]))
+    .mockResolvedValueOnce(dbRows([{ address: TEST_PUBLIC_KEY }]))
     .mockResolvedValueOnce(dbRows([{ loan_id: LOAN_ID }]))
     .mockResolvedValueOnce(dbOk());
 
@@ -112,7 +112,7 @@ describe('Loan Dispute/Appeal Mechanism', () => {
     /**
      * POST /api/loans/9999/contest-default
      *   requireLoanBorrowerAccess for loanId=9999:
-     *   [1] SELECT borrower FROM loan_events WHERE loan_id = 9999 → no rows → 404
+     *   [1] SELECT address FROM contract_events WHERE loan_id = 9999 → no rows → 404
      *
      * Middleware throws notFound before contestDefault even runs.
      */
@@ -130,15 +130,15 @@ describe('Loan Dispute/Appeal Mechanism', () => {
     /**
      * POST /api/loans/42/contest-default
      *   requireLoanBorrowerAccess:
-     *   [1] SELECT borrower FROM loan_events WHERE loan_id = 42  → TEST_PUBLIC_KEY ✓
+     *   [1] SELECT address FROM contract_events WHERE loan_id = 42  → TEST_PUBLIC_KEY ✓
      *
      *   contestDefault:
-     *   [2] SELECT loan_events WHERE event_type='LoanDefaulted'  → found
+     *   [2] SELECT contract_events WHERE event_type='LoanDefaulted'  → found
      *   [3] INSERT loan_disputes RETURNING id                    → disputeId
-     *   [4] INSERT loan_events LoanDisputed
+     *   [4] INSERT contract_events LoanDisputed
      */
     mockQuery
-      .mockResolvedValueOnce(dbRows([{ borrower: TEST_PUBLIC_KEY }]))  // [1] loanAccess
+      .mockResolvedValueOnce(dbRows([{ address: TEST_PUBLIC_KEY }]))  // [1] loanAccess
       .mockResolvedValueOnce(dbRows([{ loan_id: LOAN_ID }]))           // [2] defaulted check
       .mockResolvedValueOnce(dbRows([{ id: DISPUTE_ID }]))             // [3] dispute INSERT
       .mockResolvedValueOnce(dbOk());                                   // [4] LoanDisputed event
@@ -158,16 +158,16 @@ describe('Loan Dispute/Appeal Mechanism', () => {
     /**
      * GET /api/loans/42
      *   requireLoanBorrowerAccess:
-     *   [1] SELECT borrower FROM loan_events WHERE loan_id = 42  → TEST_PUBLIC_KEY ✓
+     *   [1] SELECT address FROM contract_events WHERE loan_id = 42  → TEST_PUBLIC_KEY ✓
      *
      *   getLoanDetails:
-     *   [2] SELECT all loan_events for loanId
+     *   [2] SELECT all contract_events for loanId
      *   [3] SELECT last_indexed_ledger (getLatestLedger)
      *   [4] SELECT loan_disputes WHERE status='open'             → open dispute found
-     *   [5] SELECT loan_events for freeze ledger lookup
+     *   [5] SELECT contract_events for freeze ledger lookup
      */
     mockQuery
-      .mockResolvedValueOnce(dbRows([{ borrower: TEST_PUBLIC_KEY }]))  // [1] loanAccess
+      .mockResolvedValueOnce(dbRows([{ address: TEST_PUBLIC_KEY }]))  // [1] loanAccess
       .mockResolvedValueOnce(dbRows([                                   // [2] all loan events
         { event_type: 'LoanRequested', amount: '1000', ledger: 100, ledger_closed_at: new Date().toISOString(), tx_hash: null, interest_rate_bps: null,  term_ledgers: null  },
         { event_type: 'LoanApproved',  amount: '1000', ledger: 101, ledger_closed_at: new Date().toISOString(), tx_hash: null, interest_rate_bps: 1200,  term_ledgers: 17280 },
@@ -191,7 +191,7 @@ describe('Loan Dispute/Appeal Mechanism', () => {
      *   resolveLoanDispute:
      *   [1] SELECT loan_disputes WHERE id = disputeId AND status='open'  → found
      *   [2] UPDATE loan_disputes SET status='resolved'
-     *   [3] INSERT loan_events DefaultConfirmed  (action = 'confirm')
+     *   [3] INSERT contract_events DefaultConfirmed  (action = 'confirm')
      */
     mockQuery
       .mockResolvedValueOnce(dbRows([{ id: disputeId, loan_id: LOAN_ID, borrower: TEST_PUBLIC_KEY, status: 'open' }])) // [1]
@@ -212,7 +212,7 @@ describe('Loan Dispute/Appeal Mechanism', () => {
      * resolveLoanDispute:
      *   [1] SELECT loan_disputes WHERE id = disputeId AND status='open'  → found
      *   [2] UPDATE loan_disputes SET status='resolved'
-     *   [3] INSERT loan_events DefaultReversed  (action = 'reverse')
+     *   [3] INSERT contract_events DefaultReversed  (action = 'reverse')
      */
     mockQuery
       .mockResolvedValueOnce(dbRows([{ id: disputeId, loan_id: LOAN_ID, borrower: TEST_PUBLIC_KEY, status: 'open' }])) // [1]

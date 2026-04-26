@@ -49,7 +49,7 @@ interface LoanEventSeed {
   eventId: string;
   eventType: string;
   loanId?: number;
-  borrower: string;
+  address: string;
   amount?: string;
   ledger: number;
   ledgerClosedAt: Date;
@@ -247,7 +247,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1001-requested",
     eventType: "LoanRequested",
     loanId: 1001,
-    borrower: aliceUser.publicKey,
+    address: aliceUser.publicKey,
     amount: "1200",
     ledger: 240100,
     ledgerClosedAt: new Date("2026-03-20T10:00:00.000Z"),
@@ -260,7 +260,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1001-approved",
     eventType: "LoanApproved",
     loanId: 1001,
-    borrower: aliceUser.publicKey,
+    address: aliceUser.publicKey,
     amount: "1200",
     ledger: 240105,
     ledgerClosedAt: new Date("2026-03-20T10:15:00.000Z"),
@@ -275,7 +275,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1002-requested",
     eventType: "LoanRequested",
     loanId: 1002,
-    borrower: bolaUser.publicKey,
+    address: bolaUser.publicKey,
     amount: "800",
     ledger: 239500,
     ledgerClosedAt: new Date("2026-03-12T09:00:00.000Z"),
@@ -288,7 +288,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1002-approved",
     eventType: "LoanApproved",
     loanId: 1002,
-    borrower: bolaUser.publicKey,
+    address: bolaUser.publicKey,
     amount: "800",
     ledger: 239506,
     ledgerClosedAt: new Date("2026-03-12T09:30:00.000Z"),
@@ -303,7 +303,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1002-repaid",
     eventType: "LoanRepaid",
     loanId: 1002,
-    borrower: bolaUser.publicKey,
+    address: bolaUser.publicKey,
     amount: "824",
     ledger: 239900,
     ledgerClosedAt: new Date("2026-03-18T11:00:00.000Z"),
@@ -316,7 +316,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1003-requested",
     eventType: "LoanRequested",
     loanId: 1003,
-    borrower: chidiUser.publicKey,
+    address: chidiUser.publicKey,
     amount: "650",
     ledger: 238200,
     ledgerClosedAt: new Date("2026-03-03T08:00:00.000Z"),
@@ -329,7 +329,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1003-approved",
     eventType: "LoanApproved",
     loanId: 1003,
-    borrower: chidiUser.publicKey,
+    address: chidiUser.publicKey,
     amount: "650",
     ledger: 238205,
     ledgerClosedAt: new Date("2026-03-03T08:25:00.000Z"),
@@ -344,7 +344,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1003-repaid-partial",
     eventType: "LoanRepaid",
     loanId: 1003,
-    borrower: chidiUser.publicKey,
+    address: chidiUser.publicKey,
     amount: "210",
     ledger: 238600,
     ledgerClosedAt: new Date("2026-03-08T10:00:00.000Z"),
@@ -357,7 +357,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1003-defaulted",
     eventType: "LoanDefaulted",
     loanId: 1003,
-    borrower: chidiUser.publicKey,
+    address: chidiUser.publicKey,
     ledger: 239100,
     ledgerClosedAt: new Date("2026-03-16T14:00:00.000Z"),
     txHash: "seed-tx-1003-defaulted",
@@ -369,7 +369,7 @@ const loanEventSeeds: LoanEventSeed[] = [
     eventId: "seed-loan-1004-requested",
     eventType: "LoanRequested",
     loanId: 1004,
-    borrower: daraUser.publicKey,
+    address: daraUser.publicKey,
     amount: "500",
     ledger: 240990,
     ledgerClosedAt: new Date("2026-03-25T16:00:00.000Z"),
@@ -603,15 +603,15 @@ const seedLoanHistory = async () => {
 };
 
 const seedLoanEvents = async () => {
-  logger.info("Seeding loan_events...");
+  logger.info("Seeding contract_events...");
 
   for (const event of loanEventSeeds) {
     await query(
-      `INSERT INTO loan_events (
+      `INSERT INTO contract_events (
          event_id,
          event_type,
          loan_id,
-         borrower,
+         address,
          amount,
          ledger,
          ledger_closed_at,
@@ -628,7 +628,7 @@ const seedLoanEvents = async () => {
        DO UPDATE SET
          event_type = EXCLUDED.event_type,
          loan_id = EXCLUDED.loan_id,
-         borrower = EXCLUDED.borrower,
+         address = EXCLUDED.address,
          amount = EXCLUDED.amount,
          ledger = EXCLUDED.ledger,
          ledger_closed_at = EXCLUDED.ledger_closed_at,
@@ -642,7 +642,7 @@ const seedLoanEvents = async () => {
         event.eventId,
         event.eventType,
         event.loanId ?? null,
-        event.borrower,
+        event.address,
         event.amount ?? null,
         event.ledger,
         event.ledgerClosedAt,
@@ -752,7 +752,7 @@ const resetDevelopmentData = async () => {
   await query(
     `TRUNCATE TABLE
        notifications,
-       loan_events,
+       contract_events,
        loan_history,
        remittance_history,
        scores,

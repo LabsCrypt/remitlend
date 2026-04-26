@@ -157,7 +157,7 @@ export class DefaultChecker {
       `
       WITH approved AS (
         SELECT loan_id, MAX(ledger) AS approved_ledger
-        FROM loan_events
+        FROM contract_events
         WHERE event_type = 'LoanApproved'
           AND loan_id IS NOT NULL
         GROUP BY loan_id
@@ -170,7 +170,7 @@ export class DefaultChecker {
         FROM approved a
         WHERE NOT EXISTS (
           SELECT 1
-          FROM loan_events e
+          FROM contract_events e
           WHERE e.loan_id = a.loan_id
             AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
         )
@@ -198,7 +198,7 @@ export class DefaultChecker {
       `
       WITH approved AS (
         SELECT loan_id, MAX(ledger) AS approved_ledger
-        FROM loan_events
+        FROM contract_events
         WHERE event_type = 'LoanApproved'
           AND loan_id IS NOT NULL
         GROUP BY loan_id
@@ -210,7 +210,7 @@ export class DefaultChecker {
         FROM approved a
         WHERE NOT EXISTS (
           SELECT 1
-          FROM loan_events e
+          FROM contract_events e
           WHERE e.loan_id = a.loan_id
             AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
         )

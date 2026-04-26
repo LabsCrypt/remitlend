@@ -186,8 +186,8 @@ export const getScoreBreakdown = asyncHandler(
            ledger_closed_at,
            amount,
            term_ledgers
-         FROM loan_events
-         WHERE borrower = $1
+         FROM contract_events
+         WHERE address = $1
        ),
        -- Loan approval details (ledger and term)
        approved_loans AS (
@@ -285,8 +285,8 @@ export const getScoreBreakdown = asyncHandler(
       `SELECT 
          event_type,
          ledger_closed_at
-       FROM loan_events
-       WHERE borrower = $1 AND event_type IN ('LoanRepaid', 'LoanDefaulted')
+       FROM contract_events
+       WHERE address = $1 AND event_type IN ('LoanRepaid', 'LoanDefaulted')
        ORDER BY ledger_closed_at ASC`,
       [userId],
     );

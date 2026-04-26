@@ -16,8 +16,8 @@ export const getRemittanceHistory = asyncHandler(
     // 2. Fetch all repayment and default events for history calculation
     const eventsResult = await query(
       `SELECT event_type, amount, ledger_closed_at 
-       FROM loan_events 
-       WHERE borrower = $1 AND event_type IN ('LoanRepaid', 'LoanDefaulted')
+       FROM contract_events 
+       WHERE address = $1 AND event_type IN ('LoanRepaid', 'LoanDefaulted')
        ORDER BY ledger_closed_at ASC`,
       [userId],
     );

@@ -48,13 +48,13 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
   if (action === 'confirm') {
     // Leave loan as defaulted, optionally log event
     await query(
-      `INSERT INTO loan_events (loan_id, borrower, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultConfirmed', NULL, NULL, NOW())`,
+      `INSERT INTO contract_events (loan_id, address, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultConfirmed', NULL, NULL, NOW())`,
       [dispute.loan_id, dispute.borrower],
     );
   } else if (action === 'reverse') {
     // Insert event to mark loan as active again
     await query(
-      `INSERT INTO loan_events (loan_id, borrower, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultReversed', NULL, NULL, NOW())`,
+      `INSERT INTO contract_events (loan_id, address, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultReversed', NULL, NULL, NOW())`,
       [dispute.loan_id, dispute.borrower],
     );
   }
