@@ -15,7 +15,7 @@ const mockBroadcast = jest.fn();
 const mockCreateNotification = jest
   .fn<() => Promise<void>>()
   .mockResolvedValue(undefined);
-const mockGetScoreConfig = jest.fn(() => ({
+const mockGetScoreConfig = jest.fn(async () => ({
   repaymentDelta: 15,
   defaultPenalty: 50,
 }));
