@@ -97,6 +97,36 @@
       "pending": "Nakabinbin"
     }
   },
+  "Kingdom": {
+    "title": "Kingdom Dashboard",
+    "description": "Subaybayan ang iyong pag-unlad, i-unlock ang mga tagumpay, at umangat sa mga ranggo",
+    "welcome": "Maligayang pagdating, {kingdomTitle}!",
+    "level": "Ngayon ay nasa Level {level} ka",
+    "achievements": "Mga Tagumpay",
+    "unlockedCount": "{unlocked} / {total}",
+    "progress": "Pag-unlad",
+    "unlocked": "I-unlock {date}",
+    "repaymentProgress": "Pag-unlad ng Pagbabayad"
+  },
+  "LoanCard": {
+    "totalOwed": "Kabuuang Utang",
+    "principal": "Principal",
+    "accruedInterest": "Naipon na Interes",
+    "interest": "Interes",
+    "nextPayment": "Susunod na Pagbabayad",
+    "daysRemaining": "{days} na araw na natitira",
+    "daysOverdue": "{days} na araw na lintasan",
+    "defaultedLabel": "Kontakin ang support upang makapagrecover",
+    "onTrack": "Sa Track",
+    "dueSoon": "Malapit nang Dapat Bayaran",
+    "overdue": "Lintasan",
+    "defaulted": "Defaulted",
+    "repayNow": "Bayaran Ngayon",
+    "payNowOverdue": "Bayaran Ngayon (Lintasan)",
+    "contactSupport": "Kontakin ang Support",
+    "viewDetails": "Tingnan ang Mga Detalye",
+    "details": "Mga Detalye"
+  },
   "Settings": {
     "language": "Wika",
     "selectLanguage": "Piliin ang Wika"

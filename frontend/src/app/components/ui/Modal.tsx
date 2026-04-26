@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { motion, AnimatePresence } from "framer-motion";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 /** Tool to merge Tailwind classes safely */
 function cn(...inputs: ClassValue[]) {
@@ -36,74 +37,15 @@ const Modal: React.FC<ModalProps> = ({
   size = "lg",
 }) => {
   const modalRef = React.useRef<HTMLDivElement>(null);
-  const triggerRef = React.useRef<HTMLElement | null>(null);
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const titleId = React.useId();
 
-  React.useEffect(() => {
-    if (isOpen) {
-      triggerRef.current = document.activeElement as HTMLElement;
-      document.body.style.overflow = "hidden";
-
-      // Delay slightly to ensure elements are rendered before focusing
-      requestAnimationFrame(() => {
-        if (!modalRef.current) return;
-        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        );
-        if (focusableElements.length) {
-          focusableElements[0].focus();
-        }
-      });
-    }
-
-    return () => {
-      document.body.style.overflow = "unset";
-      if (!isOpen && triggerRef.current) {
-        triggerRef.current.focus();
-      }
-    };
-  }, [isOpen]);
-
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isOpen) return;
-
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-
-      if (e.key === "Tab") {
-        if (!modalRef.current) return;
-
-        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        );
-
-        if (focusableElements.length === 0) {
-          e.preventDefault();
-          return;
-        }
-
-        const firstElement = focusableElements[0];
-        const lastElement = focusableElements[focusableElements.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === firstElement) {
-            e.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          if (document.activeElement === lastElement) {
-            e.preventDefault();
-            firstElement.focus();
-          }
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  useModalFocusTrap({
+    isOpen,
+    onClose,
+    containerRef: modalRef,
+    initialFocusRef: closeButtonRef,
+  });
 
   return (
     <AnimatePresence>
@@ -127,7 +69,8 @@ const Modal: React.FC<ModalProps> = ({
             ref={modalRef}
             role="dialog"
             aria-modal="true"
-            aria-labelledby={title ? "modal-title" : undefined}
+            aria-labelledby={title ? titleId : undefined}
+            tabIndex={-1}
             className={cn(
               "relative w-full overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-zinc-950 dark:border dark:border-zinc-800 focus:outline-none",
               sizeClasses[size],
@@ -137,13 +80,14 @@ const Modal: React.FC<ModalProps> = ({
             <div className="flex items-center justify-between border-b border-gray-100 p-6 dark:border-zinc-800">
               {title && (
                 <h3
-                  id="modal-title"
+                  id={titleId}
                   className="text-xl font-semibold text-gray-900 dark:text-zinc-100"
                 >
                   {title}
                 </h3>
               )}
               <button
+                ref={closeButtonRef}
                 onClick={onClose}
                 aria-label="Close modal"
                 className="rounded-full p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-900 dark:text-zinc-500"
@@ -160,3 +104,4 @@ const Modal: React.FC<ModalProps> = ({
 };
 
 export { Modal };
+export default Modal;

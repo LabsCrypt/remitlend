@@ -816,6 +816,7 @@ impl LoanManager {
     pub fn approve_loan(env: Env, loan_id: u32) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
+        // ── CHECKS ──────────────────────────────────────────────────────────
         let admin = Self::admin(&env);
         admin.require_auth();
         Self::require_not_paused(&env)?;
@@ -832,6 +833,7 @@ impl LoanManager {
             return Err(LoanError::LoanNotPending);
         }
 
+        // Read all instance-level config before any state mutations.
         let lending_pool: Address = env
             .storage()
             .instance()
@@ -842,6 +844,8 @@ impl LoanManager {
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
+
+        // Cross-contract READ for liquidity check — still in the CHECKS phase.
         let pool_client = PoolClient::new(&env, &lending_pool);
         let pool_balance = pool_client.pool_balance(&token);
         if pool_balance < loan.amount {
@@ -850,6 +854,11 @@ impl LoanManager {
 
         let term_ledgers = Self::read_default_term(&env);
 
+        // ── EFFECTS (all state mutations before any external calls) ─────────
+        // Capture values used in the transfer before mutating loan fields.
+        let borrower = loan.borrower.clone();
+        let transfer_amount = loan.amount;
+
         loan.status = LoanStatus::Approved;
         loan.due_date = env.ledger().sequence() + term_ledgers;
         loan.last_interest_ledger = env.ledger().sequence();
@@ -857,14 +866,17 @@ impl LoanManager {
             .due_date
             .checked_add(Self::grace_period_ledgers(&env))
             .expect("grace period overflow");
+
+        // Commit state before any cross-contract call (CEI pattern).
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
+
+        // ── INTERACTIONS (external calls last) ──────────────────────────────
         let token_client = TokenClient::new(&env, &token);
+        token_client.transfer(&lending_pool, &borrower, &transfer_amount);
 
-        token_client.transfer(&lending_pool, &loan.borrower, &loan.amount);
-
-        events::loan_approved(&env, loan_id, loan.borrower.clone());
-        events::loan_approved_by_admin(&env, admin, loan_id, loan.borrower.clone());
+        events::loan_approved(&env, loan_id, borrower.clone());
+        events::loan_approved_by_admin(&env, admin, loan_id, borrower);
 
         Ok(())
     }
