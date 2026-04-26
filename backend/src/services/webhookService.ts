@@ -7,7 +7,7 @@ export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "LoanApproved",
   "LoanRepaid",
   "LoanDefaulted",
-  "Seized",
+  "CollateralLiquidated",
   "Paused",
   "Unpaused",
   "MinScoreUpdated",
@@ -173,7 +173,7 @@ export class WebhookService {
     }
   }
 
-  private static async retryWebhookDelivery(
+  public static async retryWebhookDelivery(
     deliveryId: number,
     subscriptionId: number,
     callbackUrl: string,

@@ -22,6 +22,7 @@ pub enum NftError {
     ContractPaused = 13,
     InvalidHistoryHash = 14,
     NoProposedAdmin = 15,
+    RemintNotApproved = 16,
 }
 
 #[contracttype]
@@ -383,7 +384,7 @@ impl RemittanceNFT {
         history_hash: BytesN<32>,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
-        let admin_direct_mint = minter.is_none();
+        let _admin_direct_mint = minter.is_none();
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
@@ -397,21 +398,7 @@ impl RemittanceNFT {
         }
 
         if env.storage().persistent().has(&burned_key) {
-            let remint_approval_key = DataKey::RemintApproval(user.clone());
-            let has_approval = env.storage().persistent().has(&remint_approval_key);
-
-            if !admin_direct_mint && !has_approval {
-                return Err(NftError::BurnedRequiresApproval);
-            }
-
-            env.storage().persistent().remove(&burned_key);
-            env.storage().persistent().remove(&remint_approval_key);
-            env.storage()
-                .persistent()
-                .remove(&DataKey::Seized(user.clone()));
-            env.storage()
-                .persistent()
-                .remove(&DataKey::TransferCooldown(user.clone()));
+            return Err(NftError::BurnedRequiresApproval);
         }
 
         let metadata = RemittanceMetadata {
@@ -423,6 +410,78 @@ impl RemittanceNFT {
         Self::bump_persistent_ttl(&env, &metadata_key);
         env.events()
             .publish((symbol_short!("Mint"), user), initial_score);
+
+        Ok(())
+    }
+
+    /// Re-mint an NFT for a previously burned account.
+    ///
+    /// Unlike `mint()`, this function:
+    /// - Is admin-only (no authorized minter path)
+    /// - Requires a prior `approve_remint()` call (enforced via RemintApproval storage key)
+    /// - Emits a distinct `AdminRemint` event for audit trail separation
+    /// - Cannot be used for first-time mints (only works if `Burned(user)` is set)
+    ///
+    /// This separation ensures that burned-account recovery is always
+    /// intentional, admin-gated, and auditable on-chain separately from
+    /// normal minting activity.
+    pub fn admin_remint(
+        env: Env,
+        user: Address,
+        initial_score: u32,
+        history_hash: BytesN<32>,
+    ) -> Result<(), NftError> {
+        // Admin-only — no minter bypass allowed for remints.
+        Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env)?;
+
+        // Must be a previously burned account — not a first-time mint.
+        let burned_key = DataKey::Burned(user.clone());
+        if !env.storage().persistent().has(&burned_key) {
+            return Err(NftError::NftNotFound);
+        }
+
+        // Require explicit prior approval even for admin.
+        // approve_remint() must be called in a separate transaction first.
+        let remint_approval_key = DataKey::RemintApproval(user.clone());
+        if !env.storage().persistent().has(&remint_approval_key) {
+            return Err(NftError::RemintNotApproved);
+        }
+
+        // User must not already have an active NFT (sanity check).
+        let metadata_key = DataKey::Metadata(user.clone());
+        if env.storage().persistent().has(&metadata_key)
+            || env
+                .storage()
+                .persistent()
+                .has(&DataKey::Score(user.clone()))
+        {
+            return Err(NftError::NftAlreadyExists);
+        }
+
+        // Consume the one-time approval.
+        env.storage().persistent().remove(&remint_approval_key);
+
+        // Clear burned state and associated flags.
+        env.storage().persistent().remove(&burned_key);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Seized(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::TransferCooldown(user.clone()));
+
+        // Write the new NFT metadata.
+        let metadata = RemittanceMetadata {
+            score: initial_score.min(Self::MAX_SCORE),
+            history_hash,
+        };
+        env.storage().persistent().set(&metadata_key, &metadata);
+        Self::bump_persistent_ttl(&env, &metadata_key);
+
+        // Emit a distinct AdminRemint event — auditably separate from Mint events.
+        env.events()
+            .publish((symbol_short!("AdmRemint"), user.clone()), initial_score);
 
         Ok(())
     }
@@ -580,6 +639,17 @@ impl RemittanceNFT {
         Ok(())
     }
 
+    /// Mark a borrower's collateral as seized.
+    ///
+    /// # Seized flag semantics
+    /// The `seized` flag gates **new credit activity only**:
+    /// - Blocks: new loan requests, new collateral deposits
+    /// - Does NOT block: repayment of existing approved loans,
+    ///   collateral release after full repayment, or score reads.
+    ///
+    /// This ensures that a seized borrower retains a path to clear
+    /// their outstanding debt and avoid permanent bad-debt accumulation
+    /// in the lending pool.
     pub fn seize_collateral(
         env: Env,
         user: Address,
@@ -751,6 +821,8 @@ impl RemittanceNFT {
         Ok(())
     }
 
+    /// Returns true if the borrower's collateral has been seized.
+    /// See `seize_collateral` for the full list of operations this flag blocks.
     pub fn is_seized(env: Env, user: Address) -> bool {
         let seized_key = DataKey::Seized(user.clone());
         let is_seized = env.storage().persistent().has(&seized_key);
@@ -769,6 +841,14 @@ impl RemittanceNFT {
         count
     }
 
+    /// Grant one-time approval for a burned account to be re-minted.
+    ///
+    /// This must be called by the admin before `mint()` can succeed for a
+    /// previously-burned user. The approval is consumed on use and cannot
+    /// be reused — a new `approve_remint()` call is required for each
+    /// subsequent remint attempt.
+    ///
+    /// Reverts with `ContractPaused` if the contract is paused.
     pub fn approve_remint(env: Env, user: Address) -> Result<(), NftError> {
         Self::admin(&env).require_auth();
         Self::assert_not_paused(&env)?;

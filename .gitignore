@@ -13,3 +13,4 @@ coverage
 .idea
 create_issues.sh
 .claude
+.kiro/

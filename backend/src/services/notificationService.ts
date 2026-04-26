@@ -40,7 +40,16 @@ interface CreateNotificationParams {
 type SseClient = Response;
 const sseClients = new Map<string, Set<SseClient>>();
 
-// ─── Notification Service ─────────────────────────────────────────────────────
+// SendGrid / Twilio placeholders (would be imported from a config/provider file in a real app)
+async function sendEmail(email: string, message: string) {
+  logger.info(`[Email] Sending to ${email}: ${message}`);
+  // await sgMail.send({ to: email, ... });
+}
+
+async function sendSMS(phone: string, message: string) {
+  logger.info(`[SMS] Sending to ${phone}: ${message}`);
+  // await twilio.messages.create({ to: phone, ... });
+}
 
 class NotificationService {
   /**
@@ -61,7 +70,39 @@ class NotificationService {
 
     const notification = this.mapRow(result.rows[0]);
     this.broadcast(userId, notification);
+    
+    // Also trigger external notifications
+    await this.notifyUserExternal(userId, message);
+    
     return notification;
+  }
+
+  /**
+   * Sends external notifications (Email/SMS) based on user preferences.
+   */
+  private async notifyUserExternal(userId: string, message: string) {
+    try {
+      const result = await query(
+        `SELECT email, phone, email_enabled, sms_enabled 
+         FROM user_profiles 
+         WHERE public_key = $1`,
+        [userId],
+      );
+
+      if (result.rows.length === 0) return;
+
+      const user = result.rows[0];
+
+      if (user.email_enabled && user.email) {
+        await sendEmail(user.email, message);
+      }
+
+      if (user.sms_enabled && user.phone) {
+        await sendSMS(user.phone, message);
+      }
+    } catch (error) {
+      logger.error("Error sending external notifications", { userId, error });
+    }
   }
 
   /**

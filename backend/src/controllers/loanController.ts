@@ -402,7 +402,6 @@ export const getLoanDetails = asyncHandler(
   async (req: Request, res: Response) => {
     const { loanId } = req.params;
 
-
     const eventsResult = await query(
       `SELECT event_type, amount, ledger, ledger_closed_at, tx_hash, interest_rate_bps, term_ledgers
        FROM loan_events

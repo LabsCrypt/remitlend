@@ -13,12 +13,18 @@ export const requireLoanBorrowerAccess = asyncHandler(
   async (req, res, next) => {
     const loanId = req.params.loanId;
     const pk = req.user?.publicKey;
+    const role = req.user?.role;
 
     if (!pk) {
       throw AppError.unauthorized("Authentication required");
     }
     if (!loanId) {
       throw AppError.badRequest("Loan ID is required");
+    }
+
+    // Admins and lenders are allowed to view loan details.
+    if (role === "admin" || role === "lender") {
+      return next();
     }
 
     const r = await query(

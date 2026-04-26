@@ -3,6 +3,7 @@
 import { CalendarDays } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import type { LoanAmortization, LoanAmortizationScheduleRow } from "../../hooks/useApi";
+import { EmptyState } from "../ui/EmptyState";
 
 function formatMoney(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -91,66 +92,74 @@ export function RepaymentScheduleTable({
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">
-                  Period
-                </th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">
-                  Due Date
-                </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
-                  Principal
-                </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
-                  Interest
-                </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
-                  Total
-                </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
-                  Balance
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {schedule.map((row) => (
-                <tr key={row.period} className="border-b border-zinc-100 dark:border-zinc-800/50">
-                  <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{row.period}</td>
-                  <td className="px-4 py-3 text-zinc-900 dark:text-zinc-50">{row.dueDate}</td>
-                  <td className="px-4 py-3 text-right text-zinc-900 dark:text-zinc-50">
-                    {formatMoney(row.principal)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-amber-600 dark:text-amber-400">
-                    {formatMoney(row.interest)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-zinc-900 dark:text-zinc-50">
-                    {formatMoney(row.total)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
-                    {formatMoney(row.balance)}
-                  </td>
+        {schedule.length === 0 ? (
+          <EmptyState
+            icon={CalendarDays}
+            title="No repayment schedule available"
+            description="Generate or load a loan preview to see installment dates and balances."
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+                  <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">
+                    Period
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">
+                    Due Date
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
+                    Principal
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
+                    Interest
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
+                    Total
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">
+                    Balance
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-zinc-50 dark:bg-zinc-900">
-                <td
-                  colSpan={4}
-                  className="px-4 py-3 text-right font-semibold text-zinc-700 dark:text-zinc-300"
-                >
-                  Total Cost of Loan
-                </td>
-                <td className="px-4 py-3 text-right font-semibold text-indigo-600 dark:text-indigo-400">
-                  {formatMoney(amortization.totalDue)}
-                </td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {schedule.map((row) => (
+                  <tr key={row.period} className="border-b border-zinc-100 dark:border-zinc-800/50">
+                    <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{row.period}</td>
+                    <td className="px-4 py-3 text-zinc-900 dark:text-zinc-50">{row.dueDate}</td>
+                    <td className="px-4 py-3 text-right text-zinc-900 dark:text-zinc-50">
+                      {formatMoney(row.principal)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-amber-600 dark:text-amber-400">
+                      {formatMoney(row.interest)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-zinc-900 dark:text-zinc-50">
+                      {formatMoney(row.total)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
+                      {formatMoney(row.balance)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-zinc-50 dark:bg-zinc-900">
+                  <td
+                    colSpan={4}
+                    className="px-4 py-3 text-right font-semibold text-zinc-700 dark:text-zinc-300"
+                  >
+                    Total Cost of Loan
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-indigo-600 dark:text-indigo-400">
+                    {formatMoney(amortization.totalDue)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

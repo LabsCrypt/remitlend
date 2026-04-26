@@ -16,6 +16,7 @@ import {
   reindexLedgerRange,
 } from "../controllers/indexerController.js";
 import { listLoanDisputes, resolveLoanDispute } from "../controllers/adminDisputeController.js";
+import { query } from "../db/connection.js";
 
 const router = Router();
 
@@ -278,5 +279,34 @@ router.delete(
  *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get("/webhooks/:id/deliveries", requireApiKey, getWebhookDeliveries);
+
+/**
+ * @swagger
+ * /admin/webhooks/retry-status:
+ *   get:
+ *     summary: Get status of failed webhooks and retry queue
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Retry status information
+ */
+router.get(
+  "/webhooks/retry-status",
+  requireApiKey,
+  asyncHandler(async (req, res) => {
+    const result = await query(`
+      SELECT 
+        COUNT(*) as total_failed,
+        COUNT(*) FILTER (WHERE attempt_count >= 5) as permanently_failed,
+        COUNT(*) FILTER (WHERE next_retry_at IS NOT NULL) as pending_retry
+      FROM webhook_deliveries
+      WHERE delivered_at IS NULL
+    `);
+    
+    res.json(result.rows[0]);
+  })
+);
 
 export default router;

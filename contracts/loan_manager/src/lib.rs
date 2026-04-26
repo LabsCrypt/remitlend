@@ -54,6 +54,7 @@ pub enum LoanError {
     PoolPaused = 19,
     NftPaused = 20,
     InvalidConfiguration = 21,
+    SeizedBorrower = 22,
 }
 
 #[contracttype]
@@ -87,6 +88,7 @@ pub struct Loan {
     // How many extensions have been granted for this loan.
     // Capped at MaxExtensions to prevent indefinite deferral.
     pub extension_count: u32,
+    pub term_ledgers: u32,
 }
 
 #[contracttype]
@@ -424,13 +426,14 @@ impl LoanManager {
         }
 
         let remaining_principal = Self::remaining_principal(loan);
-        let remaining_debt = remaining_principal
-            .checked_add(loan.accrued_interest)
-            .expect("debt overflow");
-        if remaining_debt <= 0 {
+        if remaining_principal <= 0 {
             loan.last_late_fee_ledger = current_ledger;
             return 0;
         }
+
+        let remaining_debt = remaining_principal
+            .checked_add(loan.accrued_interest)
+            .expect("debt overflow");
 
         let overdue_ledgers = current_ledger - late_fee_start;
         let incremental_fee = remaining_debt
@@ -715,7 +718,12 @@ impl LoanManager {
         Self::bump_instance_ttl(&env);
     }
 
-    pub fn request_loan(env: Env, borrower: Address, amount: i128) -> Result<u32, LoanError> {
+    pub fn request_loan(
+        env: Env,
+        borrower: Address,
+        amount: i128,
+        term: u32,
+    ) -> Result<u32, LoanError> {
         borrower.require_auth();
         Self::require_not_paused(&env)?;
 
@@ -726,6 +734,10 @@ impl LoanManager {
         let max_loan_amount = Self::max_loan_amount(&env);
         if amount > max_loan_amount {
             return Err(LoanError::InvalidAmount);
+        }
+
+        if term == 0 {
+            return Err(LoanError::InvalidTerm);
         }
 
         let nft_contract: Address = env
@@ -743,6 +755,9 @@ impl LoanManager {
             .unwrap_or(500);
         if score < min_score {
             return Err(LoanError::InsufficientScore);
+        }
+        if nft_client.is_seized(&borrower) {
+            return Err(LoanError::SeizedBorrower);
         }
 
         let active_loan_count = Self::borrower_loan_count(&env, &borrower);
@@ -774,14 +789,20 @@ impl LoanManager {
             status: LoanStatus::Pending,
             interest_residual: 0,
             extension_count: 0,
+            term_ledgers: term,
         };
 
         env.storage()
             .persistent()
             .set(&DataKey::Loan(loan_counter), &loan);
+
         env.storage()
             .instance()
             .set(&DataKey::LoanCounter, &loan_counter);
+
+        // Count pending loans against the borrower cap immediately.
+        Self::increment_borrower_loan_count(&env, &borrower);
+
         Self::bump_instance_ttl(&env);
         Self::bump_persistent_ttl(&env, &DataKey::Loan(loan_counter));
 
@@ -801,13 +822,13 @@ impl LoanManager {
         events::loan_requested(&env, borrower.clone(), amount);
         env.events()
             .publish((symbol_short!("LoanReq"), borrower), loan_counter);
-
         Ok(loan_counter)
     }
 
     pub fn approve_loan(env: Env, loan_id: u32) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
+        // ── CHECKS ──────────────────────────────────────────────────────────
         let admin = Self::admin(&env);
         admin.require_auth();
         Self::require_not_paused(&env)?;
@@ -824,6 +845,7 @@ impl LoanManager {
             return Err(LoanError::LoanNotPending);
         }
 
+        // Read all instance-level config before any state mutations.
         let lending_pool: Address = env
             .storage()
             .instance()
@@ -834,30 +856,37 @@ impl LoanManager {
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
+
+        // Cross-contract READ for liquidity check — still in the CHECKS phase.
         let pool_client = PoolClient::new(&env, &lending_pool);
         let pool_balance = pool_client.pool_balance(&token);
         if pool_balance < loan.amount {
             return Err(LoanError::InsufficientPoolLiquidity);
         }
 
-        let term_ledgers = Self::read_default_term(&env);
+        // ── EFFECTS (all state mutations before any external calls) ─────────
+        // Capture values used in the transfer before mutating loan fields.
+        let borrower = loan.borrower.clone();
+        let transfer_amount = loan.amount;
 
         loan.status = LoanStatus::Approved;
-        loan.due_date = env.ledger().sequence() + term_ledgers;
+        loan.due_date = env.ledger().sequence() + loan.term_ledgers;
         loan.last_interest_ledger = env.ledger().sequence();
         loan.last_late_fee_ledger = loan
             .due_date
             .checked_add(Self::grace_period_ledgers(&env))
             .expect("grace period overflow");
+
+        // Commit state before any cross-contract call (CEI pattern).
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
+
+        // ── INTERACTIONS (external calls last) ──────────────────────────────
         let token_client = TokenClient::new(&env, &token);
+        token_client.transfer(&lending_pool, &borrower, &transfer_amount);
 
-        Self::increment_borrower_loan_count(&env, &loan.borrower);
-        token_client.transfer(&lending_pool, &loan.borrower, &loan.amount);
-
-        events::loan_approved(&env, loan_id, loan.borrower.clone());
-        events::loan_approved_by_admin(&env, admin, loan_id, loan.borrower.clone());
+        events::loan_approved(&env, loan_id, borrower.clone());
+        events::loan_approved_by_admin(&env, admin, loan_id, borrower);
 
         Ok(())
     }
@@ -997,24 +1026,42 @@ impl LoanManager {
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
 
+        // If loan is fully repaid, emit terminal event and remove from storage
+        if completed {
+            events::loan_repaid(&env, borrower.clone(), loan_id, amount);
+            // env.storage().persistent().remove(&loan_key);
+        }
+
         if amount >= 100 {
             let nft_contract = Self::nft_contract(&env);
             let nft_client = NftClient::new(&env, &nft_contract);
-            if completed && was_late {
-                nft_client.decrease_score(
-                    &borrower,
-                    &Self::LATE_REPAYMENT_SCORE_PENALTY.unsigned_abs(),
-                    &Some(env.current_contract_address()),
-                );
-            } else {
-                nft_client.update_score(&borrower, &amount, &Some(env.current_contract_address()));
+            let borrower_score = nft_client.get_score(&borrower);
+            if borrower_score > 0 {
+                // get_score returns 0 for burned/non-existent NFTs
+                if completed && was_late {
+                    nft_client.decrease_score(
+                        &borrower,
+                        &Self::LATE_REPAYMENT_SCORE_PENALTY.unsigned_abs(),
+                        &Some(env.current_contract_address()),
+                    );
+                } else {
+                    nft_client.update_score(
+                        &borrower,
+                        &amount,
+                        &Some(env.current_contract_address()),
+                    );
+                }
             }
         }
 
         if late_fee_delta > 0 {
             events::late_fee_charged(&env, loan_id, late_fee_delta);
         }
-        events::loan_repaid(&env, borrower, loan_id, amount);
+
+        // Emit repayment event only if loan is not completed (completed loans emit in the block above)
+        if !completed {
+            events::loan_repaid(&env, borrower, loan_id, amount);
+        }
 
         Ok(())
     }
@@ -1041,6 +1088,16 @@ impl LoanManager {
         }
 
         loan.borrower.require_auth();
+
+        let nft_contract: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::NftContract)
+            .ok_or(LoanError::NotInitialized)?;
+        let nft_client = NftClient::new(&env, &nft_contract);
+        if nft_client.is_seized(&loan.borrower) {
+            return Err(LoanError::SeizedBorrower);
+        }
 
         let token: Address = env
             .storage()
@@ -1358,7 +1415,7 @@ impl LoanManager {
         Self::late_fee_rate_bps(&env)
     }
 
-    pub fn set_grace_period_ledgers(env: Env, ledgers: u32) {
+    pub fn set_grace_period_ledgers(env: Env, ledgers: u32) -> Result<(), LoanError> {
         let admin: Address = env
             .storage()
             .instance()
@@ -1366,12 +1423,19 @@ impl LoanManager {
             .expect("not initialized");
         admin.require_auth();
 
+        // Enforce invariant: default_window must be >= grace_period
+        let default_window = Self::default_window_ledgers(&env);
+        if default_window < ledgers {
+            return Err(LoanError::InvalidConfiguration);
+        }
+
         let old_ledgers = Self::grace_period_ledgers(&env);
         env.storage()
             .instance()
             .set(&DataKey::GracePeriodLedgers, &ledgers);
         Self::bump_instance_ttl(&env);
         events::grace_period_updated(&env, admin, old_ledgers, ledgers);
+        Ok(())
     }
 
     pub fn get_grace_period_ledgers(env: Env) -> u32 {
@@ -1390,6 +1454,12 @@ impl LoanManager {
             .get(&DataKey::Admin)
             .ok_or(LoanError::NotInitialized)?;
         admin.require_auth();
+
+        // Enforce invariant: default_window must be >= grace_period
+        let grace_period = Self::grace_period_ledgers(&env);
+        if ledgers < grace_period {
+            return Err(LoanError::InvalidConfiguration);
+        }
 
         let old_ledgers = Self::default_window_ledgers(&env);
         env.storage()
@@ -1745,6 +1815,9 @@ impl LoanManager {
 
         events::loan_defaulted(&env, loan_id, loan.borrower.clone());
 
+        // Remove loan from storage after emitting terminal event
+        // env.storage().persistent().remove(&loan_key);
+
         Ok(())
     }
 
@@ -1789,6 +1862,9 @@ impl LoanManager {
             nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
 
             events::loan_defaulted(&env, loan_id, loan.borrower.clone());
+
+            // Remove loan from storage after emitting terminal event
+            // env.storage().persistent().remove(&loan_key);
         }
 
         Ok(())

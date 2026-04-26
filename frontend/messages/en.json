@@ -97,6 +97,36 @@
       "pending": "Pending"
     }
   },
+  "Kingdom": {
+    "title": "Kingdom Dashboard",
+    "description": "Track your progress, unlock achievements, and rise through the ranks",
+    "welcome": "Welcome, {kingdomTitle}!",
+    "level": "You are currently at Level {level}",
+    "achievements": "Achievements",
+    "unlockedCount": "{unlocked} / {total}",
+    "progress": "Progress",
+    "unlocked": "Unlocked {date}",
+    "repaymentProgress": "Repayment Progress"
+  },
+  "LoanCard": {
+    "totalOwed": "Total Owed",
+    "principal": "Principal",
+    "accruedInterest": "Accrued Interest",
+    "interest": "Interest",
+    "nextPayment": "Next Payment",
+    "daysRemaining": "{days} days remaining",
+    "daysOverdue": "{days} days overdue",
+    "defaultedLabel": "Contact support to recover",
+    "onTrack": "On Track",
+    "dueSoon": "Due Soon",
+    "overdue": "Overdue",
+    "defaulted": "Defaulted",
+    "repayNow": "Repay Now",
+    "payNowOverdue": "Pay Now (Overdue)",
+    "contactSupport": "Contact Support",
+    "viewDetails": "View Details",
+    "details": "Details"
+  },
   "Settings": {
     "language": "Language",
     "selectLanguage": "Select Language"

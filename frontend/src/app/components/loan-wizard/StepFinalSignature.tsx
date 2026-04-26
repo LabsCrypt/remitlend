@@ -94,6 +94,7 @@ export function StepFinalSignature({
         const xdr = await buildUnsignedLoanRequestXdr({
           borrower: borrowerAddress,
           amount: principal,
+          term: data.termDays * 17280,
           contractId: managerContractId,
         });
         if (!cancelled) setUnsignedXdr(xdr);

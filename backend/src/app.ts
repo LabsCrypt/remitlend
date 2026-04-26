@@ -33,16 +33,26 @@ const app = express();
 
 const isProduction = process.env.NODE_ENV === "production";
 const configuredFrontendUrl = process.env.FRONTEND_URL?.trim();
+
+if (isProduction && !configuredFrontendUrl) {
+  throw new Error("FRONTEND_URL environment variable is required in production");
+}
+
 // `CORS_ALLOWED_ORIGINS` is retained as a migration fallback while `FRONTEND_URL`
 // becomes the primary documented config for the frontend origin.
 const additionalAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
   : [];
-const allowedOrigins = new Set(
-  [configuredFrontendUrl, ...additionalAllowedOrigins].filter(
-    (origin): origin is string => Boolean(origin),
-  ),
+
+const allowedOriginsList = [configuredFrontendUrl, ...additionalAllowedOrigins].filter(
+  (origin): origin is string => Boolean(origin),
 );
+
+if (isProduction && allowedOriginsList.length === 0) {
+  throw new Error("No allowed origins configured for CORS in production. Set FRONTEND_URL.");
+}
+
+const allowedOrigins = new Set(allowedOriginsList);
 
 app.use(
   helmet({

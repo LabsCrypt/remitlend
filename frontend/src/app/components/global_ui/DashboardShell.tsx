@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { Breadcrumbs } from "./Breadcrumbs";
+import { OfflineBanner } from "./OfflineBanner";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -47,6 +48,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <Header onMenuClick={() => setIsSidebarOpen(true)} />
+        <OfflineBanner />
 
         {/* Dynamic Page Content */}
         <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

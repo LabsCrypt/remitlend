@@ -13,6 +13,7 @@ import {
   DollarSign,
   Search,
 } from "lucide-react";
+import { useLocale } from "next-intl";
 import {
   useWalletStore,
   selectIsWalletConnected,
@@ -25,6 +26,7 @@ import { Spinner } from "../../components/global_ui/Spinner";
 import { PaginationControls } from "../../components/ui/PaginationControls";
 import Link from "next/link";
 import { formatAmountOnBlur } from "../../utils/amountPrecision";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -68,33 +70,6 @@ type StatusFilter = "all" | Remittance["status"];
 
 const PAGE_SIZE = 20;
 
-function EmptyState({ filtered }: { filtered: boolean }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="mb-4 rounded-2xl bg-zinc-50 p-6 dark:bg-zinc-900">
-        <SendHorizontal className="h-10 w-10 text-indigo-400" />
-      </div>
-      <h3 className="mb-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-        {filtered ? "No remittances match this status" : "No remittances yet"}
-      </h3>
-      <p className="max-w-xs text-sm text-zinc-500 dark:text-zinc-400">
-        {filtered
-          ? "Try a different status filter to see more results."
-          : "Your cross-border transfers will appear here once you send your first remittance."}
-      </p>
-      {!filtered && (
-        <Link
-          href="/"
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
-        >
-          <ArrowUpRight className="h-4 w-4" />
-          New Remittance
-        </Link>
-      )}
-    </div>
-  );
-}
-
 function ConnectWalletPrompt() {
   return (
     <main className="flex min-h-[60vh] flex-col items-center justify-center gap-6 p-8">
@@ -112,6 +87,7 @@ function ConnectWalletPrompt() {
 }
 
 export default function RemittancesPage() {
+  const locale = useLocale();
   const isConnected = useWalletStore(selectIsWalletConnected);
   const address = useWalletStore(selectWalletAddress);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -189,7 +165,7 @@ export default function RemittancesPage() {
           </p>
         </div>
         <Link
-          href="/"
+          href={`/${locale}/send-remittance`}
           className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
         >
           <ArrowUpRight className="h-4 w-4" />
@@ -353,7 +329,20 @@ export default function RemittancesPage() {
               </p>
             </div>
           ) : remittances.length === 0 ? (
-            <EmptyState filtered={statusFilter !== "all"} />
+            <EmptyState
+              icon={SendHorizontal}
+              title={
+                statusFilter !== "all" ? "No remittances match this status" : "No remittances yet"
+              }
+              description={
+                statusFilter !== "all"
+                  ? "Try a different filter to see more transfer history."
+                  : "Your cross-border transfers will appear here once you send your first remittance."
+              }
+              actionLabel={statusFilter !== "all" ? undefined : "Send your first remittance"}
+              actionHref={statusFilter !== "all" ? undefined : `/${locale}/send-remittance`}
+              actionIcon={<ArrowUpRight className="h-4 w-4" />}
+            />
           ) : (
             <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden dark:border-zinc-800 dark:bg-zinc-950">
               <div className="grid grid-cols-12 gap-4 border-b border-zinc-100 bg-zinc-50 px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/50">

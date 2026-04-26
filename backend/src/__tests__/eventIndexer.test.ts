@@ -259,6 +259,7 @@ describe("EventIndexer", () => {
   it("deduplicates repeated events and only triggers side effects for inserted rows", async () => {
     const borrower = makeAddress();
     let insertCount = 0;
+    const insertStatements: string[] = [];
 
     mockQuery.mockImplementation(
       async (sql: string, params: unknown[] = []) => {
@@ -267,6 +268,7 @@ describe("EventIndexer", () => {
         }
 
         if (sql.includes("INSERT INTO loan_events")) {
+          insertStatements.push(sql);
           insertCount += 1;
           const inserted = insertCount === 1;
           return {
@@ -309,6 +311,7 @@ describe("EventIndexer", () => {
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
     expect(mockCreateNotification).toHaveBeenCalledTimes(1);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(1);
+    expect(insertStatements[0]).toContain("ON CONFLICT (event_id) DO NOTHING");
   });
 
   it("ignores duplicate LoanApproved rows for the same loan and emits side effects once", async () => {

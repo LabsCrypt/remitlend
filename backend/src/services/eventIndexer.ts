@@ -420,7 +420,7 @@ export class EventIndexer {
             term_ledgers
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          ON CONFLICT DO NOTHING
+          ON CONFLICT (event_id) DO NOTHING
           RETURNING event_id`,
           [
             event.eventId,
@@ -454,6 +454,14 @@ export class EventIndexer {
             }
           } else if (event.eventType === "LoanDefaulted") {
             const { defaultPenalty } = await sorobanService.getScoreConfig();
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
+              );
+            }
+          } else if (event.eventType === "CollateralLiquidated") {
+            const { defaultPenalty } = sorobanService.getScoreConfig();
             if (event.borrower) {
               scoreUpdates.set(
                 event.borrower,
@@ -543,9 +551,11 @@ export class EventIndexer {
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
       borrower = this.decodeAddress(event.value);
-    } else if (type === "Seized") {
+    } else if (type === "CollateralLiquidated") {
       if (!event.topic[1]) return null;
-      borrower = this.decodeAddress(event.topic[1]);
+      loanId = this.decodeLoanId(event.topic[1]);
+      if (loanId === undefined) return null;
+      amount = this.decodeAmount(event.value);
     }
 
     return {
@@ -614,6 +624,13 @@ export class EventIndexer {
         message = event.loanId
           ? `Loan #${event.loanId} has been marked as defaulted.`
           : "A loan has been marked as defaulted.";
+        break;
+      case "CollateralLiquidated":
+        type = "loan_defaulted";
+        title = "Collateral Seized";
+        message = event.loanId
+          ? `Collateral for loan #${event.loanId} has been seized due to default.`
+          : "Collateral has been seized due to a loan default.";
         break;
       default:
         return;
@@ -758,7 +775,7 @@ export class EventIndexer {
         "LoanApproved",
         "LoanRepaid",
         "LoanDefaulted",
-        "Seized",
+        "CollateralLiquidated",
         "Paused",
         "Unpaused",
         "MinScoreUpdated",

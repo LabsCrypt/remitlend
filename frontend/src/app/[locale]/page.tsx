@@ -27,6 +27,7 @@ import {
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { CreditScoreGauge } from "../components/ui/CreditScoreGauge";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
+import { Tooltip } from "../components/ui/Tooltip";
 import React, { useMemo } from "react";
 
 function formatCurrency(value: number): string {
@@ -252,7 +253,15 @@ export default function Home() {
                 </div>
                 <div className="mt-4">
                   <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                    {stat.label}
+                    <span className="inline-flex items-center gap-1">
+                      {stat.label}
+                      {stat.label.toLowerCase().includes("apy") ? (
+                        <Tooltip
+                          content="APY (Annual Percentage Yield): The estimated yearly return on your deposits, including compounding. This may change over time."
+                          label="APY info"
+                        />
+                      ) : null}
+                    </span>
                   </p>
                   <h3 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
                     {stat.value}
@@ -374,6 +383,15 @@ export default function Home() {
               className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950"
               aria-label="Credit Score"
             >
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  Credit Score
+                </h3>
+                <Tooltip
+                  content="Credit Score: An on-chain signal of repayment reliability. Higher scores can unlock better terms over time."
+                  label="Credit score info"
+                />
+              </div>
               <CreditScoreGauge
                 score={currentCreditScore ?? 300}
                 previousScore={previousCreditScore ?? undefined}

@@ -21,6 +21,9 @@ import {
  * Handles the transaction lifecycle: build → (frontend signs) → submit.
  */
 class SorobanService {
+  private static readonly FALLBACK_CREDIT_SCORE = 500;
+  private static readonly SCORE_SIMULATION_RETRY_ATTEMPTS = 2;
+
   private getRpcServer() {
     return createSorobanRpcServer();
   }
@@ -89,6 +92,45 @@ class SorobanService {
         "The configured score reconciliation source secret is invalid",
       );
     }
+  }
+
+  private getDefaultCreditScore(): number {
+    const configured = Number.parseInt(
+      process.env.DEFAULT_CREDIT_SCORE ??
+        String(SorobanService.FALLBACK_CREDIT_SCORE),
+      10,
+    );
+
+    if (!Number.isFinite(configured)) {
+      return SorobanService.FALLBACK_CREDIT_SCORE;
+    }
+
+    return configured;
+  }
+
+  private isMissingScoreError(message: string): boolean {
+    const lower = message.toLowerCase();
+    return (
+      lower.includes("not found") ||
+      lower.includes("unknown address") ||
+      lower.includes("missing value") ||
+      lower.includes("does not exist") ||
+      lower.includes("contract, #") ||
+      lower.includes("hosterror")
+    );
+  }
+
+  private isTransientRpcError(message: string): boolean {
+    const lower = message.toLowerCase();
+    return (
+      lower.includes("timeout") ||
+      lower.includes("temporar") ||
+      lower.includes("connection") ||
+      lower.includes("network") ||
+      lower.includes("unavailable") ||
+      lower.includes("503") ||
+      lower.includes("502")
+    );
   }
 
   /**
@@ -450,26 +492,80 @@ class SorobanService {
       .setTimeout(30)
       .build();
 
-    const simulation = await server.simulateTransaction(tx);
+    const defaultScore = this.getDefaultCreditScore();
+    let simulation: Awaited<ReturnType<typeof server.simulateTransaction>> | null =
+      null;
+
+    for (
+      let attempt = 1;
+      attempt <= SorobanService.SCORE_SIMULATION_RETRY_ATTEMPTS;
+      attempt += 1
+    ) {
+      simulation = await server.simulateTransaction(tx);
+      if (!("error" in simulation)) {
+        break;
+      }
+
+      const message = String(simulation.error ?? "");
+      const isRetryable = this.isTransientRpcError(message);
+      const hasMoreAttempts =
+        attempt < SorobanService.SCORE_SIMULATION_RETRY_ATTEMPTS;
+      if (!isRetryable || !hasMoreAttempts) {
+        break;
+      }
+
+      logger.warn("Retrying get_score simulation after transient RPC failure", {
+        borrower: userPublicKey,
+        attempt,
+        error: message,
+      });
+    }
+
+    if (!simulation) {
+      logger.warn("Falling back to default credit score: empty simulation", {
+        borrower: userPublicKey,
+        defaultScore,
+      });
+      return defaultScore;
+    }
+
     if ("error" in simulation) {
+      const message = String(simulation.error ?? "");
+      if (
+        this.isMissingScoreError(message) ||
+        this.isTransientRpcError(message)
+      ) {
+        logger.warn("Falling back to default credit score", {
+          borrower: userPublicKey,
+          defaultScore,
+          reason: message,
+        });
+        return defaultScore;
+      }
+
       throw AppError.internal(
-        `Failed to simulate get_score for ${userPublicKey}: ${simulation.error}`,
+        `Failed to simulate get_score for ${userPublicKey}: ${message}`,
       );
     }
 
     const retval = simulation.result?.retval;
     if (!retval) {
-      throw AppError.internal(
-        `No score returned by get_score for ${userPublicKey}`,
-      );
+      logger.warn("Falling back to default credit score: no score returned", {
+        borrower: userPublicKey,
+        defaultScore,
+      });
+      return defaultScore;
     }
 
     const nativeScore = scValToNative(retval);
     const score = Number(nativeScore);
     if (!Number.isFinite(score)) {
-      throw AppError.internal(
-        `Invalid on-chain score returned for ${userPublicKey}`,
-      );
+      logger.warn("Falling back to default credit score: invalid score value", {
+        borrower: userPublicKey,
+        defaultScore,
+        nativeScore,
+      });
+      return defaultScore;
     }
 
     return score;
