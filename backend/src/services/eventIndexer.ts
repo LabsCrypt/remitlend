@@ -1,4 +1,3 @@
-// @ts-expect-error - SDK exports are valid but linting fails in some environments
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";

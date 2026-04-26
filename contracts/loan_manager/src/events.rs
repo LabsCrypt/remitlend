@@ -13,7 +13,8 @@ pub fn loan_approved(
     term_ledgers: u32,
 ) {
     let topics = (Symbol::new(env, "LoanApproved"), loan_id, borrower);
-    env.events().publish(topics, (interest_rate_bps, term_ledgers));
+    env.events()
+        .publish(topics, (interest_rate_bps, term_ledgers));
 }
 
 pub fn loan_refinanced(
