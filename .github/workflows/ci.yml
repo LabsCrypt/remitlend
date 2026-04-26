@@ -110,3 +110,5 @@ jobs:
       - name: Run coverage
         run: cargo tarpaulin --out Xml
         working-directory: contracts
+
+// Contributed via automated bounty system
