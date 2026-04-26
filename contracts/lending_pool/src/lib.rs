@@ -19,6 +19,7 @@ pub enum PoolError {
     InsufficientLiquidity = 7,
     InvalidMaxPoolSize = 9,
     NoProposedAdmin = 10,
+    CooldownTooLong = 11,
 }
 
 /// Storage keys.
@@ -77,6 +78,7 @@ impl LendingPool {
     const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 3;
     const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
+    const MAX_WITHDRAWAL_COOLDOWN_LEDGERS: u32 = 17_280 * 30;
 
     // ── TTL helpers ───────────────────────────────────────────────────────
 
@@ -348,8 +350,11 @@ impl LendingPool {
         Ok(())
     }
 
-    pub fn set_withdrawal_cooldown(env: Env, ledgers: u32) {
+    pub fn set_withdrawal_cooldown(env: Env, ledgers: u32) -> Result<(), PoolError> {
         Self::admin(&env).require_auth();
+        if ledgers > Self::MAX_WITHDRAWAL_COOLDOWN_LEDGERS {
+            return Err(PoolError::CooldownTooLong);
+        }
 
         let old_cooldown = Self::get_withdrawal_cooldown(env.clone());
 
@@ -359,6 +364,7 @@ impl LendingPool {
         Self::bump_instance_ttl(&env);
 
         withdrawal_cooldown_updated(&env, old_cooldown, ledgers);
+        Ok(())
     }
 
     pub fn get_max_pool_size(env: Env, token: Address) -> i128 {

@@ -900,6 +900,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "LiquidationBonusBps"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 500
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "LiquidationThresholdBps"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 15000
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "LoanCounter"
                             }
                           ]
@@ -980,7 +1004,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 3
+                          "u32": 4
                         }
                       }
                     ]

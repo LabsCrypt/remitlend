@@ -239,6 +239,21 @@ fn test_withdraw_succeeds_after_cooldown() {
 }
 
 #[test]
+fn test_set_withdrawal_cooldown_rejects_values_above_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+
+    let result = pool_client.try_set_withdrawal_cooldown(&(17_280 * 30 + 1));
+    assert_eq!(result, Err(Ok(crate::PoolError::CooldownTooLong)));
+    assert_eq!(pool_client.get_withdrawal_cooldown(), 1_440);
+}
+
+#[test]
 fn test_emergency_withdraw_bypasses_pause_and_cooldown() {
     let env = Env::default();
     env.mock_all_auths();

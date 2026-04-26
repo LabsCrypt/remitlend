@@ -46,6 +46,7 @@
       "completed": "Nakumpleto",
       "repaid": "Binayaran",
       "failed": "Nabigo",
+      "liquidated": "Liquidated",
       "defaulted": "Di-nakamit"
     },
     "pagination": {

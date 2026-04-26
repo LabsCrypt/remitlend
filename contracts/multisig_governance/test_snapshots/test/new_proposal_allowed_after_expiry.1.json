@@ -136,14 +136,6 @@
                       },
                       {
                         "key": {
-                          "symbol": "CANCEL_AT"
-                        },
-                        "val": {
-                          "u64": 605801
-                        }
-                      },
-                      {
-                        "key": {
                           "symbol": "COUNT"
                         },
                         "val": {
