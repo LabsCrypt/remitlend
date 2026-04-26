@@ -42,8 +42,38 @@ export interface Remittance {
 function isValidStellarAddress(address: string): boolean {
   if (!address || typeof address !== "string") return false;
   if (address.length !== 56 || !address.startsWith("G")) return false;
-  return /^G[A-Z2-7]{54}$/.test(address);
+  return /^G[A-Z2-7]{55}$/.test(address);
 }
+
+const normalizeCurrency = (currency: string): string =>
+  currency.trim().toUpperCase();
+
+const getCurrencyAsset = (currency: string): Asset => {
+  const normalized = normalizeCurrency(currency);
+
+  if (normalized === "XLM") {
+    return Asset.native();
+  }
+
+  const tokenIssuers: Record<string, string | undefined> = {
+    USDC: process.env.STELLAR_USDC_ISSUER,
+    EURC: process.env.STELLAR_EURC_ISSUER,
+    PHP: process.env.STELLAR_PHP_ISSUER,
+  };
+
+  const issuer = tokenIssuers[normalized];
+  if (!issuer) {
+    throw AppError.badRequest(`Unsupported currency: ${currency}`);
+  }
+
+  if (!isValidStellarAddress(issuer)) {
+    throw AppError.badRequest(
+      `Unsupported currency: ${currency} (issuer is not configured correctly)`,
+    );
+  }
+
+  return new Asset(normalized, issuer);
+};
 
 export const remittanceService = {
   /**
@@ -69,6 +99,10 @@ export const remittanceService = {
       );
     }
 
+    const paymentAsset = getCurrencyAsset(payload.fromCurrency);
+    const normalizedFromCurrency = normalizeCurrency(payload.fromCurrency);
+    const normalizedToCurrency = normalizeCurrency(payload.toCurrency);
+
     try {
       const networkPassphrase = getStellarNetworkPassphrase();
 
@@ -81,7 +115,7 @@ export const remittanceService = {
         .addOperation(
           Operation.payment({
             destination: payload.recipientAddress,
-            asset: Asset.native(),
+            asset: paymentAsset,
             amount: payload.amount.toString(),
           }),
         )
@@ -103,8 +137,8 @@ export const remittanceService = {
             payload.senderAddress,
             payload.recipientAddress,
             payload.amount,
-            payload.fromCurrency,
-            payload.toCurrency,
+            normalizedFromCurrency,
+            normalizedToCurrency,
             payload.memo || null,
             "pending",
             xdr,

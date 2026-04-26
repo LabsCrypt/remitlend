@@ -15,7 +15,10 @@ import {
   reprocessQuarantinedEvents,
   reindexLedgerRange,
 } from "../controllers/indexerController.js";
-import { listLoanDisputes, resolveLoanDispute } from "../controllers/adminDisputeController.js";
+import {
+  listLoanDisputes,
+  resolveLoanDispute,
+} from "../controllers/adminDisputeController.js";
 
 const router = Router();
 
@@ -65,11 +68,31 @@ const router = Router();
  *         description: Dispute resolved
  */
 router.get("/loan-disputes", requireApiKey, listLoanDisputes);
-router.post("/loan-disputes/:disputeId/resolve", requireApiKey, resolveLoanDispute);
+router.post(
+  "/loan-disputes/:disputeId/resolve",
+  requireApiKey,
+  resolveLoanDispute,
+);
 
 const checkDefaultsBodySchema = z.object({
-  loanIds: z.array(z.number().int().positive()).optional(),
+  loanIds: z
+    .array(z.number().int().positive())
+    .max(1000, "max 1000 loan IDs per request")
+    .optional(),
 });
+
+router.post(
+  "/check-defaults",
+  requireApiKey,
+  strictRateLimiter,
+  validateBody(checkDefaultsBodySchema),
+  auditLog,
+  asyncHandler(async (req, res) => {
+    const body = req.body as { loanIds?: number[] };
+    const result = await defaultChecker.checkOverdueLoans(body.loanIds);
+    res.json({ success: true, data: result });
+  }),
+);
 
 /**
  * @swagger

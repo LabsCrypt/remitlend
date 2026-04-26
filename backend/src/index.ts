@@ -10,7 +10,7 @@ initSentry();
 
 const app = (await import("./app.js")).default;
 import logger from "./utils/logger.js";
-import pool from "./db/connection.js";
+import { closePool } from "./db/connection.js";
 import { startIndexer, stopIndexer } from "./services/indexerManager.js";
 import {
   startDefaultCheckerScheduler,
@@ -79,39 +79,36 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
   }, 30000);
   timeout.unref();
 
-  stopIndexer();
-  stopDefaultCheckerScheduler();
-  stopWebhookRetryProcessor();
-  stopScoreReconciliationScheduler();
-  stopNotificationCleanupScheduler();
+  try {
+    await stopIndexer();
+    stopDefaultCheckerScheduler();
+    stopWebhookRetryProcessor();
+    stopScoreReconciliationScheduler();
+    stopNotificationCleanupScheduler();
 
-  if (typeof (eventStreamService as any).closeAll === "function") {
-    (eventStreamService as any).closeAll("Server shutting down");
-  } else if (typeof eventStreamService.closeAllConnections === "function") {
-    eventStreamService.closeAllConnections("Server shutting down");
-  }
-
-  server.close(async (err) => {
-    if (err) {
-      logger.error("HTTP server shutdown failed", { signal, err });
-      process.exit(1);
-      return;
+    if (typeof (eventStreamService as any).closeAll === "function") {
+      (eventStreamService as any).closeAll("Server shutting down");
+    } else if (typeof eventStreamService.closeAllConnections === "function") {
+      eventStreamService.closeAllConnections("Server shutting down");
     }
 
-    try {
-      if (pool && typeof (pool as any).drain === "function") {
-        await (pool as any).drain();
-        logger.info("Database pool drained.");
-      } else if (pool && typeof (pool as any).end === "function") {
-        await (pool as any).end();
-        logger.info("Database pool ended.");
-      }
-    } catch (e) {
-      logger.error("Failed to drain DB pool", e);
-    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+    });
 
+    await closePool();
+    logger.info("Database pool drained.");
     process.exit(0);
-  });
+  } catch (err) {
+    logger.error("Graceful shutdown failed", { signal, err });
+    process.exit(1);
+  }
 };
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

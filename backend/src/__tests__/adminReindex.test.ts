@@ -40,4 +40,15 @@ describe("Admin reindex endpoint", () => {
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
   });
+
+  it("rejects check-defaults payloads with more than 1000 loan IDs", async () => {
+    const loanIds = Array.from({ length: 1001 }, (_, index) => index + 1);
+    const response = await request(app)
+      .post("/api/admin/check-defaults")
+      .set("x-api-key", apiKey)
+      .send({ loanIds });
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+  });
 });

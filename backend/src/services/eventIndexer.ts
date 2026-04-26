@@ -69,6 +69,7 @@ export class EventIndexer {
   private lastObservedQuarantineCount = 0;
   private running = false;
   private pollTimeout: NodeJS.Timeout | null = null;
+  private activePollPromise: Promise<void> | null = null;
 
   constructor(config: EventIndexerConfig);
   constructor(rpcUrl: string, contractId: string);
@@ -119,15 +120,26 @@ export class EventIndexer {
     }
 
     this.running = true;
-    await this.pollOnce();
+    this.activePollPromise = this.pollOnce();
+    await this.activePollPromise;
+    this.activePollPromise = null;
     this.scheduleNextPoll();
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.running = false;
     if (this.pollTimeout) {
       clearTimeout(this.pollTimeout);
       this.pollTimeout = null;
+    }
+    if (this.activePollPromise) {
+      try {
+        await this.activePollPromise;
+      } catch (error) {
+        logger.warn("Indexer stop awaited a failing poll iteration", { error });
+      } finally {
+        this.activePollPromise = null;
+      }
     }
   }
 
@@ -174,11 +186,17 @@ export class EventIndexer {
     if (!this.running) return;
 
     this.pollTimeout = setTimeout(async () => {
+      let pollPromise: Promise<void> | null = null;
       try {
-        await this.pollOnce();
+        pollPromise = this.pollOnce();
+        this.activePollPromise = pollPromise;
+        await pollPromise;
       } catch (error) {
         logger.error("Indexer poll iteration failed", { error });
       } finally {
+        if (this.activePollPromise === pollPromise) {
+          this.activePollPromise = null;
+        }
         this.scheduleNextPoll();
       }
     }, this.pollIntervalMs);
