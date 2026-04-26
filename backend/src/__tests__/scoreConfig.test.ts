@@ -10,8 +10,8 @@ interface ScoreConfig {
 }
 
 const mockGetScoreConfig = jest
-  .fn<() => ScoreConfig>()
-  .mockImplementation(() => ({
+  .fn<() => Promise<ScoreConfig>>()
+  .mockImplementation(async () => ({
     repaymentDelta: parseInt(process.env.SCORE_REPAYMENT_DELTA ?? "15", 10),
     defaultPenalty: parseInt(process.env.SCORE_DEFAULT_PENALTY ?? "50", 10),
   }));
@@ -51,27 +51,27 @@ describe("SorobanService.getScoreConfig()", () => {
     mockGetScoreConfig.mockClear();
   });
 
-  it("returns default repaymentDelta of 15 when env var is not set", () => {
+  it("returns default repaymentDelta of 15 when env var is not set", async () => {
     delete process.env.SCORE_REPAYMENT_DELTA;
-    const cfg = mockGetScoreConfig();
+    const cfg = await mockGetScoreConfig();
     expect((cfg as any).repaymentDelta).toBe(15);
   });
 
-  it("returns default defaultPenalty of 50 when env var is not set", () => {
+  it("returns default defaultPenalty of 50 when env var is not set", async () => {
     delete process.env.SCORE_DEFAULT_PENALTY;
-    const cfg = mockGetScoreConfig();
+    const cfg = await mockGetScoreConfig();
     expect((cfg as any).defaultPenalty).toBe(50);
   });
 
-  it("returns repaymentDelta from SCORE_REPAYMENT_DELTA env var", () => {
+  it("returns repaymentDelta from SCORE_REPAYMENT_DELTA env var", async () => {
     process.env.SCORE_REPAYMENT_DELTA = "20";
-    const cfg = mockGetScoreConfig();
+    const cfg = await mockGetScoreConfig();
     expect((cfg as any).repaymentDelta).toBe(20);
   });
 
-  it("returns defaultPenalty from SCORE_DEFAULT_PENALTY env var", () => {
+  it("returns defaultPenalty from SCORE_DEFAULT_PENALTY env var", async () => {
     process.env.SCORE_DEFAULT_PENALTY = "75";
-    const cfg = mockGetScoreConfig();
+    const cfg = await mockGetScoreConfig();
     expect((cfg as any).defaultPenalty).toBe(75);
   });
 });

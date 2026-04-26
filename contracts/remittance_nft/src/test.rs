@@ -1306,3 +1306,30 @@ fn test_admin_remint_clears_seized_flag() {
 
     assert!(!client.is_seized(&user));
 }
+#[test]
+fn test_score_config() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+    client.initialize(&admin);
+
+    // Initial config should be default (+15, -50)
+    let config = client.get_score_config();
+    assert_eq!(config.repayment_delta, 15);
+    assert_eq!(config.default_penalty, 50);
+
+    // Update config
+    let new_config = ScoreConfig {
+        repayment_delta: 20,
+        default_penalty: 100,
+    };
+    client.set_score_config(&new_config);
+
+    // Verify update
+    let updated = client.get_score_config();
+    assert_eq!(updated.repayment_delta, 20);
+    assert_eq!(updated.default_penalty, 100);
+}
+

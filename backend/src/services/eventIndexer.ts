@@ -445,7 +445,7 @@ export class EventIndexer {
           // aggregate score deltas per borrower; apply after the transaction
           // to avoid issuing a query per event (N+1).
           if (event.eventType === "LoanRepaid") {
-            const { repaymentDelta } = sorobanService.getScoreConfig();
+            const { repaymentDelta } = await sorobanService.getScoreConfig();
             if (event.borrower) {
               scoreUpdates.set(
                 event.borrower,
@@ -453,7 +453,7 @@ export class EventIndexer {
               );
             }
           } else if (event.eventType === "LoanDefaulted") {
-            const { defaultPenalty } = sorobanService.getScoreConfig();
+            const { defaultPenalty } = await sorobanService.getScoreConfig();
             if (event.borrower) {
               scoreUpdates.set(
                 event.borrower,
@@ -461,7 +461,7 @@ export class EventIndexer {
               );
             }
           } else if (event.eventType === "CollateralLiquidated") {
-            const { defaultPenalty } = sorobanService.getScoreConfig();
+            const { defaultPenalty } = await sorobanService.getScoreConfig();
             if (event.borrower) {
               scoreUpdates.set(
                 event.borrower,

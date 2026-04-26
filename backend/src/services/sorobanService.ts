@@ -28,6 +28,11 @@ class SorobanService {
     return createSorobanRpcServer();
   }
 
+  private scoreConfig: { repaymentDelta: number; defaultPenalty: number } | null =
+    null;
+  private lastScoreConfigFetch = 0;
+  private readonly SCORE_CONFIG_TTL_MS = 60 * 60 * 1000; // 1 hour
+
   async ping(): Promise<"ok" | "error"> {
     const result = await this.healthCheck();
     return result.connected ? "ok" : "error";
@@ -648,20 +653,105 @@ class SorobanService {
 
   /**
    * Returns score adjustment constants for indexing.
-   * Values are sourced from environment variables so they stay in sync
-   * with the deployed RemittanceNFT contract constants without requiring
-   * a hardcoded value in application logic.
+   * Attempts to read them from the contract first, falling back to
+   * environment variables with hardcoded defaults.
+   * Results are cached for 1 hour to avoid excessive RPC load.
    */
-  getScoreConfig(): { repaymentDelta: number; defaultPenalty: number } {
-    const repaymentDelta = Number.parseInt(
-      process.env.SCORE_REPAYMENT_DELTA ?? "15",
-      10,
-    );
-    const defaultPenalty = Number.parseInt(
-      process.env.SCORE_DEFAULT_PENALTY ?? "50",
-      10,
-    );
-    return { repaymentDelta, defaultPenalty };
+  async getScoreConfig(): Promise<{
+    repaymentDelta: number;
+    defaultPenalty: number;
+  }> {
+    const now = Date.now();
+    if (
+      this.scoreConfig &&
+      now - this.lastScoreConfigFetch < this.SCORE_CONFIG_TTL_MS
+    ) {
+      return this.scoreConfig;
+    }
+
+    try {
+      // Attempt to read from contract first
+      const config = await this.fetchScoreConfigFromContract();
+      this.scoreConfig = config;
+      this.lastScoreConfigFetch = now;
+      logger.info("Fetched score configuration from contract", config);
+      return config;
+    } catch (error) {
+      logger.warn(
+        "Failed to fetch score config from contract, falling back to env vars",
+        { error: error instanceof Error ? error.message : String(error) },
+      );
+
+      const repaymentDelta = Number.parseInt(
+        process.env.SCORE_REPAYMENT_DELTA ?? "15",
+        10,
+      );
+      const defaultPenalty = Number.parseInt(
+        process.env.SCORE_DEFAULT_PENALTY ?? "50",
+        10,
+      );
+
+      const config = { repaymentDelta, defaultPenalty };
+      // Don't cache fallback values for long so we retry contract call soon
+      this.scoreConfig = config;
+      this.lastScoreConfigFetch = now - (this.SCORE_CONFIG_TTL_MS - 5 * 60 * 1000); // Retry in 5 mins
+      return config;
+    }
+  }
+
+  /**
+   * Reads score configuration from the Remittance NFT contract.
+   * Assumes the contract has a `get_score_config` method.
+   */
+  private async fetchScoreConfigFromContract(): Promise<{
+    repaymentDelta: number;
+    defaultPenalty: number;
+  }> {
+    const server = this.getRpcServer();
+    const contractId = this.getRemittanceNftContractId();
+    const passphrase = this.getNetworkPassphrase();
+    const source = this.getScoreReadSourceKeypair();
+
+    const account = await server.getAccount(source.publicKey());
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "get_score_config",
+          args: [],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const simulation = await server.simulateTransaction(tx);
+    if ("error" in simulation) {
+      throw new Error(`Simulation failed: ${simulation.error}`);
+    }
+
+    const retval = simulation.result?.retval;
+    if (!retval) {
+      throw new Error("No return value from get_score_config");
+    }
+
+    const native = scValToNative(retval);
+    if (
+      typeof native !== "object" ||
+      native === null ||
+      !("repayment_delta" in native) ||
+      !("default_penalty" in native)
+    ) {
+      throw new Error("Invalid score config format returned by contract");
+    }
+
+    return {
+      repaymentDelta: Number(native.repayment_delta),
+      defaultPenalty: Number(native.default_penalty),
+    };
   }
 }
 

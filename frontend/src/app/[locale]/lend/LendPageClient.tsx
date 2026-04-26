@@ -30,6 +30,7 @@ import { OperationProgress } from "../../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
 import { useSSE } from "../../hooks/useSSE";
+import { formatAmountOnBlur } from "../../utils/amountPrecision";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Tooltip } from "../../components/ui/Tooltip";
 
@@ -296,6 +297,7 @@ export function LendPageClient() {
                     step="0.01"
                     value={depositAmount}
                     onChange={(event) => setDepositAmount(event.target.value)}
+                    onBlur={(event) => setDepositAmount(formatAmountOnBlur(event.target.value, "USDC"))}
                     className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900"
                   />
                   <button
@@ -329,6 +331,7 @@ export function LendPageClient() {
                     step="0.01"
                     value={withdrawAmount}
                     onChange={(event) => setWithdrawAmount(event.target.value)}
+                    onBlur={(event) => setWithdrawAmount(formatAmountOnBlur(event.target.value, "USDC"))}
                     className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900"
                   />
                   <button
