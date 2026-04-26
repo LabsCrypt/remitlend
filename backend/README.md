@@ -159,7 +159,7 @@ npm run seed:reset
 
 ### Health Check
 
-**GET** `/api/health`
+**GET** `/health`
 
 Check if the API is running.
 
@@ -168,9 +168,12 @@ Check if the API is running.
 ```json
 {
   "status": "ok",
+  "uptime": 123.456,
   "timestamp": "2024-01-15T10:30:00.000Z"
 }
 ```
+
+`GET /api/health` is also available as a legacy alias.
 
 ### Credit Score
 
@@ -356,9 +359,9 @@ npm test -- --watch
 import request from "supertest";
 import app from "../app";
 
-describe("GET /api/health", () => {
+describe("GET /health", () => {
   it("should return 200 OK", async () => {
-    const response = await request(app).get("/api/health").expect(200);
+    const response = await request(app).get("/health").expect(200);
 
     expect(response.body).toHaveProperty("status", "ok");
   });
