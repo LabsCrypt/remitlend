@@ -7,7 +7,7 @@ export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "LoanApproved",
   "LoanRepaid",
   "LoanDefaulted",
-  "Seized",
+  "CollateralLiquidated",
   "Paused",
   "Unpaused",
   "MinScoreUpdated",
