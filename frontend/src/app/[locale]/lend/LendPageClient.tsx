@@ -30,6 +30,7 @@ import { OperationProgress } from "../../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
 import { useSSE } from "../../hooks/useSSE";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -385,12 +386,11 @@ export function LendPageClient() {
 
             {!isLoading &&
               (loans ?? []).filter((loan) => loan.status === "active").length === 0 && (
-                <div className="rounded-2xl border border-dashed border-zinc-300 px-6 py-8 text-center dark:border-zinc-700">
-                  <PiggyBank className="mx-auto h-6 w-6 text-zinc-400" />
-                  <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    No active pool-funded loans available yet.
-                  </p>
-                </div>
+                <EmptyState
+                  icon={PiggyBank}
+                  title="No active pool-funded loans yet"
+                  description="Active loans funded by the pool will appear here once borrowers draw against available liquidity."
+                />
               )}
           </div>
         </section>
@@ -403,6 +403,12 @@ export function LendPageClient() {
               <Skeleton className="h-5 w-40" />
               <Skeleton className="h-[300px] w-full rounded-xl" />
             </div>
+          ) : chartData.length === 0 ? (
+            <EmptyState
+              icon={Activity}
+              title="No yield history yet"
+              description="Yield performance will appear here after the pool records deposits, loans, and earnings."
+            />
           ) : (
             <YieldEarningsChart data={chartData} />
           )}

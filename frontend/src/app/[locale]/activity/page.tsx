@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useTranslations } from "next-intl";
-import { Clock, ArrowUpRight, ArrowDownLeft, ExternalLink, X } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
+import { Clock, ArrowUpRight, ArrowDownLeft, ExternalLink } from "lucide-react";
 import { useWalletStore, selectIsWalletConnected } from "../../stores/useWalletStore";
 import { useLoans, useRemittances } from "../../hooks/useApi";
 import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 import { StatusIndicator } from "../../components/ui/StatusIndicator";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 type FilterType = "all" | "loan" | "remittance";
 
@@ -24,6 +25,7 @@ const ITEMS_PER_PAGE = 20;
 
 export default function ActivityPage() {
   const t = useTranslations("ActivityPage");
+  const locale = useLocale();
   const isConnected = useWalletStore(selectIsWalletConnected);
   const [currentPage, setCurrentPage] = useState(1);
   const [filterType, setFilterType] = useState<FilterType>("all");
@@ -34,9 +36,10 @@ export default function ActivityPage() {
   });
 
   const isLoading = loansLoading || remittancesLoading;
+  const isFilteredView = filterType !== "all";
 
   const allActivity = useMemo(() => {
-    const loanEvents: ActivityItem[] = loans.map((loan, idx) => ({
+    const loanEvents: ActivityItem[] = loans.map((loan) => ({
       id: `loan-${loan.id}`,
       type:
         loan.status === "repaid"
@@ -53,7 +56,7 @@ export default function ActivityPage() {
       txHash: undefined,
     }));
 
-    const remittanceEvents: ActivityItem[] = remittances.map((remittance, idx) => ({
+    const remittanceEvents: ActivityItem[] = remittances.map((remittance) => ({
       id: `remittance-${remittance.id}`,
       type: "Remittance",
       description: `To ${remittance.recipientAddress.slice(0, 6)}...${remittance.recipientAddress.slice(-4)}`,
@@ -142,9 +145,18 @@ export default function ActivityPage() {
               ))}
             </div>
           ) : paginatedActivity.length === 0 ? (
-            <div className="p-12 text-center">
-              <Clock className="h-12 w-12 mx-auto text-zinc-300 dark:text-zinc-700 mb-4" />
-              <p className="text-zinc-500 dark:text-zinc-400">{t("emptyState")}</p>
+            <div className="p-6">
+              <EmptyState
+                icon={Clock}
+                title={isFilteredView ? "No matching activity" : "No activity yet"}
+                description={
+                  isFilteredView
+                    ? "Try a different filter to see more loan and remittance history."
+                    : t("emptyState")
+                }
+                actionLabel={isFilteredView ? undefined : "Send your first remittance"}
+                actionHref={isFilteredView ? undefined : `/${locale}/send-remittance`}
+              />
             </div>
           ) : (
             <div className="divide-y divide-zinc-200 dark:divide-zinc-800">

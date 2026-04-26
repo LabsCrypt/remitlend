@@ -18,6 +18,7 @@ import {
   type UseMutationOptions,
 } from "@tanstack/react-query";
 import { useUserStore } from "../stores/useUserStore";
+import { isJwtExpired, logoutUser, SessionExpiredError } from "../lib/session";
 
 // NEXT_PUBLIC_API_URL is required in production.
 // In development it falls back to localhost — but never silently in production.
@@ -100,11 +101,26 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   // Attach JWT token if available (reads directly from Zustand store state,
   // safe to call outside React render since Zustand stores are singletons).
   const token = useUserStore.getState().authToken;
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (token) {
+    if (isJwtExpired(token)) {
+      logoutUser("expired");
+      throw new SessionExpiredError();
+    }
+
+    if (!headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
   }
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+
+  if (response.status === 401 && token) {
+    const error = await response
+      .json()
+      .catch(() => ({ message: "Session expired. Please sign in again." }));
+    logoutUser("expired");
+    throw new SessionExpiredError(error.message);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }));
