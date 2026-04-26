@@ -506,9 +506,6 @@ impl GovernanceContract {
 
         env.storage().instance().remove(&KEY_PENDING);
 
-        // Set cooldown timestamp to prevent immediate reproposal spam
-        env.storage().instance().set(&KEY_LAST_CANCELLED_AT, &now);
-
         env.events().publish(
             (symbol_short!("GovExp"), caller.clone()),
             ProposalExpiredEvent {

@@ -23,20 +23,24 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
   const daysUntil = getDaysUntilDeadline(loan.nextPaymentDeadline);
   const isOverdue = daysUntil < 0;
   const isUrgent = daysUntil >= 0 && daysUntil <= 7;
+  const isLiquidated = loan.status === "liquidated";
   const isDefaulted = loan.status === "defaulted";
+  const isTerminalDistressed = isDefaulted || isLiquidated;
 
   // ── Badge ──────────────────────────────────────────────────────────────────
   const badge =
     variant === "detailed"
       ? {
-          label: isDefaulted
-            ? "Defaulted"
-            : isOverdue
-              ? "Overdue"
-              : isUrgent
-                ? "Due Soon"
-                : "On Track",
-          className: isDefaulted
+          label: isLiquidated
+            ? "Liquidated"
+            : isDefaulted
+              ? "Defaulted"
+              : isOverdue
+                ? "Overdue"
+                : isUrgent
+                  ? "Due Soon"
+                  : "On Track",
+          className: isTerminalDistressed
             ? "bg-red-900 text-white"
             : isOverdue
               ? "bg-red-100 text-red-800"
@@ -47,32 +51,34 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
       : null;
 
   // ── Deadline colours ───────────────────────────────────────────────────────
-  const deadlineBg = isDefaulted
+  const deadlineBg = isTerminalDistressed
     ? "bg-red-900/20"
     : isOverdue
       ? "bg-red-50"
       : isUrgent
         ? "bg-yellow-50"
         : "bg-gray-50";
-  const deadlineTextColor = isDefaulted
+  const deadlineTextColor = isTerminalDistressed
     ? "text-red-900"
     : isOverdue
       ? "text-red-600"
       : isUrgent
         ? "text-yellow-600"
         : "text-gray-900";
-  const deadlineSubColor = isDefaulted
+  const deadlineSubColor = isTerminalDistressed
     ? "text-red-700"
     : isOverdue
       ? "text-red-600"
       : isUrgent
         ? "text-yellow-600"
         : "text-gray-600";
-  const deadlineLabel = isDefaulted
-    ? "Contact support to recover"
-    : isOverdue
-      ? `${Math.abs(daysUntil)} days overdue`
-      : `${daysUntil} days remaining`;
+  const deadlineLabel = isLiquidated
+    ? "Collateral was liquidated"
+    : isDefaulted
+      ? "Contact support to recover"
+      : isOverdue
+        ? `${Math.abs(daysUntil)} days overdue`
+        : `${daysUntil} days remaining`;
 
   // ── Progress (detailed only) ───────────────────────────────────────────────
   const totalForProgress = loan.principal + loan.accruedInterest;
@@ -154,7 +160,7 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
 
       {/* Actions */}
       <div className="flex gap-3">
-        {isDefaulted ? (
+        {isTerminalDistressed ? (
           <>
             <Button
               onClick={() => router.push(`/loans/${loan.id}`)}

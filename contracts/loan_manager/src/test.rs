@@ -84,7 +84,7 @@ fn test_loan_request_success() {
 
     let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
-    assert_eq!(manager.version(), 3);
+    assert_eq!(manager.version(), 4);
 
     // Give borrower a score high enough to pass (>= 500)
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
@@ -950,7 +950,7 @@ fn test_late_fee_is_capped_at_quarter_principal() {
     let stellar_token = StellarAssetClient::new(&env, &token_id);
     stellar_token.mint(&pool_client, &10_000);
 
-    manager.set_late_fee_rate(&10_000);
+    manager.set_late_fee_rate(&2_500);
     manager.set_grace_period_ledgers(&0);
     let loan_id = manager.request_loan(&borrower, &1000, &17280);
     manager.approve_loan(&loan_id);
@@ -960,6 +960,17 @@ fn test_late_fee_is_capped_at_quarter_principal() {
 
     let loan = manager.get_loan(&loan_id);
     assert_eq!(loan.accrued_late_fee, 250);
+}
+
+#[test]
+fn test_set_late_fee_rate_rejects_above_cap() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool_client, _token_id, _token_admin) = setup_test(&env);
+
+    let result = manager.try_set_late_fee_rate(&2_501);
+    assert_eq!(result, Err(Ok(LoanError::InvalidRate)));
 }
 
 #[test]
@@ -1084,6 +1095,80 @@ fn test_collateral_is_seized_on_batch_default() {
         token_client.balance(&pool_client),
         pool_balance_before + 300 + 500
     );
+}
+
+#[test]
+fn test_liquidate_under_threshold_transfers_bonus_and_refund() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    manager.set_liquidation_threshold(&14_500);
+    manager.set_liquidation_bonus_bps(&1_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+    manager.deposit_collateral(&loan_id, &1_400);
+
+    let borrower_balance_before = token_client.balance(&borrower);
+    let liquidator_balance_before = token_client.balance(&liquidator);
+    let pool_balance_before = token_client.balance(&pool_client);
+
+    manager.liquidate(&liquidator, &loan_id);
+
+    let liquidated_loan = manager.get_loan(&loan_id);
+    assert_eq!(liquidated_loan.status, LoanStatus::Liquidated);
+    assert_eq!(manager.get_collateral(&loan_id), 0);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+    assert_eq!(
+        token_client.balance(&pool_client),
+        pool_balance_before + 1_000
+    );
+    assert_eq!(
+        token_client.balance(&liquidator),
+        liquidator_balance_before + 140
+    );
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before + 260
+    );
+}
+
+#[test]
+fn test_liquidate_rejects_healthy_collateral_ratio() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &650, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+    manager.deposit_collateral(&loan_id, &1_600);
+
+    let result = manager.try_liquidate(&liquidator, &loan_id);
+    assert_eq!(result, Err(Ok(LoanError::LoanNotLiquidatable)));
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
+    assert_eq!(manager.get_collateral(&loan_id), 1_600);
 }
 
 #[test]
