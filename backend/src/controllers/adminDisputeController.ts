@@ -89,7 +89,8 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
   // Notify borrower via notifications + SSE (and external email if enabled)
   try {
     const msg = `Your dispute for loan ${dispute.loan_id} has been resolved: ${resolution}`;
-    const type = action === "reverse" ? "repayment_confirmed" : "loan_defaulted";
+    const type =
+      action === "reverse" ? "repayment_confirmed" : "loan_defaulted";
     await notificationService.createNotification({
       userId: dispute.borrower,
       type: type as any,
@@ -97,7 +98,7 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
       message: msg,
       loanId: dispute.loan_id,
     });
-  } catch (err) {
+  } catch (_err) {
     // Log and continue — resolution shouldn't fail because of notifications
     // notificationService already logs errors internally
   }
@@ -137,7 +138,7 @@ export const rejectLoanDispute = asyncHandler(async (req, res) => {
       message: admin_note ? `${msg} Note: ${admin_note}` : msg,
       loanId: dispute.loan_id,
     });
-  } catch (err) {
+  } catch (_err) {
     // swallow
   }
 

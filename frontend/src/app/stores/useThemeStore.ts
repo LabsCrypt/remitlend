@@ -90,7 +90,11 @@ export const useThemeStore = create<ThemeStore>()(
           // When stored === 'system' or no stored value, keep store.theme as 'system' or resolved
           applyTheme(stored === "system" ? "system" : nextTheme);
           // If stored === 'system', keep state.theme as 'system', else set resolved theme
-          set({ theme: stored === "system" ? "system" : nextTheme }, false, "theme/syncSystemTheme");
+          set(
+            { theme: stored === "system" ? "system" : nextTheme },
+            false,
+            "theme/syncSystemTheme",
+          );
         };
 
         mediaQuery.addEventListener("change", handleSystemThemeChange);

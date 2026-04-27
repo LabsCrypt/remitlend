@@ -79,8 +79,18 @@ router.post(
 );
 
 // New admin JWT-protected endpoints
-router.get("/disputes", requireJwtAuth, requireRoles("admin"), listLoanDisputes);
-router.get("/disputes/:disputeId", requireJwtAuth, requireRoles("admin"), getLoanDispute);
+router.get(
+  "/disputes",
+  requireJwtAuth,
+  requireRoles("admin"),
+  listLoanDisputes,
+);
+router.get(
+  "/disputes/:disputeId",
+  requireJwtAuth,
+  requireRoles("admin"),
+  getLoanDispute,
+);
 router.post(
   "/disputes/:disputeId/resolve",
   requireJwtAuth,

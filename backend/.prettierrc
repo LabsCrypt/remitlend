@@ -6,5 +6,5 @@
   "singleQuote": true,
   "trailingComma": "all",
   "arrowParens": "always",
-  "endOfLine": "lf"
+  "endOfLine": "auto"
 }
