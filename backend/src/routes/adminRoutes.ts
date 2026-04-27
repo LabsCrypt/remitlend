@@ -245,6 +245,18 @@ router.post(
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/WebhookSubscriptionResponse'
+ */
+router.post(
+  "/webhooks",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  createWebhookSubscription,
+);
+
+/**
+ * @swagger
+ * /admin/webhooks:
  *   get:
  *     summary: List webhook subscriptions
  *     tags: [Admin]
@@ -258,14 +270,8 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/WebhookSubscriptionListResponse'
  */
-router.post(
-  "/webhooks",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  createWebhookSubscription,
-);
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
+
 
 /**
  * @swagger
