@@ -1,18 +1,24 @@
-import { query } from "../db/connection.js";
+import { type PoolClient, query } from "../db/connection.js";
 import logger from "../utils/logger.js";
 
 /**
- * Apply multiple user score deltas. The `updates` map contains userId => delta
- * (can be positive or negative). All user updates are inserted in a single
- * query for efficiency.
+ * Apply multiple user score deltas atomically.
+ *
+ * The `updates` map contains `userId => delta` (positive or negative).
+ * All rows are upserted in a single query for efficiency.
+ *
+ * When `client` is supplied the query runs on that pinned connection so it
+ * participates in the caller's open transaction.  When omitted the shared
+ * pool `query()` is used (standalone use).
  */
 export async function updateUserScoresBulk(
   updates: Map<string, number>,
+  client?: PoolClient,
 ): Promise<void> {
   if (!updates || updates.size === 0) return;
 
   const params: (string | number)[] = [];
-  
+
   for (const [userId, delta] of updates) {
     // skip empty user ids
     if (!userId) continue;
@@ -21,21 +27,25 @@ export async function updateUserScoresBulk(
 
   if (params.length === 0) return;
 
-  try {
-    const valuePlaceholders = Array.from(
-      { length: params.length / 2 },
-      (_, i) => `($${i * 2 + 1}, 500 + $${i * 2 + 2})`
-    ).join(", ");
+  const valuePlaceholders = Array.from(
+    { length: params.length / 2 },
+    (_, i) => `($${i * 2 + 1}, 500 + $${i * 2 + 2})`,
+  ).join(", ");
 
-    await query(
-      `INSERT INTO scores (user_id, current_score)
-       VALUES ${valuePlaceholders}
-       ON CONFLICT (user_id)
-       DO UPDATE SET
-         current_score = LEAST(850, GREATEST(300, scores.current_score + EXCLUDED.current_score - 500)),
-         updated_at = CURRENT_TIMESTAMP`,
-      params,
-    );
+  const sql = `
+    INSERT INTO scores (user_id, current_score)
+    VALUES ${valuePlaceholders}
+    ON CONFLICT (user_id)
+    DO UPDATE SET
+      current_score = LEAST(850, GREATEST(300, scores.current_score + EXCLUDED.current_score - 500)),
+      updated_at = CURRENT_TIMESTAMP`;
+
+  try {
+    if (client) {
+      await client.query(sql, params);
+    } else {
+      await query(sql, params);
+    }
     logger.info("Applied bulk user score updates", {
       updatedCount: params.length / 2,
     });

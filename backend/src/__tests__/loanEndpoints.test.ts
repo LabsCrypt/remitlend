@@ -27,6 +27,7 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
   closePool: jest.fn(),
+  withTransaction: jest.fn(),
 }));
 
 // Mock CacheService to prevent Redis connections
