@@ -22,6 +22,12 @@ By participating in this project, you agree to maintain a respectful, inclusive,
 
 We follow a **Feature-Branch-to-Main** workflow. All development work should happen in feature branches and be merged into `main` via Pull Requests.
 
+### Architecture & Contributor Wiki
+
+If you're new to the codebase, start with:
+- `docs/wiki/README.md` (high-level contributor wiki)
+- `ARCHITECTURE.md` (system overview)
+
 ```mermaid
 graph TD
     Main[main branch] -->|Checkout| Feat[feat/your-feature]

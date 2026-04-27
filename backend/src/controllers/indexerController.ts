@@ -98,11 +98,12 @@ const buildIndexerFromConfig = (): EventIndexer => {
     process.env.LOAN_MANAGER_CONTRACT_ID,
     process.env.LENDING_POOL_CONTRACT_ID,
     process.env.REMITTANCE_NFT_CONTRACT_ID,
-    process.env.GOVERNANCE_CONTRACT_ID,
+    process.env.MULTISIG_GOVERNANCE_CONTRACT_ID,
   ].filter((id): id is string => Boolean(id && id.trim().length > 0));
 
   if (contractIds.length === 0) {
-    throw new Error("No contract IDs are configured");
+    throw new Error("At least one indexer contract ID must be configured");
+  }
   }
 
   const rpcUrl = getStellarRpcUrl();
@@ -110,7 +111,7 @@ const buildIndexerFromConfig = (): EventIndexer => {
 
   return new EventIndexer({
     rpcUrl,
-    contractIds,
+    contractConfigs: contractIds.map((contractId) => ({ contractId })),
     pollIntervalMs: 30_000,
     batchSize,
   });

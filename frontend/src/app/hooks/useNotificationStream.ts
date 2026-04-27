@@ -38,75 +38,80 @@ export function useNotificationStream() {
       try {
         const url = `${API_URL}/api/notifications/stream`;
         const response = await fetch(url, {
+          method: "GET",
+          credentials: "include",
           headers: {
-            "Accept": "text/event-stream",
-            "Authorization": `Bearer ${token}`,
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${token}`,
           },
           signal: controller.signal,
         });
 
         if (!response.ok) {
-          throw new Error(`SSE failed: ${response.status}`);
+          throw new Error(`SSE connect failed (${response.status})`);
         }
 
         if (!response.body) {
-          throw new Error("No response body");
+          throw new Error("SSE response body missing");
         }
 
-        retryDelay.current = 1_000;
+        retryDelay.current = 1_000; // reset backoff on successful connect
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
 
-        while (true) {
+        while (!cancelled) {
           const { done, value } = await reader.read();
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
           const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
+          buffer = parts.pop() ?? "";
 
           for (const part of parts) {
             const lines = part.split("\n");
             for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                const dataStr = line.slice(6);
-                try {
-                  const payload = JSON.parse(dataStr) as
-                    | AppNotification
-                    | { type: "init"; notifications: AppNotification[] };
+              if (!line.startsWith("data:")) continue;
+              const dataStr = line.slice("data:".length).trim();
+              if (!dataStr) continue;
 
-                  queryClient.setQueryData(
-                    queryKeys.notifications.all(),
-                    (prev: { notifications: AppNotification[]; unreadCount: number } | undefined) => {
-                      const existing = prev ?? { notifications: [], unreadCount: 0 };
+              try {
+                const payload = JSON.parse(dataStr) as
+                  | AppNotification
+                  | { type: "init"; notifications: AppNotification[] };
 
-                      if ("type" in payload && payload.type === "init") {
-                        const ids = new Set(existing.notifications.map((n) => n.id));
-                        const merged = [
-                          ...payload.notifications.filter((n) => !ids.has(n.id)),
-                          ...existing.notifications,
-                        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                        const unreadCount = merged.filter((n) => !n.read).length;
-                        return { notifications: merged, unreadCount };
-                      }
+                queryClient.setQueryData(
+                  queryKeys.notifications.all(),
+                  (prev: { notifications: AppNotification[]; unreadCount: number } | undefined) => {
+                    const existing = prev ?? { notifications: [], unreadCount: 0 };
 
-                      const newNotif = payload as AppNotification;
-                      // Avoid duplicates
-                      if (existing.notifications.some(n => n.id === newNotif.id)) {
-                        return existing;
-                      }
-                      const notifications = [newNotif, ...existing.notifications];
-                      return {
-                        notifications,
-                        unreadCount: existing.unreadCount + (newNotif.read ? 0 : 1),
-                      };
-                    },
-                  );
-                } catch (e) {
-                  console.error("Failed to parse notification SSE data", e);
-                }
+                    if ("type" in payload && payload.type === "init") {
+                      const ids = new Set(existing.notifications.map((n) => n.id));
+                      const merged = [
+                        ...payload.notifications.filter((n) => !ids.has(n.id)),
+                        ...existing.notifications,
+                      ].sort(
+                        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                      );
+                      const unreadCount = merged.filter((n) => !n.read).length;
+                      return { notifications: merged, unreadCount };
+                    }
+
+                    const newNotif = payload as AppNotification;
+                    if (existing.notifications.some((n) => n.id === newNotif.id)) {
+                      return existing;
+                    }
+
+                    const notifications = [newNotif, ...existing.notifications];
+                    return {
+                      notifications,
+                      unreadCount: existing.unreadCount + (newNotif.read ? 0 : 1),
+                    };
+                  },
+                );
+              } catch {
+                // Ignore malformed SSE messages
               }
             }
           }

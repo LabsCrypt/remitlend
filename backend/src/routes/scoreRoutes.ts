@@ -3,9 +3,14 @@ import {
   getScore,
   updateScore,
   getScoreBreakdown,
+  getOnChainScoreHistory,
 } from "../controllers/scoreController.js";
 import { validate } from "../middleware/validation.js";
-import { getScoreSchema, updateScoreSchema } from "../schemas/scoreSchemas.js";
+import {
+  getScoreHistorySchema,
+  getScoreSchema,
+  updateScoreSchema,
+} from "../schemas/scoreSchemas.js";
 import { requireApiKey } from "../middleware/auth.js";
 import { scoreUpdateRateLimit } from "../middleware/rateLimitMiddleware.js";
 import {
@@ -59,6 +64,42 @@ router.get(
   requireWalletParamMatchesJwt("userId"),
   validate(getScoreSchema),
   getScore,
+);
+
+/**
+ * @swagger
+ * /score/{walletAddress}/history:
+ *   get:
+ *     summary: Retrieve a user's on-chain credit score history
+ *     description: >
+ *       Queries the RemittanceNFT contract for the score history vector and
+ *       returns a chronologically sorted timeline. Cached for 60 seconds to
+ *       avoid spamming the Soroban RPC.
+ *     tags: [Score]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: walletAddress
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Must equal the JWT wallet (`publicKey`)
+ *     responses:
+ *       200:
+ *         description: Score history retrieved successfully.
+ *       401:
+ *         description: Missing or invalid Bearer token.
+ *       403:
+ *         description: walletAddress does not match the authenticated wallet.
+ */
+router.get(
+  "/:walletAddress/history",
+  requireJwtAuth,
+  requireScopes("read:score"),
+  requireWalletParamMatchesJwt("walletAddress"),
+  validate(getScoreHistorySchema),
+  getOnChainScoreHistory,
 );
 
 /**

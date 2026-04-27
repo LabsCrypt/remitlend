@@ -33,6 +33,7 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
+  SUPPORTED_WEBHOOK_EVENT_TYPES: [],
   webhookService: {
     dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
   },

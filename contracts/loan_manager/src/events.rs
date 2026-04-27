@@ -170,17 +170,6 @@ pub fn loan_liquidated(
         .publish(topics, (debt_repaid, liquidator_bonus, borrower_refund));
 }
 
-pub fn loan_extended(
-    env: &Env,
-    loan_id: u32,
-    borrower: Address,
-    new_due_date: u32,
-    extension_fee: i128,
-) {
-    let topics = (Symbol::new(env, "LoanExtended"), loan_id, borrower);
-    env.events().publish(topics, (new_due_date, extension_fee));
-}
-
 pub fn min_rate_bps_updated(env: &Env, admin: Address, old_rate: u32, new_rate: u32) {
     let topics = (Symbol::new(env, "MinRateBpsUpdated"), admin);
     env.events().publish(topics, (old_rate, new_rate));

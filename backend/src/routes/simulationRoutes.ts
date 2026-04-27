@@ -8,7 +8,7 @@ import {
   getRemittanceHistorySchema,
   simulatePaymentSchema,
 } from "../schemas/simulationSchemas.js";
-import { strictRateLimiter } from "../middleware/rateLimiter.js";
+import { simulationRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -42,6 +42,7 @@ const router = Router();
 
 router.get(
   "/history/:userId",
+  simulationRateLimiter,
   validate(getRemittanceHistorySchema),
   getRemittanceHistory,
 );
@@ -85,7 +86,7 @@ router.get(
  */
 router.post(
   "/simulate",
-  strictRateLimiter,
+  simulationRateLimiter,
   validate(simulatePaymentSchema),
   simulatePayment,
 );

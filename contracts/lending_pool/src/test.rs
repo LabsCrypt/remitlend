@@ -501,6 +501,81 @@ fn test_full_loan_cycle_with_interest() {
     assert_eq!(token_client.balance(&pool_id), 0);
 }
 
+#[test]
+fn test_pool_stats_reflect_funds_allocated_and_returned() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5_000);
+
+    pool_client.deposit(&provider, &token_id, &5_000);
+
+    let initial_stats = pool_client.get_pool_stats(&token_id);
+    assert_eq!(initial_stats.total_deposits, 5_000);
+    assert_eq!(initial_stats.pool_token_balance, 5_000);
+    assert_eq!(initial_stats.utilization_bps, 0);
+
+    token_client.transfer(&pool_id, &borrower, &2_000);
+    let allocated_stats = pool_client.get_pool_stats(&token_id);
+    assert_eq!(allocated_stats.pool_token_balance, 3_000);
+    assert_eq!(allocated_stats.total_deposits, 5_000);
+    assert_eq!(allocated_stats.utilization_bps, 4_000);
+
+    stellar_asset_client.mint(&borrower, &200);
+    token_client.transfer(&borrower, &pool_id, &2_200);
+
+    let returned_stats = pool_client.get_pool_stats(&token_id);
+    assert_eq!(returned_stats.pool_token_balance, 5_200);
+    assert_eq!(returned_stats.total_deposits, 5_000);
+    assert_eq!(returned_stats.utilization_bps, 0);
+}
+
+#[test]
+fn test_many_depositors_receive_proportional_yield() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let depositors = [
+        (Address::generate(&env), 1_000_i128),
+        (Address::generate(&env), 2_000_i128),
+        (Address::generate(&env), 3_000_i128),
+    ];
+
+    for (provider, amount) in &depositors {
+        stellar_asset_client.mint(provider, amount);
+        pool_client.deposit(provider, &token_id, amount);
+    }
+
+    stellar_asset_client.mint(&pool_id, &600);
+
+    for (provider, shares) in &depositors {
+        pool_client.withdraw(provider, &token_id, shares);
+    }
+
+    assert_eq!(token_client.balance(&depositors[0].0), 1_100);
+    assert_eq!(token_client.balance(&depositors[1].0), 2_200);
+    assert_eq!(token_client.balance(&depositors[2].0), 3_300);
+    assert_eq!(token_client.balance(&pool_id), 0);
+}
+
 // ── Admin transfer ────────────────────────────────────────────────────────────
 
 #[test]

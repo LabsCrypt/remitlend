@@ -41,6 +41,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: backend
+      - name: Lint
+        run: npm run lint
+        working-directory: backend
+      - name: Build
+        run: npm run build
+        working-directory: backend
       - name: Type check
         run: npm run typecheck
         working-directory: backend
