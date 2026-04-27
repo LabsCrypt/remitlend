@@ -200,7 +200,7 @@ export interface BorrowerLoan {
   totalOwed: number;
   totalRepaid: number;
   nextPaymentDeadline: string;
-  status: "active" | "pending" | "repaid";
+  status: "active" | "pending" | "repaid" | "defaulted";
   borrower: string;
   approvedAt?: string;
 }
