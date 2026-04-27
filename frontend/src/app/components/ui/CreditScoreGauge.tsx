@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { ArrowUp, ArrowDown, RefreshCw, AlertCircle } from "lucide-react";
 
 interface CreditScoreGaugeProps {
-  score: number;
+  score?: number | null;
   previousScore?: number;
   min?: number;
   max?: number;
@@ -57,8 +57,7 @@ export function CreditScoreGauge({
   error = null,
   onRetry,
 }: CreditScoreGaugeProps) {
-  const band = useMemo(() => getBand(score), [score]);
-  const delta = previousScore != null ? score - previousScore : null;
+  const numericScore = typeof score === "number" && Number.isFinite(score) ? score : null;
 
   // Loading state
   if (isLoading) {
@@ -123,7 +122,7 @@ export function CreditScoreGauge({
   }
 
   // New user with no score (score is 0 or below minimum)
-  if (score === 0 || score < min) {
+  if (numericScore === null || numericScore === 0 || numericScore < min) {
     return (
       <div className="flex flex-col items-center gap-3">
         <div className="relative" role="img" aria-label="No credit score yet">
@@ -149,6 +148,9 @@ export function CreditScoreGauge({
     );
   }
 
+  const band = useMemo(() => getBand(numericScore), [numericScore]);
+  const delta = previousScore != null ? numericScore - previousScore : null;
+
   const cx = 120;
   const cy = 120;
   const r = 100;
@@ -156,7 +158,7 @@ export function CreditScoreGauge({
   const endAngle = 120;
   const totalArc = endAngle - startAngle;
 
-  const clampedScore = Math.max(min, Math.min(max, score));
+  const clampedScore = Math.max(min, Math.min(max, numericScore));
   const fraction = (clampedScore - min) / (max - min);
   const scoreAngle = startAngle + fraction * totalArc;
 
@@ -174,7 +176,11 @@ export function CreditScoreGauge({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="relative" role="img" aria-label={`Credit score: ${score}, ${band.label}`}>
+      <div
+        className="relative"
+        role="img"
+        aria-label={`Credit score: ${numericScore}, ${band.label}`}
+      >
         <svg width="240" height="160" viewBox="0 60 240 140">
           {/* Background band arcs */}
           {bandArcs.map((b) => (
@@ -214,7 +220,7 @@ export function CreditScoreGauge({
 
         {/* Center score display */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
-          <span className={`text-4xl font-bold ${band.color}`}>{score}</span>
+          <span className={`text-4xl font-bold ${band.color}`}>{numericScore}</span>
         </div>
       </div>
 

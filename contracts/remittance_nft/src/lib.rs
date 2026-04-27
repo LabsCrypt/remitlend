@@ -23,6 +23,7 @@ pub enum NftError {
     InvalidHistoryHash = 14,
     NoProposedAdmin = 15,
     RemintNotApproved = 16,
+    BelowMinimum = 17,
 }
 
 #[contracttype]
@@ -56,6 +57,7 @@ pub enum DataKey {
     TransferCooldown(Address),
     Paused,
     ProposedAdmin,
+    MinRepaymentAmount,
 }
 
 #[contract]
@@ -74,6 +76,13 @@ impl RemittanceNFT {
     const MIN_CREDIT_SCORE: u32 = 300;
     pub const MAX_SCORE: u32 = 850;
     pub const MAX_ALLOWED_BURN_THRESHOLD: u32 = 1000; // Set as appropriate for your business logic
+    const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 0;
+    /// Minimum repayment amount accepted by update_score() (1/10 XLM in stroops).
+    /// Dust repayments below this threshold award 0 score points due to integer
+    /// division (`repayment_amount / 100 == 0`) but still write storage and emit
+    /// events, enabling spam attacks. This floor rejects such calls early with
+    /// InvalidRepaymentAmount (error 7).
+    pub const MIN_SCORE_UPDATE_REPAYMENT: i128 = 100;
 
     fn admin_key() -> soroban_sdk::Symbol {
         symbol_short!("ADMIN")
@@ -509,13 +518,24 @@ impl RemittanceNFT {
         if repayment_amount <= 0 {
             return Err(NftError::InvalidRepaymentAmount);
         }
+
+        let min_repayment = Self::min_repayment_amount(&env);
+        if repayment_amount < min_repayment {
+            return Err(NftError::BelowMinimum);
+        }
+
+        // Reject dust repayments that award zero score points (repayment_amount / 100 == 0)
+        // but still incur storage writes and event emissions, enabling low-cost spam.
+        if repayment_amount < Self::MIN_SCORE_UPDATE_REPAYMENT {
+            return Err(NftError::InvalidRepaymentAmount);
+        }
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
         let mut metadata =
             Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
-        // Simple logic: 1 point per 100 units of repayment
+        // Simple logic: 1 point per 100 units of repayment.
         let points_i128 = repayment_amount / 100;
         if points_i128 == 0 {
             return Ok(());
@@ -541,6 +561,28 @@ impl RemittanceNFT {
             .publish((symbol_short!("ScoreUpd"), user), metadata.score);
 
         Ok(())
+    }
+
+    pub fn set_min_repayment_amount(env: Env, amount: i128) {
+        Self::admin(&env).require_auth();
+        if amount < 0 {
+            panic!("negative amount");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::MinRepaymentAmount, &amount);
+        Self::bump_instance_ttl(&env);
+    }
+
+    pub fn get_min_repayment_amount(env: Env) -> i128 {
+        Self::min_repayment_amount(&env)
+    }
+
+    fn min_repayment_amount(env: &Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::MinRepaymentAmount)
+            .unwrap_or(Self::DEFAULT_MIN_REPAYMENT_AMOUNT)
     }
 
     pub fn decrease_score(env: Env, user: Address, penalty_points: u32, minter: Option<Address>) {

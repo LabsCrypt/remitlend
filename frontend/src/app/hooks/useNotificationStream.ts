@@ -11,14 +11,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
  * Connects to the SSE /api/notifications/stream endpoint and pushes new
  * notifications into the TanStack Query cache so the UI updates immediately.
  *
- * The hook is a no-op when there is no auth token (unauthenticated users).
- * It automatically reconnects with exponential backoff if the connection drops.
+ * Uses fetch + ReadableStream to support custom Authorization header.
  */
 export function useNotificationStream() {
   const queryClient = useQueryClient();
   const token = useUserStore((s: UserStore) => s.authToken);
   const retryDelay = useRef(1_000);
-  const esRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -26,77 +25,120 @@ export function useNotificationStream() {
 
     let cancelled = false;
 
-    function connect() {
+    async function connect() {
       if (cancelled) return;
 
-      // EventSource is notoriously difficult to authenticate because it doesn't
-      // support custom headers. We now rely on the secure, HTTP-only JWT
-      // cookie set during login instead of passing the token as a leaky
-      // query parameter.
-      const url = `${API_URL}/api/notifications/stream`;
-      const es = new EventSource(url, { withCredentials: true });
-      esRef.current = es;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
 
-      es.onopen = () => {
-        retryDelay.current = 1_000; // reset backoff on successful connect
-      };
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-      es.onmessage = (event: MessageEvent<string>) => {
-        try {
-          const payload = JSON.parse(event.data) as
-            | AppNotification
-            | { type: "init"; notifications: AppNotification[] };
+      try {
+        const url = `${API_URL}/api/notifications/stream`;
+        const response = await fetch(url, {
+          method: "GET",
+          credentials: "include",
+          headers: {
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        });
 
-          queryClient.setQueryData(
-            queryKeys.notifications.all(),
-            (prev: { notifications: AppNotification[]; unreadCount: number } | undefined) => {
-              const existing = prev ?? { notifications: [], unreadCount: 0 };
-
-              if ("type" in payload && payload.type === "init") {
-                // Merge server-sent unread list into existing cache without
-                // duplicating entries.
-                const ids = new Set(existing.notifications.map((n) => n.id));
-                const merged = [
-                  ...payload.notifications.filter((n) => !ids.has(n.id)),
-                  ...existing.notifications,
-                ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                const unreadCount = merged.filter((n) => !n.read).length;
-                return { notifications: merged, unreadCount };
-              }
-
-              // Single new notification pushed from server
-              const newNotif = payload as AppNotification;
-              const notifications = [newNotif, ...existing.notifications];
-              return {
-                notifications,
-                unreadCount: existing.unreadCount + (newNotif.read ? 0 : 1),
-              };
-            },
-          );
-        } catch {
-          // Ignore malformed SSE messages
+        if (!response.ok) {
+          throw new Error(`SSE connect failed (${response.status})`);
         }
-      };
 
-      es.onerror = () => {
-        es.close();
-        esRef.current = null;
+        if (!response.body) {
+          throw new Error("SSE response body missing");
+        }
+
+        retryDelay.current = 1_000; // reset backoff on successful connect
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            const lines = part.split("\n");
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const dataStr = line.slice("data:".length).trim();
+              if (!dataStr) continue;
+
+              try {
+                const payload = JSON.parse(dataStr) as
+                  | AppNotification
+                  | { type: "init"; notifications: AppNotification[] };
+
+                queryClient.setQueryData(
+                  queryKeys.notifications.all(),
+                  (prev: { notifications: AppNotification[]; unreadCount: number } | undefined) => {
+                    const existing = prev ?? { notifications: [], unreadCount: 0 };
+
+                    if ("type" in payload && payload.type === "init") {
+                      const ids = new Set(existing.notifications.map((n) => n.id));
+                      const merged = [
+                        ...payload.notifications.filter((n) => !ids.has(n.id)),
+                        ...existing.notifications,
+                      ].sort(
+                        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                      );
+                      const unreadCount = merged.filter((n) => !n.read).length;
+                      return { notifications: merged, unreadCount };
+                    }
+
+                    const newNotif = payload as AppNotification;
+                    if (existing.notifications.some((n) => n.id === newNotif.id)) {
+                      return existing;
+                    }
+
+                    const notifications = [newNotif, ...existing.notifications];
+                    return {
+                      notifications,
+                      unreadCount: existing.unreadCount + (newNotif.read ? 0 : 1),
+                    };
+                  },
+                );
+              } catch {
+                // Ignore malformed SSE messages
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          return;
+        }
+
         if (!cancelled) {
-          // Exponential backoff — cap at 30s
           const delay = Math.min(retryDelay.current, 30_000);
           retryDelay.current = Math.min(delay * 2, 30_000);
           timeoutRef.current = setTimeout(connect, delay);
         }
-      };
+      }
     }
 
     connect();
 
     return () => {
       cancelled = true;
-      esRef.current?.close();
-      esRef.current = null;
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
     };
   }, [token, queryClient]);
 }

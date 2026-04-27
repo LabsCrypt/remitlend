@@ -314,6 +314,7 @@ fn test_update_score_migrates_legacy_data() {
 }
 
 #[test]
+#[should_panic]
 fn test_small_repayment_does_not_write_score_change() {
     let env = Env::default();
     env.mock_all_auths();
@@ -328,8 +329,9 @@ fn test_small_repayment_does_not_write_score_change() {
     let history_hash = create_test_hash(&env, 1);
     client.mint(&user, &500, &history_hash, &None);
 
+    // Below MIN_SCORE_UPDATE_REPAYMENT (100) should be rejected to prevent spammy
+    // zero-point updates that still write storage and emit events.
     client.update_score(&user, &99, &None);
-    assert_eq!(client.get_score(&user), 500);
 }
 
 #[test]
@@ -1501,6 +1503,8 @@ fn test_score_history_max_50_entries() {
     assert_eq!(first_entry.ledger, 11);
 
     // Verify newest entry is from sequence 60
-    let last_entry = history.get(RemittanceNFT::MAX_SCORE_HISTORY_ENTRIES - 1).unwrap();
+    let last_entry = history
+        .get(RemittanceNFT::MAX_SCORE_HISTORY_ENTRIES - 1)
+        .unwrap();
     assert_eq!(last_entry.ledger, 60);
 }

@@ -35,11 +35,12 @@ import { startLoanDueCheckCron } from "./cron/loanCheckCron.js";
 
 const port = process.env.PORT || 3001;
 
-// Validate loan config on startup before accepting traffic
+// Validate score delta and loan config on startup before accepting traffic
 try {
   validateLoanConfig();
+  sorobanService.validateScoreConfig();
 } catch (err) {
-  logger.error("Loan configuration is invalid, aborting startup.", { err });
+  logger.error("Startup configuration is invalid, aborting startup.", { err });
   process.exit(1);
 }
 

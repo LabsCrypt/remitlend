@@ -26,6 +26,10 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
+  withTransaction: jest.fn().mockImplementation(async (fn: (client: any) => Promise<unknown>) => {
+    const client = { query: jest.fn((sql: string, params?: unknown[]) => mockQuery(sql, params ?? [])) };
+    return fn(client);
+  }),
 }));
 
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
@@ -33,6 +37,7 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
+  SUPPORTED_WEBHOOK_EVENT_TYPES: [],
   webhookService: {
     dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
   },
@@ -120,10 +125,8 @@ describe("EventIndexer score delta wiring", () => {
 
   it("calls sorobanService.getScoreConfig for LoanRepaid events", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
       .mockResolvedValueOnce({ rows: [{ event_id: "evt-1" }], rowCount: 1 }) // INSERT
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // score upsert
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // score upsert
 
     const { storeEvents } = await buildIndexer();
     await storeEvents([makeEvent("evt-1", "LoanRepaid", "GABC")]);
@@ -133,10 +136,8 @@ describe("EventIndexer score delta wiring", () => {
 
   it("calls sorobanService.getScoreConfig for LoanDefaulted events", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
-      .mockResolvedValueOnce({ rows: [{ event_id: "evt-2" }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+      .mockResolvedValueOnce({ rows: [{ event_id: "evt-2" }], rowCount: 1 }) // INSERT
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // score upsert
 
     const { storeEvents } = await buildIndexer();
     await storeEvents([makeEvent("evt-2", "LoanDefaulted", "GDEF")]);

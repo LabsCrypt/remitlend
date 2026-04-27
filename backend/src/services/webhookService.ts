@@ -8,9 +8,32 @@ export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "LoanRepaid",
   "LoanDefaulted",
   "CollateralLiquidated",
+  "Deposit",
+  "Withdraw",
+  "YieldDistributed",
+  "EmergencyWithdraw",
+  "NFTMinted",
+  "ScoreUpdated",
+  "NFTSeized",
+  "NFTBurned",
+  "ProposalCreated",
+  "ProposalApproved",
+  "ProposalFinalized",
+  // Legacy aliases kept to preserve compatibility for existing subscribers.
+  "Mint",
+  "ScoreUpd",
+  "Seized",
+  "GovProp",
+  "GovAppr",
+  "GovFin",
+  "Transfer",
+  "MntAuth",
+  "MntRev",
   "Paused",
   "Unpaused",
   "MinScoreUpdated",
+  "PoolPaused",
+  "PoolUnpaused",
 ] as const;
 
 export type WebhookEventType = (typeof SUPPORTED_WEBHOOK_EVENT_TYPES)[number];
@@ -238,11 +261,10 @@ const RETRY_DELAYS_MS = [
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 export const getRetryDelayMs = (attemptNumber: number): number => {
-  const delayIndex = Math.min(
-    attemptNumber - 1,
-    RETRY_DELAYS_MS.length - 1,
+  const delayIndex = Math.min(attemptNumber - 1, RETRY_DELAYS_MS.length - 1);
+  return (
+    RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!
   );
-  return RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
 };
 
 export class WebhookService {
@@ -387,14 +409,17 @@ export class WebhookService {
             nextRetryAt: nextRetryTime,
           });
         } else {
-          logger.error("Webhook delivery permanently failed after max retries", {
-            deliveryId,
-            subscriptionId,
-            eventId,
-            attemptCount: newAttemptCount,
-            statusCode: response.status,
-            payload: body,
-          });
+          logger.error(
+            "Webhook delivery permanently failed after max retries",
+            {
+              deliveryId,
+              subscriptionId,
+              eventId,
+              attemptCount: newAttemptCount,
+              statusCode: response.status,
+              payload: body,
+            },
+          );
         }
       }
     } catch (error) {
@@ -427,16 +452,13 @@ export class WebhookService {
           nextRetryAt: nextRetryTime,
         });
       } else {
-        logger.error(
-          "Webhook delivery permanently failed after max retries",
-          {
-            deliveryId,
-            subscriptionId,
-            eventId,
-            attemptCount: newAttemptCount,
-            error,
-          },
-        );
+        logger.error("Webhook delivery permanently failed after max retries", {
+          deliveryId,
+          subscriptionId,
+          eventId,
+          attemptCount: newAttemptCount,
+          error,
+        });
       }
     }
   }

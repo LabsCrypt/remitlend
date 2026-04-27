@@ -78,6 +78,7 @@ impl LendingPool {
     const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 3;
     const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
+    const SHARE_PRICE_SCALE: i128 = 1_000_000;
     const MAX_WITHDRAWAL_COOLDOWN_LEDGERS: u32 = 17_280 * 30;
 
     // ── TTL helpers ───────────────────────────────────────────────────────
@@ -527,6 +528,20 @@ impl LendingPool {
     /// Raw LP share balance for `provider` in the `token` pool.
     pub fn get_shares(env: Env, provider: Address, token: Address) -> i128 {
         Self::read_shares(&env, &provider, &token)
+    }
+
+    /// Current LP share price scaled by `SHARE_PRICE_SCALE`.
+    /// `1_000_000` means 1.0 underlying asset per share.
+    pub fn get_share_price(env: Env, token: Address) -> i128 {
+        let total_shares = Self::total_shares(&env, &token);
+        if total_shares <= 0 {
+            return Self::SHARE_PRICE_SCALE;
+        }
+
+        Self::read_pool_balance(&env, &token)
+            .checked_mul(Self::SHARE_PRICE_SCALE)
+            .and_then(|v| v.checked_div(total_shares))
+            .expect("share price overflow")
     }
 
     /// Burn `shares` LP tokens and receive the proportional underlying assets.

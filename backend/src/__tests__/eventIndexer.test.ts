@@ -27,14 +27,60 @@ const mockLogger = {
   warn: jest.fn(),
   error: jest.fn(),
 };
+const supportedWebhookEventTypes = [
+  "LoanRequested",
+  "LoanApproved",
+  "LoanRepaid",
+  "LoanDefaulted",
+  "CollateralLiquidated",
+  "Deposit",
+  "Withdraw",
+  "YieldDistributed",
+  "EmergencyWithdraw",
+  "NFTMinted",
+  "ScoreUpdated",
+  "NFTSeized",
+  "NFTBurned",
+  "ProposalCreated",
+  "ProposalApproved",
+  "ProposalFinalized",
+  "Mint",
+  "ScoreUpd",
+  "Seized",
+  "GovProp",
+  "GovAppr",
+  "GovFin",
+  "Transfer",
+  "MntAuth",
+  "MntRev",
+  "Paused",
+  "Unpaused",
+  "MinScoreUpdated",
+  "PoolPaused",
+  "PoolUnpaused",
+] as const;
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
+  withTransaction: jest.fn(
+    async (fn: (client: { query: typeof mockQuery; release: () => void }) => Promise<unknown>) => {
+      // Provide a mock client whose .query() delegates to the shared mockQuery
+      // so all existing SQL-inspection assertions in the tests keep working.
+      const mockClient = {
+        query: jest.fn(async (sql: string, params?: unknown[]) =>
+          mockQuery(sql, params ?? []),
+        ),
+        release: jest.fn(),
+      };
+      return fn(mockClient);
+    },
+  ),
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
+  SUPPORTED_WEBHOOK_EVENT_TYPES: supportedWebhookEventTypes,
   webhookService: { dispatch: mockDispatch },
 }));
 
@@ -142,6 +188,59 @@ function makeRawEvent(params: {
     default:
       throw new Error(`Unsupported event type: ${params.type}`);
   }
+}
+
+function makeAliasedEvent(params: {
+  id: string;
+  ledger: number;
+  rawType: string;
+  borrower?: string;
+  amount?: number;
+}) {
+  const borrower = params.borrower ?? makeAddress();
+  const base = {
+    id: params.id,
+    pagingToken: `${params.ledger}`,
+    ledger: params.ledger,
+    ledgerClosedAt: "2026-03-29T00:00:00.000Z",
+    txHash: `tx-${params.id}`,
+    contractId: "CINDEXERTEST",
+  };
+
+  if (params.rawType === "Deposit" || params.rawType === "EmergencyWithdraw") {
+    return {
+      ...base,
+      topic: [scSymbol(params.rawType), scAddress(borrower), scAddress(makeAddress())],
+      value: nativeToScVal([BigInt(params.amount ?? 100), BigInt(1)]),
+    };
+  }
+
+  if (
+    params.rawType === "Mint" ||
+    params.rawType === "ScoreUpd" ||
+    params.rawType === "NftBurned" ||
+    params.rawType === "Seized"
+  ) {
+    return {
+      ...base,
+      topic: [scSymbol(params.rawType), scAddress(borrower)],
+      value: scI128(params.amount ?? 100),
+    };
+  }
+
+  if (
+    params.rawType === "GovProp" ||
+    params.rawType === "GovAppr" ||
+    params.rawType === "GovFin"
+  ) {
+    return {
+      ...base,
+      topic: [scSymbol(params.rawType), scAddress(borrower)],
+      value: scU32(1),
+    };
+  }
+
+  throw new Error(`Unsupported aliased event type: ${params.rawType}`);
 }
 
 describe("EventIndexer", () => {
@@ -258,6 +357,127 @@ describe("EventIndexer", () => {
     expect(mockDispatch).toHaveBeenCalledTimes(4);
     expect(mockBroadcast).toHaveBeenCalledTimes(4);
     expect(mockCreateNotification).toHaveBeenCalledTimes(3);
+  });
+
+  it("normalizes pool, NFT, and governance events into indexable event types", async () => {
+    const depositor = makeAddress();
+    const emergencyWithdrawer = makeAddress();
+    const nftUser = makeAddress();
+    const governanceActor = makeAddress();
+    const insertedLoanEvents: unknown[][] = [];
+
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql === "BEGIN" || sql === "COMMIT") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          insertedLoanEvents.push(params);
+          return { rows: [{ event_id: params[0] }], rowCount: 1 };
+        }
+
+        return { rows: [], rowCount: 0 };
+      },
+    );
+
+    const indexer = new EventIndexer({
+      rpcUrl: "https://rpc.test",
+      contractId: "CINDEXERTEST",
+    });
+
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
+        events: [
+          makeAliasedEvent({
+            id: "evt-deposit",
+            ledger: 50,
+            rawType: "Deposit",
+            borrower: depositor,
+            amount: 700,
+          }),
+          makeAliasedEvent({
+            id: "evt-emergency-withdraw",
+            ledger: 51,
+            rawType: "EmergencyWithdraw",
+            borrower: emergencyWithdrawer,
+            amount: 300,
+          }),
+          makeAliasedEvent({
+            id: "evt-score",
+            ledger: 52,
+            rawType: "ScoreUpd",
+            borrower: nftUser,
+            amount: 640,
+          }),
+          makeAliasedEvent({
+            id: "evt-seized",
+            ledger: 53,
+            rawType: "Seized",
+            borrower: nftUser,
+          }),
+          makeAliasedEvent({
+            id: "evt-burned",
+            ledger: 54,
+            rawType: "NftBurned",
+            borrower: nftUser,
+          }),
+          makeAliasedEvent({
+            id: "evt-gov-created",
+            ledger: 55,
+            rawType: "GovProp",
+            borrower: governanceActor,
+          }),
+          makeAliasedEvent({
+            id: "evt-gov-approved",
+            ledger: 56,
+            rawType: "GovAppr",
+            borrower: governanceActor,
+          }),
+          makeAliasedEvent({
+            id: "evt-gov-finalized",
+            ledger: 57,
+            rawType: "GovFin",
+            borrower: governanceActor,
+          }),
+          makeAliasedEvent({
+            id: "evt-minted",
+            ledger: 58,
+            rawType: "Mint",
+            borrower: nftUser,
+            amount: 500,
+          }),
+        ],
+      }),
+    };
+
+    const lastProcessedLedger = await indexer.processEvents(50, 58);
+
+    expect(lastProcessedLedger).toBe(58);
+    expect(insertedLoanEvents.map((params) => params[1])).toEqual([
+      "Deposit",
+      "EmergencyWithdraw",
+      "ScoreUpdated",
+      "NFTSeized",
+      "NFTBurned",
+      "ProposalCreated",
+      "ProposalApproved",
+      "ProposalFinalized",
+      "NFTMinted",
+    ]);
+    expect(insertedLoanEvents[0]?.[3]).toBe(depositor);
+    expect(insertedLoanEvents[0]?.[4]).toBe("700");
+    expect(insertedLoanEvents[1]?.[3]).toBe(emergencyWithdrawer);
+    expect(insertedLoanEvents[1]?.[4]).toBe("300");
+    expect(insertedLoanEvents[2]?.[3]).toBe(nftUser);
+    expect(insertedLoanEvents[2]?.[4]).toBe("640");
+    expect(insertedLoanEvents[5]?.[3]).toBe(governanceActor);
+    expect(insertedLoanEvents[8]?.[3]).toBe(nftUser);
+    expect(insertedLoanEvents[8]?.[4]).toBe("500");
+
+    expect(mockDispatch).toHaveBeenCalledTimes(9);
+    expect(mockBroadcast).toHaveBeenCalledTimes(9);
+    expect(mockCreateNotification).not.toHaveBeenCalled();
   });
 
   it("deduplicates repeated events and only triggers side effects for inserted rows", async () => {

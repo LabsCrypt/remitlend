@@ -11,6 +11,7 @@ const mockQuery: any = jest.fn();
 jest.unstable_mockModule('../db/connection.js', () => ({
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
+  withTransaction: jest.fn(),
 }));
 jest.unstable_mockModule('../db/transaction.js', () => ({
   withTransaction: jest.fn(),

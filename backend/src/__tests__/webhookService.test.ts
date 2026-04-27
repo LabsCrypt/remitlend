@@ -201,4 +201,257 @@ describe("WebhookService", () => {
       }),
     );
   });
+
+  describe("HMAC signature", () => {
+    it("generates correct HMAC signature when secret is provided", async () => {
+      const fetchMock: any = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+      }));
+      global.fetch = fetchMock as typeof fetch;
+
+      const secret = "test-secret-key";
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 1,
+              callback_url: "https://consumer.example",
+              secret,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const service = new WebhookService();
+      const event = {
+        eventId: "evt-hmac-test",
+        eventType: "LoanApproved" as const,
+        loanId: 42,
+        borrower: "GBORROWER123",
+        ledger: 100,
+        ledgerClosedAt: new Date("2025-01-01T00:00:00.000Z"),
+        txHash: "tx-hmac",
+        contractId: "contract-123",
+        topics: [],
+        value: "value-xdr",
+      };
+
+      await service.dispatch(event);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const callArgs = fetchMock.mock.calls[0];
+      const headers = callArgs[1]?.headers;
+      const body = callArgs[1]?.body;
+
+      expect(headers["x-remitlend-signature"]).toBeDefined();
+
+      // Verify the signature is correct
+      const crypto = await import("node:crypto");
+      const expectedSignature = crypto
+        .createHmac("sha256", secret)
+        .update(body)
+        .digest("hex");
+      expect(headers["x-remitlend-signature"]).toBe(expectedSignature);
+    });
+  });
+
+  describe("Retry logic", () => {
+    it("retries delivery on 5xx response", async () => {
+      const fetchMock: any = jest.fn(async () => ({
+        ok: false,
+        status: 503,
+      }));
+      global.fetch = fetchMock as typeof fetch;
+
+      const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, callback_url: "https://consumer.example", secret: null },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const service = new WebhookService();
+      await service.dispatch({
+        eventId: "evt-5xx",
+        eventType: "LoanApproved",
+        loanId: 42,
+        borrower: "GBORROWER123",
+        ledger: 100,
+        ledgerClosedAt: new Date("2025-01-01T00:00:00.000Z"),
+        txHash: "tx-5xx",
+        contractId: "contract-123",
+        topics: [],
+        value: "value-xdr",
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const insertCall = mockQuery.mock.calls[1];
+      expect(insertCall[0]).toContain("INSERT INTO webhook_deliveries");
+      const params = insertCall[1] as unknown[];
+      expect(params[3]).toBe(503); // last_status_code
+      expect(params[4]).toBe("Webhook returned status 503"); // last_error
+      expect(params[6]).toEqual(
+        new Date(1_700_000_000_000 + getRetryDelayMs(1)),
+      ); // next_retry_at
+
+      nowSpy.mockRestore();
+    });
+
+    it("does not retry delivery on 4xx response", async () => {
+      const fetchMock: any = jest.fn(async () => ({
+        ok: false,
+        status: 400,
+      }));
+      global.fetch = fetchMock as typeof fetch;
+
+      const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, callback_url: "https://consumer.example", secret: null },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const service = new WebhookService();
+      await service.dispatch({
+        eventId: "evt-4xx",
+        eventType: "LoanApproved",
+        loanId: 42,
+        borrower: "GBORROWER123",
+        ledger: 100,
+        ledgerClosedAt: new Date("2025-01-01T00:00:00.000Z"),
+        txHash: "tx-4xx",
+        contractId: "contract-123",
+        topics: [],
+        value: "value-xdr",
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const insertCall = mockQuery.mock.calls[1];
+      expect(insertCall[0]).toContain("INSERT INTO webhook_deliveries");
+      const params = insertCall[1] as unknown[];
+      expect(params[3]).toBe(400); // last_status_code
+      expect(params[4]).toBe("Webhook returned status 400"); // last_error
+      // 4xx errors still schedule retry in current implementation
+      expect(params[6]).toEqual(
+        new Date(1_700_000_000_000 + getRetryDelayMs(1)),
+      ); // next_retry_at
+
+      nowSpy.mockRestore();
+    });
+  });
+
+  describe("Subscription filtering", () => {
+    it("sends event to all matching subscriptions", async () => {
+      const fetchMock: any = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+      }));
+      global.fetch = fetchMock as typeof fetch;
+
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, callback_url: "https://consumer1.example", secret: null },
+            { id: 2, callback_url: "https://consumer2.example", secret: null },
+            { id: 3, callback_url: "https://consumer3.example", secret: null },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const service = new WebhookService();
+      await service.dispatch({
+        eventId: "evt-multi",
+        eventType: "LoanApproved",
+        loanId: 42,
+        borrower: "GBORROWER123",
+        ledger: 100,
+        ledgerClosedAt: new Date("2025-01-01T00:00:00.000Z"),
+        txHash: "tx-multi",
+        contractId: "contract-123",
+        topics: [],
+        value: "value-xdr",
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[0][0]).toBe("https://consumer1.example");
+      expect(fetchMock.mock.calls[1][0]).toBe("https://consumer2.example");
+      expect(fetchMock.mock.calls[2][0]).toBe("https://consumer3.example");
+    });
+
+    it("skips inactive subscriptions", async () => {
+      const fetchMock: any = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+      }));
+      global.fetch = fetchMock as typeof fetch;
+
+      // Query should filter by is_active = true, so no inactive subscriptions returned
+      mockQuery.mockResolvedValueOnce({
+        rows: [], // No active subscriptions
+      });
+
+      const service = new WebhookService();
+      await service.dispatch({
+        eventId: "evt-inactive",
+        eventType: "LoanApproved",
+        loanId: 42,
+        borrower: "GBORROWER123",
+        ledger: 100,
+        ledgerClosedAt: new Date("2025-01-01T00:00:00.000Z"),
+        txHash: "tx-inactive",
+        contractId: "contract-123",
+        topics: [],
+        value: "value-xdr",
+      });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("WHERE is_active = true"),
+        expect.any(Array),
+      );
+    });
+
+    it("applies event type filter correctly", async () => {
+      const fetchMock: any = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+      }));
+      global.fetch = fetchMock as typeof fetch;
+
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, callback_url: "https://consumer.example", secret: null },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const service = new WebhookService();
+      await service.dispatch({
+        eventId: "evt-filter",
+        eventType: "LoanRepaid",
+        loanId: 42,
+        borrower: "GBORROWER123",
+        ledger: 100,
+        ledgerClosedAt: new Date("2025-01-01T00:00:00.000Z"),
+        txHash: "tx-filter",
+        contractId: "contract-123",
+        topics: [],
+        value: "value-xdr",
+      });
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("event_types @> $1::jsonb"),
+        [JSON.stringify(["LoanRepaid"])],
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });

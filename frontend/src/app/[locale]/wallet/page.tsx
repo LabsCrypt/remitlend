@@ -341,6 +341,7 @@ function TransactionHistoryCard({
   }
 
   function exportCsv() {
+    const today = new Date().toISOString().split("T")[0];
     const rows = payments.map((p) => {
       const asset = p.asset_type === "native" ? "XLM" : (p.asset_code ?? "");
       return {
@@ -350,10 +351,11 @@ function TransactionHistoryCard({
         asset,
         status: "success",
         transactionHash: p.transaction_hash,
+        stellarExplorerLink: `${explorerBase}/tx/${p.transaction_hash}`,
       };
     });
 
-    downloadCsv(`transaction-history-${address.slice(0, 6)}.csv`, rowsToCsv(rows));
+    downloadCsv(`remitlend-activity-${today}.csv`, rowsToCsv(rows));
   }
 
   return (

@@ -69,8 +69,55 @@ router.get("/loan-disputes", requireApiKey, listLoanDisputes);
 router.post("/loan-disputes/:disputeId/resolve", requireApiKey, resolveLoanDispute);
 
 const checkDefaultsBodySchema = z.object({
-  loanIds: z.array(z.number().int().positive()).optional(),
+  loanIds: z.array(z.number().int().positive()).max(100).optional(),
 });
+
+/**
+ * @swagger
+ * /admin/check-defaults:
+ *   post:
+ *     summary: Trigger manual on-chain default checks for a set of loans
+ *     description: >
+ *       Calls the LoanManager `check_defaults` contract function for the
+ *       provided loan IDs (or all overdue loans if IDs are omitted).
+ *       Bounded to a maximum of 100 IDs per request for security.
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               loanIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 maxItems: 100
+ *                 description: Explicit list of loan IDs to check
+ *     responses:
+ *       200:
+ *         description: Default check run completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DefaultCheckRunResult'
+ *       400:
+ *         description: Validation error or too many IDs
+ */
+router.post(
+  "/check-defaults",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  validateBody(checkDefaultsBodySchema),
+  asyncHandler(async (req, res) => {
+    const result = await defaultChecker.checkOverdueLoans(req.body.loanIds);
+    res.json(result);
+  }),
+);
 
 /**
  * @swagger
@@ -198,6 +245,18 @@ router.post(
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/WebhookSubscriptionResponse'
+ */
+router.post(
+  "/webhooks",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  createWebhookSubscription,
+);
+
+/**
+ * @swagger
+ * /admin/webhooks:
  *   get:
  *     summary: List webhook subscriptions
  *     tags: [Admin]
@@ -211,14 +270,8 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/WebhookSubscriptionListResponse'
  */
-router.post(
-  "/webhooks",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  createWebhookSubscription,
-);
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
+
 
 /**
  * @swagger
