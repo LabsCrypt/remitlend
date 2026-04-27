@@ -823,8 +823,10 @@ fn test_check_default_success() {
 
     assert!(!nft_client.is_seized(&borrower));
 
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 10_000);
+        .set_sequence_number(due_date + default_window + 1);
 
     manager.check_default(&loan_id);
 
@@ -935,8 +937,10 @@ fn test_check_defaults_batch() {
     manager.approve_loan(&loan_id2);
     manager.approve_loan(&loan_id3);
 
+    let due_date = manager.get_loan(&loan_id1).due_date;
+    let default_window = manager.get_default_window_ledgers();
     env.ledger()
-        .set_sequence_number(env.ledger().sequence() + 10_000);
+        .set_sequence_number(due_date + default_window + 1);
 
     let loan_ids = soroban_sdk::vec![&env, loan_id1, loan_id2, loan_id3];
     manager.check_defaults(&loan_ids);
