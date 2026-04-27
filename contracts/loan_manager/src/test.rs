@@ -2038,3 +2038,123 @@ fn test_late_fees_stop_accruing_when_principal_paid() {
     // Should have zero late fees because principal is paid
     assert_eq!(loan.accrued_late_fee, 0);
 }
+
+// ── refinance_loan tests ───────────────────────────────────────────────────
+
+#[test]
+fn test_refinance_loan_increases_principal_draws_from_pool() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &700, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    let token_client = TokenClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    // Approve a 1_000-unit loan, then set collateral high enough for refinance.
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Inject collateral directly so the contract accepts the larger amount.
+    stellar_token.mint(&manager.address, &5_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 5_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let borrower_balance_before = token_client.balance(&borrower);
+    let pool_balance_before = token_client.balance(&pool_client);
+
+    // Refinance to 2_000 — pool should disburse the extra 1_000.
+    manager.refinance_loan(&loan_id, &2_000, &17_280);
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.amount, 2_000);
+    assert_eq!(loan.principal_paid, 0); // reset on refinance
+    assert_eq!(loan.status, LoanStatus::Approved);
+    // Borrower received the additional 1_000 from the pool.
+    assert_eq!(token_client.balance(&borrower), borrower_balance_before + 1_000);
+    assert_eq!(token_client.balance(&pool_client), pool_balance_before - 1_000);
+}
+
+#[test]
+fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &700, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    let token_client = TokenClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+    // Give borrower tokens so they can return the excess principal.
+    stellar_token.mint(&borrower, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &2_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Set collateral so the contract doesn't reject the call.
+    stellar_token.mint(&manager.address, &2_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 2_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let pool_balance_before = token_client.balance(&pool_client);
+
+    // Refinance down to 1_000 — borrower returns 1_000 to the pool.
+    manager.refinance_loan(&loan_id, &1_000, &17_280);
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.amount, 1_000);
+    assert_eq!(loan.principal_paid, 0);
+    assert_eq!(loan.status, LoanStatus::Approved);
+    // Pool received the 1_000 excess back.
+    assert_eq!(token_client.balance(&pool_client), pool_balance_before + 1_000);
+}
+
+#[test]
+fn test_refinance_loan_fails_when_score_drops_below_minimum() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &600, &history_hash, &None);
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Artificially lower the borrower's score below the 500 minimum by
+    // overwriting the Metadata entry directly in the NFT contract's storage.
+    env.as_contract(&nft_client.address, || {
+        use remittance_nft::{DataKey as NftKey, RemittanceMetadata};
+        let key = NftKey::Metadata(borrower.clone());
+        let mut meta: RemittanceMetadata = env.storage().persistent().get(&key).unwrap();
+        meta.score = 400;
+        env.storage().persistent().set(&key, &meta);
+    });
+
+    let result = manager.try_refinance_loan(&loan_id, &1_000, &17_280);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientScore)));
+    // Loan must remain unchanged.
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
+}
