@@ -13,9 +13,8 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   closePool: jest.fn(),
 }));
 
-const { WebhookService, getRetryDelayMs } = await import(
-  "../services/webhookService.js"
-);
+const { WebhookService, getRetryDelayMs } =
+  await import("../services/webhookService.js");
 const { default: logger } = await import("../utils/logger.js");
 
 describe("WebhookService", () => {
@@ -44,7 +43,9 @@ describe("WebhookService", () => {
     const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     mockQuery
       .mockResolvedValueOnce({
-        rows: [{ id: 1, callback_url: "https://consumer.example", secret: null }],
+        rows: [
+          { id: 1, callback_url: "https://consumer.example", secret: null },
+        ],
       })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
@@ -112,7 +113,9 @@ describe("WebhookService", () => {
 
     mockQuery
       .mockResolvedValueOnce({
-        rows: [{ id: 1, callback_url: "https://consumer.example", secret: null }],
+        rows: [
+          { id: 1, callback_url: "https://consumer.example", secret: null },
+        ],
       })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
@@ -132,7 +135,10 @@ describe("WebhookService", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const deliveredBody = String(fetchMock.mock.calls[0]?.[1]?.body);
-    const deliveredPayload = JSON.parse(deliveredBody) as Record<string, unknown>;
+    const deliveredPayload = JSON.parse(deliveredBody) as Record<
+      string,
+      unknown
+    >;
     expect(deliveredPayload.truncated).toBe(true);
     expect(deliveredPayload.reason).toBe("payload_too_large");
     expect(deliveredPayload.eventId).toBe("evt-oversized");
@@ -184,7 +190,9 @@ describe("WebhookService", () => {
 
     mockQuery
       .mockResolvedValueOnce({
-        rows: [{ id: 1, callback_url: "https://consumer.example", secret: null }],
+        rows: [
+          { id: 1, callback_url: "https://consumer.example", secret: null },
+        ],
       })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 

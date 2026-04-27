@@ -49,7 +49,7 @@ export function useSSE<T = unknown>({
 
     async function connect() {
       if (cancelled) return;
-      
+
       // Clean up previous connection if any
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -61,7 +61,7 @@ export function useSSE<T = unknown>({
 
       try {
         const headers: Record<string, string> = {
-          "Accept": "text/event-stream",
+          Accept: "text/event-stream",
         };
 
         if (token) {

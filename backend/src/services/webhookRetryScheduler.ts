@@ -25,8 +25,10 @@ function shouldRetry(delivery: any, delay: number): boolean {
 }
 
 async function sendWebhookAgain(delivery: any) {
-  logger.info(`Retrying webhook delivery ${delivery.id} (attempt ${delivery.attempt_count + 1})`);
-  
+  logger.info(
+    `Retrying webhook delivery ${delivery.id} (attempt ${delivery.attempt_count + 1})`,
+  );
+
   await WebhookService.retryWebhookDelivery(
     delivery.id,
     delivery.subscription_id,

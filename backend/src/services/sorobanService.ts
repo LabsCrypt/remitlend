@@ -488,8 +488,9 @@ class SorobanService {
       .build();
 
     const defaultScore = this.getDefaultCreditScore();
-    let simulation: Awaited<ReturnType<typeof server.simulateTransaction>> | null =
-      null;
+    let simulation: Awaited<
+      ReturnType<typeof server.simulateTransaction>
+    > | null = null;
 
     for (
       let attempt = 1;
@@ -660,7 +661,10 @@ class SorobanService {
         latestLedger: res.sequence,
       }));
 
-      return await Promise.race([ledgerPromise, (timeoutPromise as Promise<any>)]);
+      return await Promise.race([
+        ledgerPromise,
+        timeoutPromise as Promise<any>,
+      ]);
     } catch (error) {
       return {
         connected: false,
@@ -726,8 +730,8 @@ class SorobanService {
    * with the deployed RemittanceNFT contract constants without requiring
    * a hardcoded value in application logic.
    */
-  getScoreConfig(): { 
-    repaymentDelta: number; 
+  getScoreConfig(): {
+    repaymentDelta: number;
     defaultPenalty: number;
     latePenalty: number;
   } {
@@ -753,9 +757,21 @@ class SorobanService {
    */
   validateScoreConfig(): void {
     const configs = [
-      { name: "SCORE_DELTA_REPAY", value: process.env.SCORE_DELTA_REPAY ?? "15", mustBePositive: true },
-      { name: "SCORE_DELTA_DEFAULT", value: process.env.SCORE_DELTA_DEFAULT ?? "50", mustBePositive: true },
-      { name: "SCORE_DELTA_LATE", value: process.env.SCORE_DELTA_LATE ?? "5", mustBePositive: true },
+      {
+        name: "SCORE_DELTA_REPAY",
+        value: process.env.SCORE_DELTA_REPAY ?? "15",
+        mustBePositive: true,
+      },
+      {
+        name: "SCORE_DELTA_DEFAULT",
+        value: process.env.SCORE_DELTA_DEFAULT ?? "50",
+        mustBePositive: true,
+      },
+      {
+        name: "SCORE_DELTA_LATE",
+        value: process.env.SCORE_DELTA_LATE ?? "5",
+        mustBePositive: true,
+      },
     ];
 
     for (const { name, value, mustBePositive } of configs) {

@@ -39,8 +39,8 @@ export function useNotificationStream() {
         const url = `${API_URL}/api/notifications/stream`;
         const response = await fetch(url, {
           headers: {
-            "Accept": "text/event-stream",
-            "Authorization": `Bearer ${token}`,
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${token}`,
           },
           signal: controller.signal,
         });
@@ -79,7 +79,9 @@ export function useNotificationStream() {
 
                   queryClient.setQueryData(
                     queryKeys.notifications.all(),
-                    (prev: { notifications: AppNotification[]; unreadCount: number } | undefined) => {
+                    (
+                      prev: { notifications: AppNotification[]; unreadCount: number } | undefined,
+                    ) => {
                       const existing = prev ?? { notifications: [], unreadCount: 0 };
 
                       if ("type" in payload && payload.type === "init") {
@@ -87,14 +89,17 @@ export function useNotificationStream() {
                         const merged = [
                           ...payload.notifications.filter((n) => !ids.has(n.id)),
                           ...existing.notifications,
-                        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                        ].sort(
+                          (a, b) =>
+                            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                        );
                         const unreadCount = merged.filter((n) => !n.read).length;
                         return { notifications: merged, unreadCount };
                       }
 
                       const newNotif = payload as AppNotification;
                       // Avoid duplicates
-                      if (existing.notifications.some(n => n.id === newNotif.id)) {
+                      if (existing.notifications.some((n) => n.id === newNotif.id)) {
                         return existing;
                       }
                       const notifications = [newNotif, ...existing.notifications];

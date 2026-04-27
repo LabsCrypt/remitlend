@@ -442,25 +442,29 @@ describe("EventIndexer", () => {
     const previousThreshold = process.env.QUARANTINE_ALERT_THRESHOLD;
     process.env.QUARANTINE_ALERT_THRESHOLD = "2";
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes("INSERT INTO quarantine_events")) {
-        return { rows: [], rowCount: 1 };
-      }
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql.includes("INSERT INTO quarantine_events")) {
+          return { rows: [], rowCount: 1 };
+        }
 
-      if (sql.includes("SELECT COUNT(*)::int AS count FROM quarantine_events")) {
-        return { rows: [{ count: 2 }], rowCount: 1 };
-      }
+        if (
+          sql.includes("SELECT COUNT(*)::int AS count FROM quarantine_events")
+        ) {
+          return { rows: [{ count: 2 }], rowCount: 1 };
+        }
 
-      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+        if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          return { rows: [], rowCount: 0 };
+        }
+
         return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO loan_events")) {
-        return { rows: [], rowCount: 0 };
-      }
-
-      return { rows: [], rowCount: 0 };
-    });
+      },
+    );
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",

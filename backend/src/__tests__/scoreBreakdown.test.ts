@@ -65,9 +65,18 @@ describe("GET /api/score/:userId/breakdown", () => {
       } as any) // Single CTE breakdown query
       .mockResolvedValueOnce({
         rows: [
-          { event_type: "LoanRepaid", ledger_closed_at: "2026-03-01T10:00:00Z" },
-          { event_type: "LoanRepaid", ledger_closed_at: "2026-03-05T10:00:00Z" },
-          { event_type: "LoanRepaid", ledger_closed_at: "2026-03-10T10:00:00Z" },
+          {
+            event_type: "LoanRepaid",
+            ledger_closed_at: "2026-03-01T10:00:00Z",
+          },
+          {
+            event_type: "LoanRepaid",
+            ledger_closed_at: "2026-03-05T10:00:00Z",
+          },
+          {
+            event_type: "LoanRepaid",
+            ledger_closed_at: "2026-03-10T10:00:00Z",
+          },
         ],
       } as any); // History query
 

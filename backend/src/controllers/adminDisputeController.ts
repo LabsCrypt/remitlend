@@ -20,13 +20,16 @@ export const listLoanDisputes = asyncHandler(async (_req, res) => {
  */
 export const resolveLoanDispute = asyncHandler(async (req, res) => {
   const { disputeId } = req.params;
-  const { action, resolution } = req.body as { action: string; resolution: string };
+  const { action, resolution } = req.body as {
+    action: string;
+    resolution: string;
+  };
 
-  if (!['confirm', 'reverse'].includes(action)) {
-    throw AppError.badRequest('Action must be confirm or reverse');
+  if (!["confirm", "reverse"].includes(action)) {
+    throw AppError.badRequest("Action must be confirm or reverse");
   }
   if (!resolution || resolution.length < 5) {
-    throw AppError.badRequest('Resolution reason required');
+    throw AppError.badRequest("Resolution reason required");
   }
 
   // Get dispute and loan
@@ -35,7 +38,7 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
     [disputeId],
   );
   if (disputeResult.rows.length === 0) {
-    throw AppError.notFound('Dispute not found or already resolved');
+    throw AppError.notFound("Dispute not found or already resolved");
   }
   const dispute = disputeResult.rows[0];
 
@@ -45,13 +48,13 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
     [resolution, disputeId],
   );
 
-  if (action === 'confirm') {
+  if (action === "confirm") {
     // Leave loan as defaulted, optionally log event
     await query(
       `INSERT INTO loan_events (loan_id, borrower, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultConfirmed', NULL, NULL, NOW())`,
       [dispute.loan_id, dispute.borrower],
     );
-  } else if (action === 'reverse') {
+  } else if (action === "reverse") {
     // Insert event to mark loan as active again
     await query(
       `INSERT INTO loan_events (loan_id, borrower, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultReversed', NULL, NULL, NOW())`,
@@ -59,5 +62,5 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
     );
   }
 
-  res.json({ success: true, message: 'Dispute resolved.' });
+  res.json({ success: true, message: "Dispute resolved." });
 });

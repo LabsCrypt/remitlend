@@ -142,7 +142,9 @@ const decodeQuarantinedRawEvent = (
   }
 
   try {
-    const topicValues = topics.map((topic) => xdr.ScVal.fromXDR(topic, "base64"));
+    const topicValues = topics.map((topic) =>
+      xdr.ScVal.fromXDR(topic, "base64"),
+    );
     const value = xdr.ScVal.fromXDR(candidate.value, "base64");
     const ledgerClosedAt =
       typeof candidate.ledgerClosedAt === "string"
@@ -744,21 +746,22 @@ export const reprocessQuarantinedEvents = async (
         ? Math.min(limit, 500)
         : 50;
 
-    const rowsResult = parsedIds && parsedIds.length > 0
-      ? await query(
-          `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
+    const rowsResult =
+      parsedIds && parsedIds.length > 0
+        ? await query(
+            `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
            FROM quarantine_events
            WHERE id = ANY($1::int[])
            ORDER BY id ASC`,
-          [parsedIds],
-        )
-      : await query(
-          `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
+            [parsedIds],
+          )
+        : await query(
+            `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
            FROM quarantine_events
            ORDER BY id ASC
            LIMIT $1`,
-          [parsedLimit],
-        );
+            [parsedLimit],
+          );
 
     const rows = rowsResult.rows as QuarantineEventRow[];
 

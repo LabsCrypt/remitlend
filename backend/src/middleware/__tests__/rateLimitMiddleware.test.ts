@@ -24,9 +24,12 @@ jest.unstable_mockModule("../../utils/logger.js", () => ({
   },
 }));
 
-const { createRateLimitMiddleware, scoreUpdateRateLimit } = await import("../rateLimitMiddleware.js");
+const { createRateLimitMiddleware, scoreUpdateRateLimit } =
+  await import("../rateLimitMiddleware.js");
 const { rateLimitService } = await import("../../services/rateLimitService.js");
-const mockRateLimitService = rateLimitService as jest.Mocked<typeof rateLimitService>;
+const mockRateLimitService = rateLimitService as jest.Mocked<
+  typeof rateLimitService
+>;
 
 describe("Rate Limit Middleware", () => {
   jest.setTimeout(20000);
@@ -36,18 +39,18 @@ describe("Rate Limit Middleware", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     mockRequest = {
       body: { userId: "user123" },
       path: "/api/score/update",
       method: "POST",
       ip: "127.0.0.1",
     };
-    
+
     mockResponse = {
       set: jest.fn(),
     } as any;
-    
+
     mockNext = jest.fn();
   });
 
@@ -61,14 +64,18 @@ describe("Rate Limit Middleware", () => {
       });
 
       const middleware = createRateLimitMiddleware();
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockNext).toHaveBeenCalledWith();
       expect(mockResponse.set).toHaveBeenCalledWith({
-        'X-RateLimit-Limit': '5',
-        'X-RateLimit-Remaining': '4',
-        'X-RateLimit-Reset': expect.any(String),
-        'X-RateLimit-Used': '1',
+        "X-RateLimit-Limit": "5",
+        "X-RateLimit-Remaining": "4",
+        "X-RateLimit-Reset": expect.any(String),
+        "X-RateLimit-Used": "1",
       });
     });
 
@@ -81,13 +88,17 @@ describe("Rate Limit Middleware", () => {
       });
 
       const middleware = createRateLimitMiddleware();
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: 429,
           message: "Rate limit exceeded. Please try again later.",
-        })
+        }),
       );
     });
 
@@ -102,8 +113,12 @@ describe("Rate Limit Middleware", () => {
       const middleware = createRateLimitMiddleware({
         getIdentifier: (req) => `custom:${req.body?.userId}`,
       });
-      
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockRateLimitService.checkRateLimit).toHaveBeenCalledWith(
         "custom:user123",
@@ -122,18 +137,22 @@ describe("Rate Limit Middleware", () => {
       const middleware = createRateLimitMiddleware({
         config: { maxRequests: 10, windowSeconds: 3600 },
       });
-      
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockRateLimitService.checkRateLimit).toHaveBeenCalledWith(
         "user123",
         { maxRequests: 10, windowSeconds: 3600 },
       );
       expect(mockResponse.set).toHaveBeenCalledWith({
-        'X-RateLimit-Limit': '10',
-        'X-RateLimit-Remaining': '9',
-        'X-RateLimit-Reset': expect.any(String),
-        'X-RateLimit-Used': '1',
+        "X-RateLimit-Limit": "10",
+        "X-RateLimit-Remaining": "9",
+        "X-RateLimit-Reset": expect.any(String),
+        "X-RateLimit-Used": "1",
       });
     });
 
@@ -141,20 +160,30 @@ describe("Rate Limit Middleware", () => {
       const middleware = createRateLimitMiddleware({
         skipIf: (req) => req.body?.userId === "admin",
       });
-      
+
       mockRequest.body = { userId: "admin" };
-      
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockRateLimitService.checkRateLimit).not.toHaveBeenCalled();
       expect(mockNext).toHaveBeenCalledWith();
     });
 
     it("should fail open when rate limit service fails", async () => {
-      mockRateLimitService.checkRateLimit.mockRejectedValue(new Error("Redis error"));
+      mockRateLimitService.checkRateLimit.mockRejectedValue(
+        new Error("Redis error"),
+      );
 
       const middleware = createRateLimitMiddleware();
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockNext).toHaveBeenCalledWith();
     });
@@ -163,7 +192,11 @@ describe("Rate Limit Middleware", () => {
       mockRequest.body = {};
 
       const middleware = createRateLimitMiddleware();
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       // Middleware fails open when getIdentifier throws
       expect(mockNext).toHaveBeenCalledWith();
@@ -178,7 +211,11 @@ describe("Rate Limit Middleware", () => {
       });
 
       const middleware = createRateLimitMiddleware();
-      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+      await middleware(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         "Rate limit nearing exhaustion",
@@ -200,17 +237,21 @@ describe("Rate Limit Middleware", () => {
         currentCount: 1,
       });
 
-      await scoreUpdateRateLimit(mockRequest as Request, mockResponse as Response, mockNext);
+      await scoreUpdateRateLimit(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockRateLimitService.checkRateLimit).toHaveBeenCalledWith(
         "user123",
         { maxRequests: 5, windowSeconds: 86400 },
       );
       expect(mockResponse.set).toHaveBeenCalledWith({
-        'X-RateLimit-Limit': '5',
-        'X-RateLimit-Remaining': '4',
-        'X-RateLimit-Reset': expect.any(String),
-        'X-RateLimit-Used': '1',
+        "X-RateLimit-Limit": "5",
+        "X-RateLimit-Remaining": "4",
+        "X-RateLimit-Reset": expect.any(String),
+        "X-RateLimit-Used": "1",
       });
     });
 
@@ -222,13 +263,18 @@ describe("Rate Limit Middleware", () => {
         currentCount: 6,
       });
 
-      await scoreUpdateRateLimit(mockRequest as Request, mockResponse as Response, mockNext);
+      await scoreUpdateRateLimit(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext,
+      );
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: 429,
-          message: "Too many score updates. Maximum 5 updates allowed per user per day.",
-        })
+          message:
+            "Too many score updates. Maximum 5 updates allowed per user per day.",
+        }),
       );
     });
   });

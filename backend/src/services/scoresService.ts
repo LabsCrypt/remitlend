@@ -12,7 +12,7 @@ export async function updateUserScoresBulk(
   if (!updates || updates.size === 0) return;
 
   const params: (string | number)[] = [];
-  
+
   for (const [userId, delta] of updates) {
     // skip empty user ids
     if (!userId) continue;
@@ -24,7 +24,7 @@ export async function updateUserScoresBulk(
   try {
     const valuePlaceholders = Array.from(
       { length: params.length / 2 },
-      (_, i) => `($${i * 2 + 1}, 500 + $${i * 2 + 2})`
+      (_, i) => `($${i * 2 + 1}, 500 + $${i * 2 + 2})`,
     ).join(", ");
 
     await query(

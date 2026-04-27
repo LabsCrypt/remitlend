@@ -36,10 +36,6 @@ import {
   submitTxSchema,
 } from "../schemas/loanSchemas.js";
 
-
-
-
-
 const router = Router();
 
 // TEST/DEV ONLY: Create a loan directly for test setup
@@ -66,7 +62,6 @@ if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
     markLoanDefaulted,
   );
 }
-
 
 router.get("/config", getLoanConfigEndpoint);
 

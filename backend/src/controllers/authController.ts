@@ -9,14 +9,16 @@ export const registerTestUser = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const { email, password } = req.body;
     if (!email || !password) {
-      res.status(400).json({ success: false, message: "Email and password required" });
+      res
+        .status(400)
+        .json({ success: false, message: "Email and password required" });
       return;
     }
     // In real app, insert user into DB. For test, just return a fake token.
     // Use email as publicKey for test JWT.
     const token = `test-jwt-for-${email}`;
     res.json({ success: true, token });
-  }
+  },
 );
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
