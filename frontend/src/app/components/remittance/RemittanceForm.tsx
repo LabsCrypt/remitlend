@@ -11,6 +11,7 @@ import { isValidStellarAddress } from "../../utils/stellar";
 import { AlertCircle, Send, Loader } from "lucide-react";
 import { useCreateRemittance } from "../../hooks/useApi";
 import { toast } from "sonner";
+import { getAssetStep, getAssetPrecisionHelperText, formatAmountOnBlur, validateAmountPrecision } from "../../utils/amountPrecision";
 
 interface RemittanceFormProps {
   onSuccess?: () => void;
@@ -39,9 +40,14 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
     if (!amount) {
       newErrors.amount = "Amount is required";
     } else {
-      const numAmount = parseFloat(amount);
-      if (isNaN(numAmount) || numAmount <= 0) {
-        newErrors.amount = "Amount must be greater than 0";
+      const precisionError = validateAmountPrecision(amount, token);
+      if (precisionError) {
+        newErrors.amount = precisionError;
+      } else {
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+          newErrors.amount = "Amount must be greater than 0";
+        }
       }
     }
 
@@ -181,11 +187,13 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
               placeholder="0.00"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
+              onBlur={(e) => setAmount(formatAmountOnBlur(e.target.value, token))}
               disabled={mutation.isPending}
               required
               min="0"
-              step="0.01"
+              step={getAssetStep(token)}
               className={errors.amount ? "border-red-600" : ""}
+              helperText={getAssetPrecisionHelperText(token)}
             />
 
             {errors.amount && (

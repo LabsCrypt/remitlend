@@ -20,6 +20,7 @@ import { useContractToast } from "@/app/hooks/useContractToast";
 import { Button } from "@/app/components/ui/Button";
 import { Input } from "@/app/components/ui/Input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/app/components/ui/Card";
+import { formatAmountOnBlur, getAssetStep } from "@/app/utils/amountPrecision";
 
 export function LoanFormExample() {
   const [amount, setAmount] = useState("");
@@ -88,8 +89,10 @@ export function LoanFormExample() {
           <Input
             label="Loan Amount (USDC)"
             type="number"
+            step={getAssetStep("USDC")}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            onBlur={(e) => setAmount(formatAmountOnBlur(e.target.value, "USDC"))}
             placeholder="1000"
             required
           />

@@ -12,6 +12,7 @@ import { useGamificationStore } from "../../stores/useGamificationStore";
 import { useRepaymentOperation } from "../../hooks/useRepaymentOperation";
 import { OperationProgress } from "../ui/OperationProgress";
 import { useWalletStore, selectWalletAddress } from "../../stores/useWalletStore";
+import { getAssetStep, getAssetPrecisionHelperText, formatAmountOnBlur, validateAmountPrecision } from "../../utils/amountPrecision";
 
 interface LoanRepaymentFormProps {
   loanId: number;
@@ -51,6 +52,12 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
 
     if (!amount || isNaN(numAmount)) {
       setError("Please enter a valid amount");
+      return false;
+    }
+
+    const precisionError = validateAmountPrecision(amount, "USDC");
+    if (precisionError) {
+      setError(precisionError);
       return false;
     }
 
@@ -125,14 +132,16 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
           <div className="space-y-2">
             <Input
               type="number"
+              step={getAssetStep("USDC")}
               label="Repayment Amount"
               placeholder="0.00"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
+              onBlur={(e) => setAmount(formatAmountOnBlur(e.target.value, "USDC"))}
               error={error || undefined}
               leftIcon={<DollarSign className="h-4 w-4" />}
               required
-              helperText="Enter the amount you want to repay in USDC"
+              helperText={`Enter the amount you want to repay in USDC. ${getAssetPrecisionHelperText("USDC")}`}
             />
 
             <Button variant="ghost" size="sm" onClick={handlePayFullAmount} className="w-full">
