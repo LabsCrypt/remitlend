@@ -20,6 +20,7 @@ interface OperationProgressProps {
 
 const statusColors: Record<TransactionStatus, { border: string; bg: string; text: string }> = {
   idle: { border: "border-zinc-200", bg: "bg-zinc-50", text: "text-zinc-900" },
+  pending: { border: "border-amber-200", bg: "bg-amber-50", text: "text-amber-900" },
   signing: { border: "border-amber-200", bg: "bg-amber-50", text: "text-amber-900" },
   submitted: { border: "border-blue-200", bg: "bg-blue-50", text: "text-blue-900" },
   confirming: { border: "border-indigo-200", bg: "bg-indigo-50", text: "text-indigo-900" },
@@ -29,6 +30,7 @@ const statusColors: Record<TransactionStatus, { border: string; bg: string; text
 
 const statusIcons: Record<TransactionStatus, React.ReactNode> = {
   idle: null,
+  pending: <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin text-amber-500" />,
   signing: <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin text-amber-500" />,
   submitted: <Send aria-hidden="true" className="h-5 w-5 text-blue-500" />,
   confirming: <Loader aria-hidden="true" className="h-5 w-5 animate-spin text-indigo-500" />,

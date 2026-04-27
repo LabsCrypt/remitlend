@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireApiKey } from "../middleware/auth.js";
+import { requireJwtAuth, requireRoles } from "../middleware/jwtAuth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
 import { validateBody } from "../middleware/validation.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -18,6 +19,8 @@ import {
 import {
   listLoanDisputes,
   resolveLoanDispute,
+  getLoanDispute,
+  rejectLoanDispute,
 } from "../controllers/adminDisputeController.js";
 import { query } from "../db/connection.js";
 
@@ -73,6 +76,32 @@ router.post(
   "/loan-disputes/:disputeId/resolve",
   requireApiKey,
   resolveLoanDispute,
+);
+
+// New admin JWT-protected endpoints
+router.get(
+  "/disputes",
+  requireJwtAuth,
+  requireRoles("admin"),
+  listLoanDisputes,
+);
+router.get(
+  "/disputes/:disputeId",
+  requireJwtAuth,
+  requireRoles("admin"),
+  getLoanDispute,
+);
+router.post(
+  "/disputes/:disputeId/resolve",
+  requireJwtAuth,
+  requireRoles("admin"),
+  resolveLoanDispute,
+);
+router.post(
+  "/disputes/:disputeId/reject",
+  requireJwtAuth,
+  requireRoles("admin"),
+  rejectLoanDispute,
 );
 
 const checkDefaultsBodySchema = z.object({

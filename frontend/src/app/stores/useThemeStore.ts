@@ -31,7 +31,9 @@ function getStoredTheme(): Theme | null {
   }
 
   const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return storedTheme === "dark" || storedTheme === "light" ? storedTheme : null;
+  return storedTheme === "dark" || storedTheme === "light" || storedTheme === "system"
+    ? (storedTheme as Theme)
+    : null;
 }
 
 function applyTheme(theme: Theme) {
@@ -40,15 +42,22 @@ function applyTheme(theme: Theme) {
   }
 
   const root = document.documentElement;
-  root.dataset.theme = theme;
-  root.classList.toggle("dark", theme === "dark");
+  if (theme === "system") {
+    // set dataset to 'system' but apply the resolved system appearance
+    const resolved = getSystemTheme();
+    root.dataset.theme = "system";
+    root.classList.toggle("dark", resolved === "dark");
+  } else {
+    root.dataset.theme = theme;
+    root.classList.toggle("dark", theme === "dark");
+  }
 }
 
 function resolveInitialTheme(): Theme {
   if (typeof document !== "undefined") {
     const presetTheme = document.documentElement.dataset.theme;
-    if (presetTheme === "dark" || presetTheme === "light") {
-      return presetTheme;
+    if (presetTheme === "dark" || presetTheme === "light" || presetTheme === "system") {
+      return presetTheme as Theme;
     }
   }
 
@@ -73,13 +82,19 @@ export const useThemeStore = create<ThemeStore>()(
         hasAttachedSystemThemeListener = true;
         const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
         const handleSystemThemeChange = () => {
-          if (getStoredTheme() !== null) {
-            return;
-          }
+          const stored = getStoredTheme();
+          // If user has an explicit stored preference that is not 'system', do nothing.
+          if (stored !== null && stored !== "system") return;
 
           const nextTheme = mediaQuery.matches ? "dark" : "light";
-          applyTheme(nextTheme);
-          set({ theme: nextTheme }, false, "theme/syncSystemTheme");
+          // When stored === 'system' or no stored value, keep store.theme as 'system' or resolved
+          applyTheme(stored === "system" ? "system" : nextTheme);
+          // If stored === 'system', keep state.theme as 'system', else set resolved theme
+          set(
+            { theme: stored === "system" ? "system" : nextTheme },
+            false,
+            "theme/syncSystemTheme",
+          );
         };
 
         mediaQuery.addEventListener("change", handleSystemThemeChange);
@@ -94,7 +109,8 @@ export const useThemeStore = create<ThemeStore>()(
       },
 
       toggleTheme: () => {
-        const nextTheme = get().theme === "dark" ? "light" : "dark";
+        const current = get().theme;
+        const nextTheme = current === "light" ? "dark" : current === "dark" ? "system" : "light";
         get().setTheme(nextTheme);
       },
     }),

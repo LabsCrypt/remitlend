@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   User,
   Wallet,
@@ -17,7 +17,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/Ca
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { GamificationSettings } from "../../components/gamification/GamificationSettings";
-import { ThemeToggle } from "../../components/ui/ThemeToggle";
+import { useThemeStore } from "../../stores/useThemeStore";
 import {
   useWalletStore,
   selectWalletAddress,
@@ -432,6 +432,16 @@ function DisplaySection() {
 
   const [language, setLanguage] = useState("en");
 
+  const theme = useThemeStore((s) => s.theme);
+  const hydrated = useThemeStore((s) => s.hydrated);
+  const initializeTheme = useThemeStore((s) => s.initializeTheme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+
+  // Ensure client store is initialised
+  useEffect(() => {
+    if (!hydrated) initializeTheme();
+  }, [hydrated, initializeTheme]);
+
   return (
     <Card>
       <CardHeader>
@@ -445,10 +455,27 @@ function DisplaySection() {
           <div>
             <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Theme</p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              Click to cycle: Light → Dark → System
+              Choose a preference: Light / Dark / System
             </p>
           </div>
-          <ThemeToggle />
+          <div className="inline-flex items-center gap-2">
+            {(["light", "dark", "system"] as const).map((opt) => {
+              const active = theme === opt;
+              return (
+                <button
+                  key={opt}
+                  onClick={() => setTheme(opt as any)}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-indigo-600 text-white"
+                      : "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200"
+                  }`}
+                >
+                  {opt[0].toUpperCase() + opt.slice(1)}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>

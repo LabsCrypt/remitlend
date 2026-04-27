@@ -93,8 +93,10 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
   const svc = eventStreamService as unknown as Record<string, unknown>;
   if (typeof svc["closeAll"] === "function") {
     (svc["closeAll"] as (msg: string) => void)("Server shutting down");
-  } else if (typeof eventStreamService.closeAllConnections === "function") {
-    eventStreamService.closeAllConnections("Server shutting down");
+  } else if (
+    typeof (eventStreamService as any).closeAllConnections === "function"
+  ) {
+    (eventStreamService as any).closeAllConnections("Server shutting down");
   }
 
   server.close(async (err) => {

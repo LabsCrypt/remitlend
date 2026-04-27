@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 
 export type TransactionStatus =
   | "idle"
+  | "pending"
   | "signing"
   | "submitted"
   | "confirming"
@@ -58,7 +59,7 @@ export const useOptimisticUI = create<OptimisticUIStore>()(
             ...state.transactions,
             [id]: {
               id,
-              status: "pending",
+              status: "signing",
               message,
               progress: 0,
               startTime: Date.now(),
