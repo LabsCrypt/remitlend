@@ -129,6 +129,7 @@ pub enum DataKey {
     LiquidationBonusBps,
     MinRateBps,
     MaxRateBps,
+    MigratedVersion,
 }
 
 #[contract]
@@ -899,6 +900,19 @@ impl LoanManager {
     pub fn migrate(env: Env) {
         Self::admin(&env).require_auth();
 
+        // Migration guard: prevent double-execution for the same version
+        let last_migrated_version: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MigratedVersion)
+            .unwrap_or(0);
+
+        // If already migrated to this version or later, skip
+        if last_migrated_version >= Self::CURRENT_VERSION {
+            return;
+        }
+
+        // Initialize new storage keys with defaults if they don't exist
         if !env.storage().instance().has(&DataKey::LateFeeRateBps) {
             env.storage()
                 .instance()
@@ -921,14 +935,30 @@ impl LoanManager {
             );
         }
 
+        // Initialize rate bounds if they don't exist
+        if !env.storage().instance().has(&DataKey::MinRateBps) {
+            env.storage()
+                .instance()
+                .set(&DataKey::MinRateBps, &Self::MIN_RATE_BPS);
+        }
+        if !env.storage().instance().has(&DataKey::MaxRateBps) {
+            env.storage()
+                .instance()
+                .set(&DataKey::MaxRateBps, &Self::MAX_RATE_BPS);
+        }
+
         let late_fee_rate = Self::late_fee_rate_bps(&env);
         env.storage()
             .instance()
             .set(&DataKey::LateFeeRateBps, &late_fee_rate);
 
+        // Update contract version and mark migration as complete
         env.storage()
             .instance()
             .set(&DataKey::Version, &Self::CURRENT_VERSION);
+        env.storage()
+            .instance()
+            .set(&DataKey::MigratedVersion, &Self::CURRENT_VERSION);
         Self::bump_instance_ttl(&env);
     }
 
