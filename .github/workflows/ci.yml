@@ -10,7 +10,7 @@ jobs:
   supply-chain-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Block compromised packages
         run: |
           echo "Scanning lockfiles for known malicious packages..."
@@ -31,7 +31,7 @@ jobs:
     needs: supply-chain-audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -65,7 +65,7 @@ jobs:
     needs: supply-chain-audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -85,7 +85,7 @@ jobs:
   contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
      
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
