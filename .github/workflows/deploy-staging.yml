@@ -94,7 +94,7 @@ jobs:
           target: "~/remitlend"
 
       - name: Deploy on server and run migrations + healthcheck
-        uses: appleboy/ssh-action@v0.1.7
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
