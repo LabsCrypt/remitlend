@@ -372,6 +372,7 @@ class SorobanService {
     const contractChecks: Array<[string, string]> = [
       ["LOAN_MANAGER_CONTRACT_ID", process.env.LOAN_MANAGER_CONTRACT_ID ?? ""],
       ["LENDING_POOL_CONTRACT_ID", process.env.LENDING_POOL_CONTRACT_ID ?? ""],
+      ["REMITTANCE_NFT_CONTRACT_ID", process.env.REMITTANCE_NFT_CONTRACT_ID ?? ""],
       ["POOL_TOKEN_ADDRESS", process.env.POOL_TOKEN_ADDRESS ?? ""],
     ];
 

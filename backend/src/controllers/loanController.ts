@@ -266,7 +266,7 @@ export const getBorrowerLoans = asyncHandler(
       WITH loan_summaries AS (
         SELECT
           loan_id,
-          borrower,
+          address,
           MAX(CASE WHEN event_type = 'LoanRequested' THEN amount END)::numeric as principal,
           MAX(CASE WHEN event_type = 'LoanApproved' THEN ledger_closed_at END) as approved_at,
           MAX(CASE WHEN event_type = 'LoanApproved' THEN ledger END) as approved_ledger,
