@@ -17,7 +17,7 @@ This pull request addresses three critical issues in the RemitLend lending proto
 The liquidation bonus BPS (basis points) was admin-configurable with no upper bound. An admin mistake or governance exploit could set a 100% bonus, allowing liquidators to drain collateral beyond its value, leaving the lending pool insolvent.
 
 #### Solution
-- Added `MAX_LIQUIDATION_BONUS_BPS = 2000` constant (20% cap)
+- Added `MAX_LIQUIDATION_BONUS_BPS = 2000` constant (20% cap).
 - Updated `validate_liquidation_bonus_bps()` to enforce the cap with `InvalidConfiguration` error
 - Added safety assertions in `liquidate()` function to ensure bonus never exceeds remaining collateral
 - Added comprehensive test: `test_liquidation_bonus_cap_enforced`
