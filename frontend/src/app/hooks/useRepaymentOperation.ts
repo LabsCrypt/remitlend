@@ -79,7 +79,6 @@ export function useRepaymentOperation(options?: {
         await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Mark complete
-        const txHash = `tx_${Date.now()}`;
         transaction.complete(txHash);
 
         // Invalidate related queries

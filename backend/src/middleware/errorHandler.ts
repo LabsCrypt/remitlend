@@ -68,7 +68,6 @@ export const errorHandler = (
       });
     }
 
-    const errorResponse: any = {
     const errorDetail: Record<string, unknown> = {
       code: err.errorCode,
       message: err.isOperational ? err.message : "Internal server error",
