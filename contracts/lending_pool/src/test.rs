@@ -940,17 +940,15 @@ fn test_set_max_pool_size_unauthorized() {
     let pool_client = LendingPoolClient::new(&env, &pool_id);
     pool_client.initialize(&admin);
 
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &user,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                function: "set_max_pool_size",
-                args: (token_id.clone(), 1000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }
-    ]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "set_max_pool_size",
+            args: (token_id.clone(), 1000i128).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     pool_client.set_max_pool_size(&token_id, &1000);
 }
 
@@ -970,32 +968,28 @@ fn test_accept_admin_flow() {
 
     // Non-proposed admin cannot accept
     let other = Address::generate(&env);
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &other,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                function: "accept_admin",
-                args: ().into_val(&env),
-                sub_invokes: &[],
-            },
-        }
-    ]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &other,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "accept_admin",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     let res = pool_client.try_accept_admin();
     assert!(res.is_err());
 
     // Proposed admin can accept
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &new_admin,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                function: "accept_admin",
-                args: ().into_val(&env),
-                sub_invokes: &[],
-            },
-        }
-    ]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &new_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "accept_admin",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     pool_client.accept_admin();
     assert_eq!(pool_client.get_admin(), new_admin);
 }
@@ -1069,56 +1063,48 @@ fn test_unauthorized_admin_actions() {
     pool_client.initialize(&admin);
 
     // Mock auth as non-admin user
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &user,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                function: "pause",
-                args: ().into_val(&env),
-                sub_invokes: &[],
-            },
-        }
-    ]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "pause",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     assert!(pool_client.try_pause().is_err());
 
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &user,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                function: "unpause",
-                args: ().into_val(&env),
-                sub_invokes: &[],
-            },
-        }
-    ]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "unpause",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     assert!(pool_client.try_unpause().is_err());
 
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &user,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                function: "set_withdrawal_cooldown",
-                args: (100u32,).into_val(&env),
-                sub_invokes: &[],
-            },
-        }
-    ]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "set_withdrawal_cooldown",
+            args: (100u32,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     assert!(pool_client.try_set_withdrawal_cooldown(&100).is_err());
 
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &user,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &pool_id,
-                function: "propose_admin",
-                args: (user.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }
-    ]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "propose_admin",
+            args: (user.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     assert!(pool_client.try_propose_admin(&user).is_err());
 }
 
