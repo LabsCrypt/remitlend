@@ -61,21 +61,22 @@ export function useRepaymentOperation(options?: {
       setError(null);
 
       try {
-        // Step 1: Simulate building unsigned transaction
-        transaction.updateProgress(25);
+        // Step 1: Build unsigned transaction
+        transaction.updateProgress(20, "Building transaction...");
         await new Promise((resolve) => setTimeout(resolve, 300));
 
-        // Step 2: Simulate transaction signing
-        transaction.updateProgress(50);
+        // Step 2: Sign transaction (new signing state)
+        transaction.sign("Waiting for wallet signature...");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Step 3: Submit to network (new submitted state)
+        const txHash = `tx_${Date.now()}`;
+        transaction.submit(txHash, "Transaction submitted, waiting for confirmation...");
         await new Promise((resolve) => setTimeout(resolve, 300));
 
-        // Step 3: Simulate submission to network
-        transaction.updateProgress(75);
-        await new Promise((resolve) => setTimeout(resolve, 300));
-
-        // Step 4: Simulate network confirmation
-        transaction.updateProgress(95);
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        // Step 4: Poll for confirmation (new confirming state)
+        transaction.confirm("Confirming transaction...");
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Mark complete
         const txHash = `tx_${Date.now()}`;
@@ -148,27 +149,30 @@ export function useDepositOperation(options?: {
         }
 
         // Step 1: Build unsigned transaction
-        transaction.updateProgress(20);
-        transaction.start("Building transaction...");
+        transaction.updateProgress(20, "Building transaction...");
         const buildResult = await buildDeposit.mutateAsync({
           amount,
           depositorAddress,
           token,
         });
 
-        // Step 2: Sign transaction
-        transaction.updateProgress(40);
-        transaction.start("Waiting for wallet signature...");
+        // Step 2: Sign transaction (new signing state)
+        transaction.sign("Waiting for wallet signature...");
         const signedTxXdr = await signTransaction(buildResult.unsignedTxXdr);
 
-        // Step 3: Submit to network
-        transaction.updateProgress(70);
-        transaction.start("Submitting to Stellar...");
+        // Step 3: Submit to network (new submitted state)
         const submitResult = await submitPoolTransaction(signedTxXdr);
+        transaction.submit(submitResult.txHash, "Transaction submitted, waiting for confirmation...");
+
+        // Step 4: Poll for confirmation (new confirming state)
+        transaction.confirm("Confirming transaction...");
+        
+        // Simulate confirmation polling (in real implementation, poll the RPC)
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Mark complete
         const txHash = submitResult.txHash;
-        transaction.complete(txHash);
+        transaction.complete(txHash, "Deposit successful!");
 
         queryClient.invalidateQueries({
           queryKey: ["pool", "stats"],
@@ -233,27 +237,30 @@ export function useWithdrawalOperation(options?: {
         }
 
         // Step 1: Build unsigned transaction
-        transaction.updateProgress(20);
-        transaction.start("Building transaction...");
+        transaction.updateProgress(20, "Building transaction...");
         const buildResult = await buildWithdraw.mutateAsync({
           amount,
           depositorAddress,
           token,
         });
 
-        // Step 2: Sign transaction
-        transaction.updateProgress(40);
-        transaction.start("Waiting for wallet signature...");
+        // Step 2: Sign transaction (new signing state)
+        transaction.sign("Waiting for wallet signature...");
         const signedTxXdr = await signTransaction(buildResult.unsignedTxXdr);
 
-        // Step 3: Submit to network
-        transaction.updateProgress(70);
-        transaction.start("Submitting to Stellar...");
+        // Step 3: Submit to network (new submitted state)
         const submitResult = await submitPoolTransaction(signedTxXdr);
+        transaction.submit(submitResult.txHash, "Transaction submitted, waiting for confirmation...");
+
+        // Step 4: Poll for confirmation (new confirming state)
+        transaction.confirm("Confirming transaction...");
+        
+        // Simulate confirmation polling (in real implementation, poll the RPC)
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Mark complete
         const txHash = submitResult.txHash;
-        transaction.complete(txHash);
+        transaction.complete(txHash, "Withdrawal successful!");
 
         queryClient.invalidateQueries({
           queryKey: ["pool", "stats"],
