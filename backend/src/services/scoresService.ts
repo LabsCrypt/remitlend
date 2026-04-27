@@ -1,4 +1,3 @@
-import { query } from "../db/connection.js";
 import { cacheService } from "./cacheService.js";
 import { type PoolClient, query } from "../db/connection.js";
 import logger from "../utils/logger.js";
