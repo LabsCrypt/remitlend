@@ -58,7 +58,7 @@
     "prettier": "^3.8.1",
     "tailwindcss": "^4",
     "ts-jest": "^29.4.6",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
