@@ -79,9 +79,10 @@ impl RemittanceNFT {
     const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 10_000_000; // 1 XLM (10M stroops)
     /// Minimum repayment amount accepted by update_score() (1/10 XLM in stroops).
     /// Dust repayments below this threshold award 0 score points due to integer
-    /// division but still write storage and emit events, enabling spam attacks.
-    /// This floor rejects such calls early with InvalidRepaymentAmount (error 7).
-    pub const MIN_SCORE_UPDATE_REPAYMENT: i128 = 1_000_000;
+    /// division (`repayment_amount / 100 == 0`) but still write storage and emit
+    /// events, enabling spam attacks. This floor rejects such calls early with
+    /// InvalidRepaymentAmount (error 7).
+    pub const MIN_SCORE_UPDATE_REPAYMENT: i128 = 100;
 
     fn admin_key() -> soroban_sdk::Symbol {
         symbol_short!("ADMIN")

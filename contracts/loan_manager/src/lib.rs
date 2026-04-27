@@ -1279,11 +1279,25 @@ impl LoanManager {
                         &Some(env.current_contract_address()),
                     );
                 } else {
-                    nft_client.update_score(
-                        &borrower,
-                        &amount,
-                        &Some(env.current_contract_address()),
-                    );
+                    // Use apply_score_delta rather than update_score so score adjustments
+                    // work for any token denomination without hitting RemittanceNFT's
+                    // anti-dust repayment floor (which assumes XLM stroops).
+                    let points_i128 = amount / 100;
+                    let points_i32 = if points_i128 > i32::MAX as i128 {
+                        i32::MAX
+                    } else if points_i128 <= 0 {
+                        0
+                    } else {
+                        points_i128 as i32
+                    };
+
+                    if points_i32 > 0 {
+                        let _ = nft_client.apply_score_delta(
+                            &borrower,
+                            &points_i32,
+                            &Some(env.current_contract_address()),
+                        );
+                    }
                 }
             }
         }
@@ -1365,8 +1379,6 @@ impl LoanManager {
     }
 
     pub fn release_collateral(env: Env, loan_id: u32) -> Result<(), LoanError> {
-        Self::require_not_paused(&env)?;
-
         let loan_key = DataKey::Loan(loan_id);
         let loan: Loan = env
             .storage()
@@ -1408,7 +1420,10 @@ impl LoanManager {
             return Err(LoanError::LoanNotActive);
         }
 
-        let (total_debt, _) = Self::current_total_debt(&env, &mut loan)?;
+        let total_debt = {
+            let (current_total_debt, _) = Self::current_total_debt(&env, &mut loan)?;
+            current_total_debt
+        };
         let threshold_bps = Self::liquidation_threshold_bps(&env);
         if !Self::is_collateral_ratio_below_threshold(
             loan.collateral_amount,
@@ -1489,7 +1504,6 @@ impl LoanManager {
 
     pub fn cancel_loan(env: Env, borrower: Address, loan_id: u32) -> Result<(), LoanError> {
         borrower.require_auth();
-        Self::require_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -1531,7 +1545,6 @@ impl LoanManager {
 
     pub fn reject_loan(env: Env, loan_id: u32, reason: String) -> Result<(), LoanError> {
         Self::admin(&env).require_auth();
-        Self::require_not_paused(&env)?;
 
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -2360,7 +2373,14 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
 
         // Emit extension event
-        events::loan_extended(&env, loan_id, borrower, new_due_date, extension_fee, loan.extension_count);
+        events::loan_extended(
+            &env,
+            loan_id,
+            borrower,
+            new_due_date,
+            extension_fee,
+            loan.extension_count,
+        );
 
         Ok(())
     }

@@ -567,6 +567,80 @@ class SorobanService {
   }
 
   /**
+   * Reads score history entries from the RemittanceNFT contract.
+   * The contract stores up to 50 entries (ledger, old_score, new_score, reason).
+   *
+   * The API returns entries sorted chronologically (ascending ledger).
+   * Since the contract records ledgers (not wall-clock times), `timestamp`
+   * is returned as the ledger sequence number.
+   */
+  async getOnChainScoreHistory(
+    userPublicKey: string,
+  ): Promise<Array<{ score: number; timestamp: number; reason: string }>> {
+    const server = this.getRpcServer();
+    const contractId = this.getRemittanceNftContractId();
+    const passphrase = this.getNetworkPassphrase();
+    const source = this.getScoreReadSourceKeypair();
+
+    const account = await server.getAccount(source.publicKey());
+
+    const userScVal = nativeToScVal(Address.fromString(userPublicKey), {
+      type: "address",
+    });
+    const offsetScVal = nativeToScVal(0, { type: "u32" });
+    const limitScVal = nativeToScVal(50, { type: "u32" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "get_score_history",
+          args: [userScVal, offsetScVal, limitScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const simulation = await server.simulateTransaction(tx);
+    if ("error" in simulation) {
+      throw AppError.internal(
+        `Failed to simulate get_score_history for ${userPublicKey}: ${String(simulation.error ?? "")}`,
+      );
+    }
+
+    const retval = simulation.result?.retval;
+    if (!retval) {
+      return [];
+    }
+
+    const native = scValToNative(retval) as Array<{
+      ledger: number;
+      old_score: number;
+      new_score: number;
+      reason: string;
+    }>;
+
+    const entries = (Array.isArray(native) ? native : [])
+      .map((entry) => ({
+        score: Number(entry.new_score),
+        timestamp: Number(entry.ledger),
+        reason: String(entry.reason),
+      }))
+      .filter(
+        (entry) =>
+          Number.isFinite(entry.score) &&
+          Number.isFinite(entry.timestamp) &&
+          entry.reason.length > 0,
+      )
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    return entries;
+  }
+
+  /**
    * Ping the Stellar RPC server to verify connectivity.
    * Calls getLatestLedger() with a 5-second timeout.
    */

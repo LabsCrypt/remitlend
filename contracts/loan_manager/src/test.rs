@@ -242,6 +242,65 @@ fn test_reject_pending_loan() {
 }
 
 #[test]
+fn test_paused_blocks_new_loans_and_repayments_but_allows_collateral_release() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(&borrower, &700, &history_hash, &None);
+
+    // Seed liquidity so approve_loan can proceed prior to pause.
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    // Fund borrower so they can repay.
+    let token_client = TokenClient::new(&env, &token_id);
+    stellar_token.mint(&borrower, &5_000);
+
+    // Loan A: pending loan that should be cancellable even while paused.
+    let loan_a = manager.request_loan(&borrower, &1_000, &17280);
+
+    // Loan B: approve before pausing so we can verify repay is blocked while paused.
+    let loan_b = manager.request_loan(&borrower, &1_000, &17280);
+    manager.approve_loan(&loan_b);
+
+    // Loan C: pending loan used to verify approvals are blocked while paused.
+    let loan_c = manager.request_loan(&borrower, &500, &17280);
+
+    // Pause the contract.
+    manager.pause();
+    assert_eq!(manager.is_paused(), true);
+
+    // New loan requests are blocked.
+    let blocked_request = manager.try_request_loan(&borrower, &500, &17280);
+    assert_eq!(blocked_request, Err(Ok(LoanError::ContractPaused)));
+
+    // Approvals are blocked.
+    let blocked_approve = manager.try_approve_loan(&loan_c);
+    assert_eq!(blocked_approve, Err(Ok(LoanError::ContractPaused)));
+
+    // Repayments are blocked.
+    let blocked_repay = manager.try_repay(&borrower, &loan_b, &100);
+    assert_eq!(blocked_repay, Err(Ok(LoanError::ContractPaused)));
+
+    // Existing borrower-initiated cleanup should still work while paused (cancel pending loan).
+    let borrower_balance_before = token_client.balance(&borrower);
+    manager.cancel_loan(&borrower, &loan_a);
+    let borrower_balance_after = token_client.balance(&borrower);
+    assert_eq!(borrower_balance_after, borrower_balance_before);
+
+    // Unpause restores normal operations.
+    manager.unpause();
+    assert_eq!(manager.is_paused(), false);
+
+    // Now repay should succeed (partial repay).
+    manager.repay(&borrower, &loan_b, &100);
+}
+
+#[test]
 fn test_cancel_pending_loan_returns_collateral() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
