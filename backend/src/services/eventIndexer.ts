@@ -7,6 +7,7 @@ import {
 } from "../utils/requestContext.js";
 import {
   type IndexedLoanEvent,
+  SUPPORTED_WEBHOOK_EVENT_TYPES,
   type WebhookEventType,
   webhookService,
 } from "./webhookService.js";
@@ -18,6 +19,17 @@ import {
 import { sorobanService } from "./sorobanService.js";
 import { updateUserScoresBulk } from "./scoresService.js";
 import { AppError } from "../errors/AppError.js";
+
+const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
+  Mint: "NFTMinted",
+  AdmRemint: "NFTMinted",
+  ScoreUpd: "ScoreUpdated",
+  Seized: "NFTSeized",
+  NftBurned: "NFTBurned",
+  GovProp: "ProposalCreated",
+  GovAppr: "ProposalApproved",
+  GovFin: "ProposalFinalized",
+};
 
 
 export interface SorobanRawEvent {
@@ -583,16 +595,32 @@ export class EventIndexer {
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
       amount = this.decodeAmount(event.value);
-    } else if (type === "Deposit" || type === "Withdraw") {
+    } else if (
+      type === "Deposit" ||
+      type === "Withdraw" ||
+      type === "EmergencyWithdraw"
+    ) {
       if (!event.topic[1]) return null;
       borrower = this.decodeAddress(event.topic[1]);
       amount = this.decodeTupleFirstNumericValue(event.value);
-    } else if (type === "Mint" || type === "ScoreUpd" || type === "Seized") {
+    } else if (
+      type === "NFTMinted" ||
+      type === "ScoreUpdated" ||
+      type === "NFTSeized" ||
+      type === "NFTBurned"
+    ) {
       if (!event.topic[1]) return null;
       borrower = this.decodeAddress(event.topic[1]);
-      if (type === "Mint" || type === "ScoreUpd") {
+      if (type === "NFTMinted" || type === "ScoreUpdated") {
         amount = this.decodeAmount(event.value);
       }
+    } else if (
+      type === "ProposalCreated" ||
+      type === "ProposalApproved" ||
+      type === "ProposalFinalized"
+    ) {
+      if (!event.topic[1]) return null;
+      borrower = this.decodeAddress(event.topic[1]);
     } else if (type === "Transfer") {
       if (!event.topic[2]) return null;
       borrower = this.decodeAddress(event.topic[2]);
@@ -821,32 +849,13 @@ export class EventIndexer {
     if (!value) return null;
 
     try {
-      const eventType = value.sym().toString();
-      const supported: string[] = [
-        "LoanRequested",
-        "LoanApproved",
-        "LoanRepaid",
-        "LoanDefaulted",
-        "CollateralLiquidated",
-        "Deposit",
-        "Withdraw",
-        "YieldDistributed",
-        "EmergencyWithdraw",
-        "Mint",
-        "ScoreUpd",
-        "Seized",
-        "Transfer",
-        "MntAuth",
-        "MntRev",
-        "Paused",
-        "Unpaused",
-        "MinScoreUpdated",
-        "PoolPaused",
-        "PoolUnpaused",
-      ];
+      const rawType = value.sym().toString();
+      const normalizedType = EVENT_TYPE_ALIASES[rawType] ?? rawType;
 
-      return supported.includes(eventType)
-        ? (eventType as WebhookEventType)
+      return SUPPORTED_WEBHOOK_EVENT_TYPES.includes(
+        normalizedType as WebhookEventType,
+      )
+        ? (normalizedType as WebhookEventType)
         : null;
     } catch {
       return null;

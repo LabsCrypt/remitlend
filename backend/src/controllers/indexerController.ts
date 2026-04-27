@@ -94,10 +94,15 @@ type QuarantineEventRow = {
 };
 
 const buildIndexerFromConfig = (): EventIndexer => {
-  const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
+  const contractIds = [
+    process.env.LOAN_MANAGER_CONTRACT_ID,
+    process.env.LENDING_POOL_CONTRACT_ID,
+    process.env.REMITTANCE_NFT_CONTRACT_ID,
+    process.env.MULTISIG_GOVERNANCE_CONTRACT_ID,
+  ].filter((id): id is string => Boolean(id && id.trim().length > 0));
 
-  if (!contractId) {
-    throw new Error("LOAN_MANAGER_CONTRACT_ID is not configured");
+  if (contractIds.length === 0) {
+    throw new Error("At least one indexer contract ID must be configured");
   }
 
   const rpcUrl = getStellarRpcUrl();
@@ -105,7 +110,7 @@ const buildIndexerFromConfig = (): EventIndexer => {
 
   return new EventIndexer({
     rpcUrl,
-    contractId,
+    contractConfigs: contractIds.map((contractId) => ({ contractId })),
     pollIntervalMs: 30_000,
     batchSize,
   });
