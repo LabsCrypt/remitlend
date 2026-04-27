@@ -90,7 +90,7 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
   stopScoreReconciliationScheduler();
   stopNotificationCleanupScheduler();
 
-  const svc = eventStreamService as Record<string, unknown>;
+  const svc = eventStreamService as unknown as Record<string, unknown>;
   if (typeof svc["closeAll"] === "function") {
     (svc["closeAll"] as (msg: string) => void)("Server shutting down");
   } else if (typeof eventStreamService.closeAllConnections === "function") {
@@ -105,7 +105,7 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
     }
 
     try {
-      const p = pool as Record<string, unknown>;
+      const p = pool as unknown as Record<string, unknown>;
       if (pool && typeof p["drain"] === "function") {
         await (p["drain"] as () => Promise<void>)();
         logger.info("Database pool drained.");

@@ -68,13 +68,13 @@ describe("DefaultChecker", () => {
 
     const result = await checker.checkOverdueLoans();
 
-    expect(result.batches).toHaveLength(2);
-    expect(result.batches[0]).toMatchObject({
+    expect(result!.batches).toHaveLength(2);
+    expect(result!.batches[0]).toMatchObject({
       loanIds: [101],
       timedOut: true,
       error: "batch timed out after 10ms",
     });
-    expect(result.batches[1]).toMatchObject({
+    expect(result!.batches[1]).toMatchObject({
       loanIds: [102],
       txHash: "second-batch-hash",
       submitStatus: "PENDING",

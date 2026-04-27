@@ -21,12 +21,15 @@ let updateUserScoresBulk: (
   updates: Map<string, number>,
   client?: any,
 ) => Promise<void>;
-let mockQuery: jest.Mock;
-let mockLoggerInfo: jest.Mock;
-let mockLoggerError: jest.Mock;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockQuery: jest.Mock<any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockLoggerInfo: jest.Mock<any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockLoggerError: jest.Mock<any>;
 
 beforeAll(async () => {
-  mockQuery = jest.fn().mockResolvedValue({ rows: [], rowCount: 1 });
+  mockQuery = jest.fn<any>().mockResolvedValue({ rows: [], rowCount: 1 }); // eslint-disable-line @typescript-eslint/no-explicit-any
   mockLoggerInfo = jest.fn();
   mockLoggerError = jest.fn();
 
@@ -126,7 +129,7 @@ describe("updateUserScoresBulk", () => {
   describe("with pinned client (inside transaction)", () => {
     it("uses client.query instead of pool query", async () => {
       const mockClient = {
-        query: jest.fn().mockResolvedValue({ rows: [], rowCount: 1 }),
+        query: jest.fn<any>().mockResolvedValue({ rows: [], rowCount: 1 }), // eslint-disable-line @typescript-eslint/no-explicit-any
       };
 
       await updateUserScoresBulk(new Map([["user1", 10]]), mockClient as any);
@@ -146,7 +149,7 @@ describe("updateUserScoresBulk", () => {
 
     it("propagates errors from client.query", async () => {
       const mockClient = {
-        query: jest.fn().mockRejectedValueOnce(new Error("client fail")),
+        query: jest.fn<any>().mockRejectedValueOnce(new Error("client fail")), // eslint-disable-line @typescript-eslint/no-explicit-any
       };
 
       await expect(

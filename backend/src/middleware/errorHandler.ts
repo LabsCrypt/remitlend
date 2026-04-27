@@ -68,26 +68,28 @@ export const errorHandler = (
       });
     }
 
+    const errorDetail: Record<string, unknown> = {
+      code: err.errorCode,
+      message: err.isOperational ? err.message : "Internal server error",
+    };
+
     const errorResponse: Record<string, unknown> = {
       success: false,
       // Legacy format for backward compatibility
       message: err.isOperational ? err.message : "Internal server error",
       // New structured format
-      error: {
-        code: err.errorCode,
-        message: err.isOperational ? err.message : "Internal server error",
-      },
+      error: errorDetail,
     };
 
     // Include field information if present
     if (err.field) {
-      errorResponse.error.field = err.field;
+      errorDetail.field = err.field;
       errorResponse.field = err.field; // Legacy format
     }
 
     // Include additional details if present
     if (err.details) {
-      errorResponse.error.details = err.details;
+      errorDetail.details = err.details;
     }
 
     res.status(err.statusCode).json(errorResponse);

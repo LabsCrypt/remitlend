@@ -17,7 +17,12 @@ const mockGetScoreConfig = jest
   }));
 
 const mockQuery = jest
-  .fn<() => Promise<{ rows: any[]; rowCount: number }>>()
+  .fn<
+    (
+      sql?: string,
+      params?: unknown[],
+    ) => Promise<{ rows: any[]; rowCount: number }>
+  >() // eslint-disable-line @typescript-eslint/no-explicit-any
   .mockResolvedValue({ rows: [], rowCount: 0 });
 
 // All ESM mocks must be declared before any dynamic import
@@ -26,16 +31,14 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
-  withTransaction: jest
-    .fn()
-    .mockImplementation(async (fn: (client: any) => Promise<unknown>) => {
-      const client = {
-        query: jest.fn((sql: string, params?: unknown[]) =>
-          mockQuery(sql, params ?? []),
-        ),
-      };
-      return fn(client);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  withTransaction: jest.fn<any>().mockImplementation(async (fn: any) =>
+    fn({
+      query: jest.fn((sql: string, params?: unknown[]) =>
+        mockQuery(sql, params ?? []),
+      ),
     }),
+  ),
 }));
 
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
