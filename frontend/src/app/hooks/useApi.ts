@@ -17,6 +17,7 @@ import {
   type UseQueryOptions,
   type UseMutationOptions,
 } from "@tanstack/react-query";
+import { LoanStatusBadge, type LoanStatus } from "../components/ui/LoanStatusBadge";
 import { useUserStore } from "../stores/useUserStore";
 import { isJwtExpired, logoutUser, SessionExpiredError } from "../lib/session";
 
@@ -138,7 +139,7 @@ export interface Loan {
   currency: string;
   interestRate: number;
   termDays: number;
-  status: "pending" | "active" | "repaid" | "defaulted" | "liquidated";
+  status: LoanStatus;
   borrowerId: string;
   createdAt: string;
 }
@@ -200,7 +201,7 @@ export interface BorrowerLoan {
   totalOwed: number;
   totalRepaid: number;
   nextPaymentDeadline: string;
-  status: "active" | "pending" | "repaid" | "defaulted" | "liquidated";
+  status: LoanStatus;
   borrower: string;
   approvedAt?: string;
 }
