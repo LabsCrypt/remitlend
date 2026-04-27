@@ -18,7 +18,10 @@ import {
 } from "@jest/globals";
 import type { PoolClient } from "../../db/connection.js";
 
-type QueryFn = (sql: string, params?: unknown[]) => Promise<{ rows: never[]; rowCount: number }>;
+type QueryFn = (
+  sql: string,
+  params?: unknown[],
+) => Promise<{ rows: never[]; rowCount: number }>;
 type DeleteFn = (key: string) => Promise<void>;
 type GetFn = (key: string) => Promise<null>;
 type SetFn = (key: string, value: unknown) => Promise<void>;
@@ -43,14 +46,23 @@ let mockCacheSetNotExists: jest.MockedFunction<SetNotExistsFn>;
 let mockCacheClose: jest.MockedFunction<CloseFn>;
 
 beforeAll(async () => {
-  mockQuery = jest.fn(async () => ({ rows: [], rowCount: 1 })) as jest.MockedFunction<QueryFn>;
+  mockQuery = jest.fn(async () => ({
+    rows: [],
+    rowCount: 1,
+  })) as jest.MockedFunction<QueryFn>;
   mockLoggerInfo = jest.fn();
   mockLoggerError = jest.fn();
-  mockCacheDelete = jest.fn(async () => undefined) as jest.MockedFunction<DeleteFn>;
+  mockCacheDelete = jest.fn(
+    async () => undefined,
+  ) as jest.MockedFunction<DeleteFn>;
   mockCacheGet = jest.fn(async () => null) as jest.MockedFunction<GetFn>;
   mockCacheSet = jest.fn(async () => undefined) as jest.MockedFunction<SetFn>;
-  mockCacheSetNotExists = jest.fn(async () => true) as jest.MockedFunction<SetNotExistsFn>;
-  mockCacheClose = jest.fn(async () => undefined) as jest.MockedFunction<CloseFn>;
+  mockCacheSetNotExists = jest.fn(
+    async () => true,
+  ) as jest.MockedFunction<SetNotExistsFn>;
+  mockCacheClose = jest.fn(
+    async () => undefined,
+  ) as jest.MockedFunction<CloseFn>;
 
   jest.unstable_mockModule("../../db/connection.js", () => ({
     query: mockQuery,
@@ -197,7 +209,10 @@ describe("updateUserScoresBulk", () => {
     it("is a noop for empty map even with a client", async () => {
       const mockClient = { query: jest.fn() } as MockClient;
 
-      await updateUserScoresBulk(new Map(), mockClient as unknown as PoolClient);
+      await updateUserScoresBulk(
+        new Map(),
+        mockClient as unknown as PoolClient,
+      );
 
       expect(mockClient.query).not.toHaveBeenCalled();
       expect(mockQuery).not.toHaveBeenCalled();
