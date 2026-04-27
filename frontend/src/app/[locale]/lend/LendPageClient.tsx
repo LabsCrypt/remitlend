@@ -30,6 +30,8 @@ import { OperationProgress } from "../../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
 import { useSSE } from "../../hooks/useSSE";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Tooltip } from "../../components/ui/Tooltip";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -184,11 +186,15 @@ export function LendPageClient() {
               label: "Utilization Rate",
               value: formatPercent(poolStats?.utilizationRate ?? 0),
               icon: Percent,
+              tooltip:
+                "Utilization Rate: How much of the pool is currently loaned out. Higher utilization can increase yield, but may reduce instant liquidity.",
             },
             {
               label: "Current APY",
               value: formatPercent(poolStats?.apy ?? 0),
               icon: Activity,
+              tooltip:
+                "APY (Annual Percentage Yield): The estimated yearly return on deposits, including compounding. This may vary with pool utilization and repayments.",
             },
             {
               label: "Active Loans",
@@ -205,7 +211,12 @@ export function LendPageClient() {
                   <item.icon className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{item.label}</p>
+                  <p className="flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    {item.label}
+                    {"tooltip" in item && item.tooltip ? (
+                      <Tooltip content={item.tooltip} label={`${item.label} info`} />
+                    ) : null}
+                  </p>
                   {isLoading ? (
                     <Skeleton className="mt-1 h-7 w-24" />
                   ) : (
@@ -385,12 +396,11 @@ export function LendPageClient() {
 
             {!isLoading &&
               (loans ?? []).filter((loan) => loan.status === "active").length === 0 && (
-                <div className="rounded-2xl border border-dashed border-zinc-300 px-6 py-8 text-center dark:border-zinc-700">
-                  <PiggyBank className="mx-auto h-6 w-6 text-zinc-400" />
-                  <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    No active pool-funded loans available yet.
-                  </p>
-                </div>
+                <EmptyState
+                  icon={PiggyBank}
+                  title="No active pool-funded loans yet"
+                  description="Active loans funded by the pool will appear here once borrowers draw against available liquidity."
+                />
               )}
           </div>
         </section>
@@ -403,6 +413,12 @@ export function LendPageClient() {
               <Skeleton className="h-5 w-40" />
               <Skeleton className="h-[300px] w-full rounded-xl" />
             </div>
+          ) : chartData.length === 0 ? (
+            <EmptyState
+              icon={Activity}
+              title="No yield history yet"
+              description="Yield performance will appear here after the pool records deposits, loans, and earnings."
+            />
           ) : (
             <YieldEarningsChart data={chartData} />
           )}

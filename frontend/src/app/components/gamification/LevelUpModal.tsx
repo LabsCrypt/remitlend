@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Crown, Sparkles, Gift } from "lucide-react";
 import { useGamificationStore } from "@/app/stores/useGamificationStore";
 import { useSoundEffect } from "@/app/utils/soundManager";
 import { Button } from "../ui/Button";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 export function LevelUpModal() {
   const showModal = useGamificationStore((state) => state.showLevelUpModal);
@@ -13,6 +14,8 @@ export function LevelUpModal() {
   const dismissLevelUp = useGamificationStore((state) => state.dismissLevelUp);
   const soundEnabled = useGamificationStore((state) => state.soundEnabled);
   const animationsEnabled = useGamificationStore((state) => state.animationsEnabled);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   const sound = useSoundEffect();
 
@@ -31,6 +34,13 @@ export function LevelUpModal() {
     dismissLevelUp();
   };
 
+  useModalFocusTrap({
+    isOpen: showModal,
+    onClose: handleClose,
+    containerRef: modalRef,
+    initialFocusRef: closeButtonRef,
+  });
+
   return (
     <AnimatePresence>
       {showModal && (
@@ -46,10 +56,15 @@ export function LevelUpModal() {
 
           {/* Modal */}
           <motion.div
+            ref={modalRef}
             initial={animationsEnabled ? { scale: 0.5, opacity: 0, y: 50 } : { opacity: 0 }}
             animate={animationsEnabled ? { scale: 1, opacity: 1, y: 0 } : { opacity: 1 }}
             exit={animationsEnabled ? { scale: 0.8, opacity: 0, y: 20 } : { opacity: 0 }}
             transition={{ type: "spring", duration: 0.5 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="level-up-modal-title"
+            tabIndex={-1}
             className="relative w-full max-w-md overflow-hidden rounded-2xl bg-gradient-to-br from-purple-50 to-blue-50 shadow-2xl dark:from-purple-950/30 dark:to-blue-950/30 dark:border dark:border-purple-800"
           >
             {/* Animated background sparkles */}
@@ -88,7 +103,9 @@ export function LevelUpModal() {
 
             {/* Close button */}
             <button
+              ref={closeButtonRef}
               onClick={handleClose}
+              aria-label="Close level up modal"
               className="absolute top-4 right-4 z-10 rounded-full p-2 text-gray-600 hover:bg-white/50 dark:text-gray-400 dark:hover:bg-black/20"
             >
               <X size={20} />
@@ -108,6 +125,7 @@ export function LevelUpModal() {
 
               {/* Level up text */}
               <motion.h2
+                id="level-up-modal-title"
                 initial={animationsEnabled ? { opacity: 0, y: 20 } : {}}
                 animate={animationsEnabled ? { opacity: 1, y: 0 } : {}}
                 transition={{ delay: 0.3 }}

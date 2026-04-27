@@ -17,9 +17,9 @@ import {
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
 import {
-  startWebhookRetryProcessor,
-  stopWebhookRetryProcessor,
-} from "./services/webhookRetryProcessor.js";
+  startWebhookRetryScheduler,
+  stopWebhookRetryScheduler,
+} from "./services/webhookRetryScheduler.js";
 import { eventStreamService } from "./services/eventStreamService.js";
 import {
   startNotificationCleanupScheduler,
@@ -31,14 +31,16 @@ import {
 } from "./services/scoreReconciliationService.js";
 import { sorobanService } from "./services/sorobanService.js";
 import { validateLoanConfig } from "./config/loanConfig.js";
+import { startLoanDueCheckCron } from "./cron/loanCheckCron.js";
 
 const port = process.env.PORT || 3001;
 
-// Validate loan config on startup before accepting traffic
+// Validate score delta and loan config on startup before accepting traffic
 try {
   validateLoanConfig();
+  sorobanService.validateScoreConfig();
 } catch (err) {
-  logger.error("Loan configuration is invalid, aborting startup.", { err });
+  logger.error("Startup configuration is invalid, aborting startup.", { err });
   process.exit(1);
 }
 
@@ -59,14 +61,17 @@ const server = app.listen(port, () => {
   // Start periodic on-chain default checks (if configured)
   startDefaultCheckerScheduler();
 
-  // Start webhook retry processor
-  startWebhookRetryProcessor();
+  // Start webhook retry scheduler
+  startWebhookRetryScheduler();
 
   // Start scheduled score reconciliation against on-chain state
   startScoreReconciliationScheduler();
 
   // Start periodic notification cleanup
   startNotificationCleanupScheduler();
+
+  // Start loan due check cron
+  startLoanDueCheckCron();
 });
 
 const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
@@ -81,7 +86,7 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
 
   stopIndexer();
   stopDefaultCheckerScheduler();
-  stopWebhookRetryProcessor();
+  stopWebhookRetryScheduler();
   stopScoreReconciliationScheduler();
   stopNotificationCleanupScheduler();
 

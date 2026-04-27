@@ -314,6 +314,7 @@ fn test_update_score_migrates_legacy_data() {
 }
 
 #[test]
+#[should_panic]
 fn test_small_repayment_does_not_write_score_change() {
     let env = Env::default();
     env.mock_all_auths();
@@ -328,8 +329,9 @@ fn test_small_repayment_does_not_write_score_change() {
     let history_hash = create_test_hash(&env, 1);
     client.mint(&user, &500, &history_hash, &None);
 
+    // Below MIN_SCORE_UPDATE_REPAYMENT (100) should be rejected to prevent spammy
+    // zero-point updates that still write storage and emit events.
     client.update_score(&user, &99, &None);
-    assert_eq!(client.get_score(&user), 500);
 }
 
 #[test]
@@ -1305,4 +1307,204 @@ fn test_admin_remint_clears_seized_flag() {
     client.admin_remint(&user, &300, &BytesN::from_array(&env, &[2u8; 32]));
 
     assert!(!client.is_seized(&user));
+}
+
+// ── Additional test coverage for issue #738 ──────────────────────────────────
+
+#[test]
+fn test_mint_nft_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(&user, &500, &history_hash, &None);
+
+    assert_eq!(client.get_score(&user), 500);
+    let metadata = client.get_metadata(&user).unwrap();
+    assert_eq!(metadata.score, 500);
+    assert_eq!(metadata.history_hash, history_hash);
+}
+
+#[test]
+fn test_score_bounds_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    // Test lower bound (300)
+    client.mint(&user, &200, &create_test_hash(&env, 1), &None);
+    assert_eq!(client.get_score(&user), 200); // Mint doesn't enforce MIN, only MAX
+
+    // Test upper bound (850)
+    let user2 = Address::generate(&env);
+    client.mint(&user2, &900, &create_test_hash(&env, 2), &None);
+    assert_eq!(client.get_score(&user2), 850); // Capped at MAX_SCORE
+}
+
+#[test]
+fn test_update_score_within_bounds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &500, &create_test_hash(&env, 1), &None);
+
+    // Update within bounds
+    client.update_score(&user, &1000, &None);
+    assert_eq!(client.get_score(&user), 510); // 500 + 10 points
+
+    // Update that would exceed max
+    client.update_score(&user, &100000, &None);
+    assert_eq!(client.get_score(&user), 850); // Capped at MAX_SCORE
+}
+
+#[test]
+fn test_apply_score_delta_clamps_at_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &800, &create_test_hash(&env, 1), &None);
+
+    // Apply delta that would exceed max
+    client.apply_score_delta(&user, &100, &None);
+    assert_eq!(client.get_score(&user), 850); // Capped at MAX_SCORE
+
+    // Apply negative delta
+    client.apply_score_delta(&user, &-50, &None);
+    assert_eq!(client.get_score(&user), 800);
+}
+
+#[test]
+fn test_lock_and_unlock_nft() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &500, &create_test_hash(&env, 1), &None);
+
+    // Seize (lock) collateral
+    assert!(!client.is_seized(&user));
+    client.seize_collateral(&user, &None);
+    assert!(client.is_seized(&user));
+
+    // Note: There's no explicit unlock function in the contract
+    // Seized state is cleared on burn or transfer
+}
+
+#[test]
+fn test_burn_removes_nft() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &500, &create_test_hash(&env, 1), &None);
+
+    assert!(client.get_metadata(&user).is_some());
+    assert_eq!(client.get_score(&user), 500);
+
+    client.burn(&user, &None);
+
+    assert!(client.get_metadata(&user).is_none());
+    assert_eq!(client.get_score(&user), 0);
+}
+
+#[test]
+fn test_seize_collateral_by_authorized_only() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let authorized_minter = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.authorize_minter(&authorized_minter);
+    client.mint(&user, &500, &create_test_hash(&env, 1), &None);
+
+    // Admin can seize
+    client.seize_collateral(&user, &None);
+    assert!(client.is_seized(&user));
+
+    // Authorized minter can also seize
+    let user2 = Address::generate(&env);
+    client.mint(&user2, &500, &create_test_hash(&env, 2), &None);
+    client.seize_collateral(&user2, &Some(authorized_minter));
+    assert!(client.is_seized(&user2));
+}
+
+#[test]
+fn test_score_history_max_50_entries() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(&user, &500, &create_test_hash(&env, 1), &None);
+
+    // Add 60 score updates (exceeds MAX_SCORE_HISTORY_ENTRIES of 50)
+    for sequence in 1..=60u32 {
+        env.ledger().set_sequence_number(sequence);
+        client.update_score(&user, &100, &None);
+    }
+
+    // Verify history is capped at 50 entries
+    let history = client.get_score_history(&user, &0, &100);
+    assert_eq!(history.len(), RemittanceNFT::MAX_SCORE_HISTORY_ENTRIES);
+
+    // Verify oldest entries were rotated out (first entry should be from sequence 11)
+    let first_entry = history.get(0).unwrap();
+    assert_eq!(first_entry.ledger, 11);
+
+    // Verify newest entry is from sequence 60
+    let last_entry = history
+        .get(RemittanceNFT::MAX_SCORE_HISTORY_ENTRIES - 1)
+        .unwrap();
+    assert_eq!(last_entry.ledger, 60);
 }

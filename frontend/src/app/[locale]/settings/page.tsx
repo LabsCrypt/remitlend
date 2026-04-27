@@ -24,6 +24,7 @@ import {
   selectWalletNetwork,
 } from "../../stores/useWalletStore";
 import { useUserStore, selectUser } from "../../stores/useUserStore";
+import { logoutUser } from "../../lib/session";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -478,6 +479,7 @@ function DisplaySection() {
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SectionId>("profile");
+  const handleLogout = () => logoutUser("manual");
 
   const renderSection = () => {
     switch (activeSection) {
@@ -498,12 +500,22 @@ export default function SettingsPage() {
 
   return (
     <main className="space-y-8 min-h-screen p-8 lg:p-12 max-w-5xl mx-auto">
-      <header>
-        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Account</p>
-        <h1 className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Settings</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Manage your profile, wallet, notifications, and preferences.
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Account</p>
+          <h1 className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Settings</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Manage your profile, wallet, notifications, and preferences.
+          </p>
+        </div>
+        <Button
+          variant="danger"
+          onClick={handleLogout}
+          leftIcon={<LogOut className="h-4 w-4" />}
+          className="sm:mt-1"
+        >
+          Log out
+        </Button>
       </header>
 
       <div className="flex flex-col lg:flex-row gap-8">

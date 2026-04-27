@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { signTransaction } from "@stellar/freighter-api";
+import { submitLoanTransaction } from "../../../hooks/useApi";
 import { Button } from "../../../components/ui/Button";
 import {
   TransactionStatusTracker,
@@ -17,21 +19,19 @@ import {
   useWalletStore,
 } from "../../../stores/useWalletStore";
 import { useContractToast } from "../../../hooks/useContractToast";
-
-const DEMO_AVAILABLE_BALANCE = 1_000;
-
-function createDemoTxHash(): string {
-  const random = Math.random().toString(16).slice(2);
-  return `${Date.now().toString(16)}${random}`.padEnd(64, "0").slice(0, 64);
-}
+import { TransactionPreviewModal } from "../../../components/transaction/TransactionPreviewModal";
+import { useTransactionPreview } from "../../../hooks/useTransactionPreview";
+import { buildUnsignedRepaymentXdr } from "../../../utils/soroban";
 
 export default function RepayLoanPage() {
   const params = useParams<{ loanId: string }>();
   const loanId = params?.loanId ?? "unknown";
+  const router = useRouter();
 
   const walletAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const toast = useContractToast();
+  const txPreview = useTransactionPreview();
 
   const [amount, setAmount] = useState("250");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,19 +43,9 @@ export default function RepayLoanPage() {
   const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
   const [lastError, setLastError] = useState<TransactionErrorDetails | null>(null);
 
-  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const amountNumber = useMemo(() => Number(amount || "0"), [amount]);
 
-  const clearPendingTimeout = () => {
-    if (pendingTimeoutRef.current) {
-      clearTimeout(pendingTimeoutRef.current);
-      pendingTimeoutRef.current = null;
-    }
-  };
-
   const cancelFlow = () => {
-    clearPendingTimeout();
     setTrackerState("cancelled");
     setTrackerTitle("Repayment cancelled");
     setTrackerMessage("You cancelled the repayment flow.");
@@ -63,63 +53,102 @@ export default function RepayLoanPage() {
     setIsSubmitting(false);
   };
 
-  const runRepayment = async () => {
-    clearPendingTimeout();
-    setLastError(null);
-    setTrackerTxHash(null);
-
-    let toastId: string | number | null = null;
+  const handleRepayClick = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!isWalletConnected || !walletAddress) {
+      toast.error("Wallet not connected", "Please connect your wallet first.");
+      return;
+    }
 
     try {
-      if (!isWalletConnected || !walletAddress) {
-        throw new Error("Wallet not connected");
-      }
-
-      if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-        throw new Error("Invalid repayment amount");
-      }
-
-      if (amountNumber > DEMO_AVAILABLE_BALANCE) {
-        throw new Error("Insufficient balance for repayment");
-      }
-
       setIsSubmitting(true);
+
+      const contractId = process.env.NEXT_PUBLIC_LOAN_MANAGER_CONTRACT_ID;
+      if (!contractId) {
+        throw new Error("Contract configuration missing");
+      }
+
+      const xdr = await buildUnsignedRepaymentXdr({
+        borrower: walletAddress,
+        loanId,
+        amount: amountNumber,
+        contractId,
+      });
+
+      txPreview.show(
+        {
+          operations: [
+            {
+              type: "Repay Loan",
+              description: `Repaying ${amountNumber} for loan #${loanId}`,
+              amount: amountNumber.toString(),
+              token: "USDC", // Assuming USDC for now
+            },
+          ],
+          balanceChanges: [
+            {
+              token: "USDC",
+              change: `-${amountNumber}`,
+              isPositive: false,
+            },
+          ],
+          estimatedGasFee: "0.01",
+          network: "Stellar Testnet",
+          contractAddress: contractId,
+        },
+        async () => {
+          await executeRepayment(xdr);
+        },
+      );
+    } catch (error) {
+      const mapped = mapTransactionError(error);
+      setLastError(mapped);
+      toast.error(mapped.title, mapped.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const executeRepayment = async (unsignedXdr: string) => {
+    let toastId: string | number | null = null;
+    try {
       setTrackerState("signing");
       setTrackerTitle("Awaiting wallet confirmation");
       setTrackerMessage("Approve the repayment transaction in your wallet.");
 
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      const signResult = await signTransaction(unsignedXdr, {
+        networkPassphrase: "Test SDF Network ; September 2015",
+      });
+      if (signResult.error) {
+        throw new Error(
+          typeof signResult.error === "string" ? signResult.error : "Failed to sign transaction",
+        );
+      }
 
       setTrackerState("submitting");
       setTrackerTitle("Submitting repayment");
       setTrackerMessage("Sending repayment transaction to the network.");
       toastId = toast.showPending("Repayment transaction submitted");
 
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      const result = await submitLoanTransaction(signResult.signedTxXdr);
 
-      const txHash = createDemoTxHash();
-      setTrackerTxHash(txHash);
-      setTrackerState("polling");
-      setTrackerTitle("Tracking confirmation");
-      setTrackerMessage("Polling transaction status on-chain. This can take a few seconds.");
+      if (result.status === "SUCCESS") {
+        setTrackerTxHash(result.txHash);
+        setTrackerState("success");
+        setTrackerTitle("Repayment recorded");
+        setTrackerMessage("Your repayment was submitted and confirmed.");
 
-      await new Promise<void>((resolve) => {
-        pendingTimeoutRef.current = setTimeout(() => {
-          pendingTimeoutRef.current = null;
-          resolve();
-        }, 2200);
-      });
-
-      setTrackerState("success");
-      setTrackerTitle("Repayment recorded");
-      setTrackerMessage("Your repayment was submitted and confirmed.");
-      setTrackerGuidance("You can return to the loan page to verify updated outstanding balance.");
-
-      if (toastId !== null) {
-        toast.showSuccess(toastId, {
+        toast.showSuccess(toastId!, {
           successMessage: "Repayment confirmed",
-          txHash,
+          txHash: result.txHash,
         });
+
+        // Invalidate cache (simulated by a short delay before refresh)
+        setTimeout(() => {
+          router.refresh();
+        }, 2000);
+      } else {
+        throw new Error("Transaction failed");
       }
     } catch (error) {
       const mapped = mapTransactionError(error);
@@ -127,28 +156,15 @@ export default function RepayLoanPage() {
       setTrackerState(mapped.cancelledByUser ? "cancelled" : "error");
       setTrackerTitle(mapped.title);
       setTrackerMessage(mapped.message);
-      setTrackerGuidance(mapped.guidance);
 
-      if (toastId !== null) {
+      if (toastId) {
         toast.showError(toastId, {
           errorMessage: mapped.title,
-          retryAction: mapped.retryable ? handleRetry : undefined,
         });
       } else {
         toast.error(mapped.title, mapped.message);
       }
-    } finally {
-      setIsSubmitting(false);
     }
-  };
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    await runRepayment();
-  };
-
-  const handleRetry = async () => {
-    await runRepayment();
   };
 
   return (
@@ -161,19 +177,14 @@ export default function RepayLoanPage() {
           Repay Loan #{loanId}
         </h1>
         <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          This repayment flow includes structured error recovery, clear guidance, and transaction
-          status tracking.
+          Real-time blockchain settlement for your loan repayments.
         </p>
       </header>
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={handleRepayClick}
         className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none"
       >
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-          Demo available balance: ${DEMO_AVAILABLE_BALANCE.toLocaleString()}
-        </div>
-
         <div>
           <label
             htmlFor="repayment-amount"
@@ -191,7 +202,7 @@ export default function RepayLoanPage() {
         </div>
 
         <Button type="submit" className="w-full" isLoading={isSubmitting}>
-          Continue to confirmation
+          Review & Repay
         </Button>
       </form>
 
@@ -202,19 +213,20 @@ export default function RepayLoanPage() {
         guidance={trackerGuidance}
         txHash={trackerTxHash}
         onCancel={
-          trackerState === "signing" || trackerState === "submitting" || trackerState === "polling"
-            ? cancelFlow
-            : undefined
-        }
-        onRetry={
-          trackerState === "error" || trackerState === "cancelled"
-            ? lastError?.retryable === false
-              ? undefined
-              : handleRetry
-            : undefined
+          trackerState === "signing" || trackerState === "submitting" ? cancelFlow : undefined
         }
         disabled={isSubmitting}
       />
+
+      {txPreview.data && (
+        <TransactionPreviewModal
+          isOpen={txPreview.isOpen}
+          onClose={txPreview.close}
+          onConfirm={txPreview.confirm}
+          data={txPreview.data}
+          isLoading={txPreview.isLoading}
+        />
+      )}
     </section>
   );
 }

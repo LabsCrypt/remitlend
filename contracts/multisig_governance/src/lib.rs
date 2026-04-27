@@ -105,7 +105,8 @@ pub struct ProposalCancelledEvent {
 /// Emitted each time a signer approves.
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct TransferApprovedEvent {
+pub struct ProposalApprovedEvent {
+    pub proposal_id: u32,
     pub signer: Address,
     pub approvals_so_far: u32,
     pub threshold: u32,
@@ -304,12 +305,14 @@ impl GovernanceContract {
 
         let approvals_so_far = pending.approvals.len();
         let threshold = pending.threshold;
+        let proposal_id = pending.id;
 
         env.storage().instance().set(&KEY_PENDING, &pending);
 
         env.events().publish(
             (symbol_short!("GovAppr"), signer.clone()),
-            TransferApprovedEvent {
+            ProposalApprovedEvent {
+                proposal_id,
                 signer,
                 approvals_so_far,
                 threshold,

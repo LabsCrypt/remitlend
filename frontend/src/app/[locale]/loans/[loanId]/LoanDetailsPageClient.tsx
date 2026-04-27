@@ -9,6 +9,7 @@ import { RepaymentScheduleTable } from "../../../components/loan-wizard/Repaymen
 import { RepaymentProgress } from "../../../components/ui/RepaymentProgress";
 import { LoanTimeline } from "../../../components/ui/LoanTimeline";
 import { TxHashLink } from "../../../components/ui/TxHashLink";
+import { downloadCsv, rowsToCsv } from "../../../utils/csv";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -66,9 +67,24 @@ export function LoanDetailsPageClient() {
     );
   }
 
-  const latestTxHash = loan.events.find((event) => Boolean(event.txHash))?.txHash;
-  const nextDeadline = (loan as unknown as { nextPaymentDeadline?: string }).nextPaymentDeadline;
+  const loanData = loan;
+  const latestTxHash = loanData.events.find((event) => Boolean(event.txHash))?.txHash;
+  const nextDeadline = (loanData as unknown as { nextPaymentDeadline?: string })
+    .nextPaymentDeadline;
   const daysRemaining = getDaysRemaining(nextDeadline);
+
+  function exportCsv() {
+    const rows = loanData.events.map((event) => ({
+      date: event.timestamp,
+      type: event.type,
+      amount: event.amount,
+      asset: "USD",
+      status: loanData.status,
+      transactionHash: event.txHash ?? "",
+    }));
+
+    downloadCsv(`loan-${loanId}.csv`, rowsToCsv(rows));
+  }
 
   return (
     <section className="space-y-6">
@@ -88,13 +104,28 @@ export function LoanDetailsPageClient() {
       </nav>
 
       <header className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
-          Borrower Portal
-        </p>
-        <h1 className="mt-3 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Loan #{loanId}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-          Track repayment timing, lender terms, and the current outstanding balance for this loan.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
+              Borrower Portal
+            </p>
+            <h1 className="mt-3 text-3xl font-bold text-zinc-900 dark:text-zinc-50">
+              Loan #{loanId}
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
+              Track repayment timing, lender terms, and the current outstanding balance for this
+              loan.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={loan.events.length === 0}
+            className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            Export CSV
+          </button>
+        </div>
 
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-zinc-500 dark:text-zinc-400">
           {loan.interestRate > 0 && (
@@ -222,15 +253,17 @@ export function LoanDetailsPageClient() {
               <p className="mt-3 text-sm leading-6 text-indigo-700/80 dark:text-indigo-200">
                 Make a repayment before the next due date to keep your score trending upward.
               </p>
-              {loan.status !== "repaid" && (
-                <Link
-                  href={`/repay/${loanId}`}
-                  className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-                >
-                  Make Payment
-                  <ChevronRight className="h-4 w-4" />
-                </Link>
-              )}
+              {loan.status !== "repaid" &&
+                loan.status !== "defaulted" &&
+                loan.status !== "liquidated" && (
+                  <Link
+                    href={`/repay/${loanId}`}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                  >
+                    Make Payment
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                )}
 
               {latestTxHash && (
                 <div className="mt-3">
@@ -248,11 +281,13 @@ export function LoanDetailsPageClient() {
               Collateral status
             </h2>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              {loan.status === "defaulted"
-                ? "Collateral has been seized."
-                : loan.status === "repaid"
-                  ? "Collateral released — loan fully repaid."
-                  : "Collateral is held in escrow for the duration of this loan."}
+              {loan.status === "liquidated"
+                ? "Collateral was liquidated after the position fell below the collateral threshold."
+                : loan.status === "defaulted"
+                  ? "Collateral has been seized."
+                  : loan.status === "repaid"
+                    ? "Collateral released — loan fully repaid."
+                    : "Collateral is held in escrow for the duration of this loan."}
             </p>
           </div>
         </aside>

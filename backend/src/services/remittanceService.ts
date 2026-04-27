@@ -8,6 +8,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { getStellarNetworkPassphrase } from "../config/stellar.js";
 import { query } from "../db/connection.js";
+import { withTransaction } from "../db/transaction.js";
 import { AppError } from "../errors/AppError.js";
 import logger from "../utils/logger.js";
 
@@ -54,20 +55,22 @@ export const remittanceService = {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
+    // Validate before opening a DB transaction — avoids holding a connection
+    // while doing synchronous checks.
+    if (!isValidStellarAddress(payload.recipientAddress)) {
+      throw AppError.badRequest(
+        "Invalid Stellar recipient address (must be 56 chars, start with G)",
+      );
+    }
+
+    if (!isValidStellarAddress(payload.senderAddress)) {
+      throw AppError.badRequest(
+        "Invalid Stellar sender address (must be 56 chars, start with G)",
+      );
+    }
+
     try {
       const networkPassphrase = getStellarNetworkPassphrase();
-
-      if (!isValidStellarAddress(payload.recipientAddress)) {
-        throw AppError.badRequest(
-          "Invalid Stellar recipient address (must be 56 chars, start with G)",
-        );
-      }
-
-      if (!isValidStellarAddress(payload.senderAddress)) {
-        throw AppError.badRequest(
-          "Invalid Stellar sender address (must be 56 chars, start with G)",
-        );
-      }
 
       const sourceAccount = new Account(payload.senderAddress, "0");
 
@@ -87,46 +90,50 @@ export const remittanceService = {
 
       const xdr = transaction.toXDR();
 
-      const result = await query(
-        `INSERT INTO remittances 
-         (id, sender_id, recipient_address, amount, from_currency, to_currency, memo, status, xdr, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         RETURNING *`,
-        [
-          id,
-          payload.senderAddress,
-          payload.recipientAddress,
-          payload.amount,
-          payload.fromCurrency,
-          payload.toCurrency,
-          payload.memo || null,
-          "pending",
-          xdr,
-          now,
-          now,
-        ],
-      );
+      // Wrap all DB writes in a transaction so a partial failure cannot leave
+      // the database in an inconsistent half-written state.
+      return await withTransaction(async (client) => {
+        const result = await client.query(
+          `INSERT INTO remittances
+           (id, sender_id, recipient_address, amount, from_currency, to_currency, memo, status, xdr, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            id,
+            payload.senderAddress,
+            payload.recipientAddress,
+            payload.amount,
+            payload.fromCurrency,
+            payload.toCurrency,
+            payload.memo || null,
+            "pending",
+            xdr,
+            now,
+            now,
+          ],
+        );
 
-      if (!result.rows[0]) {
-        throw AppError.internal("Failed to create remittance record");
-      }
+        if (!result.rows[0]) {
+          throw AppError.internal("Failed to create remittance record");
+        }
 
-      const record = result.rows[0];
+        const record = result.rows[0];
 
-      return {
-        id: record.id,
-        senderId: record.sender_id,
-        recipientAddress: record.recipient_address,
-        amount: parseFloat(record.amount),
-        fromCurrency: record.from_currency,
-        toCurrency: record.to_currency,
-        memo: record.memo,
-        status: record.status,
-        transactionHash: record.transaction_hash,
-        xdr: record.xdr,
-        createdAt: record.created_at.toISOString(),
-        updatedAt: record.updated_at.toISOString(),
-      };
+        return {
+          id: record.id,
+          senderId: record.sender_id,
+          recipientAddress: record.recipient_address,
+          amount: parseFloat(record.amount),
+          fromCurrency: record.from_currency,
+          toCurrency: record.to_currency,
+          memo: record.memo,
+          status: record.status,
+          transactionHash: record.transaction_hash,
+          xdr: record.xdr,
+          createdAt: record.created_at.toISOString(),
+          updatedAt: record.updated_at.toISOString(),
+        };
+      });
     } catch (error) {
       logger.error("Error creating remittance:", error);
 

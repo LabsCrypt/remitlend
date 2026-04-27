@@ -70,7 +70,10 @@ The repository is organized as a monorepo containing three core packages:
    ```bash
    docker compose up --build
    ```
-   The backend waits for PostgreSQL to be ready, runs `npm run migrate:up` to apply SQL migrations, then starts the API.
+   Docker Compose uses healthchecks so services start cleanly:
+   - PostgreSQL (`db`) is marked healthy via `pg_isready`
+   - The backend waits for healthy Postgres before starting, runs `npm run migrate:up`, then starts the API
+   - The backend container is marked healthy by polling `GET /health` every 10 seconds (3 retries)
 
 4. **Access the application:**
    - Frontend: [http://localhost:3000](http://localhost:3000)

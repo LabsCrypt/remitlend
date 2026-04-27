@@ -17,6 +17,8 @@ import {
 } from "./notificationService.js";
 import { sorobanService } from "./sorobanService.js";
 import { updateUserScoresBulk } from "./scoresService.js";
+import { AppError } from "../errors/AppError.js";
+
 
 export interface SorobanRawEvent {
   id: string;
@@ -45,7 +47,9 @@ interface LoanEvent extends IndexedLoanEvent {
 
 interface EventIndexerConfig {
   rpcUrl: string;
-  contractId: string;
+  contractId?: string;
+  contractIds?: string[];
+  contractConfigs?: Array<{ contractId: string }>;
   pollIntervalMs?: number;
   batchSize?: number;
 }
@@ -62,7 +66,7 @@ interface ProcessChunkResult {
 
 export class EventIndexer {
   private readonly rpc: SorobanRpc.Server;
-  private readonly contractId: string;
+  private readonly contractIds: string[];
   private readonly pollIntervalMs: number;
   private readonly batchSize: number;
   private readonly quarantineAlertThreshold: number;
@@ -88,14 +92,26 @@ export class EventIndexer {
         throw new Error("contractId is required when using rpcUrl constructor");
       }
       this.rpc = new SorobanRpc.Server(configOrRpcUrl);
-      this.contractId = contractId;
+      this.contractIds = [contractId];
       this.pollIntervalMs = 30_000;
       this.batchSize = 100;
       return;
     }
 
     this.rpc = new SorobanRpc.Server(configOrRpcUrl.rpcUrl);
-    this.contractId = configOrRpcUrl.contractId;
+    const configuredIds = configOrRpcUrl.contractIds ?? [];
+    const configuredFromObjects = (configOrRpcUrl.contractConfigs ?? []).map(
+      (config) => config.contractId,
+    );
+    const normalized = [
+      ...configuredFromObjects,
+      ...configuredIds,
+      ...(configOrRpcUrl.contractId ? [configOrRpcUrl.contractId] : []),
+    ].filter(Boolean);
+    if (normalized.length === 0) {
+      throw new Error("At least one contractId must be configured for indexer");
+    }
+    this.contractIds = [...new Set(normalized)];
     this.pollIntervalMs = configOrRpcUrl.pollIntervalMs ?? 30_000;
     this.batchSize = configOrRpcUrl.batchSize ?? 100;
   }
@@ -272,11 +288,15 @@ export class EventIndexer {
 
     return runWithRequestContext(correlationId, async () => {
       if (endLedger < startLedger) {
+        logger.warn("Skipping invalid ledger range", { startLedger, endLedger });
         return {
-          lastProcessedLedger: endLedger,
+          lastProcessedLedger: Math.max(startLedger - 1, 0),
           fetchedEvents: 0,
           insertedEvents: 0,
         };
+        throw AppError.badRequest(
+          `Invalid ledger range: endLedger (${endLedger}) cannot be less than startLedger (${startLedger})`,
+        );
       }
 
       try {
@@ -335,7 +355,7 @@ export class EventIndexer {
         filters: [
           {
             type: "contract",
-            contractIds: [this.contractId],
+            contractIds: this.contractIds,
           },
         ],
       } as never)) as unknown as {
@@ -426,7 +446,7 @@ export class EventIndexer {
             event.eventId,
             event.eventType,
             event.loanId ?? null,
-            event.borrower || null,
+            event.borrower || "",
             event.amount ?? null,
             event.ledger,
             event.ledgerClosedAt,
@@ -460,21 +480,23 @@ export class EventIndexer {
                 (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
               );
             }
+          } else if (event.eventType === "CollateralLiquidated") {
+            const { defaultPenalty } = sorobanService.getScoreConfig();
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
+              );
+            }
           }
         }
       }
 
-      await query("COMMIT", []);
-      // apply batched score updates after the transaction commits
+      // apply batched score updates BEFORE the transaction commits to ensure atomicity
       if (scoreUpdates.size > 0) {
-        try {
-          await updateUserScoresBulk(scoreUpdates);
-        } catch (err) {
-          logger.error("Failed to apply bulk user score updates", {
-            error: err,
-          });
-        }
+        await updateUserScoresBulk(scoreUpdates);
       }
+      await query("COMMIT", []);
     } catch (error) {
       await query("ROLLBACK", []);
       throw error;
@@ -527,12 +549,25 @@ export class EventIndexer {
       borrower = this.decodeAddress(event.topic[1]);
       amount = this.decodeAmount(event.value);
     } else if (type === "LoanApproved") {
-      if (!event.topic[1]) return null;
+      if (!event.topic[1] || !event.topic[2]) return null;
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
-      borrower = this.decodeAddress(event.value);
-      interestRateBps = 1200;
-      termLedgers = 17280;
+      borrower = this.decodeAddress(event.topic[2]);
+
+      const data = scValToNative(event.value);
+      if (!Array.isArray(data) || data.length < 2) {
+        throw new Error(`LoanApproved event missing interest_rate_bps or term_ledgers: ${event.id}`);
+      }
+
+      interestRateBps = Number(data[0]);
+      termLedgers = Number(data[1]);
+
+      if (!Number.isFinite(interestRateBps)) {
+        throw new Error(`LoanApproved event has invalid interest_rate_bps: ${event.id}`);
+      }
+      if (!Number.isFinite(termLedgers)) {
+        throw new Error(`LoanApproved event has invalid term_ledgers: ${event.id}`);
+      }
     } else if (type === "LoanRepaid") {
       if (!event.topic[1] || !event.topic[2]) return null;
       borrower = this.decodeAddress(event.topic[1]);
@@ -543,9 +578,24 @@ export class EventIndexer {
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
       borrower = this.decodeAddress(event.value);
-    } else if (type === "Seized") {
+    } else if (type === "CollateralLiquidated") {
+      if (!event.topic[1]) return null;
+      loanId = this.decodeLoanId(event.topic[1]);
+      if (loanId === undefined) return null;
+      amount = this.decodeAmount(event.value);
+    } else if (type === "Deposit" || type === "Withdraw") {
       if (!event.topic[1]) return null;
       borrower = this.decodeAddress(event.topic[1]);
+      amount = this.decodeTupleFirstNumericValue(event.value);
+    } else if (type === "Mint" || type === "ScoreUpd" || type === "Seized") {
+      if (!event.topic[1]) return null;
+      borrower = this.decodeAddress(event.topic[1]);
+      if (type === "Mint" || type === "ScoreUpd") {
+        amount = this.decodeAmount(event.value);
+      }
+    } else if (type === "Transfer") {
+      if (!event.topic[2]) return null;
+      borrower = this.decodeAddress(event.topic[2]);
     }
 
     return {
@@ -615,6 +665,13 @@ export class EventIndexer {
           ? `Loan #${event.loanId} has been marked as defaulted.`
           : "A loan has been marked as defaulted.";
         break;
+      case "CollateralLiquidated":
+        type = "loan_defaulted";
+        title = "Collateral Seized";
+        message = event.loanId
+          ? `Collateral for loan #${event.loanId} has been seized due to default.`
+          : "Collateral has been seized due to a loan default.";
+        break;
       default:
         return;
     }
@@ -654,6 +711,18 @@ export class EventIndexer {
     } catch {
       return undefined;
     }
+  }
+
+  private decodeTupleFirstNumericValue(value: xdr.ScVal): string | undefined {
+    const native = scValToNative(value);
+    if (!Array.isArray(native) || native.length === 0) {
+      return undefined;
+    }
+    const first = native[0];
+    if (typeof first === "bigint" || typeof first === "number") {
+      return first.toString();
+    }
+    return undefined;
   }
 
   private async quarantineEvent(
@@ -758,10 +827,22 @@ export class EventIndexer {
         "LoanApproved",
         "LoanRepaid",
         "LoanDefaulted",
+        "CollateralLiquidated",
+        "Deposit",
+        "Withdraw",
+        "YieldDistributed",
+        "EmergencyWithdraw",
+        "Mint",
+        "ScoreUpd",
         "Seized",
+        "Transfer",
+        "MntAuth",
+        "MntRev",
         "Paused",
         "Unpaused",
         "MinScoreUpdated",
+        "PoolPaused",
+        "PoolUnpaused",
       ];
 
       return supported.includes(eventType)

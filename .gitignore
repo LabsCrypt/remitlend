@@ -7,6 +7,8 @@ contracts/cobertura.xml
 dist
 .env
 .next
+.cargo-home/
+.cargo-target/
 .DS_Store
 coverage
 *.log

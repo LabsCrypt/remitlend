@@ -16,6 +16,7 @@ import {
   reindexLedgerRange,
 } from "../controllers/indexerController.js";
 import { listLoanDisputes, resolveLoanDispute } from "../controllers/adminDisputeController.js";
+import { query } from "../db/connection.js";
 
 const router = Router();
 
@@ -68,8 +69,55 @@ router.get("/loan-disputes", requireApiKey, listLoanDisputes);
 router.post("/loan-disputes/:disputeId/resolve", requireApiKey, resolveLoanDispute);
 
 const checkDefaultsBodySchema = z.object({
-  loanIds: z.array(z.number().int().positive()).optional(),
+  loanIds: z.array(z.number().int().positive()).max(100).optional(),
 });
+
+/**
+ * @swagger
+ * /admin/check-defaults:
+ *   post:
+ *     summary: Trigger manual on-chain default checks for a set of loans
+ *     description: >
+ *       Calls the LoanManager `check_defaults` contract function for the
+ *       provided loan IDs (or all overdue loans if IDs are omitted).
+ *       Bounded to a maximum of 100 IDs per request for security.
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               loanIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 maxItems: 100
+ *                 description: Explicit list of loan IDs to check
+ *     responses:
+ *       200:
+ *         description: Default check run completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DefaultCheckRunResult'
+ *       400:
+ *         description: Validation error or too many IDs
+ */
+router.post(
+  "/check-defaults",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  validateBody(checkDefaultsBodySchema),
+  asyncHandler(async (req, res) => {
+    const result = await defaultChecker.checkOverdueLoans(req.body.loanIds);
+    res.json(result);
+  }),
+);
 
 /**
  * @swagger
@@ -278,5 +326,34 @@ router.delete(
  *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get("/webhooks/:id/deliveries", requireApiKey, getWebhookDeliveries);
+
+/**
+ * @swagger
+ * /admin/webhooks/retry-status:
+ *   get:
+ *     summary: Get status of failed webhooks and retry queue
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Retry status information
+ */
+router.get(
+  "/webhooks/retry-status",
+  requireApiKey,
+  asyncHandler(async (req, res) => {
+    const result = await query(`
+      SELECT 
+        COUNT(*) as total_failed,
+        COUNT(*) FILTER (WHERE attempt_count >= 5) as permanently_failed,
+        COUNT(*) FILTER (WHERE next_retry_at IS NOT NULL) as pending_retry
+      FROM webhook_deliveries
+      WHERE delivered_at IS NULL
+    `);
+    
+    res.json(result.rows[0]);
+  })
+);
 
 export default router;

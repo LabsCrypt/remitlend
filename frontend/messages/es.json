@@ -46,6 +46,7 @@
       "completed": "Completado",
       "repaid": "Pagado",
       "failed": "Fallido",
+      "liquidated": "Liquidado",
       "defaulted": "Incumplido"
     },
     "pagination": {
@@ -96,6 +97,36 @@
       "active": "Activo",
       "pending": "Pendiente"
     }
+  },
+  "Kingdom": {
+    "title": "Panel del Reino",
+    "description": "Rastrear tu progreso, desbloquear logros y subir de rango",
+    "welcome": "¡Bienvenido, {kingdomTitle}!",
+    "level": "Actualmente estás en el Nivel {level}",
+    "achievements": "Logros",
+    "unlockedCount": "{unlocked} / {total}",
+    "progress": "Progreso",
+    "unlocked": "Desbloqueado {date}",
+    "repaymentProgress": "Progreso de reembolso"
+  },
+  "LoanCard": {
+    "totalOwed": "Total adeudado",
+    "principal": "Principal",
+    "accruedInterest": "Interés acumulado",
+    "interest": "Interés",
+    "nextPayment": "Próximo pago",
+    "daysRemaining": "{days} días restantes",
+    "daysOverdue": "{days} días vencidos",
+    "defaultedLabel": "Contacta a soporte para recuperar",
+    "onTrack": "En camino",
+    "dueSoon": "Vence pronto",
+    "overdue": "Vencido",
+    "defaulted": "Incumplido",
+    "repayNow": "Repagar ahora",
+    "payNowOverdue": "Pagar ahora (Vencido)",
+    "contactSupport": "Contactar soporte",
+    "viewDetails": "Ver detalles",
+    "details": "Detalles"
   },
   "Settings": {
     "language": "Idioma",

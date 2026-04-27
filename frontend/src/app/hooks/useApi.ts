@@ -18,8 +18,35 @@ import {
   type UseMutationOptions,
 } from "@tanstack/react-query";
 import { useUserStore } from "../stores/useUserStore";
+import { isJwtExpired, logoutUser, SessionExpiredError } from "../lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+export class NetworkUnavailableError extends Error {
+  name = "NetworkUnavailableError";
+}
+
+const DEFAULT_API_URL = "http://localhost:3001";
+
+// Keep builds and prerendering safe even when CI/deploy env vars are absent.
+// Runtime environments should still override this with NEXT_PUBLIC_API_URL.
+function resolveApiUrl(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+
+  if (url) {
+    return url;
+  }
+
+  console.warn(
+    "[remitlend] NEXT_PUBLIC_API_URL is not set. " + `Falling back to ${DEFAULT_API_URL}.`,
+  );
+  return DEFAULT_API_URL;
+}
+
+let cachedApiUrl: string | null = null;
+function getApiUrl(): string {
+  if (cachedApiUrl !== null) return cachedApiUrl;
+  cachedApiUrl = resolveApiUrl();
+  return cachedApiUrl;
+}
 
 // ─── Query key factory ────────────────────────────────────────────────────────
 
@@ -70,6 +97,10 @@ export const queryKeys = {
  * - Throws a descriptive error on non-2xx responses
  */
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new NetworkUnavailableError("You appear to be offline. Please reconnect and try again.");
+  }
+
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -78,11 +109,33 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   // Attach JWT token if available (reads directly from Zustand store state,
   // safe to call outside React render since Zustand stores are singletons).
   const token = useUserStore.getState().authToken;
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (token) {
+    if (isJwtExpired(token)) {
+      logoutUser("expired");
+      throw new SessionExpiredError();
+    }
+
+    if (!headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
   }
 
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  let response: Response;
+  try {
+    response = await fetch(`${getApiUrl()}${path}`, { ...options, headers });
+  } catch (error) {
+    throw new NetworkUnavailableError(
+      "Network request failed. Check your connection and try again.",
+    );
+  }
+
+  if (response.status === 401 && token) {
+    const error = await response
+      .json()
+      .catch(() => ({ message: "Session expired. Please sign in again." }));
+    logoutUser("expired");
+    throw new SessionExpiredError(error.message);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }));
@@ -94,13 +147,15 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type LoanStatus = "pending" | "active" | "repaid" | "defaulted" | "liquidated";
+
 export interface Loan {
   id: string;
   amount: number;
   currency: string;
   interestRate: number;
   termDays: number;
-  status: "pending" | "active" | "repaid" | "defaulted";
+  status: LoanStatus;
   borrowerId: string;
   createdAt: string;
 }
@@ -162,7 +217,7 @@ export interface BorrowerLoan {
   totalOwed: number;
   totalRepaid: number;
   nextPaymentDeadline: string;
-  status: "active" | "pending" | "repaid";
+  status: LoanStatus;
   borrower: string;
   approvedAt?: string;
 }
@@ -181,7 +236,7 @@ export interface LoanDetails {
   totalRepaid: number;
   totalOwed: number;
   interestRate: number;
-  status: "active" | "repaid" | "defaulted" | "pending";
+  status: LoanStatus;
   requestedAt?: string;
   approvedAt?: string;
   events: LoanEvent[];
@@ -687,7 +742,7 @@ export function useCreditScore(
         return;
       }
 
-      const url = `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
+      const url = `${getApiUrl()}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
       const es = new EventSource(url, { withCredentials: true });
       eventSource = es;
 
@@ -1185,6 +1240,16 @@ export function useWithdrawFromPool() {
  */
 export async function submitPoolTransaction(signedTxXdr: string) {
   return apiFetch<{ txHash: string; status: string; resultXdr?: string }>("/pool/submit", {
+    method: "POST",
+    body: JSON.stringify({ signedTxXdr }),
+  });
+}
+
+/**
+ * Submits a signed loan transaction (e.g. repayment) to the Stellar network.
+ */
+export async function submitLoanTransaction(signedTxXdr: string) {
+  return apiFetch<{ txHash: string; status: string; resultXdr?: string }>("/loans/submit", {
     method: "POST",
     body: JSON.stringify({ signedTxXdr }),
   });

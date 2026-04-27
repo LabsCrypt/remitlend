@@ -168,6 +168,9 @@
                     "hi": 0,
                     "lo": 1000
                   }
+                },
+                {
+                  "u32": 17280
                 }
               ]
             }
@@ -193,6 +196,9 @@
                     "hi": 0,
                     "lo": 1000
                   }
+                },
+                {
+                  "u32": 17280
                 }
               ]
             }
@@ -218,6 +224,9 @@
                     "hi": 0,
                     "lo": 1000
                   }
+                },
+                {
+                  "u32": 17280
                 }
               ]
             }
@@ -2132,6 +2141,14 @@
                           }
                         ]
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "term_ledgers"
+                      },
+                      "val": {
+                        "u32": 17280
+                      }
                     }
                   ]
                 }
@@ -2325,6 +2342,14 @@
                             "symbol": "Defaulted"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "term_ledgers"
+                      },
+                      "val": {
+                        "u32": 17280
                       }
                     }
                   ]
@@ -2520,6 +2545,14 @@
                           }
                         ]
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "term_ledgers"
+                      },
+                      "val": {
+                        "u32": 17280
+                      }
                     }
                   ]
                 }
@@ -2674,6 +2707,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "LiquidationBonusBps"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 500
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "LiquidationThresholdBps"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 15000
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "LoanCounter"
                             }
                           ]
@@ -2707,6 +2764,30 @@
                         },
                         "val": {
                           "u32": 3
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "MaxRateBps"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 100000
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "MinRateBps"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 1
                         }
                       },
                       {
@@ -2749,12 +2830,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "TotalOutstanding"
+                            },
+                            {
+                              "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Version"
                             }
                           ]
                         },
                         "val": {
-                          "u32": 3
+                          "u32": 4
                         }
                       }
                     ]

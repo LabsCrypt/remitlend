@@ -116,8 +116,12 @@ function makeRawEvent(params: {
     case "LoanApproved":
       return {
         ...base,
-        topic: [scSymbol("LoanApproved"), scU32(params.loanId ?? 1)],
-        value: scAddress(borrower),
+        topic: [
+          scSymbol("LoanApproved"),
+          scU32(params.loanId ?? 1),
+          scAddress(borrower),
+        ],
+        value: nativeToScVal([1200, 17280]),
       };
     case "LoanRepaid":
       return {

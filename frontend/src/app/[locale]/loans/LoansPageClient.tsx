@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CalendarRange, CircleDollarSign, ShieldCheck } from "lucide-react";
+import { ArrowRight, CalendarRange, CircleDollarSign, HandCoins, ShieldCheck } from "lucide-react";
 import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 import { LoansListSkeleton } from "../../components/skeletons/LoansListSkeleton";
 import { useBorrowerLoansPage } from "../../hooks/useApi";
@@ -10,6 +10,7 @@ import { LoanStatusBadge } from "../../components/ui/LoanStatusBadge";
 import { PaginationControls } from "../../components/ui/PaginationControls";
 import { useWalletStore, selectWalletAddress } from "../../stores/useWalletStore";
 import { useTranslations, useLocale } from "next-intl";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 const PAGE_SIZE = 20;
 
@@ -162,21 +163,14 @@ export function LoansPageClient() {
           </div>
 
           {displayedLoans.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-zinc-300 px-6 py-10 text-center dark:border-zinc-700">
-              <p className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-                {t("empty.title")}
-              </p>
-              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                {t("empty.description")}
-              </p>
-              <Link
-                href={`/${locale}`}
-                className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-              >
-                {t("empty.action")}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
+            <EmptyState
+              icon={HandCoins}
+              title={t("empty.title")}
+              description={t("empty.description")}
+              actionLabel={t("empty.action")}
+              actionHref={`/${locale}/request-loan`}
+              actionIcon={<ArrowRight className="h-4 w-4" />}
+            />
           ) : (
             <div className="space-y-3">
               {displayedLoans.map((loan) => (
