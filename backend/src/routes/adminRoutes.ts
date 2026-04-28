@@ -123,7 +123,7 @@ const checkDefaultsBodySchema = z.object({
  *     description: >
  *       Calls the LoanManager `check_defaults` contract function for the
  *       provided loan IDs (or all overdue loans if IDs are omitted).
-  *       Bounded to a maximum of 1000 IDs per request for security.
+ *       Bounded to a maximum of 1000 IDs per request for security.
  *     tags: [Admin]
  *     security:
  *       - ApiKeyAuth: []
@@ -138,7 +138,7 @@ const checkDefaultsBodySchema = z.object({
  *                 type: array
  *                 items:
  *                   type: integer
-  *                 maxItems: 1000
+ *                 maxItems: 1000
  *                 description: Explicit list of loan IDs to check
  *     responses:
  *       200:
