@@ -16,27 +16,27 @@ export const up = (pgm) => {
   pgm.renameIndex(
     "contract_events",
     "idx_loan_events_borrower_event_type",
-    "idx_contract_events_address_event_type"
+    "idx_contract_events_address_event_type",
   );
   pgm.renameIndex(
     "contract_events",
     "idx_loan_events_loan_id_event_type",
-    "idx_contract_events_loan_id_event_type"
+    "idx_contract_events_loan_id_event_type",
   );
   pgm.renameIndex(
     "contract_events",
     "idx_loan_events_event_type_loan_id",
-    "idx_contract_events_event_type_loan_id"
+    "idx_contract_events_event_type_loan_id",
   );
   pgm.renameIndex(
     "contract_events",
     "idx_loan_events_ledger",
-    "idx_contract_events_ledger"
+    "idx_contract_events_ledger",
   );
   pgm.renameIndex(
     "contract_events",
     "idx_loan_events_pool_deposits_withdraws",
-    "idx_contract_events_pool_deposits_withdraws"
+    "idx_contract_events_pool_deposits_withdraws",
   );
 
   // Rename single-column indexes from initial schema (if they exist)
@@ -85,27 +85,27 @@ export const down = (pgm) => {
   pgm.renameIndex(
     "loan_events",
     "idx_contract_events_address_event_type",
-    "idx_loan_events_borrower_event_type"
+    "idx_loan_events_borrower_event_type",
   );
   pgm.renameIndex(
     "loan_events",
     "idx_contract_events_loan_id_event_type",
-    "idx_loan_events_loan_id_event_type"
+    "idx_loan_events_loan_id_event_type",
   );
   pgm.renameIndex(
     "loan_events",
     "idx_contract_events_event_type_loan_id",
-    "idx_loan_events_event_type_loan_id"
+    "idx_loan_events_event_type_loan_id",
   );
   pgm.renameIndex(
     "loan_events",
     "idx_contract_events_ledger",
-    "idx_loan_events_ledger"
+    "idx_loan_events_ledger",
   );
   pgm.renameIndex(
     "loan_events",
     "idx_contract_events_pool_deposits_withdraws",
-    "idx_loan_events_pool_deposits_withdraws"
+    "idx_loan_events_pool_deposits_withdraws",
   );
 
   pgm.sql(`

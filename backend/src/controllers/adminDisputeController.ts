@@ -51,7 +51,6 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
     resolution: string;
     adminNote?: string;
   };
-  };
 
   if (!["confirm", "reverse"].includes(action)) {
     throw AppError.badRequest("Action must be confirm or reverse");

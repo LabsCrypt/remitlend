@@ -445,7 +445,7 @@ describe("POST /api/loans/:loanId/repay", () => {
   it("should return unsigned XDR for valid repayment", async () => {
     // requireLoanBorrowerAccess check
     mockedQuery.mockResolvedValueOnce({
-      rows: [{ borrower: TEST_BORROWER }],
+      rows: [{ address: TEST_BORROWER }],
     });
 
     mockBuildRepayTx.mockResolvedValueOnce({
@@ -466,7 +466,7 @@ describe("POST /api/loans/:loanId/repay", () => {
 
   it("should return 403 when loan does not belong to user", async () => {
     mockedQuery.mockResolvedValueOnce({
-      rows: [{ borrower: "other-wallet" }],
+      rows: [{ address: "other-wallet" }],
     });
 
     const response = await request(app)
@@ -479,7 +479,7 @@ describe("POST /api/loans/:loanId/repay", () => {
 
   it("should reject missing amount", async () => {
     mockedQuery.mockResolvedValueOnce({
-      rows: [{ borrower: TEST_BORROWER }],
+      rows: [{ address: TEST_BORROWER }],
     });
 
     const response = await request(app)
@@ -498,7 +498,7 @@ describe("POST /api/loans/:loanId/submit", () => {
   it("should submit a signed repayment transaction", async () => {
     // requireLoanBorrowerAccess
     mockedQuery.mockResolvedValueOnce({
-      rows: [{ borrower: TEST_BORROWER }],
+      rows: [{ address: TEST_BORROWER }],
     });
 
     mockSubmitSignedTx.mockResolvedValueOnce({

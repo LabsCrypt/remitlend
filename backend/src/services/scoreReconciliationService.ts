@@ -4,12 +4,12 @@ import { sorobanService } from "./sorobanService.js";
 import logger from "../utils/logger.js";
 
 interface ActiveBorrowerScoreRow {
-  borrower: string;
+  address: string;
   dbScore: number | null;
 }
 
 export interface ScoreDivergence {
-  borrower: string;
+  address: string;
   dbScore: number | null;
   contractScore: number;
   absoluteDifference: number | null;
@@ -117,7 +117,7 @@ class ScoreReconciliationService {
       };
 
       return {
-        borrower: String(record.address ?? ""),
+        address: String(record.address ?? ""),
         dbScore:
           record.current_score === null || record.current_score === undefined
             ? null
@@ -147,7 +147,7 @@ class ScoreReconciliationService {
       const batchResults = await Promise.allSettled(
         batch.map(async (borrowerRow) => {
           const contractScore = await sorobanService.getOnChainCreditScore(
-            borrowerRow.borrower,
+            borrowerRow.address,
           );
           return {
             ...borrowerRow,
@@ -157,11 +157,11 @@ class ScoreReconciliationService {
       );
 
       batchResults.forEach((result, index) => {
-        const borrower = batch[index]?.borrower ?? "unknown";
+        const address = batch[index]?.address ?? "unknown";
         if (result.status === "rejected") {
           failedBorrowerCount += 1;
           logger.error("score_reconciliation.borrower.failed", {
-            borrower,
+            address,
             error: result.reason,
           });
           return;
@@ -178,7 +178,7 @@ class ScoreReconciliationService {
         }
 
         const divergence: ScoreDivergence = {
-          borrower,
+          address,
           dbScore,
           contractScore,
           absoluteDifference,
@@ -192,7 +192,7 @@ class ScoreReconciliationService {
           absoluteDifference >= autoCorrectThreshold;
 
         if (autoCorrectEnabled && exceedsThreshold) {
-          corrections.set(borrower, contractScore);
+          corrections.set(address, contractScore);
         }
       });
     }

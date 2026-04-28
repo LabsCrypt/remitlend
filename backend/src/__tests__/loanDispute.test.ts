@@ -143,7 +143,7 @@ describe("Loan Dispute/Appeal Mechanism", () => {
      *   [4] INSERT contract_events LoanDisputed
      */
     mockQuery
-      .mockResolvedValueOnce(dbRows([{ borrower: TEST_PUBLIC_KEY }])) // [1] loanAccess
+      .mockResolvedValueOnce(dbRows([{ address: TEST_PUBLIC_KEY }])) // [1] loanAccess
       .mockResolvedValueOnce(dbRows([{ loan_id: LOAN_ID }])) // [2] defaulted check
       .mockResolvedValueOnce(dbRows([{ id: DISPUTE_ID }])) // [3] dispute INSERT
       .mockResolvedValueOnce(dbOk()); // [4] LoanDisputed event
@@ -172,7 +172,7 @@ describe("Loan Dispute/Appeal Mechanism", () => {
      *   [5] SELECT contract_events for freeze ledger lookup
      */
     mockQuery
-      .mockResolvedValueOnce(dbRows([{ borrower: TEST_PUBLIC_KEY }])) // [1] loanAccess
+      .mockResolvedValueOnce(dbRows([{ address: TEST_PUBLIC_KEY }])) // [1] loanAccess
       .mockResolvedValueOnce(
         dbRows([
           // [2] all loan events

@@ -23,7 +23,7 @@ export const up = (pgm) => {
     WHERE le.id = duplicates.id
   `);
 
-  // Add the unique constraint. 
+  // Add the unique constraint.
   // Note: We apply it to contract_events as loan_events is often a view pointing to it.
   // If loan_events is a table, we apply it there instead.
   pgm.sql(`

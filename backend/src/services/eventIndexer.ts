@@ -488,7 +488,10 @@ export class EventIndexer {
                 (scoreUpdates.get(event.address) ?? 0) + repaymentDelta,
               );
             }
-          } else if (event.eventType === "LoanDefaulted" || event.eventType === "CollateralLiquidated") {
+          } else if (
+            event.eventType === "LoanDefaulted" ||
+            event.eventType === "CollateralLiquidated"
+          ) {
             const { defaultPenalty } = sorobanService.getScoreConfig();
             if (event.address) {
               scoreUpdates.set(
@@ -552,12 +555,12 @@ export class EventIndexer {
     let termLedgers: number | undefined;
 
     if (type === "LoanRequested") {
-      if (!event.topic[1] || !event.topic[2]) return null;
-      loanId = this.decodeLoanId(event.topic[1]);
-      if (loanId === undefined) return null;
-      address = this.decodeAddress(event.topic[2]);
+      // (type, borrower), amount
+      if (!event.topic[1]) return null;
+      address = this.decodeAddress(event.topic[1]);
       amount = this.decodeAmount(event.value);
     } else if (type === "LoanApproved") {
+      // (type, loan_id, borrower), [interest_rate_bps, term_ledgers]
       if (!event.topic[1] || !event.topic[2]) return null;
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
@@ -733,7 +736,7 @@ export class EventIndexer {
       ...(loanId !== undefined ? { loanId } : {}),
       ...(interestRateBps !== undefined ? { interestRateBps } : {}),
       ...(termLedgers !== undefined ? { termLedgers } : {}),
-      address,
+      ...(address !== undefined ? { address } : {}),
     };
   }
 

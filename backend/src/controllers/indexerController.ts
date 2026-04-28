@@ -104,7 +104,6 @@ const buildIndexerFromConfig = (): EventIndexer => {
   if (contractIds.length === 0) {
     throw new Error("At least one indexer contract ID must be configured");
   }
-  }
 
   const rpcUrl = getStellarRpcUrl();
   const batchSize = Number(process.env.INDEXER_BATCH_SIZE ?? 100);
@@ -287,7 +286,10 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
+      query(
+        `SELECT COUNT(*) as count FROM contract_events ${whereClause}`,
+        params,
+      ),
     ]);
 
     logger.debug("getBorrowerEvents after query", { result, totalCount });
@@ -362,7 +364,10 @@ export const getLoanEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
+      query(
+        `SELECT COUNT(*) as count FROM contract_events ${whereClause}`,
+        params,
+      ),
     ]);
 
     const hasNext = result.rows.length > limit;
@@ -422,7 +427,10 @@ export const getRecentEvents = async (req: Request, res: Response) => {
 
     const [result, totalCount] = await Promise.all([
       query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
+      query(
+        `SELECT COUNT(*) as count FROM contract_events ${whereClause}`,
+        params,
+      ),
     ]);
 
     logger.debug("getRecentEvents", {

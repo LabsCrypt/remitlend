@@ -1,8 +1,8 @@
 use crate::{LendingPool, LendingPoolClient};
-use soroban_sdk::testutils::{Address as _, Ledger as _};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, IntoVal, TryFromVal};
 
 fn create_token_contract<'a>(
     env: &Env,
@@ -1019,7 +1019,7 @@ fn test_set_max_pool_size_unauthorized() {
         address: &user,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &pool_id,
-            function: "set_max_pool_size",
+            fn_name: "set_max_pool_size",
             args: (token_id.clone(), 1000i128).into_val(&env),
             sub_invokes: &[],
         },
@@ -1047,7 +1047,7 @@ fn test_accept_admin_flow() {
         address: &other,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &pool_id,
-            function: "accept_admin",
+            fn_name: "accept_admin",
             args: ().into_val(&env),
             sub_invokes: &[],
         },
@@ -1060,7 +1060,7 @@ fn test_accept_admin_flow() {
         address: &new_admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &pool_id,
-            function: "accept_admin",
+            fn_name: "accept_admin",
             args: ().into_val(&env),
             sub_invokes: &[],
         },
@@ -1142,7 +1142,7 @@ fn test_unauthorized_admin_actions() {
         address: &user,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &pool_id,
-            function: "pause",
+            fn_name: "pause",
             args: ().into_val(&env),
             sub_invokes: &[],
         },
@@ -1153,7 +1153,7 @@ fn test_unauthorized_admin_actions() {
         address: &user,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &pool_id,
-            function: "unpause",
+            fn_name: "unpause",
             args: ().into_val(&env),
             sub_invokes: &[],
         },
@@ -1164,7 +1164,7 @@ fn test_unauthorized_admin_actions() {
         address: &user,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &pool_id,
-            function: "set_withdrawal_cooldown",
+            fn_name: "set_withdrawal_cooldown",
             args: (100u32,).into_val(&env),
             sub_invokes: &[],
         },
@@ -1175,7 +1175,7 @@ fn test_unauthorized_admin_actions() {
         address: &user,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &pool_id,
-            function: "propose_admin",
+            fn_name: "propose_admin",
             args: (user.clone(),).into_val(&env),
             sub_invokes: &[],
         },
@@ -1205,16 +1205,18 @@ fn test_deposit_event_emission() {
     // Event structure from events.rs:
     // pub fn deposit(env: &Env, provider: Address, token: Address, amount: i128, shares: i128)
     // env.events().publish((Symbol::new(env, "Deposit"), provider, token), (amount, shares));
-    
+
     let events = env.events().all();
     let deposit_event = events.get(events.len() - 1).unwrap();
-    
+
     // We expect the last event to be the Deposit event.
     // In Soroban tests, events are (topics, data).
     // Topics: [Deposit, provider, token]
     // Data: [amount, shares]
-    
-    assert_eq!(deposit_event.2, (1000i128, 1000i128).into_val(&env));
+
+    let data_vec = soroban_sdk::Vec::<i128>::try_from_val(&env, &deposit_event.2).unwrap();
+    assert_eq!(data_vec.get(0).unwrap(), 1000i128);
+    assert_eq!(data_vec.get(1).unwrap(), 1000i128);
 }
 
 // ── LendingPool share-based accounting tests ──────────────────────────────────

@@ -220,7 +220,7 @@ export interface LoanDetails {
   totalRepaid: number;
   totalOwed: number;
   interestRate: number;
-  status: "active" | "repaid" | "defaulted" | "pending";
+  status: "active" | "repaid" | "defaulted" | "pending" | "liquidated";
   requestedAt?: string;
   approvedAt?: string;
   events: LoanEvent[];
@@ -1226,6 +1226,16 @@ export function useWithdrawFromPool() {
  */
 export async function submitPoolTransaction(signedTxXdr: string) {
   return apiFetch<{ txHash: string; status: string; resultXdr?: string }>("/pool/submit", {
+    method: "POST",
+    body: JSON.stringify({ signedTxXdr }),
+  });
+}
+
+/**
+ * Submits a signed loan transaction (e.g. repayment) to the Stellar network.
+ */
+export async function submitLoanTransaction(signedTxXdr: string) {
+  return apiFetch<{ txHash: string; status: string; resultXdr?: string }>("/loans/submit", {
     method: "POST",
     body: JSON.stringify({ signedTxXdr }),
   });

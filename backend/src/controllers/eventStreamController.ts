@@ -111,11 +111,7 @@ export const streamEvents = asyncHandler(
         logger.error("SSE replay fetch error", { borrower, lastEventId, err });
       }
 
-      unsubscribe = eventStreamService.subscribeAddress(
-        userKey,
-        borrower,
-        res,
-      );
+      unsubscribe = eventStreamService.subscribeAddress(userKey, borrower, res);
     } else {
       try {
         const replayEvents = await query(
