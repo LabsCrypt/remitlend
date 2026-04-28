@@ -1,6 +1,3 @@
-
-
-
 import type { Request, Response, NextFunction } from "express";
 import { query } from "../db/connection.js";
 import {
@@ -31,7 +28,9 @@ export const createTestLoan = asyncHandler(
     const borrower = req.user?.publicKey || "test-borrower";
 
     if (!amount || !term) {
-      res.status(400).json({ success: false, message: "amount and term required" });
+      res
+        .status(400)
+        .json({ success: false, message: "amount and term required" });
       return;
     }
 
@@ -46,7 +45,11 @@ export const createTestLoan = asyncHandler(
       [loanId, borrower, amount, term],
     );
 
-    res.json({ success: true, id: loanId, loan: { id: loanId, amount, term, borrower } });
+    res.json({
+      success: true,
+      id: loanId,
+      loan: { id: loanId, amount, term, borrower },
+    });
   },
 );
 
@@ -72,7 +75,10 @@ export const markLoanDefaulted = asyncHandler(
       [loanId, borrower],
     );
 
-    res.json({ success: true, message: "Loan marked as defaulted for test setup." });
+    res.json({
+      success: true,
+      message: "Loan marked as defaulted for test setup.",
+    });
   },
 );
 
@@ -348,12 +354,18 @@ export const getBorrowerLoans = asyncHandler(
       return {
         loanId: Number(row.loan_id),
         principal: Number.parseFloat(row.principal || "0"),
-        accruedInterest: isPending ? null : Number.parseFloat(row.accrued_interest || "0"),
+        accruedInterest: isPending
+          ? null
+          : Number.parseFloat(row.accrued_interest || "0"),
         totalRepaid: Number.parseFloat(row.total_repaid || "0"),
         totalOwed: isPending ? null : Number.parseFloat(row.total_owed || "0"),
         nextPaymentDeadline: new Date(row.next_payment_deadline).toISOString(),
-        status: row.status as "active" | "repaid" | "defaulted" | "pending_indexing",
-        borrower: row.address ?? row.borrower,
+        status: row.status as
+          | "active"
+          | "repaid"
+          | "defaulted"
+          | "pending_indexing",
+        borrower: row.borrower,
         approvedAt: row.approved_at
           ? new Date(row.approved_at).toISOString()
           : null,
@@ -460,7 +472,8 @@ export const getLoanDetails = asyncHandler(
         `SELECT ledger, ledger_closed_at FROM contract_events WHERE loan_id = $1 AND ledger_closed_at <= $2 ORDER BY ledger_closed_at DESC LIMIT 1`,
         [loanId, disputeCreatedAt],
       );
-      freezeLedger = ledgerResult.rows.length > 0 ? ledgerResult.rows[0].ledger : null;
+      freezeLedger =
+        ledgerResult.rows.length > 0 ? ledgerResult.rows[0].ledger : null;
     }
 
     let elapsedLedgers: number;

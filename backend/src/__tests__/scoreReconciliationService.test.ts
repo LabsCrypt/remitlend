@@ -5,10 +5,10 @@ type MockQueryResult = { rows: unknown[]; rowCount?: number };
 const mockQuery: jest.MockedFunction<
   (text: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
-const mockGetOnChainCreditScore = jest.fn<(userPublicKey: string) => Promise<number>>();
-const mockSetAbsoluteUserScoresBulk = jest.fn<
-  (scores: Map<string, number>) => Promise<void>
->();
+const mockGetOnChainCreditScore =
+  jest.fn<(userPublicKey: string) => Promise<number>>();
+const mockSetAbsoluteUserScoresBulk =
+  jest.fn<(scores: Map<string, number>) => Promise<void>>();
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
@@ -28,9 +28,8 @@ jest.unstable_mockModule("../services/scoresService.js", () => ({
 }));
 
 const logger = (await import("../utils/logger.js")).default;
-const { scoreReconciliationService } = await import(
-  "../services/scoreReconciliationService.js"
-);
+const { scoreReconciliationService } =
+  await import("../services/scoreReconciliationService.js");
 
 describe("scoreReconciliationService", () => {
   const originalAutoCorrectEnabled =
@@ -90,7 +89,8 @@ describe("scoreReconciliationService", () => {
       .mockResolvedValueOnce(620);
     mockSetAbsoluteUserScoresBulk.mockResolvedValueOnce();
 
-    const result = await scoreReconciliationService.reconcileActiveBorrowerScores();
+    const result =
+      await scoreReconciliationService.reconcileActiveBorrowerScores();
 
     expect(result).toMatchObject({
       activeBorrowerCount: 3,

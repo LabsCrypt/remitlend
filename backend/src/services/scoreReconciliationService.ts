@@ -31,7 +31,10 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+function parseNonNegativeInt(
+  value: string | undefined,
+  fallback: number,
+): number {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
@@ -55,10 +58,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 class ScoreReconciliationService {
   private getBatchSize(): number {
-    return parsePositiveInt(
-      process.env.SCORE_RECONCILIATION_BATCH_SIZE,
-      25,
-    );
+    return parsePositiveInt(process.env.SCORE_RECONCILIATION_BATCH_SIZE, 25);
   }
 
   private getMaxBorrowersPerRun(): number {

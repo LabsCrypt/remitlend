@@ -1,10 +1,14 @@
 use super::*;
-use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env};
+use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env, String};
 
 fn create_test_hash(env: &Env, value: u8) -> BytesN<32> {
     let mut hash_bytes = [0u8; 32];
     hash_bytes[0] = value;
     BytesN::from_array(env, &hash_bytes)
+}
+
+fn create_test_uri(env: &Env) -> String {
+    String::from_str(env, "ipfs://QmTest123")
 }
 
 #[test]
@@ -40,7 +44,7 @@ fn test_score_lifecycle() {
     let history_hash = create_test_hash(&env, 1);
 
     // Initial mint (admin mints, so minter is None)
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
     assert_eq!(client.get_score(&user), 500);
 
     // Check metadata
@@ -84,7 +88,7 @@ fn test_history_hash_update() {
     client.initialize(&admin);
 
     let initial_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &initial_hash, &None);
+    client.mint(&user, &500, &initial_hash, &create_test_uri(&env), &None;
 
     let metadata = client.get_metadata(&user).unwrap();
     assert_eq!(metadata.history_hash, initial_hash);
@@ -112,7 +116,7 @@ fn test_update_history_hash_rejects_zero_hash() {
 
     client.initialize(&admin);
     let initial_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &initial_hash, &None);
+    client.mint(&user, &500, &initial_hash, &create_test_uri(&env), &None;
 
     // Passing an all-zero hash must panic (Err(InvalidHistoryHash))
     let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
@@ -133,7 +137,7 @@ fn test_update_history_hash_rejects_same_hash() {
 
     client.initialize(&admin);
     let initial_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &initial_hash, &None);
+    client.mint(&user, &500, &initial_hash, &create_test_uri(&env), &None;
 
     // Passing the same hash that is already stored must panic (Err(InvalidHistoryHash))
     client.update_history_hash(&user, &initial_hash, &None);
@@ -173,7 +177,7 @@ fn test_not_initialized() {
     let client = RemittanceNFTClient::new(&env, &contract_id);
 
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 }
 
 #[test]
@@ -203,11 +207,11 @@ fn test_duplicate_mint() {
     client.initialize(&admin);
 
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 
     // Try to mint again for the same user
     let history_hash2 = create_test_hash(&env, 2);
-    client.mint(&user, &600, &history_hash2, &None);
+    client.mint(&user, &600, &history_hash2, &create_test_uri(&env), &None;
 }
 
 #[test]
@@ -327,7 +331,7 @@ fn test_small_repayment_does_not_write_score_change() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 
     // Below MIN_SCORE_UPDATE_REPAYMENT (100) should be rejected to prevent spammy
     // zero-point updates that still write storage and emit events.
@@ -348,7 +352,7 @@ fn test_update_score_rejects_non_positive_repayment() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 
     client.update_score(&user, &0, &None);
 }
@@ -366,7 +370,7 @@ fn test_apply_score_delta_supports_positive_and_negative_adjustments() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 
     client.apply_score_delta(&user, &15, &None);
     assert_eq!(client.get_score(&user), 515);
@@ -388,7 +392,7 @@ fn test_apply_score_delta_floors_at_zero() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &350, &history_hash, &None);
+    client.mint(&user, &350, &history_hash, &create_test_uri(&env), &None;
 
     client.apply_score_delta(&user, &-50, &None);
     assert_eq!(client.get_score(&user), 300);
@@ -407,7 +411,7 @@ fn test_decrease_score_applies_floor_at_300() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 8);
-    client.mint(&user, &320, &history_hash, &None);
+    client.mint(&user, &320, &history_hash, &create_test_uri(&env), &None;
 
     client.decrease_score(&user, &50, &None);
     assert_eq!(client.get_score(&user), 300);
@@ -464,7 +468,7 @@ fn test_minting_with_authorized_minter_sets_expected_metadata() {
     client.authorize_minter(&authorized_minter);
 
     let history_hash = create_test_hash(&env, 9);
-    client.mint(&user, &420, &history_hash, &Some(authorized_minter));
+    client.mint(&user, &420, &history_hash, &create_test_uri(&env), &Some(authorized_minter);
 
     let metadata = client.get_metadata(&user).unwrap();
     assert_eq!(metadata.score, 420);
@@ -487,7 +491,7 @@ fn test_mint_rejects_unauthorized_minter() {
     client.initialize(&admin);
 
     let history_hash = create_test_hash(&env, 3);
-    client.mint(&user, &500, &history_hash, &Some(unauthorized_minter));
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &Some(unauthorized_minter);
 }
 
 #[test]
@@ -505,7 +509,7 @@ fn test_metadata_retrieval_before_and_after_mint() {
     assert!(client.get_metadata(&user).is_none());
 
     let history_hash = create_test_hash(&env, 11);
-    client.mint(&user, &250, &history_hash, &None);
+    client.mint(&user, &250, &history_hash, &create_test_uri(&env), &None;
 
     let metadata = client.get_metadata(&user).unwrap();
     assert_eq!(metadata.score, 250);
@@ -553,7 +557,7 @@ fn test_seize_collateral() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 
     assert!(!client.is_seized(&user));
 
@@ -593,7 +597,7 @@ fn test_seize_collateral_already_seized() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 
     client.seize_collateral(&user, &None);
     client.seize_collateral(&user, &None);
@@ -712,7 +716,7 @@ fn test_approve_remint_allows_authorized_minter_remint() {
 
     // Admin approves and uses admin_remint()
     client.approve_remint(&user);
-    client.admin_remint(&user, &650, &BytesN::from_array(&env, &[5u8; 32]));
+    client.admin_remint(&user, &650, &BytesN::from_array(&env, &[5u8; 32], &create_test_uri(&env)));
     assert_eq!(client.get_score(&user), 650);
 }
 
@@ -853,7 +857,7 @@ fn test_score_cap_at_850() {
     let history_hash = create_test_hash(&env, 1);
 
     // Test initial mint cap
-    client.mint(&user, &900, &history_hash, &None);
+    client.mint(&user, &900, &history_hash, &create_test_uri(&env), &None;
     assert_eq!(client.get_score(&user), 850);
 
     // Test update_score cap
@@ -876,7 +880,7 @@ fn test_score_overflow_handling() {
     client.initialize(&admin);
 
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &800, &history_hash, &None);
+    client.mint(&user, &800, &history_hash, &create_test_uri(&env), &None;
 
     // Very large repayment that would overflow u32 if converted to points (e.g., u32::MAX * 100 + 1)
     // repayment_amount is i128, so it can be very large.
@@ -1005,7 +1009,7 @@ fn test_is_remint_approved_cleared_after_remint() {
 
     assert!(client.is_remint_approved(&user));
 
-    client.admin_remint(&user, &600, &BytesN::from_array(&env, &[0x22u8; 32]));
+    client.admin_remint(&user, &600, &BytesN::from_array(&env, &[0x22u8; 32], &create_test_uri(&env)));
 
     assert!(!client.is_remint_approved(&user));
 }
@@ -1132,7 +1136,7 @@ fn test_remint_requires_approval() {
 
     // Grant approval then remint succeeds
     client.approve_remint(&user);
-    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32]));
+    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32], &create_test_uri(&env)));
     assert_eq!(client.get_score(&user), 500);
 }
 
@@ -1152,7 +1156,7 @@ fn test_remint_approval_is_single_use() {
     client.mint(&user, &500, &BytesN::from_array(&env, &[1u8; 32]), &None);
     client.burn(&user, &None);
     client.approve_remint(&user);
-    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32]));
+    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32], &create_test_uri(&env)));
 
     // Approval was consumed — burn and try again without new approval
     client.burn(&user, &None);
@@ -1161,7 +1165,7 @@ fn test_remint_approval_is_single_use() {
 
     // Second approval unblocks it
     client.approve_remint(&user);
-    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32]));
+    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32], &create_test_uri(&env)));
     assert_eq!(client.get_score(&user), 500);
 }
 
@@ -1183,7 +1187,7 @@ fn test_remint_approval_consumed_after_use() {
 
     assert!(client.is_remint_approved(&user));
 
-    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32]));
+    client.admin_remint(&user, &500, &BytesN::from_array(&env, &[1u8; 32], &create_test_uri(&env)));
 
     // Approval was consumed
     assert!(!client.is_remint_approved(&user));
@@ -1240,7 +1244,7 @@ fn test_admin_remint_succeeds_with_approval() {
     client.burn(&user, &None);
     client.approve_remint(&user);
 
-    client.admin_remint(&user, &400, &BytesN::from_array(&env, &[2u8; 32]));
+    client.admin_remint(&user, &400, &BytesN::from_array(&env, &[2u8; 32], &create_test_uri(&env)));
     assert_eq!(client.get_score(&user), 400);
     assert!(!client.is_remint_approved(&user));
 }
@@ -1304,7 +1308,7 @@ fn test_admin_remint_clears_seized_flag() {
 
     // After remint the user should not be seized
     client.approve_remint(&user);
-    client.admin_remint(&user, &300, &BytesN::from_array(&env, &[2u8; 32]));
+    client.admin_remint(&user, &300, &BytesN::from_array(&env, &[2u8; 32], &create_test_uri(&env)));
 
     assert!(!client.is_seized(&user));
 }
@@ -1324,7 +1328,7 @@ fn test_mint_nft_success() {
 
     client.initialize(&admin);
     let history_hash = create_test_hash(&env, 1);
-    client.mint(&user, &500, &history_hash, &None);
+    client.mint(&user, &500, &history_hash, &create_test_uri(&env), &None;
 
     assert_eq!(client.get_score(&user), 500);
     let metadata = client.get_metadata(&user).unwrap();

@@ -969,3 +969,117 @@ fn test_get_depositor_yield_reflects_accrued_interest() {
     assert_eq!(shares2, 1000);
     assert_eq!(asset_value2, 1200); // 1000 shares * 1200 assets / 1000 total_shares
 }
+
+// ── LendingPool share-based accounting tests ──────────────────────────────────
+
+#[test]
+fn test_share_price_is_one_to_one_before_any_yield() {
+    // The very first depositor should always receive exactly 1 share per token
+    // deposited, and the share price should be 1:1 (scaled by SHARE_PRICE_SCALE).
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5_000);
+    pool_client.deposit(&provider, &token_id, &5_000);
+
+    // 1:1 share allocation for the first depositor.
+    assert_eq!(pool_client.get_shares(&provider, &token_id), 5_000);
+    assert_eq!(pool_client.get_total_shares(&token_id), 5_000);
+
+    // Share price = pool_balance * SHARE_PRICE_SCALE / total_shares
+    //             = 5000 * 1_000_000 / 5000 = 1_000_000 (i.e. 1.0).
+    let share_price = pool_client.get_share_price(&token_id);
+    assert_eq!(share_price, 1_000_000);
+}
+
+#[test]
+fn test_share_price_rises_proportionally_with_yield() {
+    // After interest is deposited into the pool the share price must increase
+    // proportionally, and a partial redemption must return the correct amount.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &2_000);
+    pool_client.deposit(&provider, &token_id, &2_000); // 2000 shares
+
+    // 500 tokens of interest arrive (25 % yield).
+    stellar_asset_client.mint(&pool_id, &500);
+    // Pool: 2500 | Shares: 2000 → price = 2500 * 1_000_000 / 2000 = 1_250_000.
+    let share_price = pool_client.get_share_price(&token_id);
+    assert_eq!(share_price, 1_250_000);
+
+    // Redeem half the shares (1000) → should receive 1000 * 2500 / 2000 = 1250.
+    pool_client.withdraw(&provider, &token_id, &1_000);
+    assert_eq!(token_client.balance(&provider), 1_250); // 0 initial + 1250 redeemed
+    assert_eq!(pool_client.get_shares(&provider, &token_id), 1_000);
+}
+
+#[test]
+fn test_multiple_depositors_share_yield_proportionally_and_total_shares_track_correctly() {
+    // Three providers deposit different amounts.  Yield arrives.  Each provider
+    // redeems all their shares and must receive principal + their pro-rata yield.
+    // After all redemptions total_shares must be zero.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let p1 = Address::generate(&env);
+    let p2 = Address::generate(&env);
+    let p3 = Address::generate(&env);
+    stellar_asset_client.mint(&p1, &5_000);
+    stellar_asset_client.mint(&p2, &3_000);
+    stellar_asset_client.mint(&p3, &2_000);
+
+    // Deposits: p1=5000, p2=3000, p3=2000 → total pool=10000, total_shares=10000.
+    pool_client.deposit(&p1, &token_id, &5_000);
+    pool_client.deposit(&p2, &token_id, &3_000);
+    pool_client.deposit(&p3, &token_id, &2_000);
+
+    assert_eq!(pool_client.get_total_shares(&token_id), 10_000);
+
+    // 1000 tokens of interest arrive (10 % yield).
+    stellar_asset_client.mint(&pool_id, &1_000);
+    // Pool: 11000 | Shares: 10000
+
+    // Each provider redeems all shares.
+    // p1: 5000 * 11000 / 10000 = 5500  (pool=11000, shares=10000)
+    pool_client.withdraw(&p1, &token_id, &5_000);
+    assert_eq!(token_client.balance(&p1), 5_500);
+
+    // p2: 3000 * 5500 / 5000 = 3300  (pool=5500, shares=5000 after p1 exit)
+    pool_client.withdraw(&p2, &token_id, &3_000);
+    assert_eq!(token_client.balance(&p2), 3_300);
+
+    // p3: 2000 * 2200 / 2000 = 2200  (pool=2200, shares=2000 after p1+p2 exit)
+    pool_client.withdraw(&p3, &token_id, &2_000);
+    assert_eq!(token_client.balance(&p3), 2_200);
+
+    // Pool is fully drained and no shares remain.
+    assert_eq!(token_client.balance(&pool_id), 0);
+    assert_eq!(pool_client.get_total_shares(&token_id), 0);
+}

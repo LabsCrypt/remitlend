@@ -194,11 +194,11 @@ We welcome contributions from developers of all skill levels! Please see our [CO
 
 ### Quick Contribution Guide
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes and commit (`git commit -m 'Add amazing feature'`)
-4. Push to your branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/amazing-feature`).
+3. Make your changes and commit (`git commit -m 'Add amazing feature'`).
+4. Push to your branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
 
 ## 📄 License
 

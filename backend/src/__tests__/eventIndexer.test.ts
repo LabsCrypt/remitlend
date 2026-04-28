@@ -64,6 +64,24 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
+  withTransaction: jest.fn(
+    async (
+      fn: (client: {
+        query: typeof mockQuery;
+        release: () => void;
+      }) => Promise<unknown>,
+    ) => {
+      // Provide a mock client whose .query() delegates to the shared mockQuery
+      // so all existing SQL-inspection assertions in the tests keep working.
+      const mockClient = {
+        query: jest.fn(async (sql: string, params?: unknown[]) =>
+          mockQuery(sql, params ?? []),
+        ),
+        release: jest.fn(),
+      };
+      return fn(mockClient);
+    },
+  ),
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
@@ -197,7 +215,11 @@ function makeAliasedEvent(params: {
   if (params.rawType === "Deposit" || params.rawType === "EmergencyWithdraw") {
     return {
       ...base,
-      topic: [scSymbol(params.rawType), scAddress(borrower), scAddress(makeAddress())],
+      topic: [
+        scSymbol(params.rawType),
+        scAddress(borrower),
+        scAddress(makeAddress()),
+      ],
       value: nativeToScVal([BigInt(params.amount ?? 100), BigInt(1)]),
     };
   }
@@ -650,25 +672,29 @@ describe("EventIndexer", () => {
     const previousThreshold = process.env.QUARANTINE_ALERT_THRESHOLD;
     process.env.QUARANTINE_ALERT_THRESHOLD = "2";
 
-    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes("INSERT INTO quarantine_events")) {
-        return { rows: [], rowCount: 1 };
-      }
+    mockQuery.mockImplementation(
+      async (sql: string, params: unknown[] = []) => {
+        if (sql.includes("INSERT INTO quarantine_events")) {
+          return { rows: [], rowCount: 1 };
+        }
 
-      if (sql.includes("SELECT COUNT(*)::int AS count FROM quarantine_events")) {
-        return { rows: [{ count: 2 }], rowCount: 1 };
-      }
+        if (
+          sql.includes("SELECT COUNT(*)::int AS count FROM quarantine_events")
+        ) {
+          return { rows: [{ count: 2 }], rowCount: 1 };
+        }
 
-      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+        if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (sql.includes("INSERT INTO loan_events")) {
+          return { rows: [], rowCount: 0 };
+        }
+
         return { rows: [], rowCount: 0 };
-      }
-
-      if (sql.includes("INSERT INTO contract_events")) {
-        return { rows: [], rowCount: 0 };
-      }
-
-      return { rows: [], rowCount: 0 };
-    });
+      },
+    );
 
     const indexer = new EventIndexer({
       rpcUrl: "https://rpc.test",

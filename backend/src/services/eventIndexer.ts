@@ -1,5 +1,5 @@
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
-import { query } from "../db/connection.js";
+import { type PoolClient, query, withTransaction } from "../db/connection.js";
 import logger from "../utils/logger.js";
 import {
   createRequestId,
@@ -33,7 +33,6 @@ const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
   GovEmerg: "ProposalCancelled",
   GovExp: "ProposalCancelled",
 };
-
 
 export interface SorobanRawEvent {
   id: string;
@@ -303,7 +302,10 @@ export class EventIndexer {
 
     return runWithRequestContext(correlationId, async () => {
       if (endLedger < startLedger) {
-        logger.warn("Skipping invalid ledger range", { startLedger, endLedger });
+        logger.warn("Skipping invalid ledger range", {
+          startLedger,
+          endLedger,
+        });
         return {
           lastProcessedLedger: Math.max(startLedger - 1, 0),
           fetchedEvents: 0,
@@ -430,16 +432,15 @@ export class EventIndexer {
 
     const insertedEvents: ContractEvent[] = [];
 
-    // Collect score deltas per user during the DB transaction to avoid N+1
-    // updates. After committing the inserted events we apply a single bulk
-    // upsert that adds the deltas and keeps scores bounded.
+    // Collect score deltas per user within the transaction so that the score
+    // upsert is atomic with the event inserts. A single bulk upsert at the
+    // end avoids N+1 queries and keeps scores within [300, 850].
     const scoreUpdates: Map<string, number> = new Map();
 
-    await query("BEGIN", []);
-    try {
+    await withTransaction(async (client: PoolClient) => {
       for (const event of parsedEvents) {
-        const insertResult = await query(
-          `INSERT INTO contract_events (
+        const insertResult = await client.query(
+          `INSERT INTO loan_events (
             event_id,
             event_type,
             loan_id,
@@ -477,8 +478,8 @@ export class EventIndexer {
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
 
-          // aggregate score deltas per borrower; apply after the transaction
-          // to avoid issuing a query per event (N+1).
+          // Aggregate score deltas per borrower; a single bulk upsert at
+          // the end of the transaction avoids N+1 score updates.
           if (event.eventType === "LoanRepaid") {
             const { repaymentDelta } = sorobanService.getScoreConfig();
             if (event.address) {
@@ -499,15 +500,14 @@ export class EventIndexer {
         }
       }
 
-      // apply batched score updates BEFORE the transaction commits to ensure atomicity
+      // Apply batched score updates on the same pinned client so that both
+      // the event inserts and the score changes are committed or rolled back
+      // together — satisfying the atomicity requirement.
       if (scoreUpdates.size > 0) {
-        await updateUserScoresBulk(scoreUpdates);
+        await updateUserScoresBulk(scoreUpdates, client);
       }
-      await query("COMMIT", []);
-    } catch (error) {
-      await query("ROLLBACK", []);
-      throw error;
-    }
+    });
+    // withTransaction commits here; any error triggers automatic ROLLBACK
 
     for (const event of insertedEvents) {
       webhookService.dispatch(event).catch((error) => {
@@ -565,11 +565,24 @@ export class EventIndexer {
 
       const data = scValToNative(event.value);
       if (!Array.isArray(data) || data.length < 2) {
-        throw new Error(`LoanApproved event missing interest_rate_bps or term_ledgers: ${event.id}`);
+        throw new Error(
+          `LoanApproved event missing interest_rate_bps or term_ledgers: ${event.id}`,
+        );
       }
 
       interestRateBps = Number(data[0]);
       termLedgers = Number(data[1]);
+
+      if (!Number.isFinite(interestRateBps)) {
+        throw new Error(
+          `LoanApproved event has invalid interest_rate_bps: ${event.id}`,
+        );
+      }
+      if (!Number.isFinite(termLedgers)) {
+        throw new Error(
+          `LoanApproved event has invalid term_ledgers: ${event.id}`,
+        );
+      }
     } else if (type === "LoanRepaid") {
       if (!event.topic[1] || !event.topic[2]) return null;
       address = this.decodeAddress(event.topic[1]);

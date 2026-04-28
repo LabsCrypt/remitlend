@@ -1,9 +1,14 @@
 import { jest } from "@jest/globals";
-import type { Server } from "http";
 import type { Pool } from "pg";
 
+type CloseCb = (err?: Error) => void;
+
+type MockServer = {
+  close: (cb?: CloseCb) => void;
+};
+
 describe("Graceful Shutdown", () => {
-  let mockServer: Partial<Server>;
+  let mockServer: MockServer;
   let mockPool: Partial<Pool>;
   let shutdownHandler: (signal: "SIGTERM" | "SIGINT") => Promise<void>;
 
@@ -11,9 +16,9 @@ describe("Graceful Shutdown", () => {
     jest.clearAllMocks();
 
     mockServer = {
-      close: jest.fn((callback) => {
+      close: (callback?: CloseCb) => {
         if (callback) callback();
-      }) as any,
+      },
     };
 
     mockPool = {
@@ -22,14 +27,14 @@ describe("Graceful Shutdown", () => {
   });
 
   it("should close server on SIGTERM", async () => {
-    const closeSpy = jest.fn((callback) => {
+    const closeSpy = jest.fn((callback?: CloseCb) => {
       if (callback) callback();
     });
-    mockServer.close = closeSpy as any;
+    mockServer.close = closeSpy;
 
-    shutdownHandler = async (signal: "SIGTERM" | "SIGINT") => {
+    shutdownHandler = async (_signal: "SIGTERM" | "SIGINT") => {
       return new Promise((resolve) => {
-        mockServer.close!((err?: Error) => {
+        mockServer.close((err?: Error) => {
           if (err) throw err;
           resolve();
         });
@@ -41,14 +46,14 @@ describe("Graceful Shutdown", () => {
   });
 
   it("should close server on SIGINT", async () => {
-    const closeSpy = jest.fn((callback) => {
+    const closeSpy = jest.fn((callback?: CloseCb) => {
       if (callback) callback();
     });
-    mockServer.close = closeSpy as any;
+    mockServer.close = closeSpy;
 
-    shutdownHandler = async (signal: "SIGTERM" | "SIGINT") => {
+    shutdownHandler = async (_signal: "SIGTERM" | "SIGINT") => {
       return new Promise((resolve) => {
-        mockServer.close!((err?: Error) => {
+        mockServer.close((err?: Error) => {
           if (err) throw err;
           resolve();
         });
@@ -60,16 +65,16 @@ describe("Graceful Shutdown", () => {
   });
 
   it("should drain database pool after server closes", async () => {
-    const closeSpy = jest.fn((callback) => {
+    const closeSpy = jest.fn((callback?: CloseCb) => {
       if (callback) callback();
     });
     const endSpy = jest.fn(async () => {});
-    mockServer.close = closeSpy as any;
+    mockServer.close = closeSpy;
     mockPool.end = endSpy;
 
-    shutdownHandler = async (signal: "SIGTERM" | "SIGINT") => {
+    shutdownHandler = async (_signal: "SIGTERM" | "SIGINT") => {
       return new Promise((resolve) => {
-        mockServer.close!(async (err?: Error) => {
+        mockServer.close(async (err?: Error) => {
           if (err) throw err;
           await mockPool.end!();
           resolve();
@@ -85,11 +90,12 @@ describe("Graceful Shutdown", () => {
   it("should timeout after 30 seconds if shutdown stalls", () => {
     jest.useFakeTimers();
 
-    const closeSpy = jest.fn(() => {
+    const closeSpy = jest.fn((_callback?: CloseCb) => {
       // Never call callback - simulate stalled shutdown
     });
-    mockServer.close = closeSpy as any;
+    mockServer.close = closeSpy;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
       // Mock implementation that doesn't actually exit
     }) as any);
@@ -111,12 +117,13 @@ describe("Graceful Shutdown", () => {
   it("should complete graceful shutdown within timeout", () => {
     jest.useFakeTimers();
 
-    const closeSpy = jest.fn((callback) => {
+    const closeSpy = jest.fn((callback?: CloseCb) => {
       // Simulate quick shutdown
       if (callback) callback();
     });
-    mockServer.close = closeSpy as any;
+    mockServer.close = closeSpy;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
       // Mock implementation that doesn't actually exit
     }) as any);
@@ -126,7 +133,7 @@ describe("Graceful Shutdown", () => {
       process.exit(1);
     }, 30000);
 
-    mockServer.close!((err?: Error) => {
+    mockServer.close((err?: Error) => {
       clearTimeout(timeout);
       if (!err) {
         process.exit(0);
@@ -142,18 +149,18 @@ describe("Graceful Shutdown", () => {
 
   it("should handle server close errors gracefully", async () => {
     const testError = new Error("Server close failed");
-    const closeSpy = jest.fn((callback) => {
+    const closeSpy = jest.fn((callback?: CloseCb) => {
       if (callback) callback(testError);
     });
-    mockServer.close = closeSpy as any;
+    mockServer.close = closeSpy;
 
     const exitSpy = jest.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit called");
     });
 
-    shutdownHandler = async (signal: "SIGTERM" | "SIGINT") => {
+    shutdownHandler = async (_signal: "SIGTERM" | "SIGINT") => {
       return new Promise((resolve, reject) => {
-        mockServer.close!((err?: Error) => {
+        mockServer.close((err?: Error) => {
           if (err) {
             process.exit(1);
             reject(err);
@@ -172,4 +179,3 @@ describe("Graceful Shutdown", () => {
     exitSpy.mockRestore();
   });
 });
-

@@ -44,7 +44,6 @@ describe("Environment Variable Validation", () => {
     process.env.SCORE_DELTA_DEFAULT = "50";
     process.env.SCORE_DELTA_LATE = "5";
 
-
     expect(() => validateEnvVars()).not.toThrow();
     expect(mockExit).not.toHaveBeenCalled();
   });

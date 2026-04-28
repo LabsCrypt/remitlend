@@ -20,19 +20,26 @@ export async function getInactiveBorrowers() {
 }
 
 // Apply score decay to a borrower based on inactivity
-export async function applyScoreDecay(borrower: { id: string; score: number; last_repayment: string | null }) {
+export async function applyScoreDecay(borrower: {
+  id: string;
+  score: number;
+  last_repayment: string | null;
+}) {
   const lastRepayment = borrower.last_repayment;
   const now = new Date();
   let monthsInactive = 1;
   if (lastRepayment) {
     const last = new Date(lastRepayment);
-    monthsInactive = Math.max(1, Math.floor((now.getTime() - last.getTime()) / (30 * 24 * 60 * 60 * 1000)));
+    monthsInactive = Math.max(
+      1,
+      Math.floor((now.getTime() - last.getTime()) / (30 * 24 * 60 * 60 * 1000)),
+    );
   }
   const decay = monthsInactive * DECAY_PER_MONTH;
   const newScore = Math.max(MIN_SCORE, borrower.score - decay);
-  await query(
-    `UPDATE borrowers SET score = $1 WHERE id = $2`,
-    [newScore, borrower.id]
-  );
+  await query(`UPDATE borrowers SET score = $1 WHERE id = $2`, [
+    newScore,
+    borrower.id,
+  ]);
   return newScore;
 }

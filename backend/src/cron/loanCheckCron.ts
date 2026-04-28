@@ -34,8 +34,10 @@ export function startLoanDueCheckCron() {
           loanId: loan.loan_id,
         });
       }
-      
-      logger.info(`Loan due check completed. Notified ${result.rows.length} borrowers.`);
+
+      logger.info(
+        `Loan due check completed. Notified ${result.rows.length} borrowers.`,
+      );
     } catch (error) {
       logger.error("Error in loan due check cron", { error });
     }
