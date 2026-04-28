@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useUserStore } from "../stores/useUserStore";
 
 export type SSEStatus = "connecting" | "connected" | "disconnected";
+export type RealtimeStatus = SSEStatus | "polling";
 
 interface UseSSEOptions<T> {
   /** Full URL of the SSE endpoint. Pass null/undefined to disable. */
@@ -14,6 +15,8 @@ interface UseSSEOptions<T> {
   onOpen?: () => void;
   /** Called when the connection closes with an error. */
   onError?: (error: Error) => void;
+  /** Invoked while the hook is in fallback polling mode. */
+  onFallbackPoll?: () => void | Promise<void>;
 }
 
 /**
@@ -25,12 +28,14 @@ export function useSSE<T = unknown>({
   onMessage,
   onOpen,
   onError,
-}: UseSSEOptions<T>): SSEStatus {
-  const [status, setStatus] = useState<SSEStatus>("connecting");
+  onFallbackPoll,
+}: UseSSEOptions<T>): RealtimeStatus {
+  const [status, setStatus] = useState<RealtimeStatus>("connecting");
   const token = useUserStore((s) => s.authToken);
   const retryDelay = useRef(1_000);
   const abortControllerRef = useRef<AbortController | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
@@ -38,6 +43,8 @@ export function useSSE<T = unknown>({
   onOpenRef.current = onOpen;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const onFallbackPollRef = useRef(onFallbackPoll);
+  onFallbackPollRef.current = onFallbackPoll;
 
   useEffect(() => {
     if (!url) {
@@ -46,6 +53,25 @@ export function useSSE<T = unknown>({
     }
 
     let cancelled = false;
+
+    const stopPolling = () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+
+    const startPolling = () => {
+      if (pollingIntervalRef.current || !onFallbackPollRef.current) {
+        return;
+      }
+
+      setStatus("polling");
+      void onFallbackPollRef.current();
+      pollingIntervalRef.current = setInterval(() => {
+        void onFallbackPollRef.current?.();
+      }, 10_000);
+    };
 
     async function connect() {
       if (cancelled) return;
@@ -81,6 +107,7 @@ export function useSSE<T = unknown>({
           throw new Error("Response body is null");
         }
 
+        stopPolling();
         setStatus("connected");
         retryDelay.current = 1_000;
         onOpenRef.current?.();
@@ -117,11 +144,11 @@ export function useSSE<T = unknown>({
           return;
         }
 
-        setStatus("disconnected");
+        startPolling();
         onErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
 
         if (!cancelled) {
-          const delay = Math.min(retryDelay.current, 30_000);
+          const delay = Math.min(retryDelay.current, 5_000);
           retryDelay.current = Math.min(delay * 2, 30_000);
           timeoutRef.current = setTimeout(connect, delay);
         }
@@ -138,6 +165,7 @@ export function useSSE<T = unknown>({
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+      stopPolling();
     };
   }, [url, token]);
 

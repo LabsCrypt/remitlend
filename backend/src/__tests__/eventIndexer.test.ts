@@ -66,6 +66,24 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
+  withTransaction: jest.fn(
+    async (
+      fn: (client: {
+        query: typeof mockQuery;
+        release: () => void;
+      }) => Promise<unknown>,
+    ) => {
+      // Provide a mock client whose .query() delegates to the shared mockQuery
+      // so all existing SQL-inspection assertions in the tests keep working.
+      const mockClient = {
+        query: jest.fn(async (sql: string, params?: unknown[]) =>
+          mockQuery(sql, params ?? []),
+        ),
+        release: jest.fn(),
+      };
+      return fn(mockClient);
+    },
+  ),
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
@@ -199,7 +217,11 @@ function makeAliasedEvent(params: {
   if (params.rawType === "Deposit" || params.rawType === "EmergencyWithdraw") {
     return {
       ...base,
-      topic: [scSymbol(params.rawType), scAddress(borrower), scAddress(makeAddress())],
+      topic: [
+        scSymbol(params.rawType),
+        scAddress(borrower),
+        scAddress(makeAddress()),
+      ],
       value: nativeToScVal([BigInt(params.amount ?? 100), BigInt(1)]),
     };
   }

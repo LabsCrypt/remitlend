@@ -26,7 +26,7 @@ const config: Config = {
   },
   moduleNameMapper: {
     // Correct pattern - strips .js so Jest finds the .ts source file
-    "^(\./|\.\./)(.*)\\.js$": "$1$2",
+    "^(./|../)(.*)\\.js$": "$1$2",
   },
 };
 

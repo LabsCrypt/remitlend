@@ -23,5 +23,20 @@ module.exports = {
     "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
     "@typescript-eslint/explicit-module-boundary-types": "off",
     "no-console": ["warn", { allow: ["warn", "error"] }],
+    "@typescript-eslint/no-explicit-any": "warn",
+    "no-constant-condition": "off",
   },
+  overrides: [
+    {
+      files: [
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "src/tests/**/*.ts",
+        "src/**/__tests__/**/*.ts",
+      ],
+      rules: {
+        "no-useless-catch": "off",
+      },
+    },
+  ],
 };

@@ -5,6 +5,7 @@ import request from "supertest";
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: jest.fn(),
   getClient: jest.fn(),
+  withTransaction: jest.fn(),
   default: {
     query: jest.fn(),
   },

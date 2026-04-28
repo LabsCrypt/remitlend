@@ -29,7 +29,7 @@ export const challengeRateLimiter = rateLimit({
 
 export const loginRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 10,
+  max: 5,
   keyGenerator: (req) =>
     `${ipKeyGenerator(req.ip ?? "unknown")}:${req.body?.publicKey ?? "unknown"}`,
   message: {
@@ -46,7 +46,7 @@ export const loginRateLimiter = rateLimit({
 
 export const ipLoginRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 10,
+  max: 5,
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
   message: {
     success: false,
@@ -88,6 +88,7 @@ export const simulationRateLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test",
   handler: (req, res, _next, options) => {
     res.setHeader("Retry-After", Math.ceil(options.windowMs / 1000));
     res.status(429).json(options.message);

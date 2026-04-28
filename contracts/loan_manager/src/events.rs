@@ -170,7 +170,6 @@ pub fn loan_liquidated(
         .publish(topics, (debt_repaid, liquidator_bonus, borrower_refund));
 }
 
-
 pub fn min_rate_bps_updated(env: &Env, admin: Address, old_rate: u32, new_rate: u32) {
     let topics = (Symbol::new(env, "MinRateBpsUpdated"), admin);
     env.events().publish(topics, (old_rate, new_rate));

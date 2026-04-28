@@ -11,6 +11,7 @@ const mockQuery: any = jest.fn();
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
+  withTransaction: jest.fn(),
 }));
 jest.unstable_mockModule("../db/transaction.js", () => ({
   withTransaction: jest.fn(),
@@ -57,7 +58,7 @@ function dbOk(command = "INSERT") {
 // ─── Test state ───────────────────────────────────────────────────────────────
 
 let authToken: string;
-let defaultedLoanId = LOAN_ID;
+const defaultedLoanId = LOAN_ID;
 let disputeId = DISPUTE_ID;
 
 // Setup test loan and defaulted state before tests

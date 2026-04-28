@@ -33,6 +33,7 @@ The repository is organized as a monorepo containing three core packages:
 - **`contracts/`**: Soroban (Rust) smart contracts covering the lending pools, loan management, and NFT collateral logic.
 
 *For a detailed look at how these components interact, see our [Architecture Diagram](ARCHITECTURE.md).*
+*New contributor? Start with the in-repo wiki: [docs/wiki/README.md](docs/wiki/README.md).*
 
 ## 🛠 Tech Stack
 
@@ -193,11 +194,11 @@ We welcome contributions from developers of all skill levels! Please see our [CO
 
 ### Quick Contribution Guide
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes and commit (`git commit -m 'Add amazing feature'`)
-4. Push to your branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/amazing-feature`).
+3. Make your changes and commit (`git commit -m 'Add amazing feature'`).
+4. Push to your branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
 
 ## 📄 License
 

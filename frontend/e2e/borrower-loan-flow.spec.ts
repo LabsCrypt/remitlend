@@ -131,9 +131,9 @@ test.describe("Borrower Loan Request Flow", () => {
     await expect(page.locator(`text=${MOCK_CREDIT_SCORE}`)).toBeVisible({ timeout: 10000 });
 
     // Verify score is in the expected range
-    const scoreElement = page.locator('[data-testid="credit-score"]').or(
-      page.locator(`text=${MOCK_CREDIT_SCORE}`),
-    );
+    const scoreElement = page
+      .locator('[data-testid="credit-score"]')
+      .or(page.locator(`text=${MOCK_CREDIT_SCORE}`));
     await expect(scoreElement).toBeVisible();
   });
 

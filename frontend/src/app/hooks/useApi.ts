@@ -224,6 +224,8 @@ export interface LoanDetails {
   requestedAt?: string;
   approvedAt?: string;
   events: LoanEvent[];
+  lateFees?: number;
+  collateralLocked?: number;
 }
 
 export interface LoanAmortizationScheduleRow {

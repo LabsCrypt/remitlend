@@ -21,6 +21,7 @@ const loadApp = async () => {
     query: mockQuery,
     getClient: jest.fn(),
     closePool: jest.fn(),
+    withTransaction: jest.fn(),
   }));
 
   jest.unstable_mockModule("../services/cacheService.js", () => ({

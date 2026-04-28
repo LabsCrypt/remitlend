@@ -296,9 +296,9 @@ describe("WebhookService", () => {
       });
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const insertCall = mockQuery.mock.calls[1];
+      const insertCall = mockQuery.mock.calls[1] as [string, unknown[]];
       expect(insertCall[0]).toContain("INSERT INTO webhook_deliveries");
-      const params = insertCall[1] as unknown[];
+      const params = insertCall[1];
       expect(params[3]).toBe(503); // last_status_code
       expect(params[4]).toBe("Webhook returned status 503"); // last_error
       expect(params[6]).toEqual(
@@ -339,9 +339,9 @@ describe("WebhookService", () => {
       });
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const insertCall = mockQuery.mock.calls[1];
+      const insertCall = mockQuery.mock.calls[1] as [string, unknown[]];
       expect(insertCall[0]).toContain("INSERT INTO webhook_deliveries");
-      const params = insertCall[1] as unknown[];
+      const params = insertCall[1];
       expect(params[3]).toBe(400); // last_status_code
       expect(params[4]).toBe("Webhook returned status 400"); // last_error
       // 4xx errors still schedule retry in current implementation

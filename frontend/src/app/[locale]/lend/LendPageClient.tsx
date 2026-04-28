@@ -32,6 +32,12 @@ import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore
 import { useSSE } from "../../hooks/useSSE";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Tooltip } from "../../components/ui/Tooltip";
+import {
+  buildAmountHelperText,
+  getPrecisionError,
+  parseAmount,
+  sanitizeAmountInput,
+} from "../../utils/amount";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -61,17 +67,23 @@ export function LendPageClient() {
         invalidatePoolStats();
       }
     },
+    onFallbackPoll: () => invalidatePoolStats(),
   });
 
+  const depositPrecisionError = getPrecisionError(depositAmount, "USDC");
+  const withdrawPrecisionError = getPrecisionError(withdrawAmount, "USDC");
+  const depositHelper = buildAmountHelperText(depositAmount, "USDC");
+  const withdrawHelper = buildAmountHelperText(withdrawAmount, "USDC");
+
   const handleDeposit = async () => {
-    const amount = parseFloat(depositAmount);
-    if (!address || isNaN(amount) || amount <= 0) return;
+    const amount = parseAmount(depositAmount);
+    if (!address || Number.isNaN(amount) || amount <= 0 || depositPrecisionError) return;
     await depositOp.executeDeposit({ amount, depositorAddress: address });
   };
 
   const handleWithdraw = async () => {
-    const amount = parseFloat(withdrawAmount);
-    if (!address || isNaN(amount) || amount <= 0) return;
+    const amount = parseAmount(withdrawAmount);
+    if (!address || Number.isNaN(amount) || amount <= 0 || withdrawPrecisionError) return;
     await withdrawalOp.executeWithdrawal({ amount, depositorAddress: address });
   };
 
@@ -150,14 +162,18 @@ export function LendPageClient() {
                 ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400"
                 : sseStatus === "connecting"
                   ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                  : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
+                  : sseStatus === "polling"
+                    ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                    : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
             }`}
             title={
               sseStatus === "connected"
                 ? "Live pool updates connected"
                 : sseStatus === "connecting"
                   ? "Connecting to live updates…"
-                  : "Live updates disconnected — retrying"
+                  : sseStatus === "polling"
+                    ? "Live updates dropped — polling while reconnecting"
+                    : "Live updates disconnected — retrying"
             }
           >
             {sseStatus === "connected" ? (
@@ -169,7 +185,9 @@ export function LendPageClient() {
               ? "Live"
               : sseStatus === "connecting"
                 ? "Connecting…"
-                : "Offline"}
+                : sseStatus === "polling"
+                  ? "Reconnecting…"
+                  : "Offline"}
           </div>
         )}
       </header>
@@ -291,16 +309,29 @@ export function LendPageClient() {
                   </label>
                   <input
                     id="deposit-amount"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     min="0"
-                    step="0.01"
+                    step="0.0000001"
                     value={depositAmount}
-                    onChange={(event) => setDepositAmount(event.target.value)}
-                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900"
+                    onChange={(event) => setDepositAmount(sanitizeAmountInput(event.target.value))}
+                    aria-invalid={depositPrecisionError ? true : undefined}
+                    className={`w-full rounded-xl border bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 ${
+                      depositPrecisionError ? "border-red-500" : "border-zinc-200"
+                    }`}
                   />
+                  <p
+                    className={`text-xs ${
+                      depositPrecisionError
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-500 dark:text-zinc-400"
+                    }`}
+                  >
+                    {depositPrecisionError ?? depositHelper ?? "Up to 7 decimal places supported."}
+                  </p>
                   <button
                     type="submit"
-                    disabled={depositOp.isLoading}
+                    disabled={depositOp.isLoading || !!depositPrecisionError}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <ArrowUpRight className="h-4 w-4" />
@@ -324,16 +355,31 @@ export function LendPageClient() {
                   </label>
                   <input
                     id="withdraw-amount"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     min="0"
-                    step="0.01"
+                    step="0.0000001"
                     value={withdrawAmount}
-                    onChange={(event) => setWithdrawAmount(event.target.value)}
-                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900"
+                    onChange={(event) => setWithdrawAmount(sanitizeAmountInput(event.target.value))}
+                    aria-invalid={withdrawPrecisionError ? true : undefined}
+                    className={`w-full rounded-xl border bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 ${
+                      withdrawPrecisionError ? "border-red-500" : "border-zinc-200"
+                    }`}
                   />
+                  <p
+                    className={`text-xs ${
+                      withdrawPrecisionError
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-500 dark:text-zinc-400"
+                    }`}
+                  >
+                    {withdrawPrecisionError ??
+                      withdrawHelper ??
+                      "Up to 7 decimal places supported."}
+                  </p>
                   <button
                     type="submit"
-                    disabled={withdrawalOp.isLoading}
+                    disabled={withdrawalOp.isLoading || !!withdrawPrecisionError}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                   >
                     <ArrowDownLeft className="h-4 w-4" />

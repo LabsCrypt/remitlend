@@ -129,6 +129,7 @@ pub enum DataKey {
     LiquidationBonusBps,
     MinRateBps,
     MaxRateBps,
+    MigratedVersion,
 }
 
 #[contract]
@@ -151,6 +152,7 @@ impl LoanManager {
     const DEFAULT_DEFAULT_WINDOW_LEDGERS: u32 = Self::DEFAULT_TERM_LEDGERS;
     const DEFAULT_LIQUIDATION_THRESHOLD_BPS: u32 = 15_000;
     const DEFAULT_LIQUIDATION_BONUS_BPS: u32 = 500;
+    const MAX_LIQUIDATION_BONUS_BPS: u32 = 2000; // 20% cap on liquidation bonus
     const MIN_COLLATERAL_RATIO_BPS: i128 = 10_000;
     const MAX_RATIO_BPS: u32 = 10_000;
     const LATE_REPAYMENT_SCORE_PENALTY: i32 = 10;
@@ -417,7 +419,7 @@ impl LoanManager {
     }
 
     fn validate_liquidation_bonus_bps(bonus_bps: u32) -> Result<(), LoanError> {
-        if bonus_bps > Self::MAX_RATIO_BPS {
+        if bonus_bps > Self::MAX_LIQUIDATION_BONUS_BPS {
             return Err(LoanError::InvalidConfiguration);
         }
         Ok(())
@@ -898,6 +900,19 @@ impl LoanManager {
     pub fn migrate(env: Env) {
         Self::admin(&env).require_auth();
 
+        // Migration guard: prevent double-execution for the same version
+        let last_migrated_version: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MigratedVersion)
+            .unwrap_or(0);
+
+        // If already migrated to this version or later, skip
+        if last_migrated_version >= Self::CURRENT_VERSION {
+            return;
+        }
+
+        // Initialize new storage keys with defaults if they don't exist
         if !env.storage().instance().has(&DataKey::LateFeeRateBps) {
             env.storage()
                 .instance()
@@ -920,14 +935,30 @@ impl LoanManager {
             );
         }
 
+        // Initialize rate bounds if they don't exist
+        if !env.storage().instance().has(&DataKey::MinRateBps) {
+            env.storage()
+                .instance()
+                .set(&DataKey::MinRateBps, &Self::MIN_RATE_BPS);
+        }
+        if !env.storage().instance().has(&DataKey::MaxRateBps) {
+            env.storage()
+                .instance()
+                .set(&DataKey::MaxRateBps, &Self::MAX_RATE_BPS);
+        }
+
         let late_fee_rate = Self::late_fee_rate_bps(&env);
         env.storage()
             .instance()
             .set(&DataKey::LateFeeRateBps, &late_fee_rate);
 
+        // Update contract version and mark migration as complete
         env.storage()
             .instance()
             .set(&DataKey::Version, &Self::CURRENT_VERSION);
+        env.storage()
+            .instance()
+            .set(&DataKey::MigratedVersion, &Self::CURRENT_VERSION);
         Self::bump_instance_ttl(&env);
     }
 
@@ -1075,9 +1106,7 @@ impl LoanManager {
         let pool_client = PoolClient::new(&env, &lending_pool);
         let pool_balance = pool_client.pool_balance(&token);
         let total_outstanding = Self::total_outstanding(&env, &token);
-        let available_liquidity = pool_balance
-            .checked_sub(total_outstanding)
-            .unwrap_or(0);
+        let available_liquidity = pool_balance.checked_sub(total_outstanding).unwrap_or(0);
         if available_liquidity < loan.amount {
             return Err(LoanError::InsufficientPoolLiquidity);
         }
@@ -1117,7 +1146,6 @@ impl LoanManager {
         Ok(())
     }
 
-
     pub fn get_loan(env: Env, loan_id: u32) -> Result<Loan, LoanError> {
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -1135,6 +1163,7 @@ impl LoanManager {
 
         borrower.require_auth();
         Self::require_not_paused(&env)?;
+        Self::bump_instance_ttl(&env);
 
         if amount <= 0 {
             return Err(LoanError::InvalidAmount);
@@ -1292,7 +1321,7 @@ impl LoanManager {
                     };
 
                     if points_i32 > 0 {
-                        let _ = nft_client.apply_score_delta(
+                        nft_client.apply_score_delta(
                             &borrower,
                             &points_i32,
                             &Some(env.current_contract_address()),
@@ -1439,11 +1468,24 @@ impl LoanManager {
             .and_then(|value| value.checked_div(Self::MAX_RATIO_BPS as i128))
             .expect("liquidation bonus overflow");
 
+        // Ensure bonus cap is enforced - bonus BPS should never exceed MAX_LIQUIDATION_BONUS_BPS
+        debug_assert!(
+            Self::liquidation_bonus_bps(&env) <= Self::MAX_LIQUIDATION_BONUS_BPS,
+            "Liquidation bonus BPS exceeds maximum cap"
+        );
+
         let (debt_repaid, liquidator_bonus, borrower_refund) = if collateral_amount >= total_debt {
             let collateral_surplus = collateral_amount
                 .checked_sub(total_debt)
                 .expect("collateral surplus underflow");
             let liquidator_bonus = configured_bonus.min(collateral_surplus);
+
+            // Additional safety check: ensure bonus never exceeds remaining collateral
+            debug_assert!(
+                liquidator_bonus <= collateral_amount,
+                "Liquidation bonus exceeds collateral amount"
+            );
+
             let borrower_refund = collateral_surplus
                 .checked_sub(liquidator_bonus)
                 .expect("borrower refund underflow");
@@ -1535,7 +1577,11 @@ impl LoanManager {
                 .get(&DataKey::Token)
                 .expect("token not set");
             let token_client = TokenClient::new(&env, &token);
-            token_client.transfer(&env.current_contract_address(), &borrower, &collateral_to_release);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &borrower,
+                &collateral_to_release,
+            );
             events::collateral_returned(&env, borrower.clone(), loan_id, collateral_to_release);
         }
         events::loan_cancelled(&env, borrower, loan_id);
@@ -1573,8 +1619,17 @@ impl LoanManager {
                 .get(&DataKey::Token)
                 .expect("token not set");
             let token_client = TokenClient::new(&env, &token);
-            token_client.transfer(&env.current_contract_address(), &loan.borrower, &collateral_to_release);
-            events::collateral_returned(&env, loan.borrower.clone(), loan_id, collateral_to_release);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &loan.borrower,
+                &collateral_to_release,
+            );
+            events::collateral_returned(
+                &env,
+                loan.borrower.clone(),
+                loan_id,
+                collateral_to_release,
+            );
         }
         events::loan_rejected(&env, loan_id, reason);
 
