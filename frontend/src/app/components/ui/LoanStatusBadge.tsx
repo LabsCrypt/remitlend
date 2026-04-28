@@ -1,6 +1,6 @@
 import { StatusIndicator } from "./StatusIndicator";
 
-type LoanStatus = "active" | "pending" | "repaid" | "defaulted" | "liquidated";
+export type LoanStatus = "active" | "pending" | "repaid" | "defaulted" | "liquidated";
 
 const STATUS_CONFIG: Record<
   LoanStatus,
@@ -9,8 +9,8 @@ const STATUS_CONFIG: Record<
   active: { label: "Active", tone: "success" },
   repaid: { label: "Repaid", tone: "info" },
   defaulted: { label: "Defaulted", tone: "danger" },
-  liquidated: { label: "Liquidated", tone: "danger" },
   pending: { label: "Pending", tone: "warning" },
+  liquidated: { label: "Liquidated", tone: "danger" },
 };
 
 interface LoanStatusBadgeProps {

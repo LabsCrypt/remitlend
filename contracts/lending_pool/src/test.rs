@@ -970,6 +970,253 @@ fn test_get_depositor_yield_reflects_accrued_interest() {
     assert_eq!(asset_value2, 1200); // 1000 shares * 1200 assets / 1000 total_shares
 }
 
+#[test]
+fn test_multiple_tokens_independence() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token1_id, stellar1, _) = create_token_contract(&env, &admin);
+    let (token2_id, stellar2, _) = create_token_contract(&env, &admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar1.mint(&provider, &1000);
+    stellar2.mint(&provider, &2000);
+
+    // Deposit token 1
+    pool_client.deposit(&provider, &token1_id, &1000);
+    assert_eq!(pool_client.get_shares(&provider, &token1_id), 1000);
+    assert_eq!(pool_client.get_shares(&provider, &token2_id), 0);
+
+    // Deposit token 2
+    pool_client.deposit(&provider, &token2_id, &2000);
+    assert_eq!(pool_client.get_shares(&provider, &token2_id), 2000);
+    assert_eq!(pool_client.get_shares(&provider, &token1_id), 1000);
+
+    // Verify stats are separate
+    assert_eq!(pool_client.get_total_deposits(&token1_id), 1000);
+    assert_eq!(pool_client.get_total_deposits(&token2_id), 2000);
+}
+
+#[test]
+#[should_panic]
+fn test_set_max_pool_size_unauthorized() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let (token_id, _, _) = create_token_contract(&env, &admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "set_max_pool_size",
+            args: (token_id.clone(), 1000i128).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    pool_client.set_max_pool_size(&token_id, &1000);
+}
+
+#[test]
+fn test_accept_admin_flow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    pool_client.propose_admin(&new_admin);
+
+    // Non-proposed admin cannot accept
+    let other = Address::generate(&env);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &other,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "accept_admin",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    let res = pool_client.try_accept_admin();
+    assert!(res.is_err());
+
+    // Proposed admin can accept
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &new_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "accept_admin",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    pool_client.accept_admin();
+    assert_eq!(pool_client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_withdrawal_with_utilization() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token_id, stellar, token_client) = create_token_contract(&env, &admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar.mint(&provider, &1000);
+    pool_client.deposit(&provider, &token_id, &1000);
+
+    // Simulate 80% utilization (800 tokens borrowed)
+    let borrower = Address::generate(&env);
+    token_client.transfer(&pool_id, &borrower, &800);
+    assert_eq!(token_client.balance(&pool_id), 200);
+
+    // Stats should show 80% utilization
+    let stats = pool_client.get_pool_stats(&token_id);
+    assert_eq!(stats.utilization_bps, 8000);
+
+    // If user tries to withdraw 500 shares, they only get 100 tokens
+    // because share value is based on liquid balance.
+    // assets = shares * pool_balance / total_shares = 500 * 200 / 1000 = 100
+    pool_client.withdraw(&provider, &token_id, &500);
+    assert_eq!(token_client.balance(&provider), 100);
+}
+
+#[test]
+fn test_deposit_at_max_cap_edge_cases() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token_id, stellar, _) = create_token_contract(&env, &admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+    pool_client.set_max_pool_size(&token_id, &1000);
+
+    let provider = Address::generate(&env);
+    stellar.mint(&provider, &1500);
+
+    // Exactly at cap
+    pool_client.deposit(&provider, &token_id, &1000);
+    assert_eq!(pool_client.get_total_deposits(&token_id), 1000);
+
+    // One more should fail
+    let res = pool_client.try_deposit(&provider, &token_id, &1);
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_unauthorized_admin_actions() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    // Mock auth as non-admin user
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "pause",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(pool_client.try_pause().is_err());
+
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "unpause",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(pool_client.try_unpause().is_err());
+
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "set_withdrawal_cooldown",
+            args: (100u32,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(pool_client.try_set_withdrawal_cooldown(&100).is_err());
+
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &user,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &pool_id,
+            function: "propose_admin",
+            args: (user.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(pool_client.try_propose_admin(&user).is_err());
+}
+
+#[test]
+fn test_deposit_event_emission() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token_id, stellar, _) = create_token_contract(&env, &admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar.mint(&provider, &1000);
+
+    pool_client.deposit(&provider, &token_id, &1000);
+
+    // Verify events
+    // Event structure from events.rs:
+    // pub fn deposit(env: &Env, provider: Address, token: Address, amount: i128, shares: i128)
+    // env.events().publish((Symbol::new(env, "Deposit"), provider, token), (amount, shares));
+    
+    let events = env.events().all();
+    let deposit_event = events.get(events.len() - 1).unwrap();
+    
+    // We expect the last event to be the Deposit event.
+    // In Soroban tests, events are (topics, data).
+    // Topics: [Deposit, provider, token]
+    // Data: [amount, shares]
+    
+    assert_eq!(deposit_event.2, (1000i128, 1000i128).into_val(&env));
+}
+
 // ── LendingPool share-based accounting tests ──────────────────────────────────
 
 #[test]
