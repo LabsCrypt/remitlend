@@ -15,6 +15,7 @@ import {
 } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
 import { cacheService } from "../services/cacheService.js";
+import { notificationService } from "../services/notificationService.js";
 
 // ─── Test/Dev Only ────────────────────────────────────────────────────────────
 
@@ -121,8 +122,14 @@ export const contestDefault = asyncHandler(
       [loanId, borrower],
     );
 
-    // TODO: Notify admins (e.g., via email, dashboard alert, etc.)
     logger.info("Loan default contested", { loanId, borrower, reason });
+
+    // Notify admins via email, SSE, and optional webhook
+    await notificationService.notifyAdmins({
+      title: "Loan Default Contested",
+      message: `Borrower ${borrower} has contested the default on loan #${loanId}. Reason: ${reason}`,
+      loanId: Number(loanId),
+    });
 
     res.json({
       success: true,
