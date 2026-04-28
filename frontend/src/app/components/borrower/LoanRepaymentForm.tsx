@@ -41,14 +41,16 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
       setAmount("");
     },
   });
+  const precisionError = getPrecisionError(amount, "USDC");
+  const helperText = buildAmountHelperText(amount, "USDC");
 
   const handleAmountChange = (value: string) => {
-    setAmount(value);
+    setAmount(sanitizeAmountInput(value));
     setError(null);
   };
 
   const validateAmount = (): boolean => {
-    const numAmount = parseFloat(amount);
+    const numAmount = parseAmount(amount);
 
     if (!amount || isNaN(numAmount)) {
       setError("Please enter a valid amount");
@@ -82,7 +84,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
   const handleRepayClick = () => {
     if (!validateAmount()) return;
 
-    const numAmount = parseFloat(amount);
+    const numAmount = parseAmount(amount);
 
     const previewData = formatLoanRepayment({
       loanId,
@@ -99,7 +101,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
   };
 
   const handlePayFullAmount = () => {
-    setAmount(totalOwed.toString());
+    setAmount(totalOwed.toFixed(7).replace(/\.?0+$/, ""));
     setError(null);
   };
 
@@ -170,7 +172,7 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
           <Button
             variant="primary"
             onClick={handleRepayClick}
-            disabled={!amount || !!error || repayment.isLoading}
+            disabled={!amount || !!error || !!precisionError || repayment.isLoading}
             className="w-full"
           >
             {repayment.isLoading ? "Processing..." : "Review Repayment"}

@@ -94,10 +94,15 @@ type QuarantineEventRow = {
 };
 
 const buildIndexerFromConfig = (): EventIndexer => {
-  const contractId = process.env.LOAN_MANAGER_CONTRACT_ID;
+  const contractIds = [
+    process.env.LOAN_MANAGER_CONTRACT_ID,
+    process.env.LENDING_POOL_CONTRACT_ID,
+    process.env.REMITTANCE_NFT_CONTRACT_ID,
+    process.env.MULTISIG_GOVERNANCE_CONTRACT_ID,
+  ].filter((id): id is string => Boolean(id && id.trim().length > 0));
 
-  if (!contractId) {
-    throw new Error("LOAN_MANAGER_CONTRACT_ID is not configured");
+  if (contractIds.length === 0) {
+    throw new Error("At least one indexer contract ID must be configured");
   }
 
   const rpcUrl = getStellarRpcUrl();
@@ -105,7 +110,7 @@ const buildIndexerFromConfig = (): EventIndexer => {
 
   return new EventIndexer({
     rpcUrl,
-    contractId,
+    contractConfigs: contractIds.map((contractId) => ({ contractId })),
     pollIntervalMs: 30_000,
     batchSize,
   });
@@ -142,7 +147,9 @@ const decodeQuarantinedRawEvent = (
   }
 
   try {
-    const topicValues = topics.map((topic) => xdr.ScVal.fromXDR(topic, "base64"));
+    const topicValues = topics.map((topic) =>
+      xdr.ScVal.fromXDR(topic, "base64"),
+    );
     const value = xdr.ScVal.fromXDR(candidate.value, "base64");
     const ledgerClosedAt =
       typeof candidate.ledgerClosedAt === "string"
@@ -744,21 +751,22 @@ export const reprocessQuarantinedEvents = async (
         ? Math.min(limit, 500)
         : 50;
 
-    const rowsResult = parsedIds && parsedIds.length > 0
-      ? await query(
-          `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
+    const rowsResult =
+      parsedIds && parsedIds.length > 0
+        ? await query(
+            `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
            FROM quarantine_events
            WHERE id = ANY($1::int[])
            ORDER BY id ASC`,
-          [parsedIds],
-        )
-      : await query(
-          `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
+            [parsedIds],
+          )
+        : await query(
+            `SELECT id, event_id, ledger, tx_hash, contract_id, raw_xdr, error_message, quarantined_at
            FROM quarantine_events
            ORDER BY id ASC
            LIMIT $1`,
-          [parsedLimit],
-        );
+            [parsedLimit],
+          );
 
     const rows = rowsResult.rows as QuarantineEventRow[];
 

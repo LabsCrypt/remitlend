@@ -5,9 +5,14 @@ jest.setTimeout(60000);
 
 const loadApp = async () => {
   jest.resetModules();
-  const mockQuery = jest.fn<
-    (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>
-  >().mockResolvedValue({ rows: [], rowCount: 0 });
+  const mockQuery = jest
+    .fn<
+      (
+        sql: string,
+        params?: unknown[],
+      ) => Promise<{ rows: unknown[]; rowCount: number }>
+    >()
+    .mockResolvedValue({ rows: [], rowCount: 0 });
 
   jest.unstable_mockModule("../db/connection.js", () => ({
     default: {
@@ -16,6 +21,7 @@ const loadApp = async () => {
     query: mockQuery,
     getClient: jest.fn(),
     closePool: jest.fn(),
+    withTransaction: jest.fn(),
   }));
 
   jest.unstable_mockModule("../services/cacheService.js", () => ({
@@ -69,6 +75,8 @@ describe("CORS middleware", () => {
       .set("Origin", "https://malicious.example.com");
 
     expect(response.status).toBe(403);
-    expect(response.body.error?.message).toBe("Origin is not allowed by CORS policy");
+    expect(response.body.error?.message).toBe(
+      "Origin is not allowed by CORS policy",
+    );
   });
 });

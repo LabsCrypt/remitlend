@@ -46,6 +46,7 @@
       "completed": "Completed",
       "repaid": "Repaid",
       "failed": "Failed",
+      "liquidated": "Liquidated",
       "defaulted": "Defaulted"
     },
     "pagination": {

@@ -5,9 +5,16 @@ pub fn loan_requested(env: &Env, borrower: Address, amount: i128) {
     env.events().publish(topics, amount);
 }
 
-pub fn loan_approved(env: &Env, loan_id: u32, borrower: Address) {
-    let topics = (Symbol::new(env, "LoanApproved"), loan_id);
-    env.events().publish(topics, borrower);
+pub fn loan_approved(
+    env: &Env,
+    loan_id: u32,
+    borrower: Address,
+    interest_rate_bps: u32,
+    term_ledgers: u32,
+) {
+    let topics = (Symbol::new(env, "LoanApproved"), loan_id, borrower);
+    env.events()
+        .publish(topics, (interest_rate_bps, term_ledgers));
 }
 
 pub fn loan_refinanced(
@@ -19,6 +26,19 @@ pub fn loan_refinanced(
 ) {
     let topics = (Symbol::new(env, "LoanRefinanced"), loan_id, borrower);
     env.events().publish(topics, (new_amount, new_term));
+}
+
+pub fn loan_extended(
+    env: &Env,
+    loan_id: u32,
+    borrower: Address,
+    new_due_ledger: u32,
+    fee_amount: i128,
+    extension_count: u32,
+) {
+    let topics = (Symbol::new(env, "LoanExtended"), loan_id, borrower);
+    env.events()
+        .publish(topics, (new_due_ledger, fee_amount, extension_count));
 }
 
 pub fn loan_repaid(env: &Env, borrower: Address, loan_id: u32, amount: i128) {
@@ -129,4 +149,33 @@ pub fn loan_approved_by_admin(env: &Env, admin: Address, loan_id: u32, borrower:
 pub fn collateral_liquidated(env: &Env, loan_id: u32, amount: i128) {
     let topics = (Symbol::new(env, "CollateralLiquidated"), loan_id);
     env.events().publish(topics, amount);
+}
+
+pub fn loan_liquidated(
+    env: &Env,
+    loan_id: u32,
+    borrower: Address,
+    liquidator: Address,
+    debt_repaid: i128,
+    liquidator_bonus: i128,
+    borrower_refund: i128,
+) {
+    let topics = (
+        Symbol::new(env, "LoanLiquidated"),
+        loan_id,
+        borrower,
+        liquidator,
+    );
+    env.events()
+        .publish(topics, (debt_repaid, liquidator_bonus, borrower_refund));
+}
+
+pub fn min_rate_bps_updated(env: &Env, admin: Address, old_rate: u32, new_rate: u32) {
+    let topics = (Symbol::new(env, "MinRateBpsUpdated"), admin);
+    env.events().publish(topics, (old_rate, new_rate));
+}
+
+pub fn max_rate_bps_updated(env: &Env, admin: Address, old_rate: u32, new_rate: u32) {
+    let topics = (Symbol::new(env, "MaxRateBpsUpdated"), admin);
+    env.events().publish(topics, (old_rate, new_rate));
 }

@@ -1,6 +1,3 @@
-
-
-
 import type { Request, Response, NextFunction } from "express";
 import { query } from "../db/connection.js";
 import {
@@ -17,6 +14,7 @@ import {
   parseCursorQueryParams,
 } from "../utils/pagination.js";
 import logger from "../utils/logger.js";
+import { cacheService } from "../services/cacheService.js";
 
 // ─── Test/Dev Only ────────────────────────────────────────────────────────────
 
@@ -30,7 +28,9 @@ export const createTestLoan = asyncHandler(
     const borrower = req.user?.publicKey || "test-borrower";
 
     if (!amount || !term) {
-      res.status(400).json({ success: false, message: "amount and term required" });
+      res
+        .status(400)
+        .json({ success: false, message: "amount and term required" });
       return;
     }
 
@@ -45,7 +45,11 @@ export const createTestLoan = asyncHandler(
       [loanId, borrower, amount, term],
     );
 
-    res.json({ success: true, id: loanId, loan: { id: loanId, amount, term, borrower } });
+    res.json({
+      success: true,
+      id: loanId,
+      loan: { id: loanId, amount, term, borrower },
+    });
   },
 );
 
@@ -71,7 +75,10 @@ export const markLoanDefaulted = asyncHandler(
       [loanId, borrower],
     );
 
-    res.json({ success: true, message: "Loan marked as defaulted for test setup." });
+    res.json({
+      success: true,
+      message: "Loan marked as defaulted for test setup.",
+    });
   },
 );
 
@@ -132,11 +139,11 @@ const DEFAULT_INTEREST_RATE_BPS = 1200; // 12%
 type BorrowerLoan = {
   loanId: number;
   principal: number;
-  accruedInterest: number;
+  accruedInterest: number | null;
   totalRepaid: number;
-  totalOwed: number;
+  totalOwed: number | null;
   nextPaymentDeadline: string;
-  status: "active" | "repaid" | "defaulted";
+  status: "active" | "repaid" | "defaulted" | "pending_indexing";
   borrower: string;
   approvedAt: string | null;
 };
@@ -300,6 +307,7 @@ export const getBorrowerLoans = asyncHandler(
             ELSE NOW()
           END as next_payment_deadline,
           CASE 
+            WHEN approved_ledger IS NULL OR approved_ledger = 0 OR $2 < approved_ledger THEN 'pending_indexing'
             WHEN is_defaulted = 1 THEN 'defaulted'
             WHEN (principal + accrued_interest - total_repaid) > 0.01 THEN 'active'
             ELSE 'repaid'
@@ -341,19 +349,28 @@ export const getBorrowerLoans = asyncHandler(
     const hasNext = result.rows.length > limit;
     const trimmedRows = hasNext ? result.rows.slice(0, limit) : result.rows;
 
-    const loans: BorrowerLoan[] = trimmedRows.map((row: any) => ({
-      loanId: Number(row.loan_id),
-      principal: Number.parseFloat(row.principal || "0"),
-      accruedInterest: Number.parseFloat(row.accrued_interest || "0"),
-      totalRepaid: Number.parseFloat(row.total_repaid || "0"),
-      totalOwed: Number.parseFloat(row.total_owed || "0"),
-      nextPaymentDeadline: new Date(row.next_payment_deadline).toISOString(),
-      status: row.status as "active" | "repaid" | "defaulted",
-      borrower: row.borrower,
-      approvedAt: row.approved_at
-        ? new Date(row.approved_at).toISOString()
-        : null,
-    }));
+    const loans: BorrowerLoan[] = trimmedRows.map((row: any) => {
+      const isPending = row.status === "pending_indexing";
+      return {
+        loanId: Number(row.loan_id),
+        principal: Number.parseFloat(row.principal || "0"),
+        accruedInterest: isPending
+          ? null
+          : Number.parseFloat(row.accrued_interest || "0"),
+        totalRepaid: Number.parseFloat(row.total_repaid || "0"),
+        totalOwed: isPending ? null : Number.parseFloat(row.total_owed || "0"),
+        nextPaymentDeadline: new Date(row.next_payment_deadline).toISOString(),
+        status: row.status as
+          | "active"
+          | "repaid"
+          | "defaulted"
+          | "pending_indexing",
+        borrower: row.borrower,
+        approvedAt: row.approved_at
+          ? new Date(row.approved_at).toISOString()
+          : null,
+      };
+    });
 
     const lastLoan = loans.length > 0 ? loans[loans.length - 1] : undefined;
     const nextCursor = hasNext && lastLoan ? String(lastLoan.loanId) : null;
@@ -455,7 +472,8 @@ export const getLoanDetails = asyncHandler(
         `SELECT ledger, ledger_closed_at FROM loan_events WHERE loan_id = $1 AND ledger_closed_at <= $2 ORDER BY ledger_closed_at DESC LIMIT 1`,
         [loanId, disputeCreatedAt],
       );
-      freezeLedger = ledgerResult.rows.length > 0 ? ledgerResult.rows[0].ledger : null;
+      freezeLedger =
+        ledgerResult.rows.length > 0 ? ledgerResult.rows[0].ledger : null;
     }
 
     let elapsedLedgers: number;
@@ -465,29 +483,35 @@ export const getLoanDetails = asyncHandler(
       elapsedLedgers = Math.max(0, currentLedger - approvedLedger);
     }
 
-    const accruedInterest =
-      (principal * rateBps * elapsedLedgers) / (10000 * termLedgers);
-    const totalOwed = principal + accruedInterest - totalRepaid;
     const isDefaulted = events.some(
       (event: any) => event.event_type === "LoanDefaulted",
     );
+
+    const isPending = approvedLedger <= 0 || currentLedger < approvedLedger;
+
+    const accruedInterest = isPending
+      ? 0
+      : (principal * rateBps * elapsedLedgers) / (10000 * termLedgers);
+    const totalOwed = principal + accruedInterest - totalRepaid;
 
     res.json({
       success: true,
       loanId,
       summary: {
         principal,
-        accruedInterest,
+        accruedInterest: isPending ? null : accruedInterest,
         totalRepaid,
-        totalOwed,
+        totalOwed: isPending ? null : totalOwed,
         interestRate: rateBps / 10000,
         termLedgers,
         elapsedLedgers,
-        status: isDefaulted
-          ? "defaulted"
-          : totalOwed > 0.01
-            ? "active"
-            : "repaid",
+        status: isPending
+          ? "pending_indexing"
+          : isDefaulted
+            ? "defaulted"
+            : totalOwed > 0.01
+              ? "active"
+              : "repaid",
         requestedAt: requestEvent?.ledger_closed_at,
         approvedAt: approvalEvent?.ledger_closed_at,
         events: events.map((event: any) => ({
@@ -601,10 +625,33 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
+  // Idempotency: return existing unsigned tx if recently built for this borrower/amount
+  const cacheKey = `pending_loan_tx:${borrowerPublicKey}:${amount}`;
+  const cachedTx = await cacheService.get<{
+    unsignedTxXdr: string;
+    networkPassphrase: string;
+  }>(cacheKey);
+
+  if (cachedTx) {
+    logger.info("Returning cached unsigned loan request tx", {
+      borrower: borrowerPublicKey,
+      amount,
+    });
+    res.json({
+      success: true,
+      unsignedTxXdr: cachedTx.unsignedTxXdr,
+      networkPassphrase: cachedTx.networkPassphrase,
+    });
+    return;
+  }
+
   const result = await sorobanService.buildRequestLoanTx(
     borrowerPublicKey,
     amount,
   );
+
+  // Cache for 60 seconds to prevent sequence number collisions from rapid requests
+  await cacheService.set(cacheKey, result, 60);
 
   logger.info("Loan request transaction built", {
     borrower: borrowerPublicKey,
@@ -616,6 +663,7 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
     unsignedTxXdr: result.unsignedTxXdr,
     networkPassphrase: result.networkPassphrase,
   });
+  return;
 });
 
 /**
@@ -644,11 +692,36 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
     );
   }
 
+  // Idempotency: return existing unsigned tx if recently built for this borrower/loan/amount
+  const cacheKey = `pending_repay_tx:${borrowerPublicKey}:${loanIdNum}:${amount}`;
+  const cachedTx = await cacheService.get<{
+    unsignedTxXdr: string;
+    networkPassphrase: string;
+  }>(cacheKey);
+
+  if (cachedTx) {
+    logger.info("Returning cached unsigned repay tx", {
+      borrower: borrowerPublicKey,
+      loanId: loanIdNum,
+      amount,
+    });
+    res.json({
+      success: true,
+      loanId: loanIdNum,
+      unsignedTxXdr: cachedTx.unsignedTxXdr,
+      networkPassphrase: cachedTx.networkPassphrase,
+    });
+    return;
+  }
+
   const result = await sorobanService.buildRepayTx(
     borrowerPublicKey,
     loanIdNum,
     amount,
   );
+
+  // Cache for 60 seconds
+  await cacheService.set(cacheKey, result, 60);
 
   logger.info("Repay transaction built", {
     borrower: borrowerPublicKey,
@@ -662,6 +735,7 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
     unsignedTxXdr: result.unsignedTxXdr,
     networkPassphrase: result.networkPassphrase,
   });
+  return;
 });
 
 /**

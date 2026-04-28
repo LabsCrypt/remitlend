@@ -46,3 +46,40 @@ export const requireLoanBorrowerAccess = asyncHandler(
     next();
   },
 );
+
+/**
+ * After `requireJwtAuth`, ensures `req.params.loanId` refers to a loan whose
+ * borrower matches the JWT `publicKey`.
+ *
+ * Unlike `requireLoanBorrowerAccess`, this is intended for state-mutating
+ * borrower actions and does not allow role-based bypass.
+ */
+export const requireLoanOwnership = asyncHandler(async (req, res, next) => {
+  const loanId = req.params.loanId;
+  const pk = req.user?.publicKey;
+
+  if (!pk) {
+    throw AppError.unauthorized("Authentication required");
+  }
+  if (!loanId) {
+    throw AppError.badRequest("Loan ID is required");
+  }
+
+  const r = await query(
+    `SELECT borrower FROM loan_events WHERE loan_id = $1 LIMIT 1`,
+    [loanId],
+  );
+
+  const row = r.rows[0] as { borrower: string } | undefined;
+  if (!row) {
+    throw AppError.notFound("Loan not found");
+  }
+  if (row.borrower !== pk) {
+    throw AppError.forbidden(
+      "You are not authorized to access this loan",
+      ErrorCode.ACCESS_DENIED,
+    );
+  }
+
+  next();
+});

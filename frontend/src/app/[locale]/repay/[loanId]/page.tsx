@@ -30,6 +30,11 @@ function createDemoTxHash(): string {
 import { TransactionPreviewModal } from "../../../components/transaction/TransactionPreviewModal";
 import { useTransactionPreview } from "../../../hooks/useTransactionPreview";
 import { buildUnsignedRepaymentXdr } from "../../../utils/soroban";
+import {
+  buildAmountHelperText,
+  getPrecisionError,
+  sanitizeAmountInput,
+} from "../../../utils/amount";
 
 export default function RepayLoanPage() {
   const params = useParams<{ loanId: string }>();
@@ -52,6 +57,8 @@ export default function RepayLoanPage() {
   const [lastError, setLastError] = useState<TransactionErrorDetails | null>(null);
 
   const amountNumber = useMemo(() => Number(amount || "0"), [amount]);
+  const precisionError = getPrecisionError(amount, "USDC");
+  const helperText = buildAmountHelperText(amount, "USDC");
 
   const cancelFlow = () => {
     setTrackerState("cancelled");
@@ -65,6 +72,14 @@ export default function RepayLoanPage() {
     event.preventDefault();
     if (!isWalletConnected || !walletAddress) {
       toast.error("Wallet not connected", "Please connect your wallet first.");
+      return;
+    }
+    if (!amount || Number.isNaN(amountNumber) || amountNumber <= 0) {
+      toast.error("Invalid amount", "Enter a repayment amount greater than zero.");
+      return;
+    }
+    if (precisionError) {
+      toast.error("Invalid precision", precisionError);
       return;
     }
 
@@ -209,9 +224,21 @@ export default function RepayLoanPage() {
             onBlur={(event) => setAmount(formatAmountOnBlur(event.target.value, "USDC"))}
             className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-900 outline-none transition focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
           />
+          <p
+            className={`mt-2 text-xs ${
+              precisionError ? "text-red-600 dark:text-red-400" : "text-zinc-500 dark:text-zinc-400"
+            }`}
+          >
+            {precisionError ?? helperText ?? "Up to 7 decimal places supported."}
+          </p>
         </div>
 
-        <Button type="submit" className="w-full" isLoading={isSubmitting}>
+        <Button
+          type="submit"
+          className="w-full"
+          isLoading={isSubmitting}
+          disabled={!!precisionError}
+        >
           Review & Repay
         </Button>
       </form>

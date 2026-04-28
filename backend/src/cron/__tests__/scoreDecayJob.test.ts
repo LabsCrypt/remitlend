@@ -1,10 +1,12 @@
-
 import { jest } from "@jest/globals";
 
 // Explicitly type the mocks to match the real function signatures
 type Borrower = { id: string; score: number; last_repayment: string | null };
-const mockGetInactiveBorrowers: jest.MockedFunction<() => Promise<Borrower[]>> = jest.fn();
-const mockApplyScoreDecay: jest.MockedFunction<(b: Borrower) => Promise<number>> = jest.fn();
+const mockGetInactiveBorrowers: jest.MockedFunction<() => Promise<Borrower[]>> =
+  jest.fn();
+const mockApplyScoreDecay: jest.MockedFunction<
+  (b: Borrower) => Promise<number>
+> = jest.fn();
 
 jest.unstable_mockModule("../../services/scoreDecayService.js", () => ({
   getInactiveBorrowers: mockGetInactiveBorrowers,

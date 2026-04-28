@@ -17,7 +17,12 @@ const mockGetScoreConfig = jest
   }));
 
 const mockQuery = jest
-  .fn<() => Promise<{ rows: any[]; rowCount: number }>>()
+  .fn<
+    (
+      sql?: string,
+      params?: unknown[],
+    ) => Promise<{ rows: any[]; rowCount: number }>
+  >() // eslint-disable-line @typescript-eslint/no-explicit-any
   .mockResolvedValue({ rows: [], rowCount: 0 });
 
 // All ESM mocks must be declared before any dynamic import
@@ -26,6 +31,14 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  withTransaction: jest.fn<any>().mockImplementation(async (fn: any) =>
+    fn({
+      query: jest.fn((sql: string, params?: unknown[]) =>
+        mockQuery(sql, params ?? []),
+      ),
+    }),
+  ),
 }));
 
 jest.unstable_mockModule("../services/sorobanService.js", () => ({
@@ -33,6 +46,7 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 }));
 
 jest.unstable_mockModule("../services/webhookService.js", () => ({
+  SUPPORTED_WEBHOOK_EVENT_TYPES: [],
   webhookService: {
     dispatch: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
   },
@@ -120,10 +134,8 @@ describe("EventIndexer score delta wiring", () => {
 
   it("calls sorobanService.getScoreConfig for LoanRepaid events", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
       .mockResolvedValueOnce({ rows: [{ event_id: "evt-1" }], rowCount: 1 }) // INSERT
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // score upsert
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // score upsert
 
     const { storeEvents } = await buildIndexer();
     await storeEvents([makeEvent("evt-1", "LoanRepaid", "GABC")]);
@@ -133,10 +145,8 @@ describe("EventIndexer score delta wiring", () => {
 
   it("calls sorobanService.getScoreConfig for LoanDefaulted events", async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
-      .mockResolvedValueOnce({ rows: [{ event_id: "evt-2" }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+      .mockResolvedValueOnce({ rows: [{ event_id: "evt-2" }], rowCount: 1 }) // INSERT
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // score upsert
 
     const { storeEvents } = await buildIndexer();
     await storeEvents([makeEvent("evt-2", "LoanDefaulted", "GDEF")]);

@@ -15,7 +15,6 @@ import {
 import { requireJwtAuth } from "../middleware/jwtAuth.js";
 import { validateBody } from "../middleware/validation.js";
 
-
 const router = Router();
 
 // TEST/DEV ONLY: Register a test user

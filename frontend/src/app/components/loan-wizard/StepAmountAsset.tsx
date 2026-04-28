@@ -44,6 +44,8 @@ interface StepAmountAssetProps {
 export function StepAmountAsset({ data, onChange, onNext, error, onError }: StepAmountAssetProps) {
   const amountNumber = Number(data.amount || "0");
   const minAmount = 100;
+  const precisionError = getPrecisionError(data.amount, data.asset || "USDC");
+  const helperText = buildAmountHelperText(data.amount, data.asset || "USDC");
 
   const validate = (): boolean => {
     if (!data.amount || Number.isNaN(amountNumber) || amountNumber <= 0) {

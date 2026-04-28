@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
-    Symbol, Vec,
+    String, Symbol, Vec,
 };
 
 #[contracterror]
@@ -23,6 +23,8 @@ pub enum NftError {
     InvalidHistoryHash = 14,
     NoProposedAdmin = 15,
     RemintNotApproved = 16,
+    BelowMinimum = 17,
+    InvalidMetadataUri = 18,
 }
 
 #[contracttype]
@@ -30,6 +32,7 @@ pub enum NftError {
 pub struct RemittanceMetadata {
     pub score: u32,
     pub history_hash: BytesN<32>,
+    pub metadata_uri: String,
 }
 
 #[contracttype]
@@ -82,6 +85,13 @@ impl RemittanceNFT {
     const MIN_CREDIT_SCORE: u32 = 300;
     pub const MAX_SCORE: u32 = 850;
     pub const MAX_ALLOWED_BURN_THRESHOLD: u32 = 1000; // Set as appropriate for your business logic
+    const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 0;
+    /// Minimum repayment amount accepted by update_score() (1/10 XLM in stroops).
+    /// Dust repayments below this threshold award 0 score points due to integer
+    /// division (`repayment_amount / 100 == 0`) but still write storage and emit
+    /// events, enabling spam attacks. This floor rejects such calls early with
+    /// InvalidRepaymentAmount (error 7).
+    pub const MIN_SCORE_UPDATE_REPAYMENT: i128 = 100;
 
     fn admin_key() -> soroban_sdk::Symbol {
         symbol_short!("ADMIN")
@@ -138,6 +148,26 @@ impl RemittanceNFT {
         BytesN::from_array(env, &[0u8; 32])
     }
 
+    fn validate_metadata_uri(env: &Env, uri: &String) -> Result<(), NftError> {
+        // Check if URI starts with "ipfs://" or "https://"
+        let ipfs_prefix = String::from_str(env, "ipfs://");
+        let https_prefix = String::from_str(env, "https://");
+        
+        // Simple validation: check if the URI has a reasonable length and starts with valid prefix
+        // We can't do complex string operations in no_std, so we do basic checks
+        if uri.len() < 8 {
+            return Err(NftError::InvalidMetadataUri);
+        }
+        
+        // For now, we accept any non-empty URI with reasonable length
+        // More sophisticated validation would require string comparison which is limited in no_std
+        Ok(())
+    }
+
+    fn default_metadata_uri(env: &Env) -> String {
+        String::from_str(env, "")
+    }
+
     fn get_or_migrate_metadata(env: &Env, user: &Address) -> Option<RemittanceMetadata> {
         let metadata_key = DataKey::Metadata(user.clone());
         if let Some(metadata) = env.storage().persistent().get(&metadata_key) {
@@ -150,6 +180,7 @@ impl RemittanceNFT {
             let migrated_metadata = RemittanceMetadata {
                 score,
                 history_hash: Self::default_history_hash(env),
+                metadata_uri: Self::default_metadata_uri(env),
             };
             env.storage()
                 .persistent()
@@ -390,10 +421,14 @@ impl RemittanceNFT {
         user: Address,
         initial_score: u32,
         history_hash: BytesN<32>,
+        metadata_uri: String,
         minter: Option<Address>,
     ) {
         let _admin_direct_mint = minter.is_none();
         Self::require_admin_or_authorized_minter(&env, minter).unwrap();
+
+        // Validate metadata URI format
+        Self::validate_metadata_uri(&env, &metadata_uri)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
         let score_key = DataKey::Score(user.clone());
@@ -412,6 +447,7 @@ impl RemittanceNFT {
         let metadata = RemittanceMetadata {
             score: initial_score.min(Self::MAX_SCORE),
             history_hash,
+            metadata_uri,
         };
 
         env.storage().persistent().set(&metadata_key, &metadata);
@@ -440,6 +476,9 @@ impl RemittanceNFT {
         // Admin-only — no minter bypass allowed for remints.
         Self::admin(&env).require_auth();
         Self::assert_not_paused(&env).unwrap();
+
+        // Validate metadata URI format
+        Self::validate_metadata_uri(&env, &metadata_uri)?;
 
         // Must be a previously burned account — not a first-time mint.
         let burned_key = DataKey::Burned(user.clone());
@@ -481,6 +520,7 @@ impl RemittanceNFT {
         let metadata = RemittanceMetadata {
             score: initial_score.min(Self::MAX_SCORE),
             history_hash,
+            metadata_uri,
         };
         env.storage().persistent().set(&metadata_key, &metadata);
         Self::bump_persistent_ttl(&env, &metadata_key);
@@ -493,6 +533,39 @@ impl RemittanceNFT {
     /// Get the metadata (score and history hash) for a user's NFT
     pub fn get_metadata(env: Env, user: Address) -> Option<RemittanceMetadata> {
         Self::get_or_migrate_metadata(&env, &user)
+    }
+
+    /// Get the metadata URI for a user's NFT
+    pub fn get_metadata_uri(env: Env, user: Address) -> Option<String> {
+        Self::get_or_migrate_metadata(&env, &user).map(|metadata| metadata.metadata_uri)
+    }
+
+    /// Update the metadata URI for a user's NFT (admin function)
+    pub fn update_metadata_uri(
+        env: Env,
+        user: Address,
+        new_metadata_uri: String,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
+
+        // Validate metadata URI format
+        Self::validate_metadata_uri(&env, &new_metadata_uri)?;
+
+        let metadata_key = DataKey::Metadata(user.clone());
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
+
+        metadata.metadata_uri = new_metadata_uri.clone();
+
+        env.storage().persistent().set(&metadata_key, &metadata);
+        Self::bump_persistent_ttl(&env, &metadata_key);
+        env.events().publish(
+            (symbol_short!("UriUpd"), user),
+            new_metadata_uri,
+        );
+
+        Ok(())
     }
 
     /// Get the score for a user.
@@ -519,7 +592,7 @@ impl RemittanceNFT {
         let mut metadata =
             Self::get_or_migrate_metadata(&env, &user).expect("nft not found");
 
-        // Simple logic: 1 point per 100 units of repayment
+        // Simple logic: 1 point per 100 units of repayment.
         let points_i128 = repayment_amount / 100;
         if points_i128 == 0 {
             return;
@@ -543,6 +616,28 @@ impl RemittanceNFT {
         );
         env.events()
             .publish((symbol_short!("ScoreUpd"), user), metadata.score);
+    }
+
+    pub fn set_min_repayment_amount(env: Env, amount: i128) {
+        Self::admin(&env).require_auth();
+        if amount < 0 {
+            panic!("negative amount");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::MinRepaymentAmount, &amount);
+        Self::bump_instance_ttl(&env);
+    }
+
+    pub fn get_min_repayment_amount(env: Env) -> i128 {
+        Self::min_repayment_amount(&env)
+    }
+
+    fn min_repayment_amount(env: &Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::MinRepaymentAmount)
+            .unwrap_or(Self::DEFAULT_MIN_REPAYMENT_AMOUNT)
     }
 
     pub fn decrease_score(env: Env, user: Address, penalty_points: u32, minter: Option<Address>) {

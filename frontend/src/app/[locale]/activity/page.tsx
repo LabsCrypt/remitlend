@@ -8,16 +8,31 @@ import { useLoans, useRemittances } from "../../hooks/useApi";
 import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 import { StatusIndicator } from "../../components/ui/StatusIndicator";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { downloadCsv, rowsToCsv } from "../../utils/csv";
 
 type FilterType = "all" | "loan" | "remittance";
 
 interface ActivityItem {
   id: string;
-  type: "Loan Request" | "Loan Active" | "Loan Repaid" | "Loan Defaulted" | "Remittance";
+  type:
+    | "Loan Request"
+    | "Loan Active"
+    | "Loan Repaid"
+    | "Loan Defaulted"
+    | "Loan Liquidated"
+    | "Remittance";
   description: string;
   amount: string;
   timestamp: string;
-  status: "pending" | "active" | "completed" | "repaid" | "failed" | "defaulted" | "processing";
+  status:
+    | "pending"
+    | "active"
+    | "completed"
+    | "repaid"
+    | "failed"
+    | "defaulted"
+    | "liquidated"
+    | "processing";
   txHash?: string;
 }
 
@@ -44,11 +59,13 @@ export default function ActivityPage() {
       type:
         loan.status === "repaid"
           ? "Loan Repaid"
-          : loan.status === "defaulted"
-            ? "Loan Defaulted"
-            : loan.status === "active"
-              ? "Loan Active"
-              : "Loan Request",
+          : loan.status === "liquidated"
+            ? "Loan Liquidated"
+            : loan.status === "defaulted"
+              ? "Loan Defaulted"
+              : loan.status === "active"
+                ? "Loan Active"
+                : "Loan Request",
       description: `Loan #${loan.id} — ${loan.currency}`,
       amount: `${loan.status === "repaid" ? "+" : "-"}${formatCurrency(loan.amount)}`,
       timestamp: new Date(loan.createdAt).toISOString(),
@@ -85,6 +102,21 @@ export default function ActivityPage() {
   const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
   const paginatedActivity = allActivity.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
+  function handleExportCsv() {
+    const today = new Date().toISOString().split("T")[0];
+    const rows = allActivity.map((item) => ({
+      date: formatDate(item.timestamp),
+      type: item.type,
+      amount: item.amount,
+      status: item.status,
+      transactionHash: item.txHash ?? "",
+      stellarExplorerLink: item.txHash
+        ? `https://stellar.expert/explorer/public/tx/${item.txHash}`
+        : "",
+    }));
+    downloadCsv(`remitlend-activity-${today}.csv`, rowsToCsv(rows));
+  }
+
   if (!isConnected) {
     return (
       <main className="space-y-8 min-h-screen p-8 lg:p-12 max-w-4xl mx-auto animate-in fade-in duration-500">
@@ -103,12 +135,22 @@ export default function ActivityPage() {
 
   return (
     <main className="space-y-8 min-h-screen p-8 lg:p-12 max-w-4xl mx-auto">
-      <header>
-        <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-          <Clock className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
-          {t("title")}
-        </h1>
-        <p className="text-zinc-500 dark:text-zinc-400 mt-2">{t("description")}</p>
+      <header className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
+            <Clock className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+            {t("title")}
+          </h1>
+          <p className="text-zinc-500 dark:text-zinc-400 mt-2">{t("description")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={allActivity.length === 0 || isLoading}
+          className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+        >
+          Export CSV
+        </button>
       </header>
 
       <ErrorBoundary scope="activity filters" variant="section">
@@ -170,7 +212,9 @@ export default function ActivityPage() {
                       className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                         item.status === "completed" || item.status === "repaid"
                           ? "bg-green-50 dark:bg-green-500/10"
-                          : item.status === "failed" || item.status === "defaulted"
+                          : item.status === "failed" ||
+                              item.status === "defaulted" ||
+                              item.status === "liquidated"
                             ? "bg-red-50 dark:bg-red-500/10"
                             : "bg-indigo-50 dark:bg-indigo-500/10"
                       }`}
@@ -179,7 +223,9 @@ export default function ActivityPage() {
                       {item.amount.startsWith("+") ? (
                         <ArrowDownLeft
                           className={`h-5 w-5 ${
-                            item.status === "failed" || item.status === "defaulted"
+                            item.status === "failed" ||
+                            item.status === "defaulted" ||
+                            item.status === "liquidated"
                               ? "text-red-600 dark:text-red-400"
                               : "text-green-600 dark:text-green-400"
                           }`}
@@ -305,6 +351,7 @@ function getStatusTone(status: string): "success" | "warning" | "danger" | "info
       return "warning";
     case "failed":
     case "defaulted":
+    case "liquidated":
       return "danger";
     case "active":
       return "info";

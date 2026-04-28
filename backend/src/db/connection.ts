@@ -1,5 +1,7 @@
-import pg from "pg";
+import pg, { type PoolClient } from "pg";
 import logger from "../utils/logger.js";
+
+export type { PoolClient };
 
 const { Pool } = pg;
 
@@ -40,15 +42,17 @@ pool.on("error", (err: Error) => {
 });
 
 // Helper for transient failures
-const TRANSIENT_ERRORS = [
+export const TRANSIENT_ERROR_CODES = new Set([
   "ECONNREFUSED",
   "08000",
   "08003",
   "08006",
-  "57P01",
-  "57P02",
-  "57P03",
-];
+  "57P01", // admin_shutdown
+  "57P02", // crash_shutdown
+  "57P03", // cannot_connect_now
+  "40001", // serialization_failure
+  "40P01", // deadlock_detected
+]);
 const MAX_RETRIES = 3;
 
 const withRetry = async <T>(
@@ -59,7 +63,7 @@ const withRetry = async <T>(
   try {
     return await operation();
   } catch (error: any) {
-    if (retries > 0 && TRANSIENT_ERRORS.includes(error.code)) {
+    if (retries > 0 && TRANSIENT_ERROR_CODES.has(error.code)) {
       logger.warn(
         `Transient db error (${error.code}). Retrying in ${delay}ms... (${retries} retries left)`,
       );
@@ -69,6 +73,59 @@ const withRetry = async <T>(
     throw error;
   }
 };
+
+/**
+ * Execute `fn` inside a single dedicated database transaction.
+ *
+ * A single PoolClient is checked out for the lifetime of the call so that
+ * BEGIN / all DML / COMMIT all run on the **same** PostgreSQL connection.
+ * If `fn` throws, or if any transient error is encountered, the transaction
+ * is rolled back and the error is re-thrown after up to `maxRetries` attempts
+ * with exponential back-off.
+ *
+ * @param fn         Callback that receives the pinned client.
+ * @param maxRetries Number of retry attempts on transient errors (default 3).
+ * @param baseDelayMs Initial back-off delay in milliseconds (doubles each retry).
+ */
+export async function withTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>,
+  maxRetries = 3,
+  baseDelayMs = 200,
+): Promise<T> {
+  let attempt = 0;
+
+  while (true) {
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+      const result = await fn(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error: any) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        logger.error("Failed to rollback transaction", { rollbackError });
+      }
+
+      const isTransient = TRANSIENT_ERROR_CODES.has(error?.code);
+      if (isTransient && attempt < maxRetries) {
+        const delay = baseDelayMs * 2 ** attempt;
+        attempt++;
+        logger.warn(
+          `Transient DB error in transaction (${error.code}). ` +
+            `Retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
 
 const checkExhaustion = () => {
   if (pool.totalCount >= maxPoolSize && pool.idleCount === 0) {

@@ -141,7 +141,7 @@ export function Header({ onMenuClick, className }: HeaderProps) {
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setDebouncedQuery(query);
-    }, 250);
+    }, 300);
 
     return () => window.clearTimeout(timeout);
   }, [query]);

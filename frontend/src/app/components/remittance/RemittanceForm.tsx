@@ -26,6 +26,8 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
 
   const txPreview = useTransactionPreview();
   const mutation = useCreateRemittance();
+  const precisionError = getPrecisionError(amount, token);
+  const helperText = buildAmountHelperText(amount, token);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -67,7 +69,7 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
   };
 
   const handleAmountChange = (value: string) => {
-    setAmount(value);
+    setAmount(sanitizeAmountInput(value));
     if (errors.amount) {
       setErrors({ ...errors, amount: "" });
     }
@@ -88,7 +90,7 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
       return;
     }
 
-    const numAmount = parseFloat(amount);
+    const numAmount = parseAmount(amount);
 
     const previewData = formatRemittanceSend({
       amount: numAmount,
@@ -183,7 +185,8 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
             <Input
               id="amount"
               label="Amount"
-              type="number"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
@@ -195,13 +198,6 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
               className={errors.amount ? "border-red-600" : ""}
               helperText={getAssetPrecisionHelperText(token)}
             />
-
-            {errors.amount && (
-              <div className="mt-1 flex items-start gap-2 text-sm text-red-600">
-                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <span>{errors.amount}</span>
-              </div>
-            )}
 
             <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2">
               <span className="text-red-600">*</span> Required field
@@ -253,7 +249,7 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
             <div className="flex gap-3 pt-4">
               <Button
                 onClick={handleReviewTransaction}
-                disabled={mutation.isPending || !recipientAddress || !amount}
+                disabled={mutation.isPending || !recipientAddress || !amount || !!precisionError}
                 className="flex-1"
               >
                 {mutation.isPending ? (
