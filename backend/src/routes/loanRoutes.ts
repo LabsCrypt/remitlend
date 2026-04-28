@@ -19,7 +19,7 @@ import {
 } from "../middleware/jwtAuth.js";
 import {
   requireLoanBorrowerAccess,
-  requireLoanOwnership,
+  requireLoanOwner,
 } from "../middleware/loanAccess.js";
 import {
   validate,
@@ -48,7 +48,7 @@ if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
   router.post(
     "/:loanId/mark-defaulted",
     requireJwtAuth,
-    requireLoanOwnership,
+    requireLoanOwner,
     markLoanDefaulted,
   );
 }
@@ -58,7 +58,7 @@ if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
   router.post(
     "/:loanId/mark-defaulted",
     requireJwtAuth,
-    requireLoanOwnership,
+    requireLoanOwner,
     markLoanDefaulted,
   );
 }
@@ -116,7 +116,7 @@ router.post(
 router.post(
   "/:loanId/contest-default",
   requireJwtAuth,
-  requireLoanOwnership,
+  requireLoanOwner,
   contestDefault,
 );
 
@@ -358,7 +358,7 @@ router.post(
 router.post(
   "/:loanId/repay",
   requireJwtAuth,
-  requireLoanOwnership,
+  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(repayLoanSchema),
   idempotencyMiddleware,
@@ -413,7 +413,7 @@ router.post(
 router.post(
   "/:loanId/submit",
   requireJwtAuth,
-  requireLoanOwnership,
+  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(submitTxSchema),
   idempotencyMiddleware,
