@@ -1,6 +1,7 @@
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
 import type { Response } from "express";
+import twilio from "twilio";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,15 +41,38 @@ interface CreateNotificationParams {
 type SseClient = Response;
 const sseClients = new Map<string, Set<SseClient>>();
 
-// SendGrid / Twilio placeholders (would be imported from a config/provider file in a real app)
+// SendGrid / Twilio initialization
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
+
 async function sendEmail(email: string, message: string) {
   logger.info(`[Email] Sending to ${email}: ${message}`);
   // await sgMail.send({ to: email, ... });
 }
 
 async function sendSMS(phone: string, message: string) {
-  logger.info(`[SMS] Sending to ${phone}: ${message}`);
-  // await twilio.messages.create({ to: phone, ... });
+  if (!twilioClient) {
+    logger.warn("[SMS] Twilio not configured, skipping SMS");
+    return;
+  }
+
+  if (!process.env.TWILIO_PHONE_NUMBER) {
+    logger.error("[SMS] TWILIO_PHONE_NUMBER not configured");
+    return;
+  }
+
+  try {
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phone,
+    });
+    logger.info(`[SMS] Successfully sent to ${phone}`);
+  } catch (error) {
+    logger.error("[SMS] Failed to send message", { phone, error });
+    // Don't throw - we don't want SMS failures to break the notification flow
+  }
 }
 
 class NotificationService {
