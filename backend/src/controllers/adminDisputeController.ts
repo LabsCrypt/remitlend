@@ -87,7 +87,6 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
     );
   }
 
-<<<<<<< HEAD
   // Notify borrower via notifications + SSE (and external email if enabled)
   try {
     const msg = `Your dispute for loan ${dispute.loan_id} has been resolved: ${resolution}`;
@@ -106,36 +105,6 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true, message: "Dispute resolved." });
-=======
-  // Notify borrower about dispute resolution
-  try {
-    const notificationTitle =
-      action === "confirm"
-        ? "Dispute Resolved: Default Confirmed"
-        : "Dispute Resolved: Default Reversed";
-
-    const notificationMessage =
-      action === "confirm"
-        ? `Your loan dispute (Loan #${dispute.loan_id}) has been reviewed and the default status has been confirmed. Admin note: ${adminNote || resolution}`
-        : `Your loan dispute (Loan #${dispute.loan_id}) has been reviewed and the default status has been reversed. Your loan is now active. Admin note: ${adminNote || resolution}`;
-
-    await notificationService.createNotification({
-      userId: dispute.borrower,
-      type: action === "confirm" ? "loan_defaulted" : "repayment_confirmed",
-      title: notificationTitle,
-      message: notificationMessage,
-      loanId: dispute.loan_id,
-    });
-  } catch (error) {
-    // Log error but don't fail the entire resolution
-    console.error("Failed to send dispute resolution notification:", error);
-  }
-
-  res.json({
-    success: true,
-    message: "Dispute resolved and borrower notified.",
-  });
->>>>>>> main
 });
 
 /**
