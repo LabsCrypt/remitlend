@@ -23,35 +23,62 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
   const daysUntil = getDaysUntilDeadline(loan.nextPaymentDeadline);
   const isOverdue = daysUntil < 0;
   const isUrgent = daysUntil >= 0 && daysUntil <= 7;
+  const isLiquidated = loan.status === "liquidated";
+  const isDefaulted = loan.status === "defaulted";
+  const isTerminalDistressed = isDefaulted || isLiquidated;
 
   // ── Badge ──────────────────────────────────────────────────────────────────
   const badge =
     variant === "detailed"
       ? {
-          label: isOverdue ? "Overdue" : isUrgent ? "Due Soon" : "On Track",
-          className: isOverdue
-            ? "bg-red-100 text-red-800"
-            : isUrgent
-              ? "bg-yellow-100 text-yellow-800"
-              : "bg-green-100 text-green-800",
+          label: isLiquidated
+            ? "Liquidated"
+            : isDefaulted
+              ? "Defaulted"
+              : isOverdue
+                ? "Overdue"
+                : isUrgent
+                  ? "Due Soon"
+                  : "On Track",
+          className: isTerminalDistressed
+            ? "bg-red-900 text-white"
+            : isOverdue
+              ? "bg-red-100 text-red-800"
+              : isUrgent
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-green-100 text-green-800",
         }
       : null;
 
   // ── Deadline colours ───────────────────────────────────────────────────────
-  const deadlineBg = isOverdue ? "bg-red-50" : isUrgent ? "bg-yellow-50" : "bg-gray-50";
-  const deadlineTextColor = isOverdue
-    ? "text-red-600"
-    : isUrgent
-      ? "text-yellow-600"
-      : "text-gray-900";
-  const deadlineSubColor = isOverdue
-    ? "text-red-600"
-    : isUrgent
-      ? "text-yellow-600"
-      : "text-gray-600";
-  const deadlineLabel = isOverdue
-    ? `${Math.abs(daysUntil)} days overdue`
-    : `${daysUntil} days remaining`;
+  const deadlineBg = isTerminalDistressed
+    ? "bg-red-900/20"
+    : isOverdue
+      ? "bg-red-50"
+      : isUrgent
+        ? "bg-yellow-50"
+        : "bg-gray-50";
+  const deadlineTextColor = isTerminalDistressed
+    ? "text-red-900"
+    : isOverdue
+      ? "text-red-600"
+      : isUrgent
+        ? "text-yellow-600"
+        : "text-gray-900";
+  const deadlineSubColor = isTerminalDistressed
+    ? "text-red-700"
+    : isOverdue
+      ? "text-red-600"
+      : isUrgent
+        ? "text-yellow-600"
+        : "text-gray-600";
+  const deadlineLabel = isLiquidated
+    ? "Collateral was liquidated"
+    : isDefaulted
+      ? "Contact support to recover"
+      : isOverdue
+        ? `${Math.abs(daysUntil)} days overdue`
+        : `${daysUntil} days remaining`;
 
   // ── Progress (detailed only) ───────────────────────────────────────────────
   const totalForProgress = loan.principal + loan.accruedInterest;
@@ -133,16 +160,33 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
 
       {/* Actions */}
       <div className="flex gap-3">
-        <Button
-          onClick={() => router.push(`/repay/${loan.id}`)}
-          className="flex-1"
-          variant={isOverdue || isUrgent ? "primary" : "outline"}
-        >
-          {isOverdue ? "Pay Now (Overdue)" : "Repay Now"}
-        </Button>
-        <Button variant="outline" onClick={() => router.push(`/loans/${loan.id}`)}>
-          {variant === "compact" ? "View Details" : "Details"}
-        </Button>
+        {isTerminalDistressed ? (
+          <>
+            <Button
+              onClick={() => router.push(`/loans/${loan.id}`)}
+              className="flex-1"
+              variant="primary"
+            >
+              Contact Support
+            </Button>
+            <Button variant="outline" onClick={() => router.push(`/loans/${loan.id}`)}>
+              {variant === "compact" ? "View Details" : "Details"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              onClick={() => router.push(`/repay/${loan.id}`)}
+              className="flex-1"
+              variant={isOverdue || isUrgent ? "primary" : "outline"}
+            >
+              {isOverdue ? "Pay Now (Overdue)" : "Repay Now"}
+            </Button>
+            <Button variant="outline" onClick={() => router.push(`/loans/${loan.id}`)}>
+              {variant === "compact" ? "View Details" : "Details"}
+            </Button>
+          </>
+        )}
       </div>
     </Card>
   );

@@ -19,6 +19,7 @@ import { PaginationControls } from "../../components/ui/PaginationControls";
 import { Spinner } from "../../components/global_ui/Spinner";
 import { TransactionsSkeleton } from "../../components/skeletons/TransactionsSkeleton";
 import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
+import { downloadCsv, rowsToCsv } from "../../utils/csv";
 import {
   useWalletStore,
   selectWalletAddress,
@@ -339,13 +340,43 @@ function TransactionHistoryCard({
     return `${parseFloat(p.amount).toLocaleString("en-US", { maximumFractionDigits: 7 })} ${asset}`;
   }
 
+  function exportCsv() {
+    const today = new Date().toISOString().split("T")[0];
+    const rows = payments.map((p) => {
+      const asset = p.asset_type === "native" ? "XLM" : (p.asset_code ?? "");
+      return {
+        date: p.created_at,
+        type: paymentLabel(p),
+        amount: p.amount ?? "",
+        asset,
+        status: "success",
+        transactionHash: p.transaction_hash,
+        stellarExplorerLink: `${explorerBase}/tx/${p.transaction_hash}`,
+      };
+    });
+
+    downloadCsv(`remitlend-activity-${today}.csv`, rowsToCsv(rows));
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Transaction History</CardTitle>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-          Recent payments from Stellar Horizon
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Transaction History</CardTitle>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+              Recent payments from Stellar Horizon
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={payments.length === 0 || isLoading || isError}
+            className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            Export CSV
+          </button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (

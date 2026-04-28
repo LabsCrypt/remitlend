@@ -19,6 +19,7 @@ pub enum PoolError {
     InsufficientLiquidity = 7,
     InvalidMaxPoolSize = 9,
     NoProposedAdmin = 10,
+    CooldownTooLong = 11,
 }
 
 /// Storage keys.
@@ -77,6 +78,8 @@ impl LendingPool {
     const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 3;
     const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
+    const SHARE_PRICE_SCALE: i128 = 1_000_000;
+    const MAX_WITHDRAWAL_COOLDOWN_LEDGERS: u32 = 17_280 * 30;
 
     // ── TTL helpers ───────────────────────────────────────────────────────
 
@@ -348,8 +351,11 @@ impl LendingPool {
         Ok(())
     }
 
-    pub fn set_withdrawal_cooldown(env: Env, ledgers: u32) {
+    pub fn set_withdrawal_cooldown(env: Env, ledgers: u32) -> Result<(), PoolError> {
         Self::admin(&env).require_auth();
+        if ledgers > Self::MAX_WITHDRAWAL_COOLDOWN_LEDGERS {
+            return Err(PoolError::CooldownTooLong);
+        }
 
         let old_cooldown = Self::get_withdrawal_cooldown(env.clone());
 
@@ -359,6 +365,7 @@ impl LendingPool {
         Self::bump_instance_ttl(&env);
 
         withdrawal_cooldown_updated(&env, old_cooldown, ledgers);
+        Ok(())
     }
 
     pub fn get_max_pool_size(env: Env, token: Address) -> i128 {
@@ -479,6 +486,28 @@ impl LendingPool {
         Ok(())
     }
 
+    /// Returns `(shares, current_asset_value)` for `provider` in the `token` pool.
+    ///
+    /// Net yield = `current_asset_value - original_deposit`.  Since original
+    /// deposit amounts are not stored per-depositor, callers derive yield by
+    /// comparing `current_asset_value` against their own recorded cost basis.
+    pub fn get_depositor_yield(env: Env, provider: Address, token: Address) -> (i128, i128) {
+        let shares = Self::read_shares(&env, &provider, &token);
+        if shares == 0 {
+            return (0, 0);
+        }
+        let cur_total_shares = Self::total_shares(&env, &token);
+        if cur_total_shares == 0 {
+            return (shares, 0);
+        }
+        let asset_value = Self::calc_assets_to_redeem(
+            shares,
+            Self::read_pool_balance(&env, &token),
+            cur_total_shares,
+        );
+        (shares, asset_value)
+    }
+
     /// Underlying asset value of `provider`'s LP shares (principal + yield).
     pub fn get_deposit(env: Env, provider: Address, token: Address) -> i128 {
         let shares = Self::read_shares(&env, &provider, &token);
@@ -499,6 +528,20 @@ impl LendingPool {
     /// Raw LP share balance for `provider` in the `token` pool.
     pub fn get_shares(env: Env, provider: Address, token: Address) -> i128 {
         Self::read_shares(&env, &provider, &token)
+    }
+
+    /// Current LP share price scaled by `SHARE_PRICE_SCALE`.
+    /// `1_000_000` means 1.0 underlying asset per share.
+    pub fn get_share_price(env: Env, token: Address) -> i128 {
+        let total_shares = Self::total_shares(&env, &token);
+        if total_shares <= 0 {
+            return Self::SHARE_PRICE_SCALE;
+        }
+
+        Self::read_pool_balance(&env, &token)
+            .checked_mul(Self::SHARE_PRICE_SCALE)
+            .and_then(|v| v.checked_div(total_shares))
+            .expect("share price overflow")
     }
 
     /// Burn `shares` LP tokens and receive the proportional underlying assets.

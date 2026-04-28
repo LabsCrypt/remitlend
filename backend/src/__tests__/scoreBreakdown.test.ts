@@ -5,6 +5,7 @@ import request from "supertest";
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: jest.fn(),
   getClient: jest.fn(),
+  withTransaction: jest.fn(),
   default: {
     query: jest.fn(),
   },
@@ -47,27 +48,38 @@ describe("GET /api/score/:userId/breakdown", () => {
   });
 
   it("should return a breakdown for a valid userId", async () => {
-    // Mock the chain of queries in the breakdown endpoint
+    // Mock the optimized single CTE query (returns all breakdown metrics)
     mockedQuery
-      .mockResolvedValueOnce({ rows: [{ current_score: 720 }] } as any) // Score
       .mockResolvedValueOnce({
         rows: [
           {
-            total_loans: "5",
-            repaid_count: "4",
-            defaulted_count: "0",
-            total_repaid: "5000",
+            current_score: 720,
+            total_loans: 5,
+            repaid_count: 4,
+            defaulted_count: 0,
+            total_repaid: 5000,
+            on_time_count: 3,
+            late_count: 1,
+            avg_repayment_ledgers: 17280,
           },
         ],
-      } as any) // Stats
-      .mockResolvedValueOnce({ rows: [{ on_time: "3", late: "1" }] } as any) // Timing
-      .mockResolvedValueOnce({ rows: [{ avg_ledgers: "17280" }] } as any) // Avg time
+      } as any) // Single CTE breakdown query
       .mockResolvedValueOnce({
-        rows: [{ on_time: true }, { on_time: true }, { on_time: true }],
-      } as any) // Streak
-      .mockResolvedValueOnce({
-        rows: [{ date: "2026-03-01", event: "LoanRepaid" }],
-      } as any); // History
+        rows: [
+          {
+            event_type: "LoanRepaid",
+            ledger_closed_at: "2026-03-01T10:00:00Z",
+          },
+          {
+            event_type: "LoanRepaid",
+            ledger_closed_at: "2026-03-05T10:00:00Z",
+          },
+          {
+            event_type: "LoanRepaid",
+            ledger_closed_at: "2026-03-10T10:00:00Z",
+          },
+        ],
+      } as any); // History query
 
     const response = await request(app)
       .get("/api/score/user123/breakdown")
@@ -76,10 +88,17 @@ describe("GET /api/score/:userId/breakdown", () => {
     expect(response.status).toBe(200);
     expect(response.body.score).toBe(720);
     expect(response.body.breakdown.totalLoans).toBe(5);
+    expect(response.body.breakdown.repaidOnTime).toBe(3);
+    expect(response.body.breakdown.repaidLate).toBe(1);
+    expect(response.body.breakdown.defaulted).toBe(0);
+    expect(response.body.history).toHaveLength(3);
   });
 
   it("should return default values for a user with no history", async () => {
-    mockedQuery.mockResolvedValue({ rows: [] } as any);
+    // Mock empty breakdown and history queries
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [] } as any) // Empty breakdown
+      .mockResolvedValueOnce({ rows: [] } as any); // Empty history
 
     const response = await request(app)
       .get("/api/score/newuser/breakdown")
@@ -88,5 +107,7 @@ describe("GET /api/score/:userId/breakdown", () => {
     expect(response.status).toBe(200);
     expect(response.body.score).toBe(500);
     expect(response.body.breakdown.totalLoans).toBe(0);
+    expect(response.body.breakdown.repaidOnTime).toBe(0);
+    expect(response.body.history).toHaveLength(0);
   });
 });

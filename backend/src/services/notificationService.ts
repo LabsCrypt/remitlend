@@ -1,6 +1,7 @@
 import { query } from "../db/connection.js";
 import logger from "../utils/logger.js";
 import type { Response } from "express";
+import twilio from "twilio";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,43 @@ interface CreateNotificationParams {
 type SseClient = Response;
 const sseClients = new Map<string, Set<SseClient>>();
 
-// ─── Notification Service ─────────────────────────────────────────────────────
+// Initialize Twilio client if credentials are provided
+const twilioClient =
+  process.env.TWILIO_ACCOUNT_SID &&
+  process.env.TWILIO_AUTH_TOKEN &&
+  process.env.TWILIO_PHONE_NUMBER
+    ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    : null;
+
+// SendGrid / Twilio placeholders (would be imported from a config/provider file in a real app)
+async function sendEmail(email: string, message: string) {
+  logger.info(`[Email] Sending to ${email}: ${message}`);
+  // await sgMail.send({ to: email, ... });
+}
+
+async function sendSMS(phone: string, message: string) {
+  if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
+    logger.warn(
+      `[SMS] Twilio not configured. Would send to ${phone}: ${message}`,
+    );
+    return;
+  }
+
+  try {
+    const result = await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phone,
+    });
+    logger.info(`[SMS] Sent to ${phone}: ${message}`, { sid: result.sid });
+  } catch (error) {
+    logger.error(`[SMS] Failed to send to ${phone}`, {
+      error: error instanceof Error ? error.message : String(error),
+      phone,
+    });
+    // Swallow error - don't fail the notification creation
+  }
+}
 
 class NotificationService {
   /**
@@ -61,7 +98,48 @@ class NotificationService {
 
     const notification = this.mapRow(result.rows[0]);
     this.broadcast(userId, notification);
+
+    // Also trigger external notifications
+    await this.notifyUserExternal(userId, message, type);
+
     return notification;
+  }
+
+  /**
+   * Sends external notifications (Email/SMS) based on user preferences.
+   * SMS is triggered for repayment_due and loan_defaulted events.
+   */
+  private async notifyUserExternal(
+    userId: string,
+    message: string,
+    type: NotificationType,
+  ) {
+    try {
+      const result = await query(
+        `SELECT email, phone, email_enabled, sms_enabled 
+         FROM user_profiles 
+         WHERE public_key = $1`,
+        [userId],
+      );
+
+      if (result.rows.length === 0) return;
+
+      const user = result.rows[0];
+
+      if (user.email_enabled && user.email) {
+        await sendEmail(user.email, message);
+      }
+
+      // Trigger SMS for critical events: repayment_due and loan_defaulted
+      const smsEnabledForType =
+        type === "repayment_due" || type === "loan_defaulted";
+
+      if (user.sms_enabled && user.phone && smsEnabledForType) {
+        await sendSMS(user.phone, message);
+      }
+    } catch (error) {
+      logger.error("Error sending external notifications", { userId, error });
+    }
   }
 
   /**
@@ -242,7 +320,8 @@ class NotificationService {
       title: row.title as string,
       message: row.message as string,
       read: row.read as boolean,
-      status: (row.status as NotificationStatus) ?? (row.read ? "read" : "unread"),
+      status:
+        (row.status as NotificationStatus) ?? (row.read ? "read" : "unread"),
       createdAt: new Date(row.created_at as string),
     };
     return loanId !== undefined ? { ...base, loanId } : base;
@@ -259,7 +338,10 @@ let cleanupInterval: ReturnType<typeof setInterval> | undefined;
 export function startNotificationCleanupScheduler(): void {
   if (cleanupInterval) return;
 
-  const retentionDays = parseInt(process.env.NOTIFICATION_RETENTION_DAYS || "90", 10);
+  const retentionDays = parseInt(
+    process.env.NOTIFICATION_RETENTION_DAYS || "90",
+    10,
+  );
   const readRetentionDays = parseInt(
     process.env.READ_NOTIFICATION_RETENTION_DAYS || "30",
     10,

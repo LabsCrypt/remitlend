@@ -1,5 +1,5 @@
 import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
-import { query } from "../db/connection.js";
+import { type PoolClient, query, withTransaction } from "../db/connection.js";
 import logger from "../utils/logger.js";
 import {
   createRequestId,
@@ -7,6 +7,7 @@ import {
 } from "../utils/requestContext.js";
 import {
   type IndexedLoanEvent,
+  SUPPORTED_WEBHOOK_EVENT_TYPES,
   type WebhookEventType,
   webhookService,
 } from "./webhookService.js";
@@ -17,6 +18,18 @@ import {
 } from "./notificationService.js";
 import { sorobanService } from "./sorobanService.js";
 import { updateUserScoresBulk } from "./scoresService.js";
+import { AppError } from "../errors/AppError.js";
+
+const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
+  Mint: "NFTMinted",
+  AdmRemint: "NFTMinted",
+  ScoreUpd: "ScoreUpdated",
+  Seized: "NFTSeized",
+  NftBurned: "NFTBurned",
+  GovProp: "ProposalCreated",
+  GovAppr: "ProposalApproved",
+  GovFin: "ProposalFinalized",
+};
 
 export interface SorobanRawEvent {
   id: string;
@@ -45,7 +58,9 @@ interface LoanEvent extends IndexedLoanEvent {
 
 interface EventIndexerConfig {
   rpcUrl: string;
-  contractId: string;
+  contractId?: string;
+  contractIds?: string[];
+  contractConfigs?: Array<{ contractId: string }>;
   pollIntervalMs?: number;
   batchSize?: number;
 }
@@ -62,7 +77,7 @@ interface ProcessChunkResult {
 
 export class EventIndexer {
   private readonly rpc: SorobanRpc.Server;
-  private readonly contractId: string;
+  private readonly contractIds: string[];
   private readonly pollIntervalMs: number;
   private readonly batchSize: number;
   private readonly quarantineAlertThreshold: number;
@@ -88,14 +103,26 @@ export class EventIndexer {
         throw new Error("contractId is required when using rpcUrl constructor");
       }
       this.rpc = new SorobanRpc.Server(configOrRpcUrl);
-      this.contractId = contractId;
+      this.contractIds = [contractId];
       this.pollIntervalMs = 30_000;
       this.batchSize = 100;
       return;
     }
 
     this.rpc = new SorobanRpc.Server(configOrRpcUrl.rpcUrl);
-    this.contractId = configOrRpcUrl.contractId;
+    const configuredIds = configOrRpcUrl.contractIds ?? [];
+    const configuredFromObjects = (configOrRpcUrl.contractConfigs ?? []).map(
+      (config) => config.contractId,
+    );
+    const normalized = [
+      ...configuredFromObjects,
+      ...configuredIds,
+      ...(configOrRpcUrl.contractId ? [configOrRpcUrl.contractId] : []),
+    ].filter(Boolean);
+    if (normalized.length === 0) {
+      throw new Error("At least one contractId must be configured for indexer");
+    }
+    this.contractIds = [...new Set(normalized)];
     this.pollIntervalMs = configOrRpcUrl.pollIntervalMs ?? 30_000;
     this.batchSize = configOrRpcUrl.batchSize ?? 100;
   }
@@ -272,11 +299,18 @@ export class EventIndexer {
 
     return runWithRequestContext(correlationId, async () => {
       if (endLedger < startLedger) {
+        logger.warn("Skipping invalid ledger range", {
+          startLedger,
+          endLedger,
+        });
         return {
-          lastProcessedLedger: endLedger,
+          lastProcessedLedger: Math.max(startLedger - 1, 0),
           fetchedEvents: 0,
           insertedEvents: 0,
         };
+        throw AppError.badRequest(
+          `Invalid ledger range: endLedger (${endLedger}) cannot be less than startLedger (${startLedger})`,
+        );
       }
 
       try {
@@ -335,7 +369,7 @@ export class EventIndexer {
         filters: [
           {
             type: "contract",
-            contractIds: [this.contractId],
+            contractIds: this.contractIds,
           },
         ],
       } as never)) as unknown as {
@@ -395,15 +429,14 @@ export class EventIndexer {
 
     const insertedEvents: LoanEvent[] = [];
 
-    // Collect score deltas per user during the DB transaction to avoid N+1
-    // updates. After committing the inserted events we apply a single bulk
-    // upsert that adds the deltas and keeps scores bounded.
+    // Collect score deltas per user within the transaction so that the score
+    // upsert is atomic with the event inserts. A single bulk upsert at the
+    // end avoids N+1 queries and keeps scores within [300, 850].
     const scoreUpdates: Map<string, number> = new Map();
 
-    await query("BEGIN", []);
-    try {
+    await withTransaction(async (client: PoolClient) => {
       for (const event of parsedEvents) {
-        const insertResult = await query(
+        const insertResult = await client.query(
           `INSERT INTO loan_events (
             event_id,
             event_type,
@@ -420,13 +453,13 @@ export class EventIndexer {
             term_ledgers
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          ON CONFLICT DO NOTHING
+          ON CONFLICT (event_id) DO NOTHING
           RETURNING event_id`,
           [
             event.eventId,
             event.eventType,
             event.loanId ?? null,
-            event.borrower || null,
+            event.borrower || "",
             event.amount ?? null,
             event.ledger,
             event.ledgerClosedAt,
@@ -442,8 +475,8 @@ export class EventIndexer {
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
 
-          // aggregate score deltas per borrower; apply after the transaction
-          // to avoid issuing a query per event (N+1).
+          // Aggregate score deltas per borrower; a single bulk upsert at
+          // the end of the transaction avoids N+1 score updates.
           if (event.eventType === "LoanRepaid") {
             const { repaymentDelta } = sorobanService.getScoreConfig();
             if (event.borrower) {
@@ -460,25 +493,26 @@ export class EventIndexer {
                 (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
               );
             }
+          } else if (event.eventType === "CollateralLiquidated") {
+            const { defaultPenalty } = sorobanService.getScoreConfig();
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
+              );
+            }
           }
         }
       }
 
-      await query("COMMIT", []);
-      // apply batched score updates after the transaction commits
+      // Apply batched score updates on the same pinned client so that both
+      // the event inserts and the score changes are committed or rolled back
+      // together — satisfying the atomicity requirement.
       if (scoreUpdates.size > 0) {
-        try {
-          await updateUserScoresBulk(scoreUpdates);
-        } catch (err) {
-          logger.error("Failed to apply bulk user score updates", {
-            error: err,
-          });
-        }
+        await updateUserScoresBulk(scoreUpdates, client);
       }
-    } catch (error) {
-      await query("ROLLBACK", []);
-      throw error;
-    }
+    });
+    // withTransaction commits here; any error triggers automatic ROLLBACK
 
     for (const event of insertedEvents) {
       webhookService.dispatch(event).catch((error) => {
@@ -527,12 +561,31 @@ export class EventIndexer {
       borrower = this.decodeAddress(event.topic[1]);
       amount = this.decodeAmount(event.value);
     } else if (type === "LoanApproved") {
-      if (!event.topic[1]) return null;
+      if (!event.topic[1] || !event.topic[2]) return null;
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
-      borrower = this.decodeAddress(event.value);
-      interestRateBps = 1200;
-      termLedgers = 17280;
+      borrower = this.decodeAddress(event.topic[2]);
+
+      const data = scValToNative(event.value);
+      if (!Array.isArray(data) || data.length < 2) {
+        throw new Error(
+          `LoanApproved event missing interest_rate_bps or term_ledgers: ${event.id}`,
+        );
+      }
+
+      interestRateBps = Number(data[0]);
+      termLedgers = Number(data[1]);
+
+      if (!Number.isFinite(interestRateBps)) {
+        throw new Error(
+          `LoanApproved event has invalid interest_rate_bps: ${event.id}`,
+        );
+      }
+      if (!Number.isFinite(termLedgers)) {
+        throw new Error(
+          `LoanApproved event has invalid term_ledgers: ${event.id}`,
+        );
+      }
     } else if (type === "LoanRepaid") {
       if (!event.topic[1] || !event.topic[2]) return null;
       borrower = this.decodeAddress(event.topic[1]);
@@ -543,9 +596,40 @@ export class EventIndexer {
       loanId = this.decodeLoanId(event.topic[1]);
       if (loanId === undefined) return null;
       borrower = this.decodeAddress(event.value);
-    } else if (type === "Seized") {
+    } else if (type === "CollateralLiquidated") {
+      if (!event.topic[1]) return null;
+      loanId = this.decodeLoanId(event.topic[1]);
+      if (loanId === undefined) return null;
+      amount = this.decodeAmount(event.value);
+    } else if (
+      type === "Deposit" ||
+      type === "Withdraw" ||
+      type === "EmergencyWithdraw"
+    ) {
       if (!event.topic[1]) return null;
       borrower = this.decodeAddress(event.topic[1]);
+      amount = this.decodeTupleFirstNumericValue(event.value);
+    } else if (
+      type === "NFTMinted" ||
+      type === "ScoreUpdated" ||
+      type === "NFTSeized" ||
+      type === "NFTBurned"
+    ) {
+      if (!event.topic[1]) return null;
+      borrower = this.decodeAddress(event.topic[1]);
+      if (type === "NFTMinted" || type === "ScoreUpdated") {
+        amount = this.decodeAmount(event.value);
+      }
+    } else if (
+      type === "ProposalCreated" ||
+      type === "ProposalApproved" ||
+      type === "ProposalFinalized"
+    ) {
+      if (!event.topic[1]) return null;
+      borrower = this.decodeAddress(event.topic[1]);
+    } else if (type === "Transfer") {
+      if (!event.topic[2]) return null;
+      borrower = this.decodeAddress(event.topic[2]);
     }
 
     return {
@@ -615,6 +699,13 @@ export class EventIndexer {
           ? `Loan #${event.loanId} has been marked as defaulted.`
           : "A loan has been marked as defaulted.";
         break;
+      case "CollateralLiquidated":
+        type = "loan_defaulted";
+        title = "Collateral Seized";
+        message = event.loanId
+          ? `Collateral for loan #${event.loanId} has been seized due to default.`
+          : "Collateral has been seized due to a loan default.";
+        break;
       default:
         return;
     }
@@ -654,6 +745,18 @@ export class EventIndexer {
     } catch {
       return undefined;
     }
+  }
+
+  private decodeTupleFirstNumericValue(value: xdr.ScVal): string | undefined {
+    const native = scValToNative(value);
+    if (!Array.isArray(native) || native.length === 0) {
+      return undefined;
+    }
+    const first = native[0];
+    if (typeof first === "bigint" || typeof first === "number") {
+      return first.toString();
+    }
+    return undefined;
   }
 
   private async quarantineEvent(
@@ -752,20 +855,13 @@ export class EventIndexer {
     if (!value) return null;
 
     try {
-      const eventType = value.sym().toString();
-      const supported: string[] = [
-        "LoanRequested",
-        "LoanApproved",
-        "LoanRepaid",
-        "LoanDefaulted",
-        "Seized",
-        "Paused",
-        "Unpaused",
-        "MinScoreUpdated",
-      ];
+      const rawType = value.sym().toString();
+      const normalizedType = EVENT_TYPE_ALIASES[rawType] ?? rawType;
 
-      return supported.includes(eventType)
-        ? (eventType as WebhookEventType)
+      return SUPPORTED_WEBHOOK_EVENT_TYPES.includes(
+        normalizedType as WebhookEventType,
+      )
+        ? (normalizedType as WebhookEventType)
         : null;
     } catch {
       return null;

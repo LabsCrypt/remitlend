@@ -48,7 +48,12 @@ describe("DefaultChecker", () => {
     (checker as any).fetchOverdueLoanIds = async () => [101, 102];
 
     let submissionCount = 0;
-    (checker as any).submitCheckDefaults = async (_server: unknown, _signer: unknown, _passphrase: string, loanIds: number[]) => {
+    (checker as any).submitCheckDefaults = async (
+      _server: unknown,
+      _signer: unknown,
+      _passphrase: string,
+      loanIds: number[],
+    ) => {
       submissionCount += 1;
       if (submissionCount === 1) {
         return new Promise<never>(() => undefined);
@@ -63,13 +68,13 @@ describe("DefaultChecker", () => {
 
     const result = await checker.checkOverdueLoans();
 
-    expect(result.batches).toHaveLength(2);
-    expect(result.batches[0]).toMatchObject({
+    expect(result!.batches).toHaveLength(2);
+    expect(result!.batches[0]).toMatchObject({
       loanIds: [101],
       timedOut: true,
       error: "batch timed out after 10ms",
     });
-    expect(result.batches[1]).toMatchObject({
+    expect(result!.batches[1]).toMatchObject({
       loanIds: [102],
       txHash: "second-batch-hash",
       submitStatus: "PENDING",

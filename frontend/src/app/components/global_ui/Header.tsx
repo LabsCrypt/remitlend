@@ -63,11 +63,9 @@ export function Header({ onMenuClick, className }: HeaderProps) {
     () => [
       { name: t("dashboard"), href: `/${locale}` },
       { name: t("loans"), href: `/${locale}/loans` },
-      { name: "Remittances", href: `/${locale}/remittances` },
       { name: "Lend", href: `/${locale}/lend` },
       { name: "Analytics", href: `/${locale}/analytics` },
       { name: "Wallet", href: `/${locale}/wallet` },
-      { name: "Settings", href: `/${locale}/settings` },
     ],
     [locale, t],
   );
@@ -143,7 +141,7 @@ export function Header({ onMenuClick, className }: HeaderProps) {
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setDebouncedQuery(query);
-    }, 250);
+    }, 300);
 
     return () => window.clearTimeout(timeout);
   }, [query]);

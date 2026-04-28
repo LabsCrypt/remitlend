@@ -6,9 +6,5 @@
     "declaration": false,
     "declarationMap": false
   },
-  "exclude": [
-    "src/**/*.test.ts",
-    "src/**/__tests__/**",
-    "jest.config.ts"
-  ]
+  "exclude": ["src/**/*.test.ts", "src/**/__tests__/**", "jest.config.ts"]
 }

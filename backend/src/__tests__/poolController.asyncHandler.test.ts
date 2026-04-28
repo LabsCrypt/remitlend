@@ -1,21 +1,21 @@
 import { jest } from "@jest/globals";
 import type { NextFunction, Request, Response } from "express";
 
-const mockQuery = jest.fn<
-  (
-    sql: string,
-    params?: unknown[],
-  ) => Promise<{ rows: Record<string, unknown>[]; rowCount: number }>
->();
+const mockQuery =
+  jest.fn<
+    (
+      sql: string,
+      params?: unknown[],
+    ) => Promise<{ rows: Record<string, unknown>[]; rowCount: number }>
+  >();
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
 }));
 
-const { getPoolStats, getDepositorPortfolio } = await import(
-  "../controllers/poolController.js"
-);
+const { getPoolStats, getDepositorPortfolio } =
+  await import("../controllers/poolController.js");
 
 const flushAsync = async (): Promise<void> =>
   new Promise((resolve) => setImmediate(resolve));
@@ -50,7 +50,9 @@ describe("poolController asyncHandler wrapping", () => {
     const error = new Error("db failed");
     mockQuery.mockRejectedValue(error);
 
-    const req = { params: { address: "GTESTADDRESS123" } } as unknown as Request;
+    const req = {
+      params: { address: "GTESTADDRESS123" },
+    } as unknown as Request;
     const res = createMockResponse();
     const next = jest.fn<(err?: unknown) => void>();
 

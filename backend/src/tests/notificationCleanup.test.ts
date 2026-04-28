@@ -26,11 +26,12 @@ describe("Notification Cleanup Strategy", () => {
 
       mockedQuery.mockResolvedValue({ rowCount: 2 } as any);
 
-      const deletedCount = await notificationService.deleteOldNotifications(retentionDays);
+      const deletedCount =
+        await notificationService.deleteOldNotifications(retentionDays);
 
       expect(mockedQuery).toHaveBeenCalledWith(
         expect.stringContaining("DELETE FROM notifications"),
-        [retentionDays]
+        [retentionDays],
       );
       expect(deletedCount).toBe(2);
     });
@@ -58,11 +59,12 @@ describe("Notification Cleanup Strategy", () => {
 
       mockedQuery.mockResolvedValue({ rowCount: 5 } as any);
 
-      const deletedCount = await notificationService.deleteReadAndArchived(retentionDays);
+      const deletedCount =
+        await notificationService.deleteReadAndArchived(retentionDays);
 
       expect(mockedQuery).toHaveBeenCalledWith(
         expect.stringContaining("status IN ('read', 'archived')"),
-        [retentionDays]
+        [retentionDays],
       );
       expect(deletedCount).toBe(5);
     });
@@ -92,7 +94,7 @@ describe("Notification Cleanup Strategy", () => {
 
       expect(mockedQuery).toHaveBeenCalledWith(
         expect.stringContaining("status = 'archived'"),
-        ["user-1", [1, 2]]
+        ["user-1", [1, 2]],
       );
     });
 
@@ -111,7 +113,7 @@ describe("Notification Cleanup Strategy", () => {
 
       expect(mockedQuery).toHaveBeenCalledWith(
         expect.stringContaining("status = 'unread'"),
-        ["user-1"]
+        ["user-1"],
       );
       expect(count).toBe(3);
     });

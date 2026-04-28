@@ -25,8 +25,11 @@ const mockClient: any = {
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
   query: mockQuery,
-  getClient: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+  getClient: jest
+    .fn<() => Promise<typeof mockClient>>()
+    .mockResolvedValue(mockClient),
   closePool: jest.fn(),
+  withTransaction: jest.fn(),
 }));
 
 // Mock CacheService to prevent Redis connections
@@ -72,7 +75,6 @@ jest.unstable_mockModule("../services/sorobanService.js", () => ({
 await import("../db/connection.js");
 await import("../services/sorobanService.js");
 const { default: app } = await import("../app.js");
-
 
 const mockedQuery = mockQuery;
 

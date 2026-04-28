@@ -248,9 +248,9 @@ class EventStreamService {
       try {
         this.sendEvent(clientInfo.res, event);
       } catch (err) {
-        logger.error("SSE write error (admin)", { 
+        logger.error("SSE write error (admin)", {
           userKey: clientInfo.userKey,
-          err 
+          err,
         });
         adminsToRemove.push(clientInfo);
       }
@@ -296,18 +296,18 @@ class EventStreamService {
       try {
         clientInfo.res.write(shutdownPayload);
       } catch (err) {
-        logger.error("SSE shutdown write error", { 
+        logger.error("SSE shutdown write error", {
           userKey: clientInfo.userKey,
-          err 
+          err,
         });
       }
 
       try {
         clientInfo.res.end();
       } catch (err) {
-        logger.error("SSE shutdown close error", { 
+        logger.error("SSE shutdown close error", {
           userKey: clientInfo.userKey,
-          err 
+          err,
         });
       }
     }

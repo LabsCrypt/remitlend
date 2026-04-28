@@ -519,8 +519,8 @@ fn new_proposal_allowed_after_expiry() {
     set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS + 1);
     client.expire_proposal(&Address::generate(&env));
 
-    // Should be able to create new proposal immediately (no cooldown for expiry)
-    set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS + 2);
+    // Should be able to create new proposal after cooldown (expiry triggers same cooldown as cancellation)
+    set_ts(&env, 1000 + PROPOSAL_TTL_SECONDS + 3602);
     client.propose_admin_transfer(&proposed2, &signers, &1, &MIN_TIMELOCK_SECONDS);
     assert!(client.has_pending_transfer());
     let pending = client.get_pending_transfer();

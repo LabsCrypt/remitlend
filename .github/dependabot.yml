@@ -1,0 +1,80 @@
+version: 2
+updates:
+  # ── npm: backend ─────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Major bumps for the Stellar SDK require manual review & contract re-testing
+      - dependency-name: "@stellar/stellar-sdk"
+        update-types: ["version-update:semver-major"]
+
+  # ── npm: frontend ─────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Next.js major upgrades involve breaking changes and require manual migration
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      # React major upgrades affect the whole component tree
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # ── cargo: smart contracts ────────────────────────────────────────────────
+  - package-ecosystem: "cargo"
+    directory: "/contracts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      contracts-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # soroban-sdk major bumps require contract re-audit and redeployment
+      - dependency-name: "soroban-sdk"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "soroban-token-sdk"
+        update-types: ["version-update:semver-major"]
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

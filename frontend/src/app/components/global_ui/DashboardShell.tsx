@@ -2,8 +2,10 @@
 
 import { useState, type ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
+import { BottomNav } from "./BottomNav";
 import { Header } from "./Header";
 import { Breadcrumbs } from "./Breadcrumbs";
+import { OfflineBanner } from "./OfflineBanner";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -39,7 +41,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
       <Sidebar
         onClose={() => setIsSidebarOpen(false)}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 transition-transform duration-300 lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 transition-transform duration-300 lg:static lg:translate-x-0 hidden lg:flex",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       />
@@ -47,15 +49,23 @@ export function DashboardShell({ children }: DashboardShellProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <Header onMenuClick={() => setIsSidebarOpen(true)} />
+        <OfflineBanner />
 
         {/* Dynamic Page Content */}
-        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8"
+        >
           <div className="mx-auto max-w-7xl">
             <Breadcrumbs />
             {children}
           </div>
         </main>
       </div>
+
+      {/* Bottom Navigation - Mobile only */}
+      <BottomNav />
     </div>
   );
 }
