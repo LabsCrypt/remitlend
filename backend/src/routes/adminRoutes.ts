@@ -63,13 +63,18 @@ const router = Router();
  *               action:
  *                 type: string
  *                 enum: [confirm, reverse]
- *                 description: Action to take
+ *                 description: Action to take on the dispute
  *               resolution:
  *                 type: string
- *                 description: Reason for resolution
+ *                 description: Detailed reason for resolution (minimum 5 characters)
+ *               adminNote:
+ *                 type: string
+ *                 description: Optional admin note visible to borrower
  *     responses:
  *       200:
- *         description: Dispute resolved
+ *         description: Dispute resolved and borrower notified
+ *       400:
+ *         description: Validation error
  */
 router.get("/loan-disputes", requireApiKey, listLoanDisputes);
 router.post(

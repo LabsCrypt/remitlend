@@ -64,6 +64,14 @@ beforeAll(async () => {
     async () => undefined,
   ) as jest.MockedFunction<CloseFn>;
 
+  jest.unstable_mockModule("../cacheService.js", () => ({
+    cacheService: {
+      get: jest.fn<any>().mockResolvedValue(null),
+      set: jest.fn<any>().mockResolvedValue(undefined),
+      delete: jest.fn<any>().mockResolvedValue(undefined),
+    },
+  }));
+
   jest.unstable_mockModule("../../db/connection.js", () => ({
     query: mockQuery,
     getClient: jest.fn(),
