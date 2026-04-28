@@ -26,6 +26,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "@sentry/node": "^10.45.0",
     "@stellar/stellar-sdk": "^14.5.0",
     "@types/node-cron": "^3.0.11",
