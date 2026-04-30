@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Info } from "lucide-react";
 import { useId, type ReactNode } from "react";
