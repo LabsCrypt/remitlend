@@ -10,9 +10,6 @@ import dotenv from "dotenv";
 import { Sentry } from "./config/sentry.js";
 
 dotenv.config();
-import pool from "./db/connection.js";
-import { cacheService } from "./services/cacheService.js";
-import { sorobanService } from "./services/sorobanService.js";
 import simulationRoutes from "./routes/simulationRoutes.js";
 import scoreRoutes from "./routes/scoreRoutes.js";
 import loanRoutes from "./routes/loanRoutes.js";
@@ -119,43 +116,16 @@ app.get("/", (req: Request, res: Response) => {
   res.send("RemitLend Backend is running");
 });
 
-app.get(
-  "/health",
-  asyncHandler(async (_req: Request, res: Response) => {
-    const [databaseStatus, redisStatus, sorobanStatus] =
-      await Promise.allSettled([
-        pool
-          .query("SELECT 1")
-          .then(() => "ok" as const)
-          .catch(() => "error" as const),
-        cacheService.ping(),
-        sorobanService.ping(),
-      ]);
+const healthHandler = (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+};
 
-    const dbChecks = {
-      database:
-        databaseStatus.status === "fulfilled" ? databaseStatus.value : "error",
-      redis: redisStatus.status === "fulfilled" ? redisStatus.value : "error",
-    };
-
-    const checks = {
-      api: "ok" as const,
-      ...dbChecks,
-      soroban_rpc:
-        sorobanStatus.status === "fulfilled" ? sorobanStatus.value : "error",
-    };
-
-    const coreOk = Object.values(dbChecks).every((c) => c === "ok");
-    const allOk = coreOk && checks.soroban_rpc === "ok";
-
-    res.status(coreOk ? 200 : 503).json({
-      status: allOk ? "ok" : coreOk ? "degraded" : "down",
-      checks,
-      uptime: process.uptime(),
-      timestamp: Date.now(),
-    });
-  }),
-);
+app.get("/health", healthHandler);
+app.get("/api/health", healthHandler);
 
 // Legacy routes (deprecated, maintained for backward compatibility)
 app.use("/api", simulationRoutes);
