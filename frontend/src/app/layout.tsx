@@ -10,6 +10,7 @@ import { GlobalXPGain } from "./components/global_ui/GlobalXPGain";
 import { ErrorBoundary } from "./components/global_ui/ErrorBoundary";
 import { NextIntlClientProvider } from "next-intl";
 import { THEME_STORAGE_KEY } from "./lib/theme";
+import { TooltipProvider } from "./components/ui/Tooltip";
 
 const DEFAULT_SITE_URL = "http://localhost:3000";
 
@@ -60,11 +61,13 @@ export default async function RootLayout({
         <NextIntlClientProvider locale="en" messages={messages}>
           <QueryProvider>
             <WalletProvider>
-              <DashboardShell>
-                <ErrorBoundary scope="active page" variant="section">
-                  {children}
-                </ErrorBoundary>
-              </DashboardShell>
+              <TooltipProvider delayDuration={300}>
+                <DashboardShell>
+                  <ErrorBoundary scope="active page" variant="section">
+                    {children}
+                  </ErrorBoundary>
+                </DashboardShell>
+              </TooltipProvider>
             </WalletProvider>
             <Toaster />
             <LevelUpModal />
