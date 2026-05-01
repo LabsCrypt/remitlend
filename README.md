@@ -19,7 +19,7 @@ RemitLend treats remittance history as credit history. Migrant workers prove the
 - **Transparent Yield**: Earn interest by providing liquidity to audited borrowing pools.
 - **Risk Assessment**: Make informed decisions based on verifiable, on-chain remittance proofs (Remittance NFTs).
 
-### Technical Highlights
+### Technical Highlights/
 - **NFT-Based Collateral**: Remittance NFTs serve as proof of reliability and loan collateral.
 - **Decentralized Lending Pools**: Lenders provide liquidity and earn transparent yields.
 - **Transparent & Auditable**: All transactions and loan terms recorded on-chain.
