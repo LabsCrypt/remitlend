@@ -21,7 +21,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
     "lottie-react": "^2.4.1",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^1.11.0",
     "next": "^16.2.1",
     "next-intl": "^4.8.3",
     "qrcode.react": "^4.2.0",
