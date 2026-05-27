@@ -88,6 +88,17 @@ jobs:
         run: npm run build
         working-directory: frontend
 
+  env-docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check env docs are in sync
+        run: node scripts/check-env-docs.mjs
+
   contracts:
     runs-on: ubuntu-latest
     steps:
