@@ -127,6 +127,31 @@ app.get("/", (req: Request, res: Response) => {
   res.send("RemitLend Backend is running");
 });
 
+/**
+ * GET /version
+ *
+ * Read-only endpoint for operators and runbooks.
+ * Returns build metadata and on-chain contract IDs so that the exact
+ * backend version deployed can be determined without shelling into the container.
+ *
+ * Environment variables (injected at Docker build time via ARG/ENV):
+ *   GIT_SHA    — full git commit SHA of the build (falls back to "unknown")
+ *   BUILD_TIME — ISO-8601 UTC timestamp of the build (falls back to "unknown")
+ */
+app.get("/version", (_req: Request, res: Response) => {
+  res.json({
+    gitSha: process.env.GIT_SHA ?? "unknown",
+    builtAt: process.env.BUILD_TIME ?? "unknown",
+    nodeVersion: process.version,
+    contracts: {
+      loanManager: process.env.LOAN_MANAGER_CONTRACT_ID ?? "unknown",
+      lendingPool: process.env.LENDING_POOL_CONTRACT_ID ?? "unknown",
+      remittanceNft: process.env.REMITTANCE_NFT_CONTRACT_ID ?? "unknown",
+      multisigGovernance: process.env.MULTISIG_GOVERNANCE_CONTRACT_ID ?? "unknown",
+    },
+  });
+});
+
 app.get(
   "/health",
   asyncHandler(async (_req: Request, res: Response) => {

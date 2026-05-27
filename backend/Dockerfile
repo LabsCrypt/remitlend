@@ -18,6 +18,14 @@ FROM node:22-alpine AS production
 
 WORKDIR /app
 
+# Build-time metadata injected by the CI pipeline via --build-arg.
+# These are baked into the image so GET /version works without any
+# runtime environment variable configuration.
+ARG GIT_SHA=""
+ARG BUILD_TIME=""
+ENV GIT_SHA=$GIT_SHA \
+    BUILD_TIME=$BUILD_TIME
+
 # Install only production dependencies
 COPY package*.json ./
 RUN npm ci --omit=dev

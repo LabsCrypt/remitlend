@@ -49,6 +49,9 @@ jobs:
             ghcr.io/${{ env.OWNER_LC }}/remitlend-backend:staging-${{ github.sha }}
             ghcr.io/${{ env.OWNER_LC }}/remitlend-backend:staging-latest
           target: production
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
 
       - name: Build and push frontend
         uses: docker/build-push-action@v4
