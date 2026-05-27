@@ -499,22 +499,27 @@ export class EventIndexer {
           // Aggregate score deltas per borrower; a single bulk upsert at
           // the end of the transaction avoids N+1 score updates.
           if (event.eventType === "LoanRepaid") {
-            const { repaymentDelta } = sorobanService.getScoreConfig();
-            if (event.address) {
+            const { repaymentDelta } = await sorobanService.getScoreConfig();
+            if (event.borrower) {
               scoreUpdates.set(
                 event.address,
                 (scoreUpdates.get(event.address) ?? 0) + repaymentDelta,
               );
             }
-          } else if (
-            event.eventType === "LoanDefaulted" ||
-            event.eventType === "CollateralLiquidated"
-          ) {
-            const { defaultPenalty } = sorobanService.getScoreConfig();
-            if (event.address) {
+          } else if (event.eventType === "LoanDefaulted") {
+            const { defaultPenalty } = await sorobanService.getScoreConfig();
+            if (event.borrower) {
               scoreUpdates.set(
-                event.address,
-                (scoreUpdates.get(event.address) ?? 0) - defaultPenalty,
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
+              );
+            }
+          } else if (event.eventType === "CollateralLiquidated") {
+            const { defaultPenalty } = await sorobanService.getScoreConfig();
+            if (event.borrower) {
+              scoreUpdates.set(
+                event.borrower,
+                (scoreUpdates.get(event.borrower) ?? 0) - defaultPenalty,
               );
             }
           }
