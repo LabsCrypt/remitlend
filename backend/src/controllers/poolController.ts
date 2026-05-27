@@ -133,11 +133,7 @@ export const getPoolSharePrice = asyncHandler(
       cacheTtlSeconds: POOL_SHARE_PRICE_CACHE_TTL_SECONDS,
     };
 
-    await cacheService.set(
-      cacheKey,
-      data,
-      POOL_SHARE_PRICE_CACHE_TTL_SECONDS,
-    );
+    await cacheService.set(cacheKey, data, POOL_SHARE_PRICE_CACHE_TTL_SECONDS);
 
     res.json({
       success: true,

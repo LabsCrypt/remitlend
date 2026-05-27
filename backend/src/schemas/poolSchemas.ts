@@ -11,14 +11,17 @@ export const buildPoolTransactionSchema = z.object({
 
 export const poolSharePriceParamSchema = z.object({
   params: z.object({
-    token: z.string().min(1, "Token address is required").refine((value) => {
-      try {
-        Address.fromString(value);
-        return true;
-      } catch {
-        return false;
-      }
-    }, "Invalid Stellar token address format"),
+    token: z
+      .string()
+      .min(1, "Token address is required")
+      .refine((value) => {
+        try {
+          Address.fromString(value);
+          return true;
+        } catch {
+          return false;
+        }
+      }, "Invalid Stellar token address format"),
   }),
 });
 

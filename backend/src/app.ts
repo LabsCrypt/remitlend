@@ -29,10 +29,7 @@ import transactionRoutes from "./routes/transactionRoutes.js";
 import { requireApiKey } from "./middleware/auth.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
-import {
-  metricsHandler,
-  metricsMiddleware,
-} from "./middleware/metrics.js";
+import { metricsHandler, metricsMiddleware } from "./middleware/metrics.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
 import { asyncHandler } from "./utils/asyncHandler.js";

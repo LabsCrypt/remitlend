@@ -20,7 +20,9 @@ const mockQuery =
 const mockGetPoolSharePrice = jest.fn<(token: string) => Promise<number>>();
 const mockCacheGet = jest.fn<(key: string) => Promise<unknown | null>>();
 const mockCacheSet =
-  jest.fn<(key: string, value: unknown, ttlSeconds?: number) => Promise<void>>();
+  jest.fn<
+    (key: string, value: unknown, ttlSeconds?: number) => Promise<void>
+  >();
 
 jest.unstable_mockModule("../db/connection.js", () => ({
   default: { query: mockQuery },
