@@ -247,6 +247,33 @@ export const swaggerSchemas = {
     },
     required: ["success", "data"],
   },
+  PoolSharePrice: {
+    type: "object",
+    properties: {
+      token: { type: "string" },
+      scaledSharePrice: { type: "integer", example: 1250000 },
+      sharePriceScale: { type: "integer", example: 1000000 },
+      sharePriceRatio: { type: "number", example: 1.25 },
+      utilizationRate: { type: "number", example: 0.25 },
+      cacheTtlSeconds: { type: "integer", example: 30 },
+    },
+    required: [
+      "token",
+      "scaledSharePrice",
+      "sharePriceScale",
+      "sharePriceRatio",
+      "utilizationRate",
+      "cacheTtlSeconds",
+    ],
+  },
+  PoolSharePriceResponse: {
+    type: "object",
+    properties: {
+      success: { type: "boolean", example: true },
+      data: { $ref: "#/components/schemas/PoolSharePrice" },
+    },
+    required: ["success", "data"],
+  },
   DepositorPortfolio: {
     type: "object",
     properties: {

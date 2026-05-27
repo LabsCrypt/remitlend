@@ -25,6 +25,7 @@ import userRoutes from "./routes/userRoutes.js";
 import notificationsRoutes from "./routes/notificationsRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import remittanceRoutes from "./routes/remittanceRoutes.js";
+import transactionRoutes from "./routes/transactionRoutes.js";
 import { requireApiKey } from "./middleware/auth.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
