@@ -2029,6 +2029,11 @@ impl LoanManager {
         Self::admin(&env)
     }
 
+    pub fn get_proposed_admin(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::ProposedAdmin)
+    }
+
     pub fn get_total_loans(env: Env) -> u32 {
         Self::loan_counter(&env)
     }

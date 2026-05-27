@@ -1053,6 +1053,11 @@ impl RemittanceNFT {
         Self::admin(&env)
     }
 
+    pub fn get_proposed_admin(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::ProposedAdmin)
+    }
+
     pub fn propose_admin(env: Env, new_admin: Address) {
         let current_admin = Self::admin(&env);
         current_admin.require_auth();

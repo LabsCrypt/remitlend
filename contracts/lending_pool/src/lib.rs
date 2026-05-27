@@ -320,6 +320,11 @@ impl LendingPool {
         Self::admin(&env)
     }
 
+    pub fn get_proposed_admin(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::ProposedAdmin)
+    }
+
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         Self::admin(&env).require_auth();
         let old_version = Self::version(env.clone());

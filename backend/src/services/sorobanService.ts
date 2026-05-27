@@ -362,6 +362,185 @@ class SorobanService {
   }
 
   /**
+   * Builds an unsigned Soroban `deposit_collateral(loan_id, amount)` transaction.
+   * The borrower must sign this XDR with their wallet.
+   */
+  async buildDepositCollateralTx(
+    borrowerPublicKey: string,
+    loanId: number,
+    amount: number,
+  ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
+    const server = this.getRpcServer();
+    const contractId = this.getLoanManagerContractId();
+    const passphrase = this.getNetworkPassphrase();
+
+    const account = await server.getAccount(borrowerPublicKey);
+
+    const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
+    const amountScVal = nativeToScVal(BigInt(amount), { type: "i128" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "deposit_collateral",
+          args: [loanIdScVal, amountScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await server.prepareTransaction(tx);
+    const unsignedTxXdr = prepared.toXDR();
+
+    logger.info("Built deposit_collateral transaction", {
+      borrower: borrowerPublicKey,
+      loanId,
+      amount,
+    });
+
+    return { unsignedTxXdr, networkPassphrase: passphrase };
+  }
+
+  /**
+   * Builds an unsigned Soroban `release_collateral(loan_id)` transaction.
+   * The borrower must sign this XDR with their wallet.
+   */
+  async buildReleaseCollateralTx(
+    borrowerPublicKey: string,
+    loanId: number,
+  ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
+    const server = this.getRpcServer();
+    const contractId = this.getLoanManagerContractId();
+    const passphrase = this.getNetworkPassphrase();
+
+    const account = await server.getAccount(borrowerPublicKey);
+
+    const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "release_collateral",
+          args: [loanIdScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await server.prepareTransaction(tx);
+    const unsignedTxXdr = prepared.toXDR();
+
+    logger.info("Built release_collateral transaction", {
+      borrower: borrowerPublicKey,
+      loanId,
+    });
+
+    return { unsignedTxXdr, networkPassphrase: passphrase };
+  }
+
+  /**
+   * Builds an unsigned Soroban `refinance_loan(loan_id, new_amount, new_term)` transaction.
+   * Both the admin and borrower must sign this XDR.
+   */
+  async buildRefinanceLoanTx(
+    borrowerPublicKey: string,
+    loanId: number,
+    newAmount: number,
+    newTerm: number,
+  ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
+    const server = this.getRpcServer();
+    const contractId = this.getLoanManagerContractId();
+    const passphrase = this.getNetworkPassphrase();
+
+    const account = await server.getAccount(borrowerPublicKey);
+
+    const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
+    const amountScVal = nativeToScVal(BigInt(newAmount), { type: "i128" });
+    const termScVal = nativeToScVal(newTerm, { type: "u32" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "refinance_loan",
+          args: [loanIdScVal, amountScVal, termScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await server.prepareTransaction(tx);
+    const unsignedTxXdr = prepared.toXDR();
+
+    logger.info("Built refinance_loan transaction", {
+      borrower: borrowerPublicKey,
+      loanId,
+      newAmount,
+      newTerm,
+    });
+
+    return { unsignedTxXdr, networkPassphrase: passphrase };
+  }
+
+  /**
+   * Builds an unsigned Soroban `extend_loan(borrower, loan_id, extra_ledgers)` transaction.
+   * The borrower must sign this XDR with their wallet.
+   */
+  async buildExtendLoanTx(
+    borrowerPublicKey: string,
+    loanId: number,
+    extraLedgers: number,
+  ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
+    const server = this.getRpcServer();
+    const contractId = this.getLoanManagerContractId();
+    const passphrase = this.getNetworkPassphrase();
+
+    const account = await server.getAccount(borrowerPublicKey);
+
+    const borrowerScVal = nativeToScVal(Address.fromString(borrowerPublicKey), {
+      type: "address",
+    });
+    const loanIdScVal = nativeToScVal(loanId, { type: "u32" });
+    const extraLedgersScVal = nativeToScVal(extraLedgers, { type: "u32" });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "extend_loan",
+          args: [borrowerScVal, loanIdScVal, extraLedgersScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await server.prepareTransaction(tx);
+    const unsignedTxXdr = prepared.toXDR();
+
+    logger.info("Built extend_loan transaction", {
+      borrower: borrowerPublicKey,
+      loanId,
+      extraLedgers,
+    });
+
+    return { unsignedTxXdr, networkPassphrase: passphrase };
+  }
+
+  /**
    * Validates all required Soroban configuration on startup.
    * Checks that each contract ID is present and is a valid Stellar contract
    * address, then confirms RPC connectivity with a lightweight health call.

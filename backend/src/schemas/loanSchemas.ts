@@ -37,3 +37,26 @@ export const submitTxSchema = z.object({
     .min(1, "signedTxXdr is required")
     .regex(base64Regex, "Must be a valid base64 string"),
 });
+
+export const depositCollateralSchema = z.object({
+  amount: positiveAmountSchema,
+  borrowerPublicKey: stellarAddressSchema,
+});
+
+export const releaseCollateralSchema = z.object({
+  borrowerPublicKey: stellarAddressSchema,
+});
+
+export const refinanceLoanSchema = z.object({
+  newAmount: positiveAmountSchema,
+  newTerm: z.number().int().positive("Term must be a positive integer"),
+  borrowerPublicKey: stellarAddressSchema,
+});
+
+export const extendLoanSchema = z.object({
+  extraLedgers: z
+    .number()
+    .int()
+    .positive("Extra ledgers must be a positive integer"),
+  borrowerPublicKey: stellarAddressSchema,
+});

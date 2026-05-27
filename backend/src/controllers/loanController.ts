@@ -760,6 +760,288 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/loans/:loanId/build-deposit-collateral
+ */
+export const depositCollateral = asyncHandler(
+  async (req: Request, res: Response) => {
+    const loanId = req.params.loanId as string;
+    const { amount, borrowerPublicKey } = req.body as {
+      amount: number;
+      borrowerPublicKey: string;
+    };
+
+    if (borrowerPublicKey !== req.user?.publicKey) {
+      throw AppError.forbidden(
+        "borrowerPublicKey must match your authenticated wallet",
+        ErrorCode.BORROWER_MISMATCH,
+      );
+    }
+
+    const loanIdNum = Number.parseInt(loanId, 10);
+    if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
+      throw AppError.badRequest(
+        "Invalid loan ID",
+        ErrorCode.INVALID_LOAN_ID,
+        "loanId",
+      );
+    }
+
+    const cacheKey = `pending_deposit_collateral_tx:${borrowerPublicKey}:${loanIdNum}:${amount}`;
+    const cachedTx = await cacheService.get<{
+      unsignedTxXdr: string;
+      networkPassphrase: string;
+    }>(cacheKey);
+
+    if (cachedTx) {
+      logger.info("Returning cached unsigned deposit_collateral tx", {
+        borrower: borrowerPublicKey,
+        loanId: loanIdNum,
+        amount,
+      });
+      res.json({
+        success: true,
+        loanId: loanIdNum,
+        unsignedTxXdr: cachedTx.unsignedTxXdr,
+        networkPassphrase: cachedTx.networkPassphrase,
+      });
+      return;
+    }
+
+    const result = await sorobanService.buildDepositCollateralTx(
+      borrowerPublicKey,
+      loanIdNum,
+      amount,
+    );
+
+    await cacheService.set(cacheKey, result, 60);
+
+    logger.info("Deposit collateral transaction built", {
+      borrower: borrowerPublicKey,
+      loanId: loanIdNum,
+      amount,
+    });
+
+    res.json({
+      success: true,
+      loanId: loanIdNum,
+      unsignedTxXdr: result.unsignedTxXdr,
+      networkPassphrase: result.networkPassphrase,
+    });
+  },
+);
+
+/**
+ * POST /api/loans/:loanId/build-release-collateral
+ */
+export const releaseCollateral = asyncHandler(
+  async (req: Request, res: Response) => {
+    const loanId = req.params.loanId as string;
+    const { borrowerPublicKey } = req.body as {
+      borrowerPublicKey: string;
+    };
+
+    if (borrowerPublicKey !== req.user?.publicKey) {
+      throw AppError.forbidden(
+        "borrowerPublicKey must match your authenticated wallet",
+        ErrorCode.BORROWER_MISMATCH,
+      );
+    }
+
+    const loanIdNum = Number.parseInt(loanId, 10);
+    if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
+      throw AppError.badRequest(
+        "Invalid loan ID",
+        ErrorCode.INVALID_LOAN_ID,
+        "loanId",
+      );
+    }
+
+    const cacheKey = `pending_release_collateral_tx:${borrowerPublicKey}:${loanIdNum}`;
+    const cachedTx = await cacheService.get<{
+      unsignedTxXdr: string;
+      networkPassphrase: string;
+    }>(cacheKey);
+
+    if (cachedTx) {
+      logger.info("Returning cached unsigned release_collateral tx", {
+        borrower: borrowerPublicKey,
+        loanId: loanIdNum,
+      });
+      res.json({
+        success: true,
+        loanId: loanIdNum,
+        unsignedTxXdr: cachedTx.unsignedTxXdr,
+        networkPassphrase: cachedTx.networkPassphrase,
+      });
+      return;
+    }
+
+    const result = await sorobanService.buildReleaseCollateralTx(
+      borrowerPublicKey,
+      loanIdNum,
+    );
+
+    await cacheService.set(cacheKey, result, 60);
+
+    logger.info("Release collateral transaction built", {
+      borrower: borrowerPublicKey,
+      loanId: loanIdNum,
+    });
+
+    res.json({
+      success: true,
+      loanId: loanIdNum,
+      unsignedTxXdr: result.unsignedTxXdr,
+      networkPassphrase: result.networkPassphrase,
+    });
+  },
+);
+
+/**
+ * POST /api/loans/:loanId/build-refinance
+ */
+export const refinanceLoan = asyncHandler(
+  async (req: Request, res: Response) => {
+    const loanId = req.params.loanId as string;
+    const { newAmount, newTerm, borrowerPublicKey } = req.body as {
+      newAmount: number;
+      newTerm: number;
+      borrowerPublicKey: string;
+    };
+
+    if (borrowerPublicKey !== req.user?.publicKey) {
+      throw AppError.forbidden(
+        "borrowerPublicKey must match your authenticated wallet",
+        ErrorCode.BORROWER_MISMATCH,
+      );
+    }
+
+    const loanIdNum = Number.parseInt(loanId, 10);
+    if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
+      throw AppError.badRequest(
+        "Invalid loan ID",
+        ErrorCode.INVALID_LOAN_ID,
+        "loanId",
+      );
+    }
+
+    const cacheKey = `pending_refinance_tx:${borrowerPublicKey}:${loanIdNum}:${newAmount}:${newTerm}`;
+    const cachedTx = await cacheService.get<{
+      unsignedTxXdr: string;
+      networkPassphrase: string;
+    }>(cacheKey);
+
+    if (cachedTx) {
+      logger.info("Returning cached unsigned refinance tx", {
+        borrower: borrowerPublicKey,
+        loanId: loanIdNum,
+        newAmount,
+        newTerm,
+      });
+      res.json({
+        success: true,
+        loanId: loanIdNum,
+        unsignedTxXdr: cachedTx.unsignedTxXdr,
+        networkPassphrase: cachedTx.networkPassphrase,
+      });
+      return;
+    }
+
+    const result = await sorobanService.buildRefinanceLoanTx(
+      borrowerPublicKey,
+      loanIdNum,
+      newAmount,
+      newTerm,
+    );
+
+    await cacheService.set(cacheKey, result, 60);
+
+    logger.info("Refinance loan transaction built", {
+      borrower: borrowerPublicKey,
+      loanId: loanIdNum,
+      newAmount,
+      newTerm,
+    });
+
+    res.json({
+      success: true,
+      loanId: loanIdNum,
+      unsignedTxXdr: result.unsignedTxXdr,
+      networkPassphrase: result.networkPassphrase,
+    });
+  },
+);
+
+/**
+ * POST /api/loans/:loanId/build-extend
+ */
+export const extendLoan = asyncHandler(async (req: Request, res: Response) => {
+  const loanId = req.params.loanId as string;
+  const { extraLedgers, borrowerPublicKey } = req.body as {
+    extraLedgers: number;
+    borrowerPublicKey: string;
+  };
+
+  if (borrowerPublicKey !== req.user?.publicKey) {
+    throw AppError.forbidden(
+      "borrowerPublicKey must match your authenticated wallet",
+      ErrorCode.BORROWER_MISMATCH,
+    );
+  }
+
+  const loanIdNum = Number.parseInt(loanId, 10);
+  if (!Number.isFinite(loanIdNum) || loanIdNum <= 0) {
+    throw AppError.badRequest(
+      "Invalid loan ID",
+      ErrorCode.INVALID_LOAN_ID,
+      "loanId",
+    );
+  }
+
+  const cacheKey = `pending_extend_tx:${borrowerPublicKey}:${loanIdNum}:${extraLedgers}`;
+  const cachedTx = await cacheService.get<{
+    unsignedTxXdr: string;
+    networkPassphrase: string;
+  }>(cacheKey);
+
+  if (cachedTx) {
+    logger.info("Returning cached unsigned extend tx", {
+      borrower: borrowerPublicKey,
+      loanId: loanIdNum,
+      extraLedgers,
+    });
+    res.json({
+      success: true,
+      loanId: loanIdNum,
+      unsignedTxXdr: cachedTx.unsignedTxXdr,
+      networkPassphrase: cachedTx.networkPassphrase,
+    });
+    return;
+  }
+
+  const result = await sorobanService.buildExtendLoanTx(
+    borrowerPublicKey,
+    loanIdNum,
+    extraLedgers,
+  );
+
+  await cacheService.set(cacheKey, result, 60);
+
+  logger.info("Extend loan transaction built", {
+    borrower: borrowerPublicKey,
+    loanId: loanIdNum,
+    extraLedgers,
+  });
+
+  res.json({
+    success: true,
+    loanId: loanIdNum,
+    unsignedTxXdr: result.unsignedTxXdr,
+    networkPassphrase: result.networkPassphrase,
+  });
+});
+
+/**
  * POST /api/loans/submit
  * POST /api/loans/:loanId/submit
  */

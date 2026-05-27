@@ -1,6 +1,11 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  manifest: "/manifest.webmanifest",
+};
 
 export default async function LocaleLayout({
   children,
@@ -11,12 +16,10 @@ export default async function LocaleLayout({
 }) {
   const { locale } = await params;
 
-  // Validate that the incoming `locale` parameter is valid
   if (!["en", "es", "tl"].includes(locale)) {
     notFound();
   }
 
-  // Providing all messages to the client side
   const messages = await getMessages();
 
   return (

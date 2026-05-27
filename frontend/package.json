@@ -14,6 +14,9 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.46.0",
+    "@serwist/next": "^9.0.12",
+    "@serwist/precaching": "^9.0.12",
+    "@serwist/sw": "^9.0.12",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^14.6.1",
     "@tanstack/react-query": "^5.95.2",

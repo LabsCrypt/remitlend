@@ -81,6 +81,44 @@ fn test_set_admin_updates_admin_immediately() {
 }
 
 #[test]
+fn test_get_proposed_admin_returns_none_when_no_proposal() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+
+    assert_eq!(manager.get_proposed_admin(), None);
+}
+
+#[test]
+fn test_get_proposed_admin_returns_proposed_admin() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+    let new_admin = Address::generate(&env);
+
+    manager.propose_admin(&new_admin);
+
+    assert_eq!(manager.get_proposed_admin(), Some(new_admin));
+}
+
+#[test]
+fn test_get_proposed_admin_returns_none_after_accept() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+    let new_admin = Address::generate(&env);
+
+    manager.propose_admin(&new_admin);
+    manager.accept_admin();
+
+    assert_eq!(manager.get_proposed_admin(), None);
+    assert_eq!(manager.get_admin(), new_admin);
+}
+
+#[test]
 fn test_migration_guard_prevents_double_execution() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
