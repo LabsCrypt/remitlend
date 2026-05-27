@@ -173,9 +173,12 @@ app.use("/api/remittances", remittanceRoutes);
 app.use("/api/v1", simulationRoutes);
 app.use("/api/v1/score", scoreRoutes);
 app.use("/api/v1/loans", loanRoutes);
+app.use("/api/v1/pool", poolRoutes);
 app.use("/api/v1/indexer", indexerRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/notifications", notificationsRoutes);
+app.use("/api/v1/events", eventRoutes);
 app.use("/api/v1/remittances", remittanceRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────

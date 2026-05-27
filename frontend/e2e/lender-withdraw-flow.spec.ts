@@ -106,9 +106,14 @@ test.describe("Lender Withdraw Flow", () => {
     }, lenderWalletState("1500.00"));
 
     await page.click('button:has-text("Review Withdrawal"), button:has-text("Confirm Withdrawal")');
-    await page.getByRole("button", { name: /Confirm Withdrawal/i }).click().catch(() => {});
+    await page
+      .getByRole("button", { name: /Confirm Withdrawal/i })
+      .click()
+      .catch(() => {});
 
-    await expect(page.locator("text=/Withdrawal (Successful|Complete)/i")).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("text=/Withdrawal (Successful|Complete)/i")).toBeVisible({
+      timeout: 10000,
+    });
 
     await page.reload();
     await expect(page.locator("text=1,500")).toBeVisible();
@@ -126,9 +131,11 @@ test.describe("Lender Withdraw Flow", () => {
     await page.fill('input[type="number"]', "999999");
 
     const confirm = page.getByRole("button", { name: /Confirm Withdrawal/i });
-    await expect(confirm).toBeDisabled().catch(async () => {
-      await confirm.click();
-      await expect(page.locator("text=/exceeds|insufficient|maximum/i")).toBeVisible();
-    });
+    await expect(confirm)
+      .toBeDisabled()
+      .catch(async () => {
+        await confirm.click();
+        await expect(page.locator("text=/exceeds|insufficient|maximum/i")).toBeVisible();
+      });
   });
 });
