@@ -23,6 +23,7 @@ import authRoutes from "./routes/authRoutes.js";
 import notificationsRoutes from "./routes/notificationsRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import remittanceRoutes from "./routes/remittanceRoutes.js";
+import transactionRoutes from "./routes/transactionRoutes.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
@@ -168,6 +169,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/remittances", remittanceRoutes);
+app.use("/api/transactions", transactionRoutes);
 
 // Versioned API routes (v1 - current)
 app.use("/api/v1", simulationRoutes);
@@ -177,6 +179,7 @@ app.use("/api/v1/indexer", indexerRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/remittances", remittanceRoutes);
+app.use("/api/v1/transactions", transactionRoutes);
 
 // ── Diagnostic / Test Routes ─────────────────────────────────────
 // Only exposed in test environment to verify centralized error handling.
