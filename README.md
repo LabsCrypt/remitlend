@@ -200,6 +200,12 @@ We welcome contributions from developers of all skill levels! Please see our [CO
 4. Push to your branch (`git push origin feature/amazing-feature`).
 5. Open a Pull Request.
 
+## Security
+
+Please review [SECURITY.md](SECURITY.md) before reporting vulnerabilities. It
+lists the supported versions, private disclosure process, expected response
+timeline, project scope, and reward policy.
+
 ## 📄 License
 
 This project is licensed under the ISC License. See the `LICENSE` file for details..

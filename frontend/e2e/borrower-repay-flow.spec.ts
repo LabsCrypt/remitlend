@@ -102,7 +102,11 @@ test.describe("Borrower Repayment Flow", () => {
     await expect(page.locator("text=4,500")).toBeVisible();
   });
 
-  test("rejects a repayment greater than the outstanding balance", async ({ page }: { page: Page }) => {
+  test("rejects a repayment greater than the outstanding balance", async ({
+    page,
+  }: {
+    page: Page;
+  }) => {
     await page.goto("/en");
 
     const repayBtn = page.getByRole("button", { name: /Repay/i }).first();
@@ -115,9 +119,11 @@ test.describe("Borrower Repayment Flow", () => {
 
     const review = page.getByRole("button", { name: /Review Repayment/i });
     // The flow should not allow proceeding to confirmation with an invalid amount.
-    await expect(review).toBeDisabled().catch(async () => {
-      await review.click();
-      await expect(page.locator("text=/exceeds|too (large|high)|maximum/i")).toBeVisible();
-    });
+    await expect(review)
+      .toBeDisabled()
+      .catch(async () => {
+        await review.click();
+        await expect(page.locator("text=/exceeds|too (large|high)|maximum/i")).toBeVisible();
+      });
   });
 });
