@@ -60,6 +60,7 @@ describe("Idempotency Middleware", () => {
     expect(cacheService.get).toHaveBeenCalledWith(`idemp:${key}`);
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.set).toHaveBeenCalledWith("X-Idempotency-Cache", "HIT");
+    expect(res.set).toHaveBeenCalledWith("X-Idempotent-Replayed", "true");
     expect(res.json).toHaveBeenCalledWith(cachedResponse.body);
     expect(next).not.toHaveBeenCalled();
   });
@@ -72,6 +73,70 @@ describe("Idempotency Middleware", () => {
     await idempotencyMiddleware(req as Request, res as Response, next);
 
     expect(next).toHaveBeenCalled();
+    expect(res.set).toHaveBeenCalledWith("X-Idempotent-Replayed", "false");
     expect(res.on).toHaveBeenCalledWith("finish", expect.any(Function));
+  });
+
+  it("should mark first execution and sequential replay with header values", async () => {
+    const key = "sequential-key";
+    const cache = new Map<string, unknown>();
+    const firstFinishHandlers: Array<() => Promise<void>> = [];
+
+    asMock(req.header).mockReturnValue(key);
+    (cacheService.get as jest.Mock<(cacheKey: string) => Promise<unknown>>)
+      .mockImplementation(async (cacheKey: string) => cache.get(cacheKey))
+      .mockName("cacheService.get");
+    (
+      cacheService.set as jest.Mock<
+        (cacheKey: string, value: unknown) => Promise<void>
+      >
+    )
+      .mockImplementation(async (cacheKey: string, value: unknown) => {
+        cache.set(cacheKey, value);
+      })
+      .mockName("cacheService.set");
+    res.on.mockImplementation((event: string, handler: () => Promise<void>) => {
+      if (event === "finish") {
+        firstFinishHandlers.push(handler);
+      }
+      return res;
+    });
+
+    await idempotencyMiddleware(req as Request, res as Response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.set).toHaveBeenCalledWith("X-Idempotent-Replayed", "false");
+
+    res.statusCode = 202;
+    res.json({ accepted: true });
+    const finishHandler = firstFinishHandlers[0];
+    if (!finishHandler) {
+      throw new Error(
+        "Expected idempotency middleware to register finish hook",
+      );
+    }
+    await finishHandler();
+
+    const replayRes = {
+      status: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+      send: jest.fn().mockReturnThis(),
+      on: jest.fn(),
+      statusCode: 200,
+    };
+    const replayNext = jest.fn();
+
+    await idempotencyMiddleware(
+      req as Request,
+      replayRes as unknown as Response,
+      replayNext,
+    );
+
+    expect(replayRes.status).toHaveBeenCalledWith(202);
+    expect(replayRes.set).toHaveBeenCalledWith("X-Idempotency-Cache", "HIT");
+    expect(replayRes.set).toHaveBeenCalledWith("X-Idempotent-Replayed", "true");
+    expect(replayRes.json).toHaveBeenCalledWith({ accepted: true });
+    expect(replayNext).not.toHaveBeenCalled();
   });
 });

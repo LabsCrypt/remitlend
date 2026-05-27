@@ -65,6 +65,9 @@ describe("CORS middleware", () => {
       "https://frontend.example.com",
     );
     expect(response.headers["access-control-allow-credentials"]).toBe("true");
+    expect(response.headers["access-control-expose-headers"]).toBe(
+      "X-Idempotent-Replayed,X-Idempotency-Cache",
+    );
   });
 
   it("rejects unknown origins in production", async () => {
