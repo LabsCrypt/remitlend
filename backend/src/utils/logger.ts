@@ -69,4 +69,31 @@ const logger = winston.createLogger({
   transports,
 });
 
-export default logger;
+export interface LogContext {
+  requestId?: string;
+  userId?: string;
+  loanId?: string;
+  [key: string]: any;
+}
+
+const withContext = (context: LogContext = {}) => {
+  const requestId = context.requestId || getRequestId();
+  const baseMeta: Record<string, any> = {};
+
+  if (requestId) baseMeta.requestId = requestId;
+  if (context.userId) baseMeta.userId = context.userId;
+  if (context.loanId) baseMeta.loanId = context.loanId;
+
+  return {
+    info: (message: string, meta?: any) =>
+      logger.info(message, { ...baseMeta, ...meta }),
+    warn: (message: string, meta?: any) =>
+      logger.warn(message, { ...baseMeta, ...meta }),
+    error: (message: string, meta?: any) =>
+      logger.error(message, { ...baseMeta, ...meta }),
+  };
+};
+
+const loggerWithContext = Object.assign(logger, { withContext });
+
+export default loggerWithContext;

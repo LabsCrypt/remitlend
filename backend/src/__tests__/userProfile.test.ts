@@ -87,9 +87,10 @@ describe("/user/profile", () => {
       displayName: "",
       phone: "",
     });
-    expect(queryMock).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO user_profiles"), [
-      publicKey,
-    ]);
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO user_profiles"),
+      [publicKey],
+    );
   });
 
   it("updates allowed profile fields after validation", async () => {

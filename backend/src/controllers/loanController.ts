@@ -122,7 +122,9 @@ export const contestDefault = asyncHandler(
       [loanId, borrower],
     );
 
-    logger.info("Loan default contested", { loanId, borrower, reason });
+    logger
+      .withContext()
+      .info("Loan default contested", { loanId, borrower, reason });
 
     // Notify admins via email, SSE, and optional webhook
     await notificationService.notifyAdmins({
@@ -462,10 +464,12 @@ export const getLoanDetails = asyncHandler(
       (event: any) => event.event_type === "LoanApproved",
     );
     if (approvalEvents.length > 1) {
-      logger.warn("Duplicate LoanApproved events detected for loan", {
-        loanId,
-        duplicateCount: approvalEvents.length,
-      });
+      logger
+        .withContext()
+        .warn("Duplicate LoanApproved events detected for loan", {
+          loanId,
+          duplicateCount: approvalEvents.length,
+        });
     }
     const approvalEvent =
       approvalEvents.length > 0
@@ -665,7 +669,7 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
   }>(cacheKey);
 
   if (cachedTx) {
-    logger.info("Returning cached unsigned loan request tx", {
+    logger.withContext().info("Returning cached unsigned loan request tx", {
       borrower: borrowerPublicKey,
       amount,
     });
@@ -685,7 +689,7 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
   // Cache for 60 seconds to prevent sequence number collisions from rapid requests
   await cacheService.set(cacheKey, result, 60);
 
-  logger.info("Loan request transaction built", {
+  logger.withContext().info("Loan request transaction built", {
     borrower: borrowerPublicKey,
     amount,
   });
@@ -732,7 +736,7 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
   }>(cacheKey);
 
   if (cachedTx) {
-    logger.info("Returning cached unsigned repay tx", {
+    logger.withContext().info("Returning cached unsigned repay tx", {
       borrower: borrowerPublicKey,
       loanId: loanIdNum,
       amount,
@@ -755,7 +759,7 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
   // Cache for 60 seconds
   await cacheService.set(cacheKey, result, 60);
 
-  logger.info("Repay transaction built", {
+  logger.withContext().info("Repay transaction built", {
     borrower: borrowerPublicKey,
     loanId: loanIdNum,
     amount,
@@ -804,11 +808,13 @@ export const depositCollateral = asyncHandler(
     }>(cacheKey);
 
     if (cachedTx) {
-      logger.info("Returning cached unsigned deposit_collateral tx", {
-        borrower: borrowerPublicKey,
-        loanId: loanIdNum,
-        amount,
-      });
+      logger
+        .withContext()
+        .info("Returning cached unsigned deposit_collateral tx", {
+          borrower: borrowerPublicKey,
+          loanId: loanIdNum,
+          amount,
+        });
       res.json({
         success: true,
         loanId: loanIdNum,
@@ -826,7 +832,7 @@ export const depositCollateral = asyncHandler(
 
     await cacheService.set(cacheKey, result, 60);
 
-    logger.info("Deposit collateral transaction built", {
+    logger.withContext().info("Deposit collateral transaction built", {
       borrower: borrowerPublicKey,
       loanId: loanIdNum,
       amount,
@@ -874,10 +880,12 @@ export const releaseCollateral = asyncHandler(
     }>(cacheKey);
 
     if (cachedTx) {
-      logger.info("Returning cached unsigned release_collateral tx", {
-        borrower: borrowerPublicKey,
-        loanId: loanIdNum,
-      });
+      logger
+        .withContext()
+        .info("Returning cached unsigned release_collateral tx", {
+          borrower: borrowerPublicKey,
+          loanId: loanIdNum,
+        });
       res.json({
         success: true,
         loanId: loanIdNum,
@@ -894,7 +902,7 @@ export const releaseCollateral = asyncHandler(
 
     await cacheService.set(cacheKey, result, 60);
 
-    logger.info("Release collateral transaction built", {
+    logger.withContext().info("Release collateral transaction built", {
       borrower: borrowerPublicKey,
       loanId: loanIdNum,
     });
@@ -943,7 +951,7 @@ export const refinanceLoan = asyncHandler(
     }>(cacheKey);
 
     if (cachedTx) {
-      logger.info("Returning cached unsigned refinance tx", {
+      logger.withContext().info("Returning cached unsigned refinance tx", {
         borrower: borrowerPublicKey,
         loanId: loanIdNum,
         newAmount,
@@ -967,7 +975,7 @@ export const refinanceLoan = asyncHandler(
 
     await cacheService.set(cacheKey, result, 60);
 
-    logger.info("Refinance loan transaction built", {
+    logger.withContext().info("Refinance loan transaction built", {
       borrower: borrowerPublicKey,
       loanId: loanIdNum,
       newAmount,
@@ -1016,7 +1024,7 @@ export const extendLoan = asyncHandler(async (req: Request, res: Response) => {
   }>(cacheKey);
 
   if (cachedTx) {
-    logger.info("Returning cached unsigned extend tx", {
+    logger.withContext().info("Returning cached unsigned extend tx", {
       borrower: borrowerPublicKey,
       loanId: loanIdNum,
       extraLedgers,
@@ -1038,7 +1046,7 @@ export const extendLoan = asyncHandler(async (req: Request, res: Response) => {
 
   await cacheService.set(cacheKey, result, 60);
 
-  logger.info("Extend loan transaction built", {
+  logger.withContext().info("Extend loan transaction built", {
     borrower: borrowerPublicKey,
     loanId: loanIdNum,
     extraLedgers,
@@ -1085,7 +1093,7 @@ export const buildLiquidateLoan = asyncHandler(
     }>(cacheKey);
 
     if (cachedTx) {
-      logger.info("Returning cached unsigned liquidate tx", {
+      logger.withContext().info("Returning cached unsigned liquidate tx", {
         liquidator: liquidatorPublicKey,
         loanId: loanIdNum,
       });
@@ -1105,7 +1113,7 @@ export const buildLiquidateLoan = asyncHandler(
 
     await cacheService.set(cacheKey, result, 60);
 
-    logger.info("Liquidate loan transaction built", {
+    logger.withContext().info("Liquidate loan transaction built", {
       liquidator: liquidatorPublicKey,
       loanId: loanIdNum,
     });
@@ -1157,7 +1165,7 @@ export const submitTransaction = asyncHandler(
           ],
         );
 
-        logger.info("Transaction submission recorded", {
+        logger.withContext().info("Transaction submission recorded", {
           txHash: stellarResult.txHash,
           status: stellarResult.status,
           submittedBy: req.user?.publicKey,
@@ -1167,7 +1175,7 @@ export const submitTransaction = asyncHandler(
       },
     );
 
-    logger.info("Transaction submitted successfully", {
+    logger.withContext().info("Transaction submitted successfully", {
       txHash: result.stellarResult.txHash,
       status: result.stellarResult.status,
     });

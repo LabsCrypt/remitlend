@@ -25,7 +25,7 @@ export const createRemittance = asyncHandler(
       throw AppError.unauthorized("Wallet address not found in request");
     }
 
-    logger.info("Creating remittance", {
+    logger.withContext().info("Creating remittance", {
       sender: senderAddress,
       recipient: recipientAddress,
       amount,
@@ -141,7 +141,9 @@ export const submitRemittanceTransaction = asyncHandler(
       throw AppError.badRequest("Remittance ID is required");
     }
 
-    logger.info("Submitting remittance transaction", { remittanceId: id });
+    logger
+      .withContext()
+      .info("Submitting remittance transaction", { remittanceId: id });
 
     try {
       const remittance = await remittanceService.getRemittance(id);
@@ -167,7 +169,7 @@ export const submitRemittanceTransaction = asyncHandler(
         stellarResult.txHash,
       );
 
-      logger.info("Remittance transaction confirmed", {
+      logger.withContext().info("Remittance transaction confirmed", {
         remittanceId: id,
         txHash: stellarResult.txHash,
         status: stellarResult.status,
@@ -191,7 +193,9 @@ export const submitRemittanceTransaction = asyncHandler(
         },
       });
     } catch (error) {
-      logger.error("Error submitting remittance transaction:", error);
+      logger
+        .withContext()
+        .error("Error submitting remittance transaction:", error);
 
       if (id) {
         await remittanceService.updateRemittanceStatus(

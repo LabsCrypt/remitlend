@@ -12,11 +12,11 @@ let retryProcessorInterval: NodeJS.Timeout | null = null;
  */
 export function startWebhookRetryProcessor(): void {
   if (retryProcessorInterval) {
-    logger.warn("Webhook retry processor already running");
+    logger.withContext().warn("Webhook retry processor already running");
     return;
   }
 
-  logger.info("Starting webhook retry processor");
+  logger.withContext().info("Starting webhook retry processor");
 
   // Run retry processor every 10 seconds
   retryProcessorInterval = setInterval(async () => {
@@ -25,7 +25,9 @@ export function startWebhookRetryProcessor(): void {
       await WebhookService.processRetries();
       await refreshWebhookRetryQueueDepth();
     } catch (error) {
-      logger.error("Error in webhook retry processor interval", { error });
+      logger
+        .withContext()
+        .error("Error in webhook retry processor interval", { error });
     }
   }, 10 * 1000);
 }
@@ -35,7 +37,7 @@ export function startWebhookRetryProcessor(): void {
  */
 export function stopWebhookRetryProcessor(): void {
   if (retryProcessorInterval) {
-    logger.info("Stopping webhook retry processor");
+    logger.withContext().info("Stopping webhook retry processor");
     clearInterval(retryProcessorInterval);
     retryProcessorInterval = null;
   }

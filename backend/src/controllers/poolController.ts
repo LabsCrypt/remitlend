@@ -162,7 +162,7 @@ export const depositToPool = asyncHandler(
       amount,
     );
 
-    logger.info("Deposit transaction built", {
+    logger.withContext().info("Deposit transaction built", {
       depositor: depositorPublicKey,
       token,
       amount,
@@ -207,7 +207,7 @@ export const withdrawFromPool = asyncHandler(
       amount,
     );
 
-    logger.info("Withdraw transaction built", {
+    logger.withContext().info("Withdraw transaction built", {
       depositor: depositorPublicKey,
       token,
       shares: amount,
@@ -256,7 +256,7 @@ export const submitPoolTransaction = asyncHandler(
           ],
         );
 
-        logger.info("Pool transaction submission recorded", {
+        logger.withContext().info("Pool transaction submission recorded", {
           txHash: stellarResult.txHash,
           status: stellarResult.status,
           submittedBy: req.user?.publicKey,
@@ -267,7 +267,7 @@ export const submitPoolTransaction = asyncHandler(
       },
     );
 
-    logger.info("Pool transaction submitted successfully", {
+    logger.withContext().info("Pool transaction submitted successfully", {
       txHash: result.stellarResult.txHash,
       status: result.stellarResult.status,
     });

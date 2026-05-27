@@ -85,7 +85,9 @@ export function recordIndexerLedgers(
 }
 
 export function recordScoreReconciliationRun(date = new Date()): void {
-  scoreReconciliationLastRunTimestampGauge.set(Math.floor(date.getTime() / 1000));
+  scoreReconciliationLastRunTimestampGauge.set(
+    Math.floor(date.getTime() / 1000),
+  );
 }
 
 export async function refreshWebhookRetryQueueDepth(): Promise<void> {
@@ -99,7 +101,9 @@ export async function refreshWebhookRetryQueueDepth(): Promise<void> {
     );
     webhookRetryQueueDepthGauge.set(Number(result.rows[0]?.count ?? 0));
   } catch (error) {
-    logger.warn("Failed to refresh webhook retry queue depth metric", { error });
+    logger.warn("Failed to refresh webhook retry queue depth metric", {
+      error,
+    });
   }
 }
 

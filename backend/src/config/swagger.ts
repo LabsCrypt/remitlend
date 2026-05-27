@@ -20,7 +20,8 @@ export const swaggerSpec = swaggerJSDoc({
     info: {
       title: "RemitLend API",
       version: "1.0.0",
-      description: "Backend API for RemitLend lending, scoring, remittance, and indexer flows.",
+      description:
+        "Backend API for RemitLend lending, scoring, remittance, and indexer flows.",
     },
     servers: [
       {

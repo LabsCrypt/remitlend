@@ -88,7 +88,9 @@ class RateLimitService {
         currentCount,
       };
     } catch (error) {
-      logger.error("Rate limit check failed", { identifier, error });
+      logger
+        .withContext()
+        .error("Rate limit check failed", { identifier, error });
 
       // Fail open: allow the request if Redis is unavailable
       // This prevents the entire service from failing due to rate limiting issues
@@ -111,9 +113,11 @@ class RateLimitService {
     const key = `rate_limit:${identifier}`;
     try {
       await cacheService.delete(key);
-      logger.info("Rate limit reset", { identifier });
+      logger.withContext().info("Rate limit reset", { identifier });
     } catch (error) {
-      logger.error("Failed to reset rate limit", { identifier, error });
+      logger
+        .withContext()
+        .error("Failed to reset rate limit", { identifier, error });
     }
   }
 
@@ -171,7 +175,9 @@ class RateLimitService {
         resetTime,
       };
     } catch (error) {
-      logger.error("Failed to get rate limit status", { identifier, error });
+      logger
+        .withContext()
+        .error("Failed to get rate limit status", { identifier, error });
 
       // Return conservative values on error
       return {

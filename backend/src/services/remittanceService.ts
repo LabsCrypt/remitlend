@@ -169,7 +169,7 @@ export const remittanceService = {
         };
       });
     } catch (error) {
-      logger.error("Error creating remittance:", error);
+      logger.withContext().error("Error creating remittance:", error);
 
       if (error instanceof AppError) throw error;
 
@@ -250,7 +250,7 @@ export const remittanceService = {
         nextCursor,
       };
     } catch (error) {
-      logger.error("Error fetching remittances:", error);
+      logger.withContext().error("Error fetching remittances:", error);
 
       if (error instanceof AppError) {
         throw error;
@@ -285,7 +285,7 @@ export const remittanceService = {
         updatedAt: r.updated_at.toISOString(),
       };
     } catch (error) {
-      logger.error("Error fetching remittance:", error);
+      logger.withContext().error("Error fetching remittance:", error);
 
       if (error instanceof AppError) {
         throw error;
@@ -337,7 +337,7 @@ export const remittanceService = {
         updatedAt: r.updated_at.toISOString(),
       };
     } catch (error) {
-      logger.error("Error updating remittance:", error);
+      logger.withContext().error("Error updating remittance:", error);
 
       if (error instanceof AppError) {
         throw error;

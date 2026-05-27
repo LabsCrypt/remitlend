@@ -164,7 +164,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built request_loan transaction", {
+    logger.withContext().info("Built request_loan transaction", {
       borrower: borrowerPublicKey,
       amount,
     });
@@ -210,7 +210,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built repay transaction", {
+    logger.withContext().info("Built repay transaction", {
       borrower: borrowerPublicKey,
       loanId,
       amount,
@@ -260,7 +260,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built deposit transaction", {
+    logger.withContext().info("Built deposit transaction", {
       provider: providerPublicKey,
       token: tokenAddress,
       amount,
@@ -310,7 +310,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built withdraw transaction", {
+    logger.withContext().info("Built withdraw transaction", {
       provider: providerPublicKey,
       token: tokenAddress,
       shares,
@@ -353,7 +353,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built approve_loan transaction", {
+    logger.withContext().info("Built approve_loan transaction", {
       admin: adminPublicKey,
       loanId,
     });
@@ -396,7 +396,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built deposit_collateral transaction", {
+    logger.withContext().info("Built deposit_collateral transaction", {
       borrower: borrowerPublicKey,
       loanId,
       amount,
@@ -438,7 +438,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built release_collateral transaction", {
+    logger.withContext().info("Built release_collateral transaction", {
       borrower: borrowerPublicKey,
       loanId,
     });
@@ -483,7 +483,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built refinance_loan transaction", {
+    logger.withContext().info("Built refinance_loan transaction", {
       borrower: borrowerPublicKey,
       loanId,
       newAmount,
@@ -531,7 +531,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built extend_loan transaction", {
+    logger.withContext().info("Built extend_loan transaction", {
       borrower: borrowerPublicKey,
       loanId,
       extraLedgers,
@@ -579,7 +579,7 @@ class SorobanService {
     const prepared = await server.prepareTransaction(tx);
     const unsignedTxXdr = prepared.toXDR();
 
-    logger.info("Built liquidate transaction", {
+    logger.withContext().info("Built liquidate transaction", {
       liquidator: liquidatorPublicKey,
       loanId,
     });
@@ -635,7 +635,7 @@ class SorobanService {
       );
     }
 
-    logger.info("Soroban configuration validated", {
+    logger.withContext().info("Soroban configuration validated", {
       loanManagerContractId: process.env.LOAN_MANAGER_CONTRACT_ID,
       lendingPoolContractId: process.env.LENDING_POOL_CONTRACT_ID,
       rpcUrl,
@@ -665,7 +665,7 @@ class SorobanService {
       throw AppError.internal("Transaction submission returned no hash");
     }
 
-    logger.info("Transaction submitted", {
+    logger.withContext().info("Transaction submitted", {
       txHash,
       status: sendResult.status,
     });
@@ -740,18 +740,22 @@ class SorobanService {
         break;
       }
 
-      logger.warn("Retrying get_score simulation after transient RPC failure", {
-        borrower: userPublicKey,
-        attempt,
-        error: message,
-      });
+      logger
+        .withContext()
+        .warn("Retrying get_score simulation after transient RPC failure", {
+          borrower: userPublicKey,
+          attempt,
+          error: message,
+        });
     }
 
     if (!simulation) {
-      logger.warn("Falling back to default credit score: empty simulation", {
-        borrower: userPublicKey,
-        defaultScore,
-      });
+      logger
+        .withContext()
+        .warn("Falling back to default credit score: empty simulation", {
+          borrower: userPublicKey,
+          defaultScore,
+        });
       return defaultScore;
     }
 
@@ -761,7 +765,7 @@ class SorobanService {
         this.isMissingScoreError(message) ||
         this.isTransientRpcError(message)
       ) {
-        logger.warn("Falling back to default credit score", {
+        logger.withContext().warn("Falling back to default credit score", {
           borrower: userPublicKey,
           defaultScore,
           reason: message,
@@ -776,21 +780,25 @@ class SorobanService {
 
     const retval = simulation.result?.retval;
     if (!retval) {
-      logger.warn("Falling back to default credit score: no score returned", {
-        borrower: userPublicKey,
-        defaultScore,
-      });
+      logger
+        .withContext()
+        .warn("Falling back to default credit score: no score returned", {
+          borrower: userPublicKey,
+          defaultScore,
+        });
       return defaultScore;
     }
 
     const nativeScore = scValToNative(retval);
     const score = Number(nativeScore);
     if (!Number.isFinite(score)) {
-      logger.warn("Falling back to default credit score: invalid score value", {
-        borrower: userPublicKey,
-        defaultScore,
-        nativeScore,
-      });
+      logger
+        .withContext()
+        .warn("Falling back to default credit score: invalid score value", {
+          borrower: userPublicKey,
+          defaultScore,
+          nativeScore,
+        });
       return defaultScore;
     }
 
@@ -1014,7 +1022,7 @@ class SorobanService {
       }
     }
 
-    logger.info("Score delta configuration validated", {
+    logger.withContext().info("Score delta configuration validated", {
       repaymentDelta: process.env.SCORE_DELTA_REPAY ?? "15",
       defaultPenalty: process.env.SCORE_DELTA_DEFAULT ?? "50",
       latePenalty: process.env.SCORE_DELTA_LATE ?? "5",

@@ -49,7 +49,7 @@ export async function updateUserScoresBulk(
     } else {
       await query(sql, params);
     }
-    logger.info("Applied bulk user score updates", {
+    logger.withContext().info("Applied bulk user score updates", {
       updatedCount: params.length / 2,
     });
 
@@ -59,7 +59,9 @@ export async function updateUserScoresBulk(
       await cacheService.delete(`score:breakdown:${userId}`);
     }
   } catch (error) {
-    logger.error("Failed to apply bulk user score updates", { error });
+    logger
+      .withContext()
+      .error("Failed to apply bulk user score updates", { error });
     throw error;
   }
 }
@@ -100,9 +102,11 @@ export async function setAbsoluteUserScoresBulk(
 
   try {
     await query(sql, params);
-    logger.info("Applied absolute user score reconciliation updates", {
-      updatedCount: valuePlaceholders.length,
-    });
+    logger
+      .withContext()
+      .info("Applied absolute user score reconciliation updates", {
+        updatedCount: valuePlaceholders.length,
+      });
 
     // Invalidate Redis cache for reconciled users
     for (const [userId] of scores) {
@@ -112,9 +116,11 @@ export async function setAbsoluteUserScoresBulk(
       }
     }
   } catch (error) {
-    logger.error("Failed to apply absolute user score reconciliation updates", {
-      error,
-    });
+    logger
+      .withContext()
+      .error("Failed to apply absolute user score reconciliation updates", {
+        error,
+      });
     throw error;
   }
 }

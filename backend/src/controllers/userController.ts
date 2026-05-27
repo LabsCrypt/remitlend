@@ -22,7 +22,9 @@ function metadataFrom(row: UserProfileRow): Record<string, unknown> {
 }
 
 function toIsoString(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+  return value instanceof Date
+    ? value.toISOString()
+    : new Date(value).toISOString();
 }
 
 function serializeProfile(row: UserProfileRow) {
@@ -32,7 +34,9 @@ function serializeProfile(row: UserProfileRow) {
     id: String(row.id),
     email: row.email ?? "",
     walletAddress: row.public_key,
-    kycVerified: Boolean(metadata.kycVerified ?? metadata.kyc_verified ?? false),
+    kycVerified: Boolean(
+      metadata.kycVerified ?? metadata.kyc_verified ?? false,
+    ),
     displayName: row.display_name ?? "",
     phone: row.phone ?? "",
     locale: typeof metadata.locale === "string" ? metadata.locale : undefined,
@@ -72,84 +76,88 @@ async function getOrCreateProfile(publicKey: string): Promise<UserProfileRow> {
   return profile;
 }
 
-export const getUserProfile = asyncHandler(async (req: Request, res: Response) => {
-  const publicKey = req.user?.publicKey;
-  if (!publicKey) {
-    throw AppError.unauthorized("Authentication required");
-  }
-
-  const profile = await getOrCreateProfile(publicKey);
-  res.json(serializeProfile(profile));
-});
-
-export const updateUserProfile = asyncHandler(async (req: Request, res: Response) => {
-  const publicKey = req.user?.publicKey;
-  if (!publicKey) {
-    throw AppError.unauthorized("Authentication required");
-  }
-
-  const input = req.body as UpdateUserProfileInput;
-  const current = await getOrCreateProfile(publicKey);
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  let paramIndex = 1;
-
-  if (input.displayName !== undefined) {
-    updates.push(`display_name = $${paramIndex++}`);
-    values.push(input.displayName);
-  }
-
-  if (input.email !== undefined) {
-    updates.push(`email = $${paramIndex++}`);
-    values.push(input.email);
-  }
-
-  if (input.phone !== undefined) {
-    updates.push(`phone = $${paramIndex++}`);
-    values.push(input.phone);
-  }
-
-  if (input.locale !== undefined || input.avatarUrl !== undefined) {
-    const metadata = { ...metadataFrom(current) };
-
-    if (input.locale === null) {
-      delete metadata.locale;
-    } else if (input.locale !== undefined) {
-      metadata.locale = input.locale;
+export const getUserProfile = asyncHandler(
+  async (req: Request, res: Response) => {
+    const publicKey = req.user?.publicKey;
+    if (!publicKey) {
+      throw AppError.unauthorized("Authentication required");
     }
 
-    if (input.avatarUrl === null) {
-      delete metadata.avatarUrl;
-      delete metadata.avatar_url;
-    } else if (input.avatarUrl !== undefined) {
-      metadata.avatarUrl = input.avatarUrl;
-      delete metadata.avatar_url;
+    const profile = await getOrCreateProfile(publicKey);
+    res.json(serializeProfile(profile));
+  },
+);
+
+export const updateUserProfile = asyncHandler(
+  async (req: Request, res: Response) => {
+    const publicKey = req.user?.publicKey;
+    if (!publicKey) {
+      throw AppError.unauthorized("Authentication required");
     }
 
-    updates.push(`metadata = $${paramIndex++}::jsonb`);
-    values.push(JSON.stringify(metadata));
-  }
+    const input = req.body as UpdateUserProfileInput;
+    const current = await getOrCreateProfile(publicKey);
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let paramIndex = 1;
 
-  if (updates.length === 0) {
-    res.json(serializeProfile(current));
-    return;
-  }
+    if (input.displayName !== undefined) {
+      updates.push(`display_name = $${paramIndex++}`);
+      values.push(input.displayName);
+    }
 
-  updates.push("updated_at = CURRENT_TIMESTAMP");
-  values.push(publicKey);
+    if (input.email !== undefined) {
+      updates.push(`email = $${paramIndex++}`);
+      values.push(input.email);
+    }
 
-  const result = await query(
-    `UPDATE user_profiles
+    if (input.phone !== undefined) {
+      updates.push(`phone = $${paramIndex++}`);
+      values.push(input.phone);
+    }
+
+    if (input.locale !== undefined || input.avatarUrl !== undefined) {
+      const metadata = { ...metadataFrom(current) };
+
+      if (input.locale === null) {
+        delete metadata.locale;
+      } else if (input.locale !== undefined) {
+        metadata.locale = input.locale;
+      }
+
+      if (input.avatarUrl === null) {
+        delete metadata.avatarUrl;
+        delete metadata.avatar_url;
+      } else if (input.avatarUrl !== undefined) {
+        metadata.avatarUrl = input.avatarUrl;
+        delete metadata.avatar_url;
+      }
+
+      updates.push(`metadata = $${paramIndex++}::jsonb`);
+      values.push(JSON.stringify(metadata));
+    }
+
+    if (updates.length === 0) {
+      res.json(serializeProfile(current));
+      return;
+    }
+
+    updates.push("updated_at = CURRENT_TIMESTAMP");
+    values.push(publicKey);
+
+    const result = await query(
+      `UPDATE user_profiles
      SET ${updates.join(", ")}
      WHERE public_key = $${paramIndex}
      RETURNING *`,
-    values,
-  );
+      values,
+    );
 
-  const updated = result.rows[0] as UserProfileRow | undefined;
-  if (!updated) {
-    throw AppError.notFound("User profile not found");
-  }
+    const updated = result.rows[0] as UserProfileRow | undefined;
+    if (!updated) {
+      throw AppError.notFound("User profile not found");
+    }
 
-  res.json(serializeProfile(updated));
-});
+    res.json(serializeProfile(updated));
+  },
+);

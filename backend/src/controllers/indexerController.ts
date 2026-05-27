@@ -171,7 +171,7 @@ const decodeQuarantinedRawEvent = (
           : row.contract_id,
     };
   } catch (error) {
-    logger.warn("Failed to decode quarantined raw event", {
+    logger.withContext().warn("Failed to decode quarantined raw event", {
       quarantineId: row.id,
       eventId: row.event_id,
       error,
@@ -226,7 +226,7 @@ export const getIndexerStatus = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    logger.error("Failed to get indexer status", { error });
+    logger.withContext().error("Failed to get indexer status", { error });
     res.status(500).json({
       success: false,
       message: "Failed to get indexer status",
@@ -313,7 +313,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
     await cacheService.set(cacheKey, response, 300);
     res.json(response);
   } catch (error) {
-    logger.error("Failed to get borrower events", { error });
+    logger.withContext().error("Failed to get borrower events", { error });
     res.status(500).json({
       success: false,
       message: "Failed to get borrower events",
@@ -390,7 +390,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
     await cacheService.set(cacheKey, response, 300);
     res.json(response);
   } catch (error) {
-    logger.error("Failed to get loan events", { error });
+    logger.withContext().error("Failed to get loan events", { error });
     res.status(500).json({
       success: false,
       message: "Failed to get loan events",
@@ -456,7 +456,7 @@ export const getRecentEvents = async (req: Request, res: Response) => {
     await cacheService.set(cacheKey, response, 120);
     res.json(response);
   } catch (error) {
-    logger.error("Failed to get recent events", { error });
+    logger.withContext().error("Failed to get recent events", { error });
     res.status(500).json({
       success: false,
       message: "Failed to get recent events",
@@ -478,7 +478,9 @@ export const listWebhookSubscriptions = async (
       },
     });
   } catch (error) {
-    logger.error("Failed to list webhook subscriptions", { error });
+    logger
+      .withContext()
+      .error("Failed to list webhook subscriptions", { error });
     res.status(500).json({
       success: false,
       message: "Failed to list webhook subscriptions",
@@ -554,7 +556,9 @@ export const createWebhookSubscription = async (
       },
     });
   } catch (error) {
-    logger.error("Failed to create webhook subscription", { error });
+    logger
+      .withContext()
+      .error("Failed to create webhook subscription", { error });
     res.status(500).json({
       success: false,
       message: "Failed to create webhook subscription",
@@ -589,7 +593,9 @@ export const deleteWebhookSubscription = async (
       message: "Webhook subscription deleted",
     });
   } catch (error) {
-    logger.error("Failed to delete webhook subscription", { error });
+    logger
+      .withContext()
+      .error("Failed to delete webhook subscription", { error });
     res.status(500).json({
       success: false,
       message: "Failed to delete webhook subscription",
@@ -622,7 +628,7 @@ export const getWebhookDeliveries = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    logger.error("Failed to fetch webhook deliveries", { error });
+    logger.withContext().error("Failed to fetch webhook deliveries", { error });
     res.status(500).json({
       success: false,
       message: "Failed to fetch webhook deliveries",
@@ -662,7 +668,9 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
     try {
       indexer = buildIndexerFromConfig();
     } catch (error) {
-      logger.error("Failed to initialize indexer for reindex", { error });
+      logger
+        .withContext()
+        .error("Failed to initialize indexer for reindex", { error });
       return res.status(500).json({
         success: false,
         message: "Indexer is not configured",
@@ -676,7 +684,7 @@ export const reindexLedgerRange = async (req: Request, res: Response) => {
       data: result,
     });
   } catch (error) {
-    logger.error("Failed to reindex ledger range", { error });
+    logger.withContext().error("Failed to reindex ledger range", { error });
     res.status(500).json({
       success: false,
       message: "Failed to reindex ledger range",
@@ -726,7 +734,7 @@ export const listQuarantinedEvents = async (req: Request, res: Response) => {
 
     res.json(response);
   } catch (error) {
-    logger.error("Failed to list quarantined events", { error });
+    logger.withContext().error("Failed to list quarantined events", { error });
     res.status(500).json({
       success: false,
       message: "Failed to list quarantined events",
@@ -783,9 +791,11 @@ export const reprocessQuarantinedEvents = async (
     try {
       indexer = buildIndexerFromConfig();
     } catch (error) {
-      logger.error("Failed to initialize indexer for quarantine reprocess", {
-        error,
-      });
+      logger
+        .withContext()
+        .error("Failed to initialize indexer for quarantine reprocess", {
+          error,
+        });
       return res.status(500).json({
         success: false,
         message: "Indexer is not configured",
@@ -808,7 +818,7 @@ export const reprocessQuarantinedEvents = async (
         deleted += 1;
       } catch (error) {
         failed += 1;
-        logger.warn("Failed to reprocess quarantined event", {
+        logger.withContext().warn("Failed to reprocess quarantined event", {
           quarantineId: row.id,
           eventId: row.event_id,
           error,
@@ -831,7 +841,9 @@ export const reprocessQuarantinedEvents = async (
       },
     });
   } catch (error) {
-    logger.error("Failed to reprocess quarantined events", { error });
+    logger
+      .withContext()
+      .error("Failed to reprocess quarantined events", { error });
     res.status(500).json({
       success: false,
       message: "Failed to reprocess quarantined events",

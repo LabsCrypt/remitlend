@@ -1,12 +1,7 @@
 import { z } from "zod";
 
 const nullableTrimmedString = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .nullable()
-    .optional();
+  z.string().trim().max(max).nullable().optional();
 
 export const updateUserProfileSchema = z
   .object({
