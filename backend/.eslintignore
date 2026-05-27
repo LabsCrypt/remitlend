@@ -2,3 +2,4 @@ node_modules
 dist
 coverage
 migrations
+src/tests/jest.setup.js

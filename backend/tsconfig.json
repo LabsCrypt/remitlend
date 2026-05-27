@@ -33,6 +33,8 @@
     "strict": true,
     "jsx": "react-jsx",
     // "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "isolatedModules": true,
     "esModuleInterop": true,
     // "noUncheckedSideEffectImports": true,

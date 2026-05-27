@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   User,
   Wallet,
@@ -17,14 +17,14 @@ import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/Ca
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { GamificationSettings } from "../../components/gamification/GamificationSettings";
-import { ThemeToggle } from "../../components/ui/ThemeToggle";
+import { useThemeStore } from "../../stores/useThemeStore";
 import {
   useWalletStore,
   selectWalletAddress,
   selectWalletNetwork,
 } from "../../stores/useWalletStore";
 import { useUserStore, selectUser } from "../../stores/useUserStore";
-import { useLogout } from "../../hooks/useLogout";
+import { logoutUser } from "../../lib/session";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +69,7 @@ function CopyButton({ value }: { value: string }) {
       onClick={handleCopy}
       className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
       title="Copy to clipboard"
+      aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
     >
       {copied ? <CheckCheck className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
     </button>
@@ -103,6 +104,7 @@ function Toggle({
         }`}
         role="switch"
         aria-checked={checked}
+        aria-label={label}
       >
         <span
           className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -403,6 +405,7 @@ function SecuritySection() {
               <button
                 onClick={() => setShowToken((v) => !v)}
                 className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                aria-label={showToken ? "Hide session token" : "Show session token"}
               >
                 {showToken ? "Hide" : "Show"}
               </button>
@@ -438,6 +441,16 @@ function DisplaySection() {
 
   const [language, setLanguage] = useState("en");
 
+  const theme = useThemeStore((s) => s.theme);
+  const hydrated = useThemeStore((s) => s.hydrated);
+  const initializeTheme = useThemeStore((s) => s.initializeTheme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+
+  // Ensure client store is initialised
+  useEffect(() => {
+    if (!hydrated) initializeTheme();
+  }, [hydrated, initializeTheme]);
+
   return (
     <Card>
       <CardHeader>
@@ -451,10 +464,27 @@ function DisplaySection() {
           <div>
             <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Theme</p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              Click to cycle: Light → Dark → System
+              Choose a preference: Light / Dark / System
             </p>
           </div>
-          <ThemeToggle />
+          <div className="inline-flex items-center gap-2">
+            {(["light", "dark", "system"] as const).map((opt) => {
+              const active = theme === opt;
+              return (
+                <button
+                  key={opt}
+                  onClick={() => setTheme(opt as any)}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-indigo-600 text-white"
+                      : "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200"
+                  }`}
+                >
+                  {opt[0].toUpperCase() + opt.slice(1)}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>
@@ -485,6 +515,7 @@ function DisplaySection() {
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SectionId>("profile");
+  const handleLogout = () => logoutUser("manual");
 
   const renderSection = () => {
     switch (activeSection) {
@@ -505,12 +536,22 @@ export default function SettingsPage() {
 
   return (
     <main className="space-y-8 min-h-screen p-8 lg:p-12 max-w-5xl mx-auto">
-      <header>
-        <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Account</p>
-        <h1 className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Settings</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Manage your profile, wallet, notifications, and preferences.
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Account</p>
+          <h1 className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Settings</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Manage your profile, wallet, notifications, and preferences.
+          </p>
+        </div>
+        <Button
+          variant="danger"
+          onClick={handleLogout}
+          leftIcon={<LogOut className="h-4 w-4" />}
+          className="sm:mt-1"
+        >
+          Log out
+        </Button>
       </header>
 
       <div className="flex flex-col lg:flex-row gap-8">

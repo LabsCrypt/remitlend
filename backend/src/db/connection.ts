@@ -1,12 +1,20 @@
-import pg from "pg";
+import pg, { type PoolClient } from "pg";
 import logger from "../utils/logger.js";
+
+export type { PoolClient };
 
 const { Pool } = pg;
 
 // Parse pool configuration from environment
-const maxPoolSize = process.env.DB_POOL_MAX ? parseInt(process.env.DB_POOL_MAX, 10) : 10;
-const minPoolSize = process.env.DB_POOL_MIN ? parseInt(process.env.DB_POOL_MIN, 10) : 2;
-const idleTimeoutMillis = process.env.DB_IDLE_TIMEOUT_MS ? parseInt(process.env.DB_IDLE_TIMEOUT_MS, 10) : 30000;
+const maxPoolSize = process.env.DB_POOL_MAX
+  ? parseInt(process.env.DB_POOL_MAX, 10)
+  : 10;
+const minPoolSize = process.env.DB_POOL_MIN
+  ? parseInt(process.env.DB_POOL_MIN, 10)
+  : 2;
+const idleTimeoutMillis = process.env.DB_IDLE_TIMEOUT_MS
+  ? parseInt(process.env.DB_IDLE_TIMEOUT_MS, 10)
+  : 30000;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -14,6 +22,8 @@ const pool = new Pool({
   max: maxPoolSize,
   idleTimeoutMillis,
 });
+
+let isShuttingDown = false;
 
 // Periodic pool health metrics logging
 const metricsInterval = setInterval(() => {
@@ -34,32 +44,107 @@ pool.on("error", (err: Error) => {
 });
 
 // Helper for transient failures
-const TRANSIENT_ERRORS = ["ECONNREFUSED", "08000", "08003", "08006", "57P01", "57P02", "57P03"];
+export const TRANSIENT_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "08000",
+  "08003",
+  "08006",
+  "57P01", // admin_shutdown
+  "57P02", // crash_shutdown
+  "57P03", // cannot_connect_now
+  "40001", // serialization_failure
+  "40P01", // deadlock_detected
+]);
 const MAX_RETRIES = 3;
 
-const withRetry = async <T,>(operation: () => Promise<T>, retries = MAX_RETRIES, delay = 500): Promise<T> => {
+const withRetry = async <T>(
+  operation: () => Promise<T>,
+  retries = MAX_RETRIES,
+  delay = 500,
+): Promise<T> => {
   try {
     return await operation();
   } catch (error: any) {
-    if (retries > 0 && TRANSIENT_ERRORS.includes(error.code)) {
-      logger.warn(`Transient db error (${error.code}). Retrying in ${delay}ms... (${retries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+    if (retries > 0 && TRANSIENT_ERROR_CODES.has(error.code)) {
+      logger.warn(
+        `Transient db error (${error.code}). Retrying in ${delay}ms... (${retries} retries left)`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
       return withRetry(operation, retries - 1, delay * 2);
     }
     throw error;
   }
 };
 
+/**
+ * Execute `fn` inside a single dedicated database transaction.
+ *
+ * A single PoolClient is checked out for the lifetime of the call so that
+ * BEGIN / all DML / COMMIT all run on the **same** PostgreSQL connection.
+ * If `fn` throws, or if any transient error is encountered, the transaction
+ * is rolled back and the error is re-thrown after up to `maxRetries` attempts
+ * with exponential back-off.
+ *
+ * @param fn         Callback that receives the pinned client.
+ * @param maxRetries Number of retry attempts on transient errors (default 3).
+ * @param baseDelayMs Initial back-off delay in milliseconds (doubles each retry).
+ */
+export async function withTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>,
+  maxRetries = 3,
+  baseDelayMs = 200,
+): Promise<T> {
+  let attempt = 0;
+
+  while (true) {
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+      const result = await fn(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error: any) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        logger.error("Failed to rollback transaction", { rollbackError });
+      }
+
+      const isTransient = TRANSIENT_ERROR_CODES.has(error?.code);
+      if (isTransient && attempt < maxRetries) {
+        const delay = baseDelayMs * 2 ** attempt;
+        attempt++;
+        logger.warn(
+          `Transient DB error in transaction (${error.code}). ` +
+            `Retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
 const checkExhaustion = () => {
   if (pool.totalCount >= maxPoolSize && pool.idleCount === 0) {
-    logger.warn("DB Pool Exhaustion Warning: All connections are currently in use.", {
-      waiting: pool.waitingCount,
-      active: pool.totalCount,
-    });
+    logger.warn(
+      "DB Pool Exhaustion Warning: All connections are currently in use.",
+      {
+        waiting: pool.waitingCount,
+        active: pool.totalCount,
+      },
+    );
   }
 };
 
 export const query = async (text: string, params?: unknown[]) => {
+  if (isShuttingDown) {
+    throw new Error("Database pool is shutting down");
+  }
   checkExhaustion();
   return withRetry(async () => {
     const start = Date.now();
@@ -75,6 +160,9 @@ export const query = async (text: string, params?: unknown[]) => {
 };
 
 export const getClient = async () => {
+  if (isShuttingDown) {
+    throw new Error("Database pool is shutting down");
+  }
   checkExhaustion();
   return withRetry(async () => {
     const client = await pool.connect();
@@ -82,8 +170,25 @@ export const getClient = async () => {
   });
 };
 
-export const closePool = async () => {
+const waitForPoolToDrain = async (timeoutMs: number): Promise<void> => {
+  const startedAt = Date.now();
+
+  while (pool.totalCount > 0 && pool.totalCount !== pool.idleCount) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error(
+        `Timed out waiting for pool to drain active clients after ${timeoutMs}ms`,
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+};
+
+export const closePool = async (options?: { timeoutMs?: number }) => {
+  const timeoutMs = options?.timeoutMs ?? 10_000;
+  isShuttingDown = true;
   clearInterval(metricsInterval);
+  await waitForPoolToDrain(timeoutMs);
   await pool.end();
 };
 

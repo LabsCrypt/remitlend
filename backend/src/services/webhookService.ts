@@ -7,10 +7,54 @@ export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   "LoanApproved",
   "LoanRepaid",
   "LoanDefaulted",
+  "CollateralLiquidated",
+  "CollateralReturned",
+  "ColDep",
+  "ColRel",
+  "LateFeeCharged",
+  "LoanExtended",
+  "LoanCancelled",
+  "LoanRejected",
+  "LoanRefinanced",
+  "LateFeeRateUpdated",
+  "Deposit",
+  "Withdraw",
+  "YieldDistributed",
+  "EmergencyWithdraw",
+  "DepositCapUpdated",
+  "WithdrawalCooldownUpdated",
+  "NFTMinted",
+  "ScoreUpdated",
+  "NFTSeized",
+  "NFTBurned",
+  "ProposalCreated",
+  "ProposalApproved",
+  "ProposalFinalized",
+  "ProposalCancelled",
+  "LoanApprv",
+  "LoanLiquidated",
+  // Legacy aliases kept to preserve compatibility for existing subscribers.
+  "Mint",
+  "ScoreUpd",
+  "ScoreDecr",
   "Seized",
+  "NftBurned",
+  "AdmRemint",
+  "HashUpd",
+  "GovProp",
+  "GovAppr",
+  "GovFin",
+  "Transfer",
+  "MntAuth",
+  "MntRev",
   "Paused",
   "Unpaused",
   "MinScoreUpdated",
+  "PoolPaused",
+  "PoolUnpaused",
+  "GovCncl",
+  "GovEmerg",
+  "GovExp",
 ] as const;
 
 export type WebhookEventType = (typeof SUPPORTED_WEBHOOK_EVENT_TYPES)[number];
@@ -19,7 +63,7 @@ export interface IndexedLoanEvent {
   eventId: string;
   eventType: WebhookEventType;
   loanId?: number;
-  borrower: string;
+  address?: string;
   amount?: string;
   interestRateBps?: number;
   termLedgers?: number;
@@ -60,6 +104,11 @@ interface RegisterWebhookInput {
   secret?: string;
 }
 
+interface PreparedWebhookPayload {
+  body: string;
+  payload: Record<string, unknown>;
+}
+
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -67,6 +116,128 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 
 function getWebhookRequestTimeoutMs(): number {
   return parsePositiveInt(process.env.WEBHOOK_REQUEST_TIMEOUT_MS, 30 * 1000);
+}
+
+function getWebhookMaxPayloadBytes(): number {
+  return parsePositiveInt(process.env.WEBHOOK_MAX_PAYLOAD_BYTES, 64 * 1024);
+}
+
+function summarizeOversizedPayload(
+  payload: Record<string, unknown>,
+  originalPayloadBytes: number,
+  maxPayloadBytes: number,
+): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    truncated: true,
+    reason: "payload_too_large",
+    originalPayloadBytes,
+    maxPayloadBytes,
+  };
+
+  const passthroughKeys = [
+    "eventId",
+    "eventType",
+    "loanId",
+    "address",
+    "ledger",
+  ] as const;
+
+  for (const key of passthroughKeys) {
+    const value = payload[key];
+    if (value !== undefined) {
+      summary[key] = value;
+    }
+  }
+
+  if (Array.isArray(payload.topics)) {
+    summary.topicsCount = payload.topics.length;
+  }
+
+  return summary;
+}
+
+function summarizeOversizedPayloadMinimal(
+  payload: Record<string, unknown>,
+  originalPayloadBytes: number,
+  maxPayloadBytes: number,
+): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    truncated: true,
+    reason: "payload_too_large",
+    originalPayloadBytes,
+    maxPayloadBytes,
+  };
+
+  if (typeof payload.eventId === "string") {
+    summary.eventId = payload.eventId;
+  }
+  if (typeof payload.eventType === "string") {
+    summary.eventType = payload.eventType;
+  }
+
+  return summary;
+}
+
+function prepareWebhookPayload(
+  payload: Record<string, unknown>,
+): PreparedWebhookPayload {
+  const body = JSON.stringify(payload);
+  const payloadBytes = Buffer.byteLength(body);
+  const maxPayloadBytes = getWebhookMaxPayloadBytes();
+  const eventId =
+    typeof payload.eventId === "string" ? payload.eventId : undefined;
+  const eventType =
+    typeof payload.eventType === "string" ? payload.eventType : undefined;
+
+  if (payloadBytes > maxPayloadBytes) {
+    let summarizedPayload = summarizeOversizedPayload(
+      payload,
+      payloadBytes,
+      maxPayloadBytes,
+    );
+    let summarizedBody = JSON.stringify(summarizedPayload);
+
+    if (Buffer.byteLength(summarizedBody) > maxPayloadBytes) {
+      summarizedPayload = summarizeOversizedPayloadMinimal(
+        payload,
+        payloadBytes,
+        maxPayloadBytes,
+      );
+      summarizedBody = JSON.stringify(summarizedPayload);
+    }
+
+    if (Buffer.byteLength(summarizedBody) > maxPayloadBytes) {
+      throw new Error(
+        `Webhook summary payload exceeds configured limit of ${maxPayloadBytes} bytes`,
+      );
+    }
+
+    logger.warn("Webhook payload exceeds size limit, sending summary payload", {
+      eventId,
+      eventType,
+      payloadBytes,
+      maxPayloadBytes,
+    });
+
+    return {
+      body: summarizedBody,
+      payload: summarizedPayload,
+    };
+  }
+
+  if (payloadBytes >= Math.floor(maxPayloadBytes * 0.9)) {
+    logger.warn("Webhook payload is near size limit", {
+      eventId,
+      eventType,
+      payloadBytes,
+      maxPayloadBytes,
+    });
+  }
+
+  return {
+    body,
+    payload,
+  };
 }
 
 async function postWebhook(
@@ -111,11 +282,10 @@ const RETRY_DELAYS_MS = [
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 export const getRetryDelayMs = (attemptNumber: number): number => {
-  const delayIndex = Math.min(
-    attemptNumber - 1,
-    RETRY_DELAYS_MS.length - 1,
+  const delayIndex = Math.min(attemptNumber - 1, RETRY_DELAYS_MS.length - 1);
+  return (
+    RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!
   );
-  return RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
 };
 
 export class WebhookService {
@@ -173,7 +343,7 @@ export class WebhookService {
     }
   }
 
-  private static async retryWebhookDelivery(
+  public static async retryWebhookDelivery(
     deliveryId: number,
     subscriptionId: number,
     callbackUrl: string,
@@ -183,7 +353,8 @@ export class WebhookService {
     payload: Record<string, unknown>,
     attemptCount: number,
   ): Promise<void> {
-    const body = JSON.stringify(payload);
+    const preparedPayload = prepareWebhookPayload(payload);
+    const body = preparedPayload.body;
 
     const signature = secret
       ? crypto.createHmac("sha256", secret).update(body).digest("hex")
@@ -259,14 +430,17 @@ export class WebhookService {
             nextRetryAt: nextRetryTime,
           });
         } else {
-          logger.error("Webhook delivery permanently failed after max retries", {
-            deliveryId,
-            subscriptionId,
-            eventId,
-            attemptCount: newAttemptCount,
-            statusCode: response.status,
-            payload: body,
-          });
+          logger.error(
+            "Webhook delivery permanently failed after max retries",
+            {
+              deliveryId,
+              subscriptionId,
+              eventId,
+              attemptCount: newAttemptCount,
+              statusCode: response.status,
+              payload: body,
+            },
+          );
         }
       }
     } catch (error) {
@@ -299,16 +473,13 @@ export class WebhookService {
           nextRetryAt: nextRetryTime,
         });
       } else {
-        logger.error(
-          "Webhook delivery permanently failed after max retries",
-          {
-            deliveryId,
-            subscriptionId,
-            eventId,
-            attemptCount: newAttemptCount,
-            error,
-          },
-        );
+        logger.error("Webhook delivery permanently failed after max retries", {
+          deliveryId,
+          subscriptionId,
+          eventId,
+          attemptCount: newAttemptCount,
+          error,
+        });
       }
     }
   }
@@ -323,7 +494,11 @@ export class WebhookService {
       `INSERT INTO webhook_subscriptions (callback_url, event_types, secret, is_active)
        VALUES ($1, $2::jsonb, $3, true)
        RETURNING id, callback_url, event_types, secret, is_active, created_at, updated_at`,
-      [input.callbackUrl, JSON.stringify(input.eventTypes), input.secret ?? null],
+      [
+        input.callbackUrl,
+        JSON.stringify(input.eventTypes),
+        input.secret ?? null,
+      ],
     );
 
     return this.mapSubscriptionRow(result.rows[0] as Record<string, unknown>);
@@ -376,10 +551,13 @@ export class WebhookService {
       eventId: event.eventId,
       eventType: event.eventType,
       loanId: event.loanId,
-      borrower: event.borrower,
+      address: event.address,
     });
 
     try {
+      const preparedPayload = prepareWebhookPayload(
+        event as unknown as Record<string, unknown>,
+      );
       const webhooksResult = await query(
         `SELECT id, callback_url, secret
          FROM webhook_subscriptions
@@ -395,7 +573,7 @@ export class WebhookService {
             String((hook as { callback_url: string }).callback_url),
             ((hook as { secret?: string | null }).secret ?? undefined) ||
               undefined,
-            event,
+            preparedPayload,
           ),
         ),
       );
@@ -412,9 +590,9 @@ export class WebhookService {
     subscriptionId: number,
     callbackUrl: string,
     secret: string | undefined,
-    payload: IndexedLoanEvent,
+    payload: PreparedWebhookPayload,
   ): Promise<void> {
-    const body = JSON.stringify(payload);
+    const body = payload.body;
 
     const signature = secret
       ? crypto.createHmac("sha256", secret).update(body).digest("hex")
@@ -441,8 +619,8 @@ export class WebhookService {
           VALUES ($1, $2, $3, 1, $4, $5, $6::jsonb, NULL)`,
           [
             subscriptionId,
-            payload.eventId,
-            payload.eventType,
+            payload.payload.eventId,
+            payload.payload.eventType,
             response.status,
             new Date(),
             body,
@@ -465,8 +643,8 @@ export class WebhookService {
           VALUES ($1, $2, $3, 1, $4, $5, $6::jsonb, $7)`,
           [
             subscriptionId,
-            payload.eventId,
-            payload.eventType,
+            payload.payload.eventId,
+            payload.payload.eventType,
             response.status,
             `Webhook returned status ${response.status}`,
             body,
@@ -477,7 +655,7 @@ export class WebhookService {
         logger.warn("Webhook delivery failed, scheduled retry", {
           subscriptionId,
           callbackUrl,
-          eventId: payload.eventId,
+          eventId: payload.payload.eventId,
           statusCode: response.status,
           nextRetryAt,
         });
@@ -498,8 +676,8 @@ export class WebhookService {
         VALUES ($1, $2, $3, 1, $4, $5::jsonb, $6)`,
         [
           subscriptionId,
-          payload.eventId,
-          payload.eventType,
+          payload.payload.eventId,
+          payload.payload.eventType,
           error instanceof Error ? error.message : "Unknown webhook error",
           body,
           nextRetryAt,
@@ -509,14 +687,16 @@ export class WebhookService {
       logger.error("Failed to send webhook, scheduled retry", {
         subscriptionId,
         callbackUrl,
-        eventId: payload.eventId,
+        eventId: payload.payload.eventId,
         error,
         nextRetryAt,
       });
     }
   }
 
-  private mapSubscriptionRow(row: Record<string, unknown>): WebhookSubscription {
+  private mapSubscriptionRow(
+    row: Record<string, unknown>,
+  ): WebhookSubscription {
     const secret =
       typeof row.secret === "string" && row.secret.length > 0
         ? row.secret

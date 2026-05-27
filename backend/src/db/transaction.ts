@@ -7,33 +7,35 @@ import logger from "../utils/logger.js";
  * @returns Promise with the result of the operations
  */
 export async function withTransaction<T>(
-  operations: (client: any) => Promise<T>
+  operations: (client: any) => Promise<T>,
 ): Promise<T> {
   let client;
   try {
     client = await getClient();
   } catch (error) {
-    logger.error('Failed to acquire database client for transaction', { error });
-    throw new Error('Database connection failed');
+    logger.error("Failed to acquire database client for transaction", {
+      error,
+    });
+    throw new Error("Database connection failed");
   }
 
   if (!client) {
-    throw new Error('Database client is undefined');
+    throw new Error("Database client is undefined");
   }
 
   try {
-    await client.query('BEGIN');
-    logger.debug('Database transaction started');
+    await client.query("BEGIN");
+    logger.debug("Database transaction started");
 
     const result = await operations(client);
 
-    await client.query('COMMIT');
-    logger.debug('Database transaction committed');
+    await client.query("COMMIT");
+    logger.debug("Database transaction committed");
 
     return result;
   } catch (error) {
-    await client.query('ROLLBACK');
-    logger.error('Database transaction rolled back due to error:', error);
+    await client.query("ROLLBACK");
+    logger.error("Database transaction rolled back due to error:", error);
     throw error;
   } finally {
     client.release();
@@ -46,16 +48,16 @@ export async function withTransaction<T>(
  * @returns Promise with array of results
  */
 export async function executeTransactionQueries(
-  queries: Array<{ text: string; params?: unknown[] }>
+  queries: Array<{ text: string; params?: unknown[] }>,
 ): Promise<any[]> {
   return withTransaction(async (client) => {
     const results = [];
-    
+
     for (const query of queries) {
       const result = await client.query(query.text, query.params || []);
       results.push(result);
     }
-    
+
     return results;
   });
 }
@@ -68,29 +70,29 @@ export async function executeTransactionQueries(
  */
 export async function withStellarAndDbTransaction<T>(
   stellarOperation: () => Promise<any>,
-  dbOperations: (stellarResult: any, client: any) => Promise<T>
+  dbOperations: (stellarResult: any, client: any) => Promise<T>,
 ): Promise<{ stellarResult: any; dbResult: T }> {
   return withTransaction(async (client) => {
     try {
       // Execute Stellar operation first
       const stellarResult = await stellarOperation();
-      
+
       // Then execute database operations with the Stellar result
       const dbResult = await dbOperations(stellarResult, client);
-      
+
       return { stellarResult, dbResult };
     } catch (error) {
-      logger.error('Operation failed in Stellar+DB transaction:', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+      logger.error("Operation failed in Stellar+DB transaction:", {
+        error: error instanceof Error ? error.message : "Unknown error",
         // Don't log sensitive Stellar data
       });
-      
+
       // Log for reconciliation since Stellar transaction might have succeeded
       // but DB write failed
-      logger.warn('Stellar transaction might need manual reconciliation', {
+      logger.warn("Stellar transaction might need manual reconciliation", {
         timestamp: new Date().toISOString(),
       });
-      
+
       throw error;
     }
   });

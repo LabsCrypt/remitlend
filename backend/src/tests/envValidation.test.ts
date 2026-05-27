@@ -8,9 +8,11 @@ describe("Environment Variable Validation", () => {
   let mockExit: any;
 
   beforeAll(() => {
-    mockExit = jest.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
-      throw new Error(`Process.exit called with ${code}`);
-    });
+    mockExit = jest
+      .spyOn(process, "exit")
+      .mockImplementation((code?: string | number | null | undefined) => {
+        throw new Error(`Process.exit called with ${code}`);
+      });
   });
 
   beforeEach(() => {
@@ -37,6 +39,10 @@ describe("Environment Variable Validation", () => {
     process.env.POOL_TOKEN_ADDRESS = "T1";
     process.env.LOAN_MANAGER_ADMIN_SECRET = "S1";
     process.env.INTERNAL_API_KEY = "K1";
+    process.env.FRONTEND_URL = "http://localhost:3000";
+    process.env.SCORE_DELTA_REPAY = "15";
+    process.env.SCORE_DELTA_DEFAULT = "50";
+    process.env.SCORE_DELTA_LATE = "5";
 
     expect(() => validateEnvVars()).not.toThrow();
     expect(mockExit).not.toHaveBeenCalled();

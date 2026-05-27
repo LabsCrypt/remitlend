@@ -15,7 +15,11 @@ const LOAN_MAX_AMOUNT_RANGE = { min: 1, max: 1_000_000 }; // 0 is invalid as req
 const INTEREST_RATE_PERCENT_RANGE = { min: 1, max: 100 };
 const CREDIT_SCORE_THRESHOLD_RANGE = { min: 300, max: 850 };
 
-function parseRequiredInteger(envKey: string, min: number, max: number): number {
+function parseRequiredInteger(
+  envKey: string,
+  min: number,
+  max: number,
+): number {
   const rawValue = process.env[envKey];
   if (rawValue === undefined || rawValue.trim() === "") {
     throw new Error(`${envKey} is required but missing`);

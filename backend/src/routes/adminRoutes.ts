@@ -1,34 +1,129 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireApiKey } from "../middleware/auth.js";
+import { requireJwtAuth, requireRoles } from "../middleware/jwtAuth.js";
 import { strictRateLimiter } from "../middleware/rateLimiter.js";
 import { validateBody } from "../middleware/validation.js";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { auditLog } from "../middleware/auditLog.js";
 import { defaultChecker } from "../services/defaultChecker.js";
 import {
   createWebhookSubscription,
   deleteWebhookSubscription,
   getWebhookDeliveries,
+  listQuarantinedEvents,
   listWebhookSubscriptions,
+  reprocessQuarantinedEvents,
   reindexLedgerRange,
 } from "../controllers/indexerController.js";
+import {
+  listLoanDisputes,
+  resolveLoanDispute,
+  getLoanDispute,
+  rejectLoanDispute,
+} from "../controllers/adminDisputeController.js";
+import { query } from "../db/connection.js";
 
 const router = Router();
 
+/**
+ * @swagger
+ * /admin/loan-disputes:
+ *   get:
+ *     summary: List open loan disputes
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: List of open disputes
+ *
+ * /admin/loan-disputes/{disputeId}/resolve:
+ *   post:
+ *     summary: Resolve a loan dispute (confirm or reverse default)
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: disputeId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - action
+ *               - resolution
+ *             properties:
+ *               action:
+ *                 type: string
+ *                 enum: [confirm, reverse]
+ *                 description: Action to take on the dispute
+ *               resolution:
+ *                 type: string
+ *                 description: Detailed reason for resolution (minimum 5 characters)
+ *               adminNote:
+ *                 type: string
+ *                 description: Optional admin note visible to borrower
+ *     responses:
+ *       200:
+ *         description: Dispute resolved and borrower notified
+ *       400:
+ *         description: Validation error
+ */
+router.get("/loan-disputes", requireApiKey, listLoanDisputes);
+router.post(
+  "/loan-disputes/:disputeId/resolve",
+  requireApiKey,
+  resolveLoanDispute,
+);
+// New admin JWT-protected endpoints
+router.get(
+  "/disputes",
+  requireJwtAuth,
+  requireRoles("admin"),
+  listLoanDisputes,
+);
+router.get(
+  "/disputes/:disputeId",
+  requireJwtAuth,
+  requireRoles("admin"),
+  getLoanDispute,
+);
+router.post(
+  "/disputes/:disputeId/resolve",
+  requireJwtAuth,
+  requireRoles("admin"),
+  resolveLoanDispute,
+);
+router.post(
+  "/disputes/:disputeId/reject",
+  requireJwtAuth,
+  requireRoles("admin"),
+  rejectLoanDispute,
+);
+
 const checkDefaultsBodySchema = z.object({
-  loanIds: z.array(z.number().int().positive()).optional(),
+  loanIds: z
+    .array(z.number().int().positive())
+    .max(1000, "max 1000 loan IDs per request")
+    .optional(),
 });
 
 /**
  * @swagger
  * /admin/check-defaults:
  *   post:
- *     summary: Trigger on-chain default checks (admin)
+ *     summary: Trigger manual on-chain default checks for a set of loans
  *     description: >
- *       Submits `check_defaults` to the LoanManager contract for either a specific
- *       list of loan IDs, or (if omitted) all loans that appear overdue based on
- *       indexed `LoanApproved` ledgers.
+ *       Calls the LoanManager `check_defaults` contract function for the
+ *       provided loan IDs (or all overdue loans if IDs are omitted).
+ *       Bounded to a maximum of 1000 IDs per request for security.
  *     tags: [Admin]
  *     security:
  *       - ApiKeyAuth: []
@@ -43,13 +138,17 @@ const checkDefaultsBodySchema = z.object({
  *                 type: array
  *                 items:
  *                   type: integer
+ *                 maxItems: 1000
+ *                 description: Explicit list of loan IDs to check
  *     responses:
  *       200:
- *         description: Default check run completed (see batch errors in payload)
+ *         description: Default check run completed
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/DefaultCheckResponse'
+ *               $ref: '#/components/schemas/DefaultCheckRunResult'
+ *       400:
+ *         description: Validation error or too many IDs
  */
 router.post(
   "/check-defaults",
@@ -58,13 +157,8 @@ router.post(
   auditLog,
   validateBody(checkDefaultsBodySchema),
   asyncHandler(async (req, res) => {
-    const { loanIds } = req.body as z.infer<typeof checkDefaultsBodySchema>;
-    const result = await defaultChecker.checkOverdueLoans(loanIds);
-
-    res.json({
-      success: true,
-      data: result,
-    });
+    const result = await defaultChecker.checkOverdueLoans(req.body.loanIds);
+    res.json(result);
   }),
 );
 
@@ -105,6 +199,66 @@ router.post(
 
 /**
  * @swagger
+ * /admin/quarantine-events:
+ *   get:
+ *     summary: List quarantined indexer events
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *       - in: query
+ *         name: cursor
+ *         required: false
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Quarantined events retrieved
+ */
+router.get("/quarantine-events", requireApiKey, listQuarantinedEvents);
+
+/**
+ * @swagger
+ * /admin/quarantine-events/reprocess:
+ *   post:
+ *     summary: Reprocess quarantined indexer events
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *               limit:
+ *                 type: integer
+ *                 default: 50
+ *     responses:
+ *       200:
+ *         description: Reprocess attempt completed
+ */
+router.post(
+  "/quarantine-events/reprocess",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  reprocessQuarantinedEvents,
+);
+
+/**
+ * @swagger
  * /admin/webhooks:
  *   post:
  *     summary: Register a webhook subscription
@@ -134,6 +288,18 @@ router.post(
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/WebhookSubscriptionResponse'
+ */
+router.post(
+  "/webhooks",
+  requireApiKey,
+  strictRateLimiter,
+  auditLog,
+  createWebhookSubscription,
+);
+
+/**
+ * @swagger
+ * /admin/webhooks:
  *   get:
  *     summary: List webhook subscriptions
  *     tags: [Admin]
@@ -147,13 +313,6 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/WebhookSubscriptionListResponse'
  */
-router.post(
-  "/webhooks",
-  requireApiKey,
-  strictRateLimiter,
-  auditLog,
-  createWebhookSubscription,
-);
 router.get("/webhooks", requireApiKey, listWebhookSubscriptions);
 
 /**
@@ -215,5 +374,34 @@ router.delete(
  *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get("/webhooks/:id/deliveries", requireApiKey, getWebhookDeliveries);
+
+/**
+ * @swagger
+ * /admin/webhooks/retry-status:
+ *   get:
+ *     summary: Get status of failed webhooks and retry queue
+ *     tags: [Admin]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Retry status information
+ */
+router.get(
+  "/webhooks/retry-status",
+  requireApiKey,
+  asyncHandler(async (req, res) => {
+    const result = await query(`
+      SELECT 
+        COUNT(*) as total_failed,
+        COUNT(*) FILTER (WHERE attempt_count >= 5) as permanently_failed,
+        COUNT(*) FILTER (WHERE next_retry_at IS NOT NULL) as pending_retry
+      FROM webhook_deliveries
+      WHERE delivered_at IS NULL
+    `);
+
+    res.json(result.rows[0]);
+  }),
+);
 
 export default router;

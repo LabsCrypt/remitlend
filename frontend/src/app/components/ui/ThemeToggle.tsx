@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, Monitor } from "lucide-react";
 import { useThemeStore } from "../../stores/useThemeStore";
 
 export function ThemeToggle() {
@@ -25,9 +25,9 @@ export function ThemeToggle() {
     );
   }
 
-  const Icon = theme === "dark" ? Moon : Sun;
-  const label = theme === "dark" ? "Dark mode" : "Light mode";
-  const nextLabel = theme === "dark" ? "light" : "dark";
+  const Icon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
+  const label = theme === "dark" ? "Dark mode" : theme === "light" ? "Light mode" : "System";
+  const nextLabel = theme === "dark" ? "system" : theme === "system" ? "light" : "dark";
 
   return (
     <button

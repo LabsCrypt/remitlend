@@ -14,6 +14,9 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.46.0",
+    "@serwist/next": "^9.0.12",
+    "@serwist/precaching": "^9.0.12",
+    "@serwist/sw": "^9.0.12",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^14.6.1",
     "@tanstack/react-query": "^5.95.2",
@@ -24,6 +27,7 @@
     "lucide-react": "^0.575.0",
     "next": "^16.2.1",
     "next-intl": "^4.8.3",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.8.1",
@@ -64,5 +68,8 @@
       "eslint --fix",
       "prettier --write"
     ]
+  },
+  "overrides": {
+    "axios": "1.13.5"
   }
 }

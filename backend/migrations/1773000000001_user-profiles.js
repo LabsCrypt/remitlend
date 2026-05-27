@@ -14,6 +14,9 @@ export const up = (pgm) => {
     public_key: { type: "varchar(255)", notNull: true, unique: true },
     display_name: { type: "varchar(255)" },
     email: { type: "varchar(255)" },
+    phone: { type: "varchar(50)" },
+    email_enabled: { type: "boolean", notNull: true, default: true },
+    sms_enabled: { type: "boolean", notNull: true, default: true },
     created_at: {
       type: "timestamp",
       notNull: true,

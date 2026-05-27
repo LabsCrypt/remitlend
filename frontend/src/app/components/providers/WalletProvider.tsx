@@ -6,6 +6,20 @@ import { useWalletStore } from "../../stores/useWalletStore";
 
 type FreighterApi = typeof import("@stellar/freighter-api");
 
+interface ExtendedFreighterApi {
+  isConnected: () => Promise<{ isConnected: boolean; error?: string }>;
+  requestAccess: () => Promise<FreighterAddressResult>;
+  getAddress: () => Promise<FreighterAddressResult>;
+  signTransaction: (
+    xdr: string,
+    opts?: { network?: string; networkPassphrase?: string },
+  ) => Promise<string | { signedTxXdr?: string; error?: string }>;
+  getNetworkDetails?: () => Promise<FreighterNetworkResult>;
+  getNetwork?: () => Promise<FreighterNetworkResult>;
+  watchAddress?: (callback: (address: string) => void) => () => void;
+  watchNetwork?: (callback: (network: string) => void) => () => void;
+}
+
 interface WalletProviderContextValue {
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
@@ -137,7 +151,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
 
     const task = (async () => {
-      const api = await loadFreighterApi();
+      const api = (await loadFreighterApi()) as unknown as ExtendedFreighterApi;
       const installationState = await api.isConnected();
 
       if (installationState.error || !installationState.isConnected) {
@@ -164,13 +178,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
         throw new Error("No Stellar address was returned by Freighter.");
       }
 
-      const freighterApi = api as FreighterApi & {
-        getNetworkDetails?: () => Promise<FreighterNetworkResult>;
-        getNetwork: () => Promise<FreighterNetworkResult>;
-      };
-      const networkResult: FreighterNetworkResult = freighterApi.getNetworkDetails
-        ? await freighterApi.getNetworkDetails()
-        : await freighterApi.getNetwork();
+      const networkResult: FreighterNetworkResult = api.getNetworkDetails
+        ? await api.getNetworkDetails()
+        : api.getNetwork
+          ? await api.getNetwork()
+          : { error: "Network info not available." };
 
       if (networkResult.error) {
         throw new Error(normalizeWalletError(networkResult.error));
@@ -223,12 +235,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
     disconnect();
   }
 
+  const NETWORK_PASSPHRASES: Record<string, string> = {
+    PUBLIC: "Public Global Stellar Network ; October 2015",
+    TESTNET: "Test SDF Network ; September 2015",
+    FUTURENET: "Test SDF Future Network ; October 2022",
+    STANDALONE: "Standalone Network ; Separate from SDF",
+  };
+
   async function signTransaction(unsignedTxXdr: string): Promise<string> {
-    const api = await loadFreighterApi();
-    const network = useWalletStore.getState().network?.name ?? "TESTNET";
+    const api = (await loadFreighterApi()) as unknown as ExtendedFreighterApi;
+    const networkName = useWalletStore.getState().network?.name ?? "TESTNET";
+    const networkPassphrase = NETWORK_PASSPHRASES[networkName] ?? NETWORK_PASSPHRASES.TESTNET;
 
     const result = await api.signTransaction(unsignedTxXdr, {
-      network: network as any,
+      networkPassphrase,
     });
 
     if (typeof result === "string") {
@@ -239,29 +259,32 @@ export function WalletProvider({ children }: WalletProviderProps) {
       throw new Error(normalizeWalletError(result.error));
     }
 
-    if (result.signedTransaction) {
-      return result.signedTransaction;
+    if (result.signedTxXdr) {
+      return result.signedTxXdr;
     }
 
     throw new Error("Signing failed: No signed transaction returned.");
   }
 
   async function refreshWallet() {
-    if (!shouldAutoReconnect && !address) {
-      return;
-    }
-
+    if (!shouldAutoReconnect && !address) return;
     await syncWallet(false);
   }
 
+  // Initial check and Auto-reconnect
   useEffect(() => {
     let cancelled = false;
 
     void loadFreighterApi()
       .then((api) => api.isConnected())
-      .then((result) => {
+      .then(async (result) => {
         if (!cancelled) {
-          setIsFreighterAvailable(Boolean(result.isConnected && !result.error));
+          const isAvailable = Boolean(result.isConnected && !result.error);
+          setIsFreighterAvailable(isAvailable);
+
+          if (isAvailable && shouldAutoReconnect) {
+            await refreshWallet();
+          }
         }
       })
       .catch(() => {
@@ -273,41 +296,38 @@ export function WalletProvider({ children }: WalletProviderProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    if (!shouldAutoReconnect) {
-      return;
-    }
-
-    void refreshWallet();
   }, [shouldAutoReconnect]);
 
+  // Event Listeners
   useEffect(() => {
-    if (!shouldAutoReconnect) {
-      return;
-    }
+    let unwatchAddress: (() => void) | undefined;
+    let unwatchNetwork: (() => void) | undefined;
 
-    const syncOnFocus = () => {
-      void refreshWallet();
-    };
+    void loadFreighterApi().then((apiRaw) => {
+      const api = apiRaw as unknown as ExtendedFreighterApi;
 
-    const syncOnVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void refreshWallet();
+      if (typeof api.watchAddress === "function") {
+        unwatchAddress = api.watchAddress((newAddress: string) => {
+          if (!newAddress && address) {
+            disconnect();
+          } else if (newAddress && newAddress !== address) {
+            void refreshWallet();
+          }
+        });
       }
-    };
 
-    window.addEventListener("focus", syncOnFocus);
-    document.addEventListener("visibilitychange", syncOnVisibility);
-    const interval = window.setInterval(syncOnFocus, 30_000);
+      if (typeof api.watchNetwork === "function") {
+        unwatchNetwork = api.watchNetwork((newNetwork: string) => {
+          void refreshWallet();
+        });
+      }
+    });
 
     return () => {
-      window.removeEventListener("focus", syncOnFocus);
-      document.removeEventListener("visibilitychange", syncOnVisibility);
-      window.clearInterval(interval);
+      if (unwatchAddress) unwatchAddress();
+      if (unwatchNetwork) unwatchNetwork();
     };
-  }, [shouldAutoReconnect, address]);
+  }, [address]);
 
   return (
     <WalletProviderContext.Provider

@@ -75,7 +75,12 @@ export function TransactionStatusTracker({
         .join(" ")}
     >
       <div className="flex items-start gap-3">
-        {isPending && <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-blue-600" />}
+        {isPending && (
+          <div role="status">
+            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-blue-600" />
+            <span className="sr-only">Loading...</span>
+          </div>
+        )}
         {isSuccess && <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />}
         {isError && <XCircle className="mt-0.5 h-5 w-5 text-red-600" />}
         {isCancelled && <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" />}

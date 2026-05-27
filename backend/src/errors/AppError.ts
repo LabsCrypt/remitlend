@@ -1,4 +1,8 @@
-import { ErrorCode, ERROR_CODE_REGISTRY, getDefaultErrorCodeForStatus } from "./errorCodes.js";
+import {
+  ErrorCode,
+  ERROR_CODE_REGISTRY,
+  getDefaultErrorCodeForStatus,
+} from "./errorCodes.js";
 
 /**
  * Custom application error class for centralized error handling.
@@ -42,20 +46,28 @@ export class AppError extends Error {
     errorCode?: ErrorCode,
     field?: string,
   ): AppError {
-    return new AppError(message, 400, true, errorCode ?? ErrorCode.INVALID_AMOUNT, field);
+    return new AppError(
+      message,
+      400,
+      true,
+      errorCode ?? ErrorCode.INVALID_AMOUNT,
+      field,
+    );
   }
 
   static unauthorized(
     message = "Unauthorized",
     errorCode?: ErrorCode,
   ): AppError {
-    return new AppError(message, 401, true, errorCode ?? ErrorCode.UNAUTHORIZED);
+    return new AppError(
+      message,
+      401,
+      true,
+      errorCode ?? ErrorCode.UNAUTHORIZED,
+    );
   }
 
-  static forbidden(
-    message = "Forbidden",
-    errorCode?: ErrorCode,
-  ): AppError {
+  static forbidden(message = "Forbidden", errorCode?: ErrorCode): AppError {
     return new AppError(message, 403, true, errorCode ?? ErrorCode.FORBIDDEN);
   }
 
@@ -64,13 +76,16 @@ export class AppError extends Error {
     errorCode?: ErrorCode,
     field?: string,
   ): AppError {
-    return new AppError(message, 404, true, errorCode ?? ErrorCode.NOT_FOUND, field);
+    return new AppError(
+      message,
+      404,
+      true,
+      errorCode ?? ErrorCode.NOT_FOUND,
+      field,
+    );
   }
 
-  static conflict(
-    message = "Conflict",
-    errorCode?: ErrorCode,
-  ): AppError {
+  static conflict(message = "Conflict", errorCode?: ErrorCode): AppError {
     return new AppError(message, 409, true, errorCode ?? ErrorCode.CONFLICT);
   }
 
@@ -78,7 +93,12 @@ export class AppError extends Error {
     message = "Internal server error",
     errorCode?: ErrorCode,
   ): AppError {
-    return new AppError(message, 500, false, errorCode ?? ErrorCode.INTERNAL_ERROR);
+    return new AppError(
+      message,
+      500,
+      false,
+      errorCode ?? ErrorCode.INTERNAL_ERROR,
+    );
   }
 
   /**

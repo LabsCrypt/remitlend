@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Stellar address regex (56 chars, starts with G, base32)
-const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{54}$/;
+const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{55}$/;
 
 // Schema for POST /remittances
 export const createRemittanceSchema = z.object({
@@ -15,9 +15,7 @@ export const createRemittanceSchema = z.object({
       .positive("Amount must be greater than 0")
       .max(1_000_000, "Amount exceeds maximum limit")
       .describe("Amount to send"),
-    fromCurrency: z
-      .enum(["USDC", "EURC", "PHP"])
-      .describe("Source currency"),
+    fromCurrency: z.enum(["USDC", "EURC", "PHP"]).describe("Source currency"),
     toCurrency: z
       .enum(["USDC", "EURC", "PHP"])
       .describe("Destination currency"),

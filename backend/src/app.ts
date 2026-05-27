@@ -23,17 +23,41 @@ import authRoutes from "./routes/authRoutes.js";
 import notificationsRoutes from "./routes/notificationsRoutes.js";
 import eventRoutes from "./routes/eventRoutes.js";
 import remittanceRoutes from "./routes/remittanceRoutes.js";
-import swaggerUi from "swagger-ui-express";
-import { swaggerSpec } from "./config/swagger.js";
 import { globalRateLimiter } from "./middleware/rateLimiter.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
-import { asyncHandler } from "./middleware/asyncHandler.js";
+import { asyncHandler } from "./utils/asyncHandler.js";
 import { AppError } from "./errors/AppError.js";
 const app = express();
 
 const isProduction = process.env.NODE_ENV === "production";
+const configuredFrontendUrl = process.env.FRONTEND_URL?.trim();
+
+if (isProduction && !configuredFrontendUrl) {
+  throw new Error(
+    "FRONTEND_URL environment variable is required in production",
+  );
+}
+
+// `CORS_ALLOWED_ORIGINS` is retained as a migration fallback while `FRONTEND_URL`
+// becomes the primary documented config for the frontend origin.
+const additionalAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
+  : [];
+
+const allowedOriginsList = [
+  configuredFrontendUrl,
+  ...additionalAllowedOrigins,
+].filter((origin): origin is string => Boolean(origin));
+
+if (isProduction && allowedOriginsList.length === 0) {
+  throw new Error(
+    "No allowed origins configured for CORS in production. Set FRONTEND_URL.",
+  );
+}
+
+const allowedOrigins = new Set(allowedOriginsList);
 
 app.use(
   helmet({
@@ -49,27 +73,29 @@ app.use(
     },
     strictTransportSecurity: isProduction
       ? {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true,
-      }
+          maxAge: 31536000,
+          includeSubDomains: true,
+          preload: true,
+        }
       : false,
   }),
 );
-
-const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-  : [];
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
     if (!origin) {
       return callback(null, true);
     }
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true)
+
+    if (allowedOrigins.has(origin)) {
+      return callback(null, true);
     }
-    return callback(new Error("Not allowed by CORS"));
+
+    if (!isProduction) {
+      return callback(null, true);
+    }
+
+    return callback(AppError.forbidden("Origin is not allowed by CORS policy"));
   },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: [
@@ -106,18 +132,24 @@ app.get(
         sorobanService.ping(),
       ]);
 
-    const checks = {
-      api: "ok" as const,
+    const dbChecks = {
       database:
         databaseStatus.status === "fulfilled" ? databaseStatus.value : "error",
       redis: redisStatus.status === "fulfilled" ? redisStatus.value : "error",
+    };
+
+    const checks = {
+      api: "ok" as const,
+      ...dbChecks,
       soroban_rpc:
         sorobanStatus.status === "fulfilled" ? sorobanStatus.value : "error",
     };
 
-    const allOk = Object.values(checks).every((c) => c === "ok");
-    res.status(allOk ? 200 : 503).json({
-      status: allOk ? "ok" : "degraded",
+    const coreOk = Object.values(dbChecks).every((c) => c === "ok");
+    const allOk = coreOk && checks.soroban_rpc === "ok";
+
+    res.status(coreOk ? 200 : 503).json({
+      status: allOk ? "ok" : coreOk ? "degraded" : "down",
       checks,
       uptime: process.uptime(),
       timestamp: Date.now(),
@@ -169,8 +201,6 @@ if (process.env.NODE_ENV === "test") {
     }),
   );
 }
-
-app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ── 404 Catch-All ────────────────────────────────────────────────
 // Must be placed after all route definitions so that only truly

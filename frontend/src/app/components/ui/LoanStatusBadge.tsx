@@ -1,10 +1,16 @@
-type LoanStatus = "active" | "pending" | "repaid" | "defaulted";
+import { StatusIndicator } from "./StatusIndicator";
 
-const STATUS_STYLES: Record<LoanStatus, string> = {
-  active: "bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-400",
-  repaid: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-400",
-  defaulted: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400",
-  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/15 dark:text-yellow-400",
+export type LoanStatus = "active" | "pending" | "repaid" | "defaulted" | "liquidated";
+
+const STATUS_CONFIG: Record<
+  LoanStatus,
+  { label: string; tone: "success" | "info" | "danger" | "warning" }
+> = {
+  active: { label: "Active", tone: "success" },
+  repaid: { label: "Repaid", tone: "info" },
+  defaulted: { label: "Defaulted", tone: "danger" },
+  pending: { label: "Pending", tone: "warning" },
+  liquidated: { label: "Liquidated", tone: "danger" },
 };
 
 interface LoanStatusBadgeProps {
@@ -13,16 +19,25 @@ interface LoanStatusBadgeProps {
 }
 
 export function LoanStatusBadge({ status, className = "" }: LoanStatusBadgeProps) {
-  const styles =
-    STATUS_STYLES[status as LoanStatus] ??
-    "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+  const config = STATUS_CONFIG[status as LoanStatus];
+
+  if (!config) {
+    return (
+      <StatusIndicator
+        label={status}
+        tone="neutral"
+        className={className}
+        title={`Loan status: ${status}`}
+      />
+    );
+  }
+
   return (
-    <span
-      role="status"
-      aria-label={`Loan status: ${status}`}
-      className={`inline-block rounded-full px-3 py-1 text-xs font-medium capitalize ${styles} ${className}`}
-    >
-      {status}
-    </span>
+    <StatusIndicator
+      label={config.label}
+      tone={config.tone}
+      className={className}
+      title={`Loan status: ${config.label}`}
+    />
   );
 }

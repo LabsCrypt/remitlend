@@ -65,15 +65,15 @@ Scripts use `migrate:up` and `migrate:down` (colon-separated names), which work 
 
 Core tables are created by these migrations (run in filename order):
 
-| Migration                                | Tables                                     |
-| ---------------------------------------- | ------------------------------------------ |
-| `1771691269865_initial-schema.js`        | `scores`, `remittance_history`             |
-| `1771691269866_loan-events-schema.js`    | `loan_events`, `indexer_state`             |
-| `1772000000000_webhook-subscriptions.js` | `webhook_subscriptions`                    |
-| `1773000000001_user-profiles.js`         | `user_profiles`                            |
-| `1773000000002_loan-history.js`          | `loan_history`                             |
-| `1773000000003_indexed-events.js`        | `indexed_events`                           |
-| `1774000000004_scores-add-created-at.js` | adds `created_at` to `scores` (idempotent) |
+| Migration                                    | Tables                                             |
+| -------------------------------------------- | -------------------------------------------------- |
+| `1771691269865_initial-schema.js`            | `scores`, `remittance_history`                     |
+| `1771691269866_loan-events-schema.js`        | `loan_events`, `indexer_state`                     |
+| `1772000000000_webhook-subscriptions.js`     | `webhook_subscriptions`                            |
+| `1773000000001_user-profiles.js`             | `user_profiles`                                    |
+| `1773000000002_loan-history.js`              | `loan_history`                                     |
+| `1773000000003_indexed-events.js`            | `indexed_events`                                   |
+| `1774000000004_scores-add-created-at.js`     | adds `created_at` to `scores` (idempotent)         |
 | `1777000000007_unique-loan-status-events.js` | dedupes and enforces unique status events per loan |
 
 With Docker Compose from the repo root, the `backend` service runs `migrate:up` before `npm run dev` so the schema is applied automatically when the database is healthy.
@@ -87,7 +87,9 @@ Create a `.env` file in the backend directory:
 PORT=3001
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS=http://localhost:3000
+FRONTEND_URL=http://localhost:3000
+# Optional backward-compatible fallback for multiple allowed origins during migration
+# CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 
 # Stellar Configuration
 STELLAR_NETWORK=testnet

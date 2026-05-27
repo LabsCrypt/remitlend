@@ -12,7 +12,7 @@ describe("Integration: EventIndexer end-to-end", () => {
       return;
     }
 
-    await query("DELETE FROM loan_events");
+    await query("DELETE FROM contract_events");
     await query("DELETE FROM indexer_state");
     await query("INSERT INTO indexer_state (last_indexed_ledger) VALUES (0)");
   });
@@ -22,13 +22,15 @@ describe("Integration: EventIndexer end-to-end", () => {
       return;
     }
 
-    await query("DELETE FROM loan_events");
+    await query("DELETE FROM contract_events");
     await query("DELETE FROM indexer_state");
   });
 
-  it("should ingest LoanApproved event and persist it to loan_events", async () => {
+  it("should ingest LoanApproved event and persist it to contract_events", async () => {
     if (!runIntegration) {
-      console.warn("Skipping integration test because RUN_INDEXER_INTEGRATION != true");
+      console.warn(
+        "Skipping integration test because RUN_INDEXER_INTEGRATION != true",
+      );
       return;
     }
 
@@ -37,7 +39,8 @@ describe("Integration: EventIndexer end-to-end", () => {
       throw new Error("INTEGRATION_TEST_BORROWER_ADDRESS must be defined");
     }
 
-    const placeholderContractId = process.env.LOAN_MANAGER_CONTRACT_ID ?? "CNTRACTID1";
+    const placeholderContractId =
+      process.env.LOAN_MANAGER_CONTRACT_ID ?? "CNTRACTID1";
 
     const loanId = 77;
     const dummyEvent = {
@@ -47,7 +50,9 @@ describe("Integration: EventIndexer end-to-end", () => {
         xdr.ScVal.scvSymbol("LoanApproved"),
         nativeToScVal(loanId, { type: "u32" }),
       ],
-      value: nativeToScVal(Address.fromString(borrowerAddress), { type: "address" }),
+      value: nativeToScVal(Address.fromString(borrowerAddress), {
+        type: "address",
+      }),
       ledger: 1000,
       ledgerClosedAt: new Date().toISOString(),
       txHash: "txhash-integration-001",
@@ -65,19 +70,25 @@ describe("Integration: EventIndexer end-to-end", () => {
         return;
       });
 
-    const indexer = new EventIndexer("https://example.com", placeholderContractId);
+    const indexer = new EventIndexer(
+      "https://example.com",
+      placeholderContractId,
+    );
     // Bypass the actual Soroban RPC call for deterministic integration test
     (indexer as any).fetchEventsInRange = async () => [dummyEvent];
 
     const chunkResult = await (indexer as any).processChunk(1000, 1000);
     expect(chunkResult.insertedEvents).toBe(1);
 
-    const rows = await query("SELECT * FROM loan_events WHERE event_type = $1", ["LoanApproved"]);
+    const rows = await query(
+      "SELECT * FROM contract_events WHERE event_type = $1",
+      ["LoanApproved"],
+    );
     expect(rows.rows.length).toBe(1);
 
     const row = rows.rows[0];
     expect(row.loan_id).toBe(loanId);
-    expect(row.borrower).toBe(borrowerAddress);
+    expect(row.address).toBe(borrowerAddress);
     expect(row.tx_hash).toBe("txhash-integration-001");
 
     expect(dispatchSpy).toHaveBeenCalledTimes(1);

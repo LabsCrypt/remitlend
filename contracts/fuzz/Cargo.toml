@@ -21,6 +21,9 @@ path = "../loan_manager"
 [dependencies.remittance_nft]
 path = "../remittance_nft"
 
+[dependencies.multisig_governance]
+path = "../multisig_governance"
+
 [[bin]]
 name = "fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
@@ -45,6 +48,13 @@ bench = false
 [[bin]]
 name = "remittance_nft_fuzz"
 path = "fuzz_targets/remittance_nft_fuzz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "multisig_governance_fuzz"
+path = "fuzz_targets/multisig_governance_fuzz.rs"
 test = false
 doc = false
 bench = false

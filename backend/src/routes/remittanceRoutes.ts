@@ -5,10 +5,7 @@ import {
   getRemittance,
   submitRemittanceTransaction,
 } from "../controllers/remittanceController.js";
-import {
-  requireJwtAuth,
-  requireScopes,
-} from "../middleware/jwtAuth.js";
+import { requireJwtAuth, requireScopes } from "../middleware/jwtAuth.js";
 import { validate } from "../middleware/validation.js";
 import {
   createRemittanceSchema,
@@ -78,7 +75,7 @@ router.post(
   requireJwtAuth,
   requireScopes("write:remittances"),
   validate(createRemittanceSchema),
-  createRemittance
+  createRemittance,
 );
 
 /**
@@ -121,7 +118,7 @@ router.get(
   requireJwtAuth,
   requireScopes("read:remittances"),
   validate(getRemittancesSchema),
-  getRemittances
+  getRemittances,
 );
 
 /**
@@ -166,7 +163,7 @@ router.get(
   requireJwtAuth,
   requireScopes("read:remittances"),
   validate(getRemittanceSchema),
-  getRemittance
+  getRemittance,
 );
 
 /**
@@ -215,7 +212,7 @@ router.post(
   "/:id/submit",
   requireJwtAuth,
   requireScopes("write:remittances"),
-  submitRemittanceTransaction
+  submitRemittanceTransaction,
 );
 
 export default router;

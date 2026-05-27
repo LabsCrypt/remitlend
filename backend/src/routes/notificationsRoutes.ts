@@ -44,6 +44,10 @@ router.get(
  * /notifications/stream:
  *   get:
  *     summary: SSE stream for real-time notification push
+ *     description: >
+ *       Server-Sent Events stream for pushing real-time notifications to the client.
+ *       Auth MUST be provided via the Authorization: Bearer <token> header.
+ *       Frontend should use fetch with ReadableStream to support headers.
  *     tags: [Notifications]
  *     security:
  *       - BearerAuth: []

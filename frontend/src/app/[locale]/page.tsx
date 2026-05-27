@@ -28,7 +28,112 @@ import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { CreditScoreGauge } from "../components/ui/CreditScoreGauge";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
-import React, { useMemo } from "react";
+import { Tooltip } from "../components/ui/Tooltip";
+import React, { useMemo, useState, useEffect } from "react";
+import type { Loan } from "../hooks/useApi";
+
+const SEVENTY_TWO_HOURS_MS = 72 * 60 * 60 * 1000;
+const SESSION_BANNER_KEY = "repayment_banner_dismissed";
+
+function getLoanDueDate(loan: Loan): Date {
+  return new Date(new Date(loan.createdAt).getTime() + loan.termDays * 24 * 60 * 60 * 1000);
+}
+
+function useRepaymentReminder(loans: Loan[] | undefined) {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && sessionStorage.getItem(SESSION_BANNER_KEY) === "true") {
+      setDismissed(true);
+    }
+  }, []);
+
+  const urgentLoans = useMemo(() => {
+    if (!loans) return [];
+    const now = Date.now();
+    return loans
+      .filter((l) => {
+        if (l.status !== "active") return false;
+        const due = getLoanDueDate(l).getTime();
+        return due > now && due - now <= SEVENTY_TWO_HOURS_MS;
+      })
+      .sort((a, b) => getLoanDueDate(a).getTime() - getLoanDueDate(b).getTime());
+  }, [loans]);
+
+  const dismiss = () => {
+    sessionStorage.setItem(SESSION_BANNER_KEY, "true");
+    setDismissed(true);
+  };
+
+  return { urgentLoans, dismissed, dismiss };
+}
+
+function RepaymentReminderBanner({
+  urgentLoans,
+  onDismiss,
+}: {
+  urgentLoans: Loan[];
+  onDismiss: () => void;
+}) {
+  const router = useRouter();
+  const mostUrgent = urgentLoans[0];
+  if (!mostUrgent) return null;
+
+  const dueDate = getLoanDueDate(mostUrgent);
+  const hoursLeft = Math.max(0, Math.floor((dueDate.getTime() - Date.now()) / (60 * 60 * 1000)));
+
+  return (
+    <div
+      role="alert"
+      className="flex items-start justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 dark:border-amber-500/30 dark:bg-amber-950/30"
+    >
+      <div className="flex items-start gap-3">
+        <Clock
+          className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-hidden="true"
+        />
+        <div>
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Repayment due in {hoursLeft}h — Loan #{mostUrgent.id}
+            {urgentLoans.length > 1 && (
+              <span className="ml-2 inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-500/30 dark:text-amber-300">
+                +{urgentLoans.length - 1} more
+              </span>
+            )}
+          </p>
+          <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+            Amount due:{" "}
+            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+              mostUrgent.amount,
+            )}{" "}
+            · Due{" "}
+            {dueDate.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={() => router.push(`/repay/${mostUrgent.id}`)}
+          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors"
+        >
+          Repay now
+        </button>
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss repayment reminder"
+          className="rounded p-1 text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -54,6 +159,8 @@ export default function Home() {
   });
 
   const isLoading = (loansLoading || remittancesLoading || balanceLoading) && isConnected;
+
+  const { urgentLoans, dismissed, dismiss } = useRepaymentReminder(loans);
 
   const currentCreditScore = useMemo(() => {
     if (!creditHistory || creditHistory.length === 0) return null;
@@ -193,6 +300,10 @@ export default function Home() {
         <p className="text-zinc-500 dark:text-zinc-400">{t("description")}</p>
       </header>
 
+      {!dismissed && urgentLoans.length > 0 && (
+        <RepaymentReminderBanner urgentLoans={urgentLoans} onDismiss={dismiss} />
+      )}
+
       <ErrorBoundary scope="dashboard summary" variant="section">
         <section
           aria-label="Portfolio Statistics"
@@ -253,7 +364,15 @@ export default function Home() {
                 </div>
                 <div className="mt-4">
                   <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                    {stat.label}
+                    <span className="inline-flex items-center gap-1">
+                      {stat.label}
+                      {stat.label.toLowerCase().includes("apy") ? (
+                        <Tooltip
+                          content="APY (Annual Percentage Yield): The estimated yearly return on your deposits, including compounding. This may change over time."
+                          label="APY info"
+                        />
+                      ) : null}
+                    </span>
                   </p>
                   <h3 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
                     {stat.value}
@@ -377,6 +496,15 @@ export default function Home() {
               className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950"
               aria-label="Credit Score"
             >
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  Credit Score
+                </h3>
+                <Tooltip
+                  content="Credit Score: An on-chain signal of repayment reliability. Higher scores can unlock better terms over time."
+                  label="Credit score info"
+                />
+              </div>
               <CreditScoreGauge
                 score={currentCreditScore ?? 300}
                 previousScore={previousCreditScore ?? undefined}

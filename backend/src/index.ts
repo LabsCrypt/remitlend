@@ -8,18 +8,18 @@ validateEnvVars();
 import { initSentry } from "./config/sentry.js";
 initSentry();
 
-import app from "./app.js";
+const app = (await import("./app.js")).default;
 import logger from "./utils/logger.js";
-import pool from "./db/connection.js";
+import { closePool } from "./db/connection.js";
 import { startIndexer, stopIndexer } from "./services/indexerManager.js";
 import {
   startDefaultCheckerScheduler,
   stopDefaultCheckerScheduler,
 } from "./services/defaultChecker.js";
 import {
-  startWebhookRetryProcessor,
-  stopWebhookRetryProcessor,
-} from "./services/webhookRetryProcessor.js";
+  startWebhookRetryScheduler,
+  stopWebhookRetryScheduler,
+} from "./services/webhookRetryScheduler.js";
 import { eventStreamService } from "./services/eventStreamService.js";
 import {
   startNotificationCleanupScheduler,
@@ -31,14 +31,16 @@ import {
 } from "./services/scoreReconciliationService.js";
 import { sorobanService } from "./services/sorobanService.js";
 import { validateLoanConfig } from "./config/loanConfig.js";
+import { startLoanDueCheckCron } from "./cron/loanCheckCron.js";
 
 const port = process.env.PORT || 3001;
 
-// Validate loan config on startup before accepting traffic
+// Validate score delta and loan config on startup before accepting traffic
 try {
   validateLoanConfig();
+  sorobanService.validateScoreConfig();
 } catch (err) {
-  logger.error("Loan configuration is invalid, aborting startup.", { err });
+  logger.error("Startup configuration is invalid, aborting startup.", { err });
   process.exit(1);
 }
 
@@ -59,14 +61,17 @@ const server = app.listen(port, () => {
   // Start periodic on-chain default checks (if configured)
   startDefaultCheckerScheduler();
 
-  // Start webhook retry processor
-  startWebhookRetryProcessor();
+  // Start webhook retry scheduler
+  startWebhookRetryScheduler();
 
   // Start scheduled score reconciliation against on-chain state
   startScoreReconciliationScheduler();
-  
+
   // Start periodic notification cleanup
   startNotificationCleanupScheduler();
+
+  // Start loan due check cron
+  startLoanDueCheckCron();
 });
 
 const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
@@ -79,40 +84,36 @@ const shutdown = async (signal: "SIGTERM" | "SIGINT") => {
   }, 30000);
   timeout.unref();
 
-  stopIndexer();
-  stopDefaultCheckerScheduler();
-  stopWebhookRetryProcessor();
-  stopScoreReconciliationScheduler();
-  stopNotificationCleanupScheduler();
-  stopWebhookRetryProcessor();
-  
-  if (typeof (eventStreamService as any).closeAll === 'function') {
-    (eventStreamService as any).closeAll("Server shutting down");
-  } else if (typeof eventStreamService.closeAllConnections === 'function') {
-    eventStreamService.closeAllConnections("Server shutting down");
-  }
+  try {
+    await stopIndexer();
+    stopDefaultCheckerScheduler();
+    stopWebhookRetryScheduler();
+    stopScoreReconciliationScheduler();
+    stopNotificationCleanupScheduler();
 
-  server.close(async (err) => {
-    if (err) {
-      logger.error("HTTP server shutdown failed", { signal, err });
-      process.exit(1);
-      return;
+    if (typeof (eventStreamService as any).closeAll === "function") {
+      (eventStreamService as any).closeAll("Server shutting down");
+    } else if (typeof eventStreamService.closeAllConnections === "function") {
+      eventStreamService.closeAllConnections("Server shutting down");
     }
 
-    try {
-      if (pool && typeof (pool as any).drain === 'function') {
-        await (pool as any).drain();
-        logger.info("Database pool drained.");
-      } else if (pool && typeof (pool as any).end === 'function') {
-        await (pool as any).end();
-        logger.info("Database pool ended.");
-      }
-    } catch (e) {
-      logger.error("Failed to drain DB pool", e);
-    }
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+    });
 
+    await closePool();
+    logger.info("Database pool drained.");
     process.exit(0);
-  });
+  } catch (err) {
+    logger.error("Graceful shutdown failed", { signal, err });
+    process.exit(1);
+  }
 };
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

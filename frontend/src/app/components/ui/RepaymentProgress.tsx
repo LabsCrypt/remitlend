@@ -5,7 +5,7 @@ import { LoanStatusBadge } from "./LoanStatusBadge";
 interface RepaymentProgressProps {
   totalRepaid: number;
   totalOwed: number;
-  status: "active" | "repaid" | "defaulted" | "pending";
+  status: "active" | "repaid" | "defaulted" | "pending" | "liquidated";
 }
 
 function formatCurrency(value: number) {

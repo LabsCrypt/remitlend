@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { query } from "../db/connection.js";
 import { AppError } from "../errors/AppError.js";
 import { eventStreamService } from "../services/eventStreamService.js";
@@ -13,7 +13,7 @@ const mapLoanEventRow = (row: DbEventRow) => ({
   eventId: String(row.event_id ?? ""),
   eventType: String(row.event_type ?? ""),
   loanId: row.loan_id !== undefined ? Number(row.loan_id) : undefined,
-  borrower: String(row.borrower ?? ""),
+  address: String(row.address ?? row.borrower ?? ""),
   amount: row.amount !== undefined ? String(row.amount) : undefined,
   ledger: Number(row.ledger ?? 0),
   ledgerClosedAt: String(row.ledger_closed_at ?? ""),
@@ -83,12 +83,12 @@ export const streamEvents = asyncHandler(
       // send recent events for initial context.
       try {
         const replayEvents = await query(
-          `SELECT event_id, event_type, loan_id, borrower, amount, ledger, ledger_closed_at, tx_hash
-           FROM loan_events
-           WHERE borrower = $1
+          `SELECT event_id, event_type, loan_id, address, amount, ledger, ledger_closed_at, tx_hash
+           FROM contract_events
+           WHERE address = $1
              AND (
                $2::text IS NULL
-               OR id > COALESCE((SELECT id FROM loan_events WHERE event_id = $2), 0)
+               OR id > COALESCE((SELECT id FROM contract_events WHERE event_id = $2), 0)
              )
            ORDER BY id ASC
            LIMIT $3`,
@@ -97,24 +97,29 @@ export const streamEvents = asyncHandler(
 
         if (replayEvents.rows.length > 0) {
           for (const row of replayEvents.rows) {
-            eventStreamService.sendEvent(res, mapLoanEventRow(row as DbEventRow));
+            eventStreamService.sendEvent(
+              res,
+              mapLoanEventRow(row as DbEventRow),
+            );
           }
         } else if (!lastEventId) {
-          res.write(`event: init\ndata: ${JSON.stringify({ type: "init", replayed: 0 })}\n\n`);
+          res.write(
+            `event: init\ndata: ${JSON.stringify({ type: "init", replayed: 0 })}\n\n`,
+          );
         }
       } catch (err) {
         logger.error("SSE replay fetch error", { borrower, lastEventId, err });
       }
 
-      unsubscribe = eventStreamService.subscribeBorrower(userKey, borrower, res);
+      unsubscribe = eventStreamService.subscribeAddress(userKey, borrower, res);
     } else {
       try {
         const replayEvents = await query(
-          `SELECT event_id, event_type, loan_id, borrower, amount, ledger, ledger_closed_at, tx_hash
-           FROM loan_events
+          `SELECT event_id, event_type, loan_id, address, amount, ledger, ledger_closed_at, tx_hash
+           FROM contract_events
            WHERE (
              $1::text IS NULL
-             OR id > COALESCE((SELECT id FROM loan_events WHERE event_id = $1), 0)
+             OR id > COALESCE((SELECT id FROM contract_events WHERE event_id = $1), 0)
            )
            ORDER BY id ASC
            LIMIT $2`,
@@ -123,7 +128,10 @@ export const streamEvents = asyncHandler(
 
         if (replayEvents.rows.length > 0) {
           for (const row of replayEvents.rows) {
-            eventStreamService.sendEvent(res, mapLoanEventRow(row as DbEventRow));
+            eventStreamService.sendEvent(
+              res,
+              mapLoanEventRow(row as DbEventRow),
+            );
           }
         }
       } catch (err) {
@@ -131,7 +139,9 @@ export const streamEvents = asyncHandler(
       }
 
       const counts = eventStreamService.getConnectionCount();
-      res.write(`event: init\ndata: ${JSON.stringify({ type: "init", connections: counts })}\n\n`);
+      res.write(
+        `event: init\ndata: ${JSON.stringify({ type: "init", connections: counts })}\n\n`,
+      );
       unsubscribe = eventStreamService.subscribeAll(userKey, res);
     }
 

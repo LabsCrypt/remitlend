@@ -36,10 +36,12 @@ export const up = (pgm) => {
     },
     event_id: { type: "varchar(255)", notNull: true },
     event_type: { type: "varchar(50)", notNull: true },
+    payload: { type: "jsonb", notNull: true },
     attempt_count: { type: "integer", notNull: true, default: 0 },
     last_status_code: { type: "integer" },
     last_error: { type: "text" },
     delivered_at: { type: "timestamp" },
+    next_retry_at: { type: "timestamp" },
     created_at: {
       type: "timestamp",
       notNull: true,
@@ -55,6 +57,7 @@ export const up = (pgm) => {
   pgm.createIndex("webhook_subscriptions", "is_active");
   pgm.createIndex("webhook_deliveries", "event_id");
   pgm.createIndex("webhook_deliveries", "subscription_id");
+  pgm.createIndex("webhook_deliveries", ["next_retry_at", "delivered_at"]);
 };
 
 /**

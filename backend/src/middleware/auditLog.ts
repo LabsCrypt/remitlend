@@ -44,7 +44,8 @@ function extractTarget(req: Request): string | undefined {
   const body = req.body as any;
   if (body) {
     if (body.loanId) return `LoanID:${body.loanId}`;
-    if (Array.isArray(body.loanIds)) return `LoanIDs:[${body.loanIds.join(",")}]`;
+    if (Array.isArray(body.loanIds))
+      return `LoanIDs:[${body.loanIds.join(",")}]`;
     if (body.address) return `Address:${body.address}`;
     if (body.userId) return `UserID:${body.userId}`;
     if (body.publicKey) return `PublicKey:${body.publicKey}`;

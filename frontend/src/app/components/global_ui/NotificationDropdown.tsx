@@ -14,6 +14,7 @@ import {
   type NotificationType,
 } from "../../hooks/useApi";
 import { useNotificationStream } from "../../hooks/useNotificationStream";
+import { StatusIndicator } from "../ui/StatusIndicator";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -148,9 +149,11 @@ function NotificationItem({
 
       {/* Unread dot – decorative; state is conveyed via aria-label above */}
       {!notification.read && (
-        <span
-          aria-hidden="true"
-          className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-indigo-500"
+        <StatusIndicator
+          label="Unread"
+          tone="info"
+          className="mt-1 shrink-0"
+          title="Unread notification"
         />
       )}
     </motion.li>
@@ -235,14 +238,13 @@ export function NotificationDropdown() {
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0 }}
+              title={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
               className={cn(
-                "absolute top-1 right-1 flex items-center justify-center rounded-full border-2 border-white text-white dark:border-zinc-950",
-                unreadCount > 9
-                  ? "h-4 w-4 text-[9px] font-bold bg-indigo-500"
-                  : "h-2.5 w-2.5 bg-indigo-500",
+                "absolute top-1 right-1 flex items-center justify-center rounded-full border-2 border-white px-1 text-[9px] font-bold text-white dark:border-zinc-950",
+                unreadCount > 9 ? "h-4 min-w-4 bg-indigo-500" : "h-4 min-w-4 bg-indigo-500",
               )}
             >
-              {unreadCount > 9 ? "9+" : unreadCount > 1 ? unreadCount : null}
+              {unreadCount > 9 ? "9+" : unreadCount}
             </motion.span>
           )}
         </AnimatePresence>

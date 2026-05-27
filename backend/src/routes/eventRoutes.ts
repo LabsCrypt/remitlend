@@ -15,12 +15,13 @@ const router = Router();
  *     summary: SSE stream for real-time loan events
  *     description: >
  *       Server-Sent Events endpoint for real-time loan event push.
- *       Auth is provided via Authorization bearer token or JWT cookie.
+ *       Auth MUST be provided via the Authorization: Bearer <token> header.
  *       Borrowers receive only their own events; optional `?borrower=G...`
  *       must match the authenticated wallet.
  *       Admin users receive all events when borrower is omitted.
  *       Supports replay on reconnect via `Last-Event-ID` header.
- *       Frontend can use the EventSource API for automatic reconnection.
+ *       Since native EventSource does not support custom headers, clients
+ *       should use fetch with ReadableStream to connect.
  *     tags: [Events]
  *     security:
  *       - BearerAuth: []

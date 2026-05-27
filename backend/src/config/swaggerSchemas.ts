@@ -750,6 +750,7 @@ export const swaggerSchemas = {
     properties: {
       loanIds: {
         type: "array",
+        maxItems: 1000,
         items: { type: "integer" },
       },
       txHash: { type: "string" },
@@ -830,7 +831,11 @@ export const swaggerSchemas = {
     properties: {
       code: { $ref: "#/components/schemas/ErrorCode" },
       message: { type: "string", example: "Amount must be a positive number" },
-      field: { type: "string", example: "amount", description: "The field that caused the error (if applicable)" },
+      field: {
+        type: "string",
+        example: "amount",
+        description: "The field that caused the error (if applicable)",
+      },
       details: {
         type: "object",
         description: "Additional error details (if applicable)",
