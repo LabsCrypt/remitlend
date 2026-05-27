@@ -38,9 +38,12 @@ export const idempotencyMiddleware = async (
       res
         .status(cached.status)
         .set("X-Idempotency-Cache", "HIT")
+        .set("X-Idempotent-Replayed", "true")
         .json(cached.body);
       return;
     }
+
+    res.set("X-Idempotent-Replayed", "false");
 
     // Capture the original methods to intercept the response body
     const originalJson = res.json;

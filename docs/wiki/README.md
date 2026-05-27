@@ -4,7 +4,7 @@ This folder is a GitHub Wiki-style set of documents that live in the repo so the
 
 ## Contents
 
+- [API Idempotency](./api-idempotency.md)
 - [Soroban Contract State Machine](./contract-state-machine.md)
 - [Indexer ↔ Database Sync Flow](./indexer-sync-flow.md)
 - [Frontend “Standard Library” Patterns](./frontend-patterns.md)
-

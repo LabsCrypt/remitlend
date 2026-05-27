@@ -105,6 +105,7 @@ const corsOptions: cors.CorsOptions = {
     "x-request-id",
     "Idempotency-Key",
   ],
+  exposedHeaders: ["X-Idempotent-Replayed", "X-Idempotency-Cache"],
   credentials: true,
 };
 
