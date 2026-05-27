@@ -630,6 +630,46 @@ fn test_set_interest_rate_zero_rejected() {
 }
 
 #[test]
+fn test_set_min_score_updates_value() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    manager.set_min_score(&700);
+
+    assert_eq!(manager.get_min_score(), 700);
+}
+
+#[test]
+fn test_set_min_score_accepts_max_score_boundary() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    manager.set_min_score(&850);
+
+    assert_eq!(manager.get_min_score(), 850);
+}
+
+#[test]
+fn test_set_min_score_rejects_out_of_bounds_values() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    let above_max = manager.try_set_min_score(&851);
+    assert_eq!(above_max, Err(Ok(LoanError::InvalidConfiguration)));
+    assert_eq!(manager.get_min_score(), 500);
+
+    let zero = manager.try_set_min_score(&0);
+    assert_eq!(zero, Err(Ok(LoanError::InvalidConfiguration)));
+    assert_eq!(manager.get_min_score(), 500);
+}
+
+#[test]
 fn test_legacy_zero_interest_config_falls_back_to_default() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();

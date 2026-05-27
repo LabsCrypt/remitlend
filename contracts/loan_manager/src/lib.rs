@@ -165,6 +165,7 @@ impl LoanManager {
     const MIN_RATE_BPS: u32 = 1; // Minimum 0.01% interest rate
     /// Default maximum interest rate (configurable via set_rate_bounds). #631
     const MAX_RATE_BPS: u32 = 100_000; // Maximum 1000% interest rate
+    const MAX_CREDIT_SCORE: u32 = 850;
     const MAX_PENALTY_MULTIPLIER: i128 = 2; // Total debt cannot exceed 2x original principal
 
     fn bump_instance_ttl(env: &Env) {
@@ -1935,7 +1936,11 @@ impl LoanManager {
         Self::default_window_ledgers(&env)
     }
 
-    pub fn set_min_score(env: Env, min_score: u32) {
+    pub fn set_min_score(env: Env, min_score: u32) -> Result<(), LoanError> {
+        if min_score == 0 || min_score > Self::MAX_CREDIT_SCORE {
+            return Err(LoanError::InvalidConfiguration);
+        }
+
         Self::admin(&env).require_auth();
 
         let old_score: u32 = env
@@ -1946,6 +1951,7 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::MinScore, &min_score);
         Self::bump_instance_ttl(&env);
         events::min_score_updated(&env, old_score, min_score);
+        Ok(())
     }
 
     pub fn set_max_loan_amount(env: Env, amount: i128) -> Result<(), LoanError> {
