@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import type { LoanWizardData } from "./LoanApplicationWizard";
-import { buildAmountHelperText, getPrecisionError, sanitizeAmountInput } from "../../utils/amount";
+import { getAssetStep, getAssetPrecisionHelperText, formatAmountOnBlur, validateAmountPrecision } from "../../utils/amountPrecision";
 
 const TERM_OPTIONS = [
   { label: "30 days", days: 30 as const },
@@ -52,6 +52,7 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
       onError("Enter a valid loan amount.");
       return false;
     }
+    const precisionError = validateAmountPrecision(data.amount, data.asset);
     if (precisionError) {
       onError(precisionError);
       return false;
@@ -119,28 +120,28 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
             </div>
 
             {/* Amount */}
-            <Input
-              label={`Amount (${data.asset})`}
-              type="text"
-              inputMode="decimal"
-              min={minAmount}
-              max={data.maxAmount || undefined}
-              value={data.amount}
-              onChange={(e) => {
-                onChange({ amount: sanitizeAmountInput(e.target.value) });
-                onError(null);
-              }}
-              placeholder="1000"
-              required
-              helperText={
-                precisionError ||
-                helperText ||
-                (data.maxAmount === 0
-                  ? "Not eligible"
-                  : `Eligible range: ${formatMoney(minAmount)} – ${formatMoney(data.maxAmount)}`)
-              }
-              error={precisionError || undefined}
-            />
+              <Input
+                label={`Amount (${data.asset})`}
+                type="number"
+                min={minAmount}
+                max={data.maxAmount || undefined}
+                step={getAssetStep(data.asset)}
+                value={data.amount}
+                onChange={(e) => {
+                  onChange({ amount: e.target.value });
+                  onError(null);
+                }}
+                onBlur={(e) => {
+                  const formatted = formatAmountOnBlur(e.target.value, data.asset);
+                  onChange({ amount: formatted });
+                }}
+                placeholder="1000"
+                required
+                helperText={
+                  getAssetPrecisionHelperText(data.asset)
+                }
+                error={validateAmountPrecision(data.amount, data.asset)}
+              />
 
             {/* Term */}
             <div className="space-y-2">

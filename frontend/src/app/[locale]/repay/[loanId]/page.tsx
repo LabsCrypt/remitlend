@@ -19,6 +19,14 @@ import {
   useWalletStore,
 } from "../../../stores/useWalletStore";
 import { useContractToast } from "../../../hooks/useContractToast";
+import { formatAmountOnBlur, getAssetStep } from "../../../utils/amountPrecision";
+
+const DEMO_AVAILABLE_BALANCE = 1_000;
+
+function createDemoTxHash(): string {
+  const random = Math.random().toString(16).slice(2);
+  return `${Date.now().toString(16)}${random}`.padEnd(64, "0").slice(0, 64);
+}
 import { TransactionPreviewModal } from "../../../components/transaction/TransactionPreviewModal";
 import { useTransactionPreview } from "../../../hooks/useTransactionPreview";
 import { buildUnsignedRepaymentXdr } from "../../../utils/soroban";
@@ -209,13 +217,12 @@ export default function RepayLoanPage() {
           </label>
           <input
             id="repayment-amount"
-            type="text"
-            inputMode="decimal"
+            type="number"
+            step={getAssetStep("USDC")}
             value={amount}
-            onChange={(event) => setAmount(sanitizeAmountInput(event.target.value))}
-            className={`mt-2 w-full rounded-2xl border bg-zinc-50 px-4 py-3 text-zinc-900 outline-none transition focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 ${
-              precisionError ? "border-red-500" : "border-zinc-200"
-            }`}
+            onChange={(event) => setAmount(event.target.value)}
+            onBlur={(event) => setAmount(formatAmountOnBlur(event.target.value, "USDC"))}
+            className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-900 outline-none transition focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
           />
           <p
             className={`mt-2 text-xs ${

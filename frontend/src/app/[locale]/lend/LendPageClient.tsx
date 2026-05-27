@@ -30,6 +30,7 @@ import { OperationProgress } from "../../components/ui/OperationProgress";
 import { useDepositOperation, useWithdrawalOperation } from "../../hooks/useRepaymentOperation";
 import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
 import { useSSE } from "../../hooks/useSSE";
+import { formatAmountOnBlur } from "../../utils/amountPrecision";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Tooltip } from "../../components/ui/Tooltip";
 import {
@@ -314,11 +315,9 @@ export function LendPageClient() {
                     min="0"
                     step="0.0000001"
                     value={depositAmount}
-                    onChange={(event) => setDepositAmount(sanitizeAmountInput(event.target.value))}
-                    aria-invalid={depositPrecisionError ? true : undefined}
-                    className={`w-full rounded-xl border bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 ${
-                      depositPrecisionError ? "border-red-500" : "border-zinc-200"
-                    }`}
+                    onChange={(event) => setDepositAmount(event.target.value)}
+                    onBlur={(event) => setDepositAmount(formatAmountOnBlur(event.target.value, "USDC"))}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900"
                   />
                   <p
                     className={`text-xs ${
@@ -360,11 +359,9 @@ export function LendPageClient() {
                     min="0"
                     step="0.0000001"
                     value={withdrawAmount}
-                    onChange={(event) => setWithdrawAmount(sanitizeAmountInput(event.target.value))}
-                    aria-invalid={withdrawPrecisionError ? true : undefined}
-                    className={`w-full rounded-xl border bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900 ${
-                      withdrawPrecisionError ? "border-red-500" : "border-zinc-200"
-                    }`}
+                    onChange={(event) => setWithdrawAmount(event.target.value)}
+                    onBlur={(event) => setWithdrawAmount(formatAmountOnBlur(event.target.value, "USDC"))}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-800 dark:bg-zinc-900"
                   />
                   <p
                     className={`text-xs ${
