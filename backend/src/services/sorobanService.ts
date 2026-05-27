@@ -1045,6 +1045,56 @@ class SorobanService {
   }
 
   /**
+   * Reads the current scaled LP share price for a token from the LendingPool.
+   * The contract returns a value scaled by 1e6.
+   */
+  async getPoolSharePrice(tokenAddress: string): Promise<number> {
+    const server = this.getRpcServer();
+    const contractId = this.getLendingPoolContractId();
+    const passphrase = this.getNetworkPassphrase();
+    const source = this.getScoreReadSourceKeypair();
+
+    const account = await server.getAccount(source.publicKey());
+    const tokenScVal = nativeToScVal(Address.fromString(tokenAddress), {
+      type: "address",
+    });
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: contractId,
+          function: "get_share_price",
+          args: [tokenScVal],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    const simulation = await server.simulateTransaction(tx);
+    if ("error" in simulation) {
+      throw AppError.internal(
+        `Failed to simulate pool share price: ${simulation.error}`,
+      );
+    }
+
+    const retval = simulation.result?.retval;
+    if (!retval) {
+      throw AppError.internal("No share price returned by lending pool");
+    }
+
+    const nativeSharePrice = scValToNative(retval);
+    const sharePrice = Number(nativeSharePrice);
+    if (!Number.isFinite(sharePrice)) {
+      throw AppError.internal("Invalid on-chain share price returned");
+    }
+
+    return sharePrice;
+  }
+
+  /**
    * Returns score adjustment constants for indexing.
    * Values are sourced from environment variables so they stay in sync
    * with the deployed RemittanceNFT contract constants without requiring

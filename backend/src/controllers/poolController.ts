@@ -5,9 +5,19 @@ import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sorobanService } from "../services/sorobanService.js";
+import { cacheService } from "../services/cacheService.js";
 import logger from "../utils/logger.js";
 
 const ANNUAL_APY = 0.08; // 8% annual yield paid to depositors
+const SHARE_PRICE_SCALE = 1_000_000;
+const POOL_SHARE_PRICE_CACHE_TTL_SECONDS = 30;
+
+interface AggregatePoolStats {
+  totalDeposits: number;
+  totalOutstanding: number;
+  utilizationRate: number;
+  activeLoansCount: number;
+}
 
 /**
  * Parse a database value to a finite number, returning `fallback` (default 0)
@@ -19,14 +29,9 @@ function safeFloat(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/**
- * GET /api/pool/stats
- * Returns aggregate pool statistics for the lender dashboard.
- */
-export const getPoolStats = asyncHandler(
-  async (_req: Request, res: Response) => {
-    const [depositResult, loanResult] = await Promise.all([
-      query(`
+async function readAggregatePoolStats(): Promise<AggregatePoolStats> {
+  const [depositResult, loanResult] = await Promise.all([
+    query(`
       SELECT
         COALESCE(SUM(CASE WHEN event_type = 'Deposit' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
           - COALESCE(SUM(CASE WHEN event_type = 'Withdraw' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
@@ -34,7 +39,7 @@ export const getPoolStats = asyncHandler(
       FROM contract_events
       WHERE event_type IN ('Deposit', 'Withdraw')
     `),
-      query(`
+    query(`
       SELECT
         COALESCE(COUNT(DISTINCT loan_id) FILTER (
           WHERE event_type = 'LoanApproved'
@@ -45,27 +50,94 @@ export const getPoolStats = asyncHandler(
       FROM contract_events
       WHERE event_type IN ('LoanApproved', 'LoanRepaid')
     `),
-    ]);
+  ]);
 
-    const totalDeposits = safeFloat(depositResult.rows[0]?.total_deposits);
-    const totalOutstanding = safeFloat(loanResult.rows[0]?.total_outstanding);
-    const activeLoansCount = Math.trunc(
-      safeFloat(loanResult.rows[0]?.active_loans_count),
-    );
+  const totalDeposits = safeFloat(depositResult.rows[0]?.total_deposits);
+  const totalOutstanding = safeFloat(loanResult.rows[0]?.total_outstanding);
+  const activeLoansCount = Math.trunc(
+    safeFloat(loanResult.rows[0]?.active_loans_count),
+  );
 
-    const utilizationRate =
-      totalDeposits > 0 ? Math.min(totalOutstanding / totalDeposits, 1) : 0;
+  const utilizationRate =
+    totalDeposits > 0 ? Math.min(totalOutstanding / totalDeposits, 1) : 0;
+
+  return {
+    totalDeposits,
+    totalOutstanding,
+    utilizationRate: parseFloat(utilizationRate.toFixed(4)),
+    activeLoansCount,
+  };
+}
+
+function poolSharePriceCacheKey(token: string): string {
+  return `pool:share-price:${token}`;
+}
+
+/**
+ * GET /api/pool/stats
+ * Returns aggregate pool statistics for the lender dashboard.
+ */
+export const getPoolStats = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const stats = await readAggregatePoolStats();
 
     res.json({
       success: true,
       data: {
-        totalDeposits,
-        totalOutstanding,
-        utilizationRate: parseFloat(utilizationRate.toFixed(4)),
+        totalDeposits: stats.totalDeposits,
+        totalOutstanding: stats.totalOutstanding,
+        utilizationRate: stats.utilizationRate,
         apy: ANNUAL_APY,
-        activeLoansCount,
+        activeLoansCount: stats.activeLoansCount,
         poolTokenAddress: process.env.POOL_TOKEN_ADDRESS,
       },
+    });
+  },
+);
+
+/**
+ * GET /api/pool/:token/share-price
+ * Returns the current scaled LP share price for a token plus pool utilization.
+ */
+export const getPoolSharePrice = asyncHandler(
+  async (req: Request, res: Response) => {
+    const token = req.params.token;
+    if (typeof token !== "string") {
+      throw AppError.badRequest("Token address is required");
+    }
+
+    const cacheKey = poolSharePriceCacheKey(token);
+    const cached = await cacheService.get(cacheKey);
+
+    if (cached) {
+      res.json({
+        success: true,
+        data: cached,
+      });
+      return;
+    }
+
+    const [scaledSharePrice, stats] = await Promise.all([
+      sorobanService.getPoolSharePrice(token),
+      readAggregatePoolStats(),
+    ]);
+
+    const data = {
+      token,
+      scaledSharePrice,
+      sharePriceScale: SHARE_PRICE_SCALE,
+      sharePriceRatio: parseFloat(
+        (scaledSharePrice / SHARE_PRICE_SCALE).toFixed(6),
+      ),
+      utilizationRate: stats.utilizationRate,
+      cacheTtlSeconds: POOL_SHARE_PRICE_CACHE_TTL_SECONDS,
+    };
+
+    await cacheService.set(cacheKey, data, POOL_SHARE_PRICE_CACHE_TTL_SECONDS);
+
+    res.json({
+      success: true,
+      data,
     });
   },
 );

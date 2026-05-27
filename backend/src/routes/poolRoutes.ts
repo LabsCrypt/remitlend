@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   getPoolStats,
+  getPoolSharePrice,
   getDepositorPortfolio,
   depositToPool,
   withdrawFromPool,
@@ -17,6 +18,7 @@ import { idempotencyMiddleware } from "../middleware/idempotency.js";
 import { addressParamSchema } from "../schemas/stellarSchemas.js";
 import {
   buildPoolTransactionSchema,
+  poolSharePriceParamSchema,
   submitTxSchema,
 } from "../schemas/poolSchemas.js";
 
@@ -49,6 +51,46 @@ router.get(
   requireLender,
   requireScopes("read:pool"),
   getPoolStats,
+);
+
+/**
+ * @swagger
+ * /pool/{token}/share-price:
+ *   get:
+ *     summary: Get current lending pool share price for a token
+ *     description: >
+ *       Reads the LendingPool `get_share_price(token)` value and returns both
+ *       the raw 1e6-scaled value and a human-readable ratio. The response also
+ *       includes current aggregate utilization and the short cache TTL.
+ *     tags: [Pool]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Stellar token address or contract address
+ *     responses:
+ *       200:
+ *         description: Pool share price retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PoolSharePriceResponse'
+ *       401:
+ *         description: Missing or invalid Bearer token
+ *       403:
+ *         description: Lender role or read:pool scope required
+ */
+router.get(
+  "/:token/share-price",
+  requireJwtAuth,
+  requireLender,
+  requireScopes("read:pool"),
+  validate(poolSharePriceParamSchema),
+  getPoolSharePrice,
 );
 
 /**
