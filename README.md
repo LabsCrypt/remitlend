@@ -203,3 +203,7 @@ We welcome contributions from developers of all skill levels! Please see our [CO
 ## 📄 License
 
 This project is licensed under the ISC License. See the `LICENSE` file for details..
+
+## 🔒 Security
+
+Please refer to our [Security Policy](SECURITY.md) for information on supported versions, out-of-scope targets, and how to responsibly disclose a vulnerability.
