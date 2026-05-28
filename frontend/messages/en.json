@@ -249,6 +249,29 @@
       "cancel": "Cancel",
       "confirming": "Confirming..."
     },
+    "health": {
+      "title": "Loan health",
+      "loading": "Loading health factor...",
+      "unavailableTitle": "Health data unavailable",
+      "unavailableDescription": "Collateral and debt data are not available for this loan yet.",
+      "collateral": "Collateral",
+      "totalDebt": "Total debt",
+      "threshold": "Liquidation threshold",
+      "sourceContract": "Using contract health view",
+      "sourceBackend": "Using backend-computed health data",
+      "sourceDerived": "Derived from collateral and total debt",
+      "cta": "Add collateral",
+      "states": {
+        "healthy": "Healthy",
+        "watch": "Watch",
+        "atRisk": "At risk"
+      },
+      "descriptions": {
+        "healthy": "Collateral coverage is comfortably above the liquidation threshold.",
+        "watch": "Collateral coverage is close to the safety margin. Consider adding collateral.",
+        "atRisk": "This loan is at risk of liquidation. Add collateral to restore coverage."
+      }
+    },
     "refinance": {
       "title": "Refinance loan",
       "principal": "New principal amount",

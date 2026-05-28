@@ -270,6 +270,10 @@ export interface LoanDetails {
   events: LoanEvent[];
   lateFees?: number;
   collateralLocked?: number;
+  collateralRatio?: number;
+  healthFactor?: number;
+  liquidationThreshold?: number;
+  healthSource?: "contract" | "backend";
 }
 
 export interface LiquidatableLoan {

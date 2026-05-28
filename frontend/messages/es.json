@@ -249,6 +249,29 @@
       "cancel": "Cancelar",
       "confirming": "Confirmando..."
     },
+    "health": {
+      "title": "Salud del prestamo",
+      "loading": "Cargando factor de salud...",
+      "unavailableTitle": "Datos de salud no disponibles",
+      "unavailableDescription": "Los datos de garantia y deuda aun no estan disponibles para este prestamo.",
+      "collateral": "Garantia",
+      "totalDebt": "Deuda total",
+      "threshold": "Umbral de liquidacion",
+      "sourceContract": "Usando vista de salud del contrato",
+      "sourceBackend": "Usando datos de salud calculados por backend",
+      "sourceDerived": "Derivado de garantia y deuda total",
+      "cta": "Agregar garantia",
+      "states": {
+        "healthy": "Saludable",
+        "watch": "Vigilar",
+        "atRisk": "En riesgo"
+      },
+      "descriptions": {
+        "healthy": "La cobertura de garantia esta comodamente por encima del umbral de liquidacion.",
+        "watch": "La cobertura de garantia esta cerca del margen de seguridad. Considere agregar garantia.",
+        "atRisk": "Este prestamo esta en riesgo de liquidacion. Agregue garantia para restaurar la cobertura."
+      }
+    },
     "refinance": {
       "title": "Refinanciar préstamo",
       "principal": "Nuevo monto principal",

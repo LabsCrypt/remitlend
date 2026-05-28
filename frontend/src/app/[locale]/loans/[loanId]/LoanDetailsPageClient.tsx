@@ -14,6 +14,7 @@ import { ExtensionLoanModal } from "../../../components/loan-wizard/ExtensionLoa
 import { RepaymentProgress } from "../../../components/ui/RepaymentProgress";
 import { LoanTimeline } from "../../../components/ui/LoanTimeline";
 import { TxHashLink } from "../../../components/ui/TxHashLink";
+import { LoanHealth } from "../../../components/loan/LoanHealth";
 import { downloadCsv, rowsToCsv } from "../../../utils/csv";
 
 function formatCurrency(value: number) {
@@ -269,6 +270,36 @@ export function LoanDetailsPageClient() {
         </article>
 
         <aside className="space-y-4">
+          <LoanHealth
+            loan={loan}
+            isLoading={isLoading}
+            isError={isError}
+            topUpHref="#collateral-top-up"
+            labels={{
+              title: t("health.title"),
+              loading: t("health.loading"),
+              unavailableTitle: t("health.unavailableTitle"),
+              unavailableDescription: t("health.unavailableDescription"),
+              collateral: t("health.collateral"),
+              totalDebt: t("health.totalDebt"),
+              threshold: t("health.threshold"),
+              sourceContract: t("health.sourceContract"),
+              sourceBackend: t("health.sourceBackend"),
+              sourceDerived: t("health.sourceDerived"),
+              cta: t("health.cta"),
+              states: {
+                healthy: t("health.states.healthy"),
+                watch: t("health.states.watch"),
+                atRisk: t("health.states.atRisk"),
+              },
+              descriptions: {
+                healthy: t("health.descriptions.healthy"),
+                watch: t("health.descriptions.watch"),
+                atRisk: t("health.descriptions.atRisk"),
+              },
+            }}
+          />
+
           {loan.status === "active" && daysRemaining !== null && (
             <div className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none">
               <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">

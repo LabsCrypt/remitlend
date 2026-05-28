@@ -249,6 +249,29 @@
       "cancel": "Kanselahin",
       "confirming": "Kinukumpirma..."
     },
+    "health": {
+      "title": "Loan health",
+      "loading": "Naglo-load ng health factor...",
+      "unavailableTitle": "Hindi available ang health data",
+      "unavailableDescription": "Hindi pa available ang collateral at debt data para sa loan na ito.",
+      "collateral": "Collateral",
+      "totalDebt": "Kabuuang utang",
+      "threshold": "Liquidation threshold",
+      "sourceContract": "Gamit ang contract health view",
+      "sourceBackend": "Gamit ang backend-computed health data",
+      "sourceDerived": "Derived mula sa collateral at kabuuang utang",
+      "cta": "Magdagdag ng collateral",
+      "states": {
+        "healthy": "Healthy",
+        "watch": "Bantayan",
+        "atRisk": "Nasa panganib"
+      },
+      "descriptions": {
+        "healthy": "Ang collateral coverage ay komportableng nasa itaas ng liquidation threshold.",
+        "watch": "Malapit na ang collateral coverage sa safety margin. Isaalang-alang ang pagdagdag ng collateral.",
+        "atRisk": "Ang loan na ito ay nasa panganib ng liquidation. Magdagdag ng collateral para maibalik ang coverage."
+      }
+    },
     "refinance": {
       "title": "I-refinance ang loan",
       "principal": "Bagong principal na halaga",
