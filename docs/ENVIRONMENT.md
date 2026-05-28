@@ -75,7 +75,7 @@ This document lists every environment variable used by the RemitLend platform. E
 | `SENTRY_AUTH_TOKEN` | — | ✓ | ✓ | — | Sentry auth token for source maps | `frontend/next.config.ts` |
 | `NODE_ENV` | ✓ | ✓ | ✓ | `development` | Node environment (`development`, `test`, `production`) | `next.config.ts` |
 | `NEXT_PUBLIC_STELLAR_EXPLORER_URL` | ✓ | ✓ | ✓ | `https://stellar.expert/explorer/testnet` | Stellar explorer base URL for transaction links | `frontend/src/components/ui/TxHashLink.tsx` |
-
+| `NEXT_PUBLIC_STELLAR_NETWORK` | ✓ | ✓ | ✓ | `testnet` | Stellar network name shown in the build-info footer | `frontend/src/components/BuildInfoFooter.tsx` |
 ---
 
 ## Contracts / Scripts (`contracts/`, `scripts/`)
