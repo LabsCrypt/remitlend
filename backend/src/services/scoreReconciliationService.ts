@@ -244,7 +244,11 @@ class ScoreReconciliationService {
     } catch (error) {
       // Record failure metrics
       const durationMs = Date.now() - startTime;
-      jobMetricsService.recordFailure(jobName, error as Error | string, durationMs);
+      jobMetricsService.recordFailure(
+        jobName,
+        error as Error | string,
+        durationMs,
+      );
       throw error;
     }
   }

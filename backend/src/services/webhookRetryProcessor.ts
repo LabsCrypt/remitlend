@@ -33,7 +33,11 @@ export function startWebhookRetryProcessor(): void {
       jobMetricsService.recordSuccess(jobName, durationMs);
     } catch (error) {
       const durationMs = Date.now() - startTime;
-      jobMetricsService.recordFailure(jobName, error as Error | string, durationMs);
+      jobMetricsService.recordFailure(
+        jobName,
+        error as Error | string,
+        durationMs,
+      );
       logger.error("Error in webhook retry processor interval", { error });
     }
   }, 10 * 1000);

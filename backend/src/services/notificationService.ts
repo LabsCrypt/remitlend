@@ -53,8 +53,8 @@ const sseClients = new Map<string, Set<SseClient>>();
 // Initialize Twilio client if credentials are provided
 const twilioClient =
   process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_PHONE_NUMBER
+  process.env.TWILIO_AUTH_TOKEN &&
+  process.env.TWILIO_PHONE_NUMBER
     ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
     : null;
 
@@ -68,28 +68,28 @@ function buildEmailTemplate(
   message: string,
 ): { subject: string; html: string } {
   const templates: Record<NotificationType, { subject: string; html: string }> =
-  {
-    loan_approved: {
-      subject: "Your loan has been approved — RemitLend",
-      html: `<h2>Loan Approved</h2><p>${message}</p><p>Log in to view your loan details and repayment schedule.</p>`,
-    },
-    repayment_due: {
-      subject: "Repayment reminder — RemitLend",
-      html: `<h2>Repayment Due Soon</h2><p>${message}</p><p>Please ensure funds are available to avoid a default.</p>`,
-    },
-    repayment_confirmed: {
-      subject: "Repayment confirmed — RemitLend",
-      html: `<h2>Repayment Confirmed</h2><p>${message}</p><p>Thank you for your payment.</p>`,
-    },
-    loan_defaulted: {
-      subject: "Loan default notice — RemitLend",
-      html: `<h2>Loan Defaulted</h2><p>${message}</p><p>Contact support immediately if you believe this is an error.</p>`,
-    },
-    score_changed: {
-      subject: "Your credit score has changed — RemitLend",
-      html: `<h2>Credit Score Update</h2><p>${message}</p><p>Log in to see your updated score and history.</p>`,
-    },
-  };
+    {
+      loan_approved: {
+        subject: "Your loan has been approved — RemitLend",
+        html: `<h2>Loan Approved</h2><p>${message}</p><p>Log in to view your loan details and repayment schedule.</p>`,
+      },
+      repayment_due: {
+        subject: "Repayment reminder — RemitLend",
+        html: `<h2>Repayment Due Soon</h2><p>${message}</p><p>Please ensure funds are available to avoid a default.</p>`,
+      },
+      repayment_confirmed: {
+        subject: "Repayment confirmed — RemitLend",
+        html: `<h2>Repayment Confirmed</h2><p>${message}</p><p>Thank you for your payment.</p>`,
+      },
+      loan_defaulted: {
+        subject: "Loan default notice — RemitLend",
+        html: `<h2>Loan Defaulted</h2><p>${message}</p><p>Contact support immediately if you believe this is an error.</p>`,
+      },
+      score_changed: {
+        subject: "Your credit score has changed — RemitLend",
+        html: `<h2>Credit Score Update</h2><p>${message}</p><p>Log in to see your updated score and history.</p>`,
+      },
+    };
 
   return templates[type];
 }
@@ -244,8 +244,13 @@ class NotificationService {
    */
   async batchRepaymentNotificationsForDigest(
     notifications: Array<{ userId: string; message: string; loanId?: number }>,
-  ): Promise<Map<string, Array<{ userId: string; message: string; loanId?: number }>>> {
-    const grouped = new Map<string, Array<{ userId: string; message: string; loanId?: number }>>();
+  ): Promise<
+    Map<string, Array<{ userId: string; message: string; loanId?: number }>>
+  > {
+    const grouped = new Map<
+      string,
+      Array<{ userId: string; message: string; loanId?: number }>
+    >();
 
     for (const notif of notifications) {
       const prefResult = await query(

@@ -740,9 +740,7 @@ export function useLoanEvents(
           events: RawEvent[];
         };
       }
-      const response = await apiFetch<LoanEventsResponse>(
-        `/loans/${loanId}/events`,
-      );
+      const response = await apiFetch<LoanEventsResponse>(`/loans/${loanId}/events`);
       if (response?.success && response.data?.events) {
         return response.data.events.map((e) => ({
           type: e.event_type,

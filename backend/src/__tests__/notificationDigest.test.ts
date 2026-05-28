@@ -7,137 +7,141 @@ type MockQueryResult = { rows: unknown[]; rowCount?: number };
 process.env.JWT_SECRET = "test-jwt-secret-min-32-chars-long!!";
 
 const mockQuery: jest.MockedFunction<
-    (text: string, params?: unknown[]) => Promise<MockQueryResult>
+  (text: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
 
 jest.unstable_mockModule("../db/connection.js", () => ({
-    default: { query: mockQuery },
-    query: mockQuery,
-    getClient: jest.fn(),
-    closePool: jest.fn(),
-    withTransaction: jest.fn(),
+  default: { query: mockQuery },
+  query: mockQuery,
+  getClient: jest.fn(),
+  closePool: jest.fn(),
+  withTransaction: jest.fn(),
 }));
 
 jest.unstable_mockModule("../services/cacheService.js", () => ({
-    cacheService: {
-        get: jest.fn<() => Promise<any>>().mockResolvedValue(null),
-        set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
-    },
+  cacheService: {
+    get: jest.fn<() => Promise<any>>().mockResolvedValue(null),
+    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue("ok"),
+  },
 }));
 
 await import("../db/connection.js");
-const { notificationService } = await import("../services/notificationService.js");
+const { notificationService } =
+  await import("../services/notificationService.js");
 
 const userId = "GTESTUSER1111111111111111111111111111111111111111111111111";
 
 beforeEach(() => {
-    mockQuery.mockReset();
-    jest.clearAllMocks();
+  mockQuery.mockReset();
+  jest.clearAllMocks();
 });
 
 afterAll(() => {
-    delete process.env.JWT_SECRET;
+  delete process.env.JWT_SECRET;
 });
 
 describe("notification digest batching", () => {
-    it("batches repayment notifications with digest mode off", async () => {
-        mockQuery.mockResolvedValue({
-            rows: [{ digest_frequency: "off" }],
-        });
-
-        const notifications = [
-            { userId, message: "Loan 1 due", loanId: 1 },
-            { userId, message: "Loan 2 due", loanId: 2 },
-            { userId, message: "Loan 3 due", loanId: 3 },
-        ];
-
-        const grouped = await notificationService.batchRepaymentNotificationsForDigest(
-            notifications,
-        );
-
-        expect(grouped.size).toBe(1);
-        expect(grouped.has(`${userId}:immediate`)).toBe(true);
-        expect(grouped.get(`${userId}:immediate`)).toHaveLength(3);
+  it("batches repayment notifications with digest mode off", async () => {
+    mockQuery.mockResolvedValue({
+      rows: [{ digest_frequency: "off" }],
     });
 
-    it("batches repayment notifications with daily digest mode", async () => {
-        mockQuery.mockResolvedValue({
-            rows: [{ digest_frequency: "daily" }],
-        });
+    const notifications = [
+      { userId, message: "Loan 1 due", loanId: 1 },
+      { userId, message: "Loan 2 due", loanId: 2 },
+      { userId, message: "Loan 3 due", loanId: 3 },
+    ];
 
-        const notifications = [
-            { userId, message: "Loan 1 due", loanId: 1 },
-            { userId, message: "Loan 2 due", loanId: 2 },
-        ];
+    const grouped =
+      await notificationService.batchRepaymentNotificationsForDigest(
+        notifications,
+      );
 
-        const grouped = await notificationService.batchRepaymentNotificationsForDigest(
-            notifications,
-        );
+    expect(grouped.size).toBe(1);
+    expect(grouped.has(`${userId}:immediate`)).toBe(true);
+    expect(grouped.get(`${userId}:immediate`)).toHaveLength(3);
+  });
 
-        expect(grouped.size).toBe(1);
-        expect(grouped.has(`${userId}:daily`)).toBe(true);
-        expect(grouped.get(`${userId}:daily`)).toHaveLength(2);
+  it("batches repayment notifications with daily digest mode", async () => {
+    mockQuery.mockResolvedValue({
+      rows: [{ digest_frequency: "daily" }],
     });
 
-    it("batches repayment notifications with weekly digest mode", async () => {
-        mockQuery.mockResolvedValue({
-            rows: [{ digest_frequency: "weekly" }],
-        });
+    const notifications = [
+      { userId, message: "Loan 1 due", loanId: 1 },
+      { userId, message: "Loan 2 due", loanId: 2 },
+    ];
 
-        const notifications = [
-            { userId, message: "Loan 1 due", loanId: 1 },
-            { userId, message: "Loan 2 due", loanId: 2 },
-            { userId, message: "Loan 3 due", loanId: 3 },
-        ];
+    const grouped =
+      await notificationService.batchRepaymentNotificationsForDigest(
+        notifications,
+      );
 
-        const grouped = await notificationService.batchRepaymentNotificationsForDigest(
-            notifications,
-        );
+    expect(grouped.size).toBe(1);
+    expect(grouped.has(`${userId}:daily`)).toBe(true);
+    expect(grouped.get(`${userId}:daily`)).toHaveLength(2);
+  });
 
-        expect(grouped.size).toBe(1);
-        expect(grouped.has(`${userId}:weekly`)).toBe(true);
-        expect(grouped.get(`${userId}:weekly`)).toHaveLength(3);
+  it("batches repayment notifications with weekly digest mode", async () => {
+    mockQuery.mockResolvedValue({
+      rows: [{ digest_frequency: "weekly" }],
     });
 
-    it("handles multiple users with different digest preferences", async () => {
-        const user1 = "GUSER1111111111111111111111111111111111111111111111111111";
-        const user2 = "GUSER2222222222222222222222222222222222222222222222222222";
+    const notifications = [
+      { userId, message: "Loan 1 due", loanId: 1 },
+      { userId, message: "Loan 2 due", loanId: 2 },
+      { userId, message: "Loan 3 due", loanId: 3 },
+    ];
 
-        mockQuery
-            .mockResolvedValueOnce({ rows: [{ digest_frequency: "daily" }] })
-            .mockResolvedValueOnce({ rows: [{ digest_frequency: "weekly" }] })
-            .mockResolvedValueOnce({ rows: [{ digest_frequency: "off" }] });
+    const grouped =
+      await notificationService.batchRepaymentNotificationsForDigest(
+        notifications,
+      );
 
-        const notifications = [
-            { userId: user1, message: "Loan 1 due", loanId: 1 },
-            { userId: user2, message: "Loan 2 due", loanId: 2 },
-            { userId: user1, message: "Loan 3 due", loanId: 3 },
-        ];
+    expect(grouped.size).toBe(1);
+    expect(grouped.has(`${userId}:weekly`)).toBe(true);
+    expect(grouped.get(`${userId}:weekly`)).toHaveLength(3);
+  });
 
-        const grouped = await notificationService.batchRepaymentNotificationsForDigest(
-            notifications,
-        );
+  it("handles multiple users with different digest preferences", async () => {
+    const user1 = "GUSER1111111111111111111111111111111111111111111111111111";
+    const user2 = "GUSER2222222222222222222222222222222222222222222222222222";
 
-        expect(grouped.size).toBe(3);
-        expect(grouped.get(`${user1}:daily`)).toHaveLength(2);
-        expect(grouped.get(`${user2}:weekly`)).toHaveLength(1);
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ digest_frequency: "daily" }] })
+      .mockResolvedValueOnce({ rows: [{ digest_frequency: "weekly" }] })
+      .mockResolvedValueOnce({ rows: [{ digest_frequency: "off" }] });
+
+    const notifications = [
+      { userId: user1, message: "Loan 1 due", loanId: 1 },
+      { userId: user2, message: "Loan 2 due", loanId: 2 },
+      { userId: user1, message: "Loan 3 due", loanId: 3 },
+    ];
+
+    const grouped =
+      await notificationService.batchRepaymentNotificationsForDigest(
+        notifications,
+      );
+
+    expect(grouped.size).toBe(3);
+    expect(grouped.get(`${user1}:daily`)).toHaveLength(2);
+    expect(grouped.get(`${user2}:weekly`)).toHaveLength(1);
+  });
+
+  it("defaults to off when digest_frequency is not set", async () => {
+    mockQuery.mockResolvedValue({
+      rows: [],
     });
 
-    it("defaults to off when digest_frequency is not set", async () => {
-        mockQuery.mockResolvedValue({
-            rows: [],
-        });
+    const notifications = [{ userId, message: "Loan 1 due", loanId: 1 }];
 
-        const notifications = [
-            { userId, message: "Loan 1 due", loanId: 1 },
-        ];
+    const grouped =
+      await notificationService.batchRepaymentNotificationsForDigest(
+        notifications,
+      );
 
-        const grouped = await notificationService.batchRepaymentNotificationsForDigest(
-            notifications,
-        );
-
-        expect(grouped.has(`${userId}:immediate`)).toBe(true);
-    });
+    expect(grouped.has(`${userId}:immediate`)).toBe(true);
+  });
 });

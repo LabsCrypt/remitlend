@@ -2602,8 +2602,7 @@ fn test_liquidate_emits_loan_liquidated_event_with_expected_amounts() {
 
     let events = env.events().all();
     let loan_liquidated_event = events.get(events.len() - 1).unwrap();
-    let liquidation_data =
-        soroban_sdk::Vec::<i128>::from_val(&env, &loan_liquidated_event.2);
+    let liquidation_data = soroban_sdk::Vec::<i128>::from_val(&env, &loan_liquidated_event.2);
 
     assert_eq!(liquidation_data.get(0).unwrap(), 1_000);
     assert_eq!(liquidation_data.get(1).unwrap(), 140);

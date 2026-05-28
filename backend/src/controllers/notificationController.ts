@@ -35,7 +35,14 @@ export const getNotifications = asyncHandler(
     }
 
     const [notifications, unreadCount] = await Promise.all([
-      notificationService.getNotificationsForUser(userId, limit, type, status, from, to),
+      notificationService.getNotificationsForUser(
+        userId,
+        limit,
+        type,
+        status,
+        from,
+        to,
+      ),
       notificationService.getUnreadCount(userId),
     ]);
 

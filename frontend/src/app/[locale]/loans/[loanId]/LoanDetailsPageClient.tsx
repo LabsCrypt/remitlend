@@ -46,11 +46,7 @@ export function LoanDetailsPageClient() {
   const amortizationQuery = useLoanAmortizationSchedule(loanId, {
     retry: false,
   });
-  const {
-    data: events,
-    isLoading: eventsLoading,
-    isError: eventsError,
-  } = useLoanEvents(loanId);
+  const { data: events, isLoading: eventsLoading, isError: eventsError } = useLoanEvents(loanId);
 
   if (isLoading) {
     return <LoanDetailSkeleton />;
@@ -247,7 +243,9 @@ export function LoanDetailsPageClient() {
               ) : events && events.length > 0 ? (
                 <LoanTimeline events={events} />
               ) : (
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">No loan events recorded yet.</p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  No loan events recorded yet.
+                </p>
               )}
             </div>
           </div>

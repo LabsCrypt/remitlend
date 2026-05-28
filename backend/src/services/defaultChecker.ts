@@ -235,9 +235,9 @@ export class DefaultChecker {
 
     const row = result.rows[0] as
       | {
-        overdue_count?: string | bigint;
-        oldest_due_ledger?: string | bigint | null;
-      }
+          overdue_count?: string | bigint;
+          oldest_due_ledger?: string | bigint | null;
+        }
       | undefined;
 
     const overdueCount =
@@ -443,8 +443,8 @@ export class DefaultChecker {
 
       const explicitIds = loanIds
         ? Array.from(
-          new Set(loanIds.filter((id) => Number.isInteger(id) && id > 0)),
-        )
+            new Set(loanIds.filter((id) => Number.isInteger(id) && id > 0)),
+          )
         : undefined;
 
       const targetIds =
@@ -537,7 +537,11 @@ export class DefaultChecker {
     } catch (error) {
       // Record failure metrics
       const durationMs = Date.now() - startTime;
-      jobMetricsService.recordFailure(jobName, error as Error | string, durationMs);
+      jobMetricsService.recordFailure(
+        jobName,
+        error as Error | string,
+        durationMs,
+      );
       throw error;
     } finally {
       // Always release the lock, even if the run failed

@@ -5,10 +5,11 @@ const e164PhoneRegex = /^\+?[1-9]\d{1,14}$/;
 const perTypeOverridesSchema = z.record(z.string(), z.boolean()).default({});
 
 // ISO date string validation
-const isoDateString = z.string().refine(
-  (val) => !Number.isNaN(Date.parse(val)),
-  { message: "Must be a valid ISO-8601 date string" },
-);
+const isoDateString = z
+  .string()
+  .refine((val) => !Number.isNaN(Date.parse(val)), {
+    message: "Must be a valid ISO-8601 date string",
+  });
 
 export const updateNotificationPreferencesSchema = z.object({
   emailEnabled: z.boolean(),

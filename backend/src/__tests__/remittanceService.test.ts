@@ -103,7 +103,6 @@ describe("remittanceService.createRemittance", () => {
   });
 });
 
-
 describe("remittanceService.getRemittances with filters", () => {
   let mockQuery: jest.MockedFunction<any>;
 
