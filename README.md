@@ -215,4 +215,4 @@ See [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for a full reference of all envir
 
 ## 📄 License
 
-This project is licensed under the ISC License. See the `LICENSE` file for details..
+This project is licensed under the ISC License. See the `LICENSE` file for details.
