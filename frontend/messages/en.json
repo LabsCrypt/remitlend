@@ -263,5 +263,9 @@
       "newDueDate": "New due date",
       "submit": "Build, Sign & Submit"
     }
+  },
+  "BuildInfo": {
+    "ariaLabel": "Build information",
+    "label": "v{version} · {network} · {sha}"
   }
 }
