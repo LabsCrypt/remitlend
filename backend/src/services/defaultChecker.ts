@@ -157,6 +157,10 @@ export class DefaultChecker {
     return { signer, server, passphrase };
   }
 
+  /**
+   * Fetches IDs of loans that are overdue based on the current ledger sequence.
+   * Queries the local database for active loans exceeding the term limit.
+   */
   private async fetchOverdueLoanIds(currentLedger: number): Promise<number[]> {
     const result = await query(
       `
@@ -194,6 +198,10 @@ export class DefaultChecker {
       .filter((id: number) => Number.isInteger(id) && id > 0);
   }
 
+  /**
+   * Calculates statistics for all currently overdue loans.
+   * Provides the total count and the age of the oldest overdue loan for monitoring.
+   */
   private async fetchOverdueStats(currentLedger: number): Promise<{
     overdueCount: number;
     oldestDueLedger?: number;
@@ -259,6 +267,10 @@ export class DefaultChecker {
     };
   }
 
+  /**
+   * Builds and submits a Soroban transaction to mark loans as defaulted.
+   * Invokes `check_defaults` on-chain; results in state changes and fee consumption.
+   */
   private async submitCheckDefaults(
     server: rpc.Server,
     signer: Keypair,
@@ -335,6 +347,10 @@ export class DefaultChecker {
     };
   }
 
+  /**
+   * Executes `submitCheckDefaults` with a maximum execution time limit.
+   * Ensures that slow Soroban RPC responses do not block the entire processing queue.
+   */
   private async submitCheckDefaultsWithTimeout(
     server: rpc.Server,
     signer: Keypair,
