@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { ArrowUp, ArrowDown, RefreshCw, AlertCircle } from "lucide-react";
+import { FinancialTermTooltip } from "./Tooltip";
+import { FINANCIAL_EXPLANATIONS } from "./financial-terms";
 
 interface CreditScoreGaugeProps {
   score?: number | null;
@@ -59,7 +61,6 @@ export function CreditScoreGauge({
 }: CreditScoreGaugeProps) {
   const numericScore = typeof score === "number" && Number.isFinite(score) ? score : null;
 
-  // Loading state
   if (isLoading) {
     return (
       <div className="flex flex-col items-center gap-3">
@@ -83,7 +84,6 @@ export function CreditScoreGauge({
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="flex flex-col items-center gap-3">
@@ -121,7 +121,6 @@ export function CreditScoreGauge({
     );
   }
 
-  // New user with no score (score is 0 or below minimum)
   if (numericScore === null || numericScore === 0 || numericScore < min) {
     return (
       <div className="flex flex-col items-center gap-3">
@@ -162,7 +161,6 @@ export function CreditScoreGauge({
   const fraction = (clampedScore - min) / (max - min);
   const scoreAngle = startAngle + fraction * totalArc;
 
-  // Background arc segments per band
   const bandArcs = useMemo(() => {
     return BANDS.map((b) => {
       const bStart = startAngle + ((b.range[0] - min) / (max - min)) * totalArc;
@@ -171,7 +169,6 @@ export function CreditScoreGauge({
     });
   }, [min, max]);
 
-  // Active arc from start to current score
   const activePath = describeArc(cx, cy, r, startAngle, scoreAngle);
 
   return (
@@ -182,7 +179,6 @@ export function CreditScoreGauge({
         aria-label={`Credit score: ${numericScore}, ${band.label}`}
       >
         <svg width="240" height="160" viewBox="0 60 240 140">
-          {/* Background band arcs */}
           {bandArcs.map((b) => (
             <path
               key={b.label}
@@ -195,7 +191,6 @@ export function CreditScoreGauge({
             />
           ))}
 
-          {/* Colored band segments */}
           {bandArcs.map((b) => (
             <path
               key={`color-${b.label}`}
@@ -208,7 +203,6 @@ export function CreditScoreGauge({
             />
           ))}
 
-          {/* Active score arc */}
           <path
             d={activePath}
             fill="none"
@@ -218,16 +212,20 @@ export function CreditScoreGauge({
           />
         </svg>
 
-        {/* Center score display */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
-          <span className={`text-4xl font-bold ${band.color}`}>{numericScore}</span>
+          <div className="flex flex-col items-center">
+            <span className={`text-4xl font-bold ${band.color}`}>{numericScore}</span>
+            <FinancialTermTooltip
+              term="Credit Score"
+              explanation={FINANCIAL_EXPLANATIONS.CREDIT_SCORE}
+              className="mt-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Band label */}
       <span className={`text-sm font-semibold ${band.color}`}>{band.label}</span>
 
-      {/* Trend indicator */}
       {delta !== null && delta !== 0 && (
         <div
           className={`flex items-center gap-1 text-xs font-medium ${
@@ -242,10 +240,15 @@ export function CreditScoreGauge({
         </div>
       )}
 
-      {/* Tooltip / explanation */}
       <p className="max-w-xs text-center text-xs text-zinc-500 dark:text-zinc-400">
-        Your credit score ranges from {min} to {max}. Maintain on-time repayments and low
-        utilization to improve your score.
+        Your credit score ranges from {min} to {max}. Maintain on-time repayments and low{" "}
+        <FinancialTermTooltip
+          term="utilization"
+          explanation={FINANCIAL_EXPLANATIONS.UTILIZATION_RATE}
+          className="border-none p-0 h-auto font-medium text-zinc-600 dark:text-zinc-300"
+          icon={() => null}
+        />{" "}
+        to improve your score.
       </p>
     </div>
   );
