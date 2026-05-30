@@ -27,7 +27,8 @@ We follow a **Feature-Branch-to-Main** workflow. All development work should hap
 
 If you're new to the codebase, start with:
 - `docs/wiki/README.md` (high-level contributor wiki)
-- `ARCHITECTURE.md` (system overview).
+- `ARCHITECTURE.md` (system overview)
+- `docs/deployed-contracts.md` (testnet/mainnet contract IDs and the env vars that consume them).
 
 ```mermaid
 graph TD

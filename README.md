@@ -34,6 +34,7 @@ The repository is organized as a monorepo containing three core packages:
 
 *For a detailed look at how these components interact, see our [Architecture Diagram](ARCHITECTURE.md).*
 *New contributor? Start with the in-repo wiki: [docs/wiki/README.md](docs/wiki/README.md).*
+*Looking for deployed contract IDs? See [docs/deployed-contracts.md](docs/deployed-contracts.md).*
 
 ### API Reference
 
