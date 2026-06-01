@@ -5,7 +5,12 @@
     "noEmit": false,
     "allowImportingTsExtensions": false,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    // The base config sets rootDir to "./" so it can also include jest.config.ts
+    // for type-checking. The build only compiles src/**, so pin rootDir to ./src
+    // and emit straight into dist/ — otherwise output nests under dist/src/ and
+    // the `node dist/index.js` entrypoint (start script + Docker CMD) breaks.
+    "rootDir": "./src"
   },
   "exclude": ["src/**/*.test.ts", "src/**/__tests__/**", "jest.config.ts"]
 }
