@@ -173,9 +173,14 @@ function makeRawEvent(params: {
 
   switch (params.type) {
     case "LoanRequested":
+      // Contract emits (Symbol, loan_id, borrower) with amount as the value.
       return {
         ...base,
-        topic: [scSymbol("LoanRequested"), scAddress(borrower)],
+        topic: [
+          scSymbol("LoanRequested"),
+          scU32(params.loanId ?? 1),
+          scAddress(borrower),
+        ],
         value: scI128(params.amount ?? 500),
       };
     case "LoanApproved":

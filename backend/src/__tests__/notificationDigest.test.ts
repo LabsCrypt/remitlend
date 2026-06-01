@@ -109,10 +109,18 @@ describe("notification digest batching", () => {
     const user1 = "GUSER1111111111111111111111111111111111111111111111111111";
     const user2 = "GUSER2222222222222222222222222222222222222222222222222222";
 
-    mockQuery
-      .mockResolvedValueOnce({ rows: [{ digest_frequency: "daily" }] })
-      .mockResolvedValueOnce({ rows: [{ digest_frequency: "weekly" }] })
-      .mockResolvedValueOnce({ rows: [{ digest_frequency: "off" }] });
+    // A user has a single digest preference, so the lookup must be keyed by
+    // user id rather than by call order: user1 is always daily, user2 weekly.
+    mockQuery.mockImplementation(async (_text, params) => {
+      const uid = (params as unknown[] | undefined)?.[0];
+      if (uid === user1) {
+        return { rows: [{ digest_frequency: "daily" }] };
+      }
+      if (uid === user2) {
+        return { rows: [{ digest_frequency: "weekly" }] };
+      }
+      return { rows: [] };
+    });
 
     const notifications = [
       { userId: user1, message: "Loan 1 due", loanId: 1 },
@@ -125,7 +133,7 @@ describe("notification digest batching", () => {
         notifications,
       );
 
-    expect(grouped.size).toBe(3);
+    expect(grouped.size).toBe(2);
     expect(grouped.get(`${user1}:daily`)).toHaveLength(2);
     expect(grouped.get(`${user2}:weekly`)).toHaveLength(1);
   });

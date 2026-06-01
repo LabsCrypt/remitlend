@@ -142,20 +142,28 @@ function parsePositiveInteger(
   fallback: number,
   max?: number,
 ): number {
-  if (typeof value !== "string") {
+  // Accept both raw query strings and values already coerced to numbers by
+  // Zod validation middleware (e.g. `z.coerce.number()`).
+  let parsed: number;
+  if (typeof value === "number") {
+    parsed = value;
+  } else if (typeof value === "string") {
+    parsed = Number.parseInt(value, 10);
+  } else {
     return fallback;
   }
 
-  const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
     return fallback;
   }
 
+  const truncated = Math.trunc(parsed);
+
   if (max !== undefined) {
-    return Math.min(parsed, max);
+    return Math.min(truncated, max);
   }
 
-  return parsed;
+  return truncated;
 }
 
 function parseDateRange(value: unknown): { start: Date; end: Date } | null {

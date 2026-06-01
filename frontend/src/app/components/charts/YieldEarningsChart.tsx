@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  TooltipProps,
+  TooltipContentProps,
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/Card";
 import { DollarSign, TrendingUp } from "lucide-react";
@@ -35,7 +35,7 @@ export function YieldEarningsChart({ data, className }: YieldEarningsChartProps)
       : "0.00";
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload }: TooltipProps<YieldDataPoint, string>) => {
+  const CustomTooltip = ({ active, payload }: TooltipContentProps) => {
     if (active && payload && payload.length) {
       const data = (payload[0] as unknown as { payload: YieldDataPoint }).payload;
       return (
@@ -137,7 +137,7 @@ export function YieldEarningsChart({ data, className }: YieldEarningsChartProps)
                 className: "text-xs text-gray-600 dark:text-zinc-400",
               }}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={CustomTooltip} />
             <Legend
               wrapperStyle={{
                 paddingTop: "20px",

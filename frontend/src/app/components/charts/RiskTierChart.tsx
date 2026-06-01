@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
-  TooltipProps,
+  TooltipContentProps,
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/Card";
 
@@ -27,7 +27,7 @@ interface RiskTierChartProps {
 export function RiskTierChart({ data, className }: RiskTierChartProps) {
   const total = data.reduce((sum, d) => sum + d.count, 0);
 
-  const CustomTooltip = ({ active, payload }: TooltipProps<RiskTierDataPoint, string>) => {
+  const CustomTooltip = ({ active, payload }: TooltipContentProps) => {
     if (active && payload && payload.length) {
       const d = (payload[0] as unknown as { payload: RiskTierDataPoint }).payload;
       const pct = total > 0 ? ((d.count / total) * 100).toFixed(1) : "0.0";
@@ -67,7 +67,7 @@ export function RiskTierChart({ data, className }: RiskTierChartProps) {
               tickLine={{ stroke: "currentColor" }}
               className="text-xs text-gray-600 dark:text-zinc-400"
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={CustomTooltip} />
             <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Loans">
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />

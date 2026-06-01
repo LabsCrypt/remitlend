@@ -20,6 +20,7 @@ jest.unstable_mockModule("../db/connection.js", () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
+  withTransaction: jest.fn(),
 }));
 
 // ── notificationService mock ─────────────────────────────────────────────────

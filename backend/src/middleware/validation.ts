@@ -12,7 +12,15 @@ const validateSource = (schema: ZodType, source: ValidationSource) => {
           : source === "query"
             ? req.query
             : req.params;
-      req[source] = schema.parse(data);
+      // In Express 5, `req.query` and `req.params` are getter-only and cannot
+      // be reassigned (`req.query = ...` throws). Shadow them with a writable
+      // data property so coerced/validated values are persisted for handlers.
+      Object.defineProperty(req, source, {
+        value: schema.parse(data),
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
       next();
     } catch (error) {
       next(error);

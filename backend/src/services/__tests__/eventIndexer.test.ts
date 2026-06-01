@@ -287,6 +287,7 @@ beforeAll(async () => {
       "PoolPaused",
       "PoolUnpaused",
       "LoanApprv",
+      "LoanLiquidated",
     ],
   }));
 

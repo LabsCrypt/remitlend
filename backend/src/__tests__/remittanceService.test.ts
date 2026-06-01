@@ -104,15 +104,11 @@ describe("remittanceService.createRemittance", () => {
 });
 
 describe("remittanceService.getRemittances with filters", () => {
-  let mockQuery: jest.MockedFunction<any>;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    mockQuery = jest.fn();
   });
 
   it("filters remittances by status", async () => {
-    const { query: queryModule } = await import("../db/connection.js");
     mockQuery.mockResolvedValueOnce({
       rows: [
         {
