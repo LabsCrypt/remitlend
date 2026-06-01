@@ -78,6 +78,12 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'CRITICAL'
           exit-code: '1'
+          # Without this, trivy-action builds the SARIF with ALL severities and
+          # the exit-code then trips on any vulnerability (e.g. the existing
+          # HIGH axios advisories) — not just CRITICAL as the step intends.
+          # Limiting the report to the requested severity makes the gate fail
+          # only on genuine CRITICAL findings.
+          limit-severities-for-sarif: 'true'
           trivyignores: '.trivyignore'
 
       - name: Upload Trivy scan results to GitHub Security tab
