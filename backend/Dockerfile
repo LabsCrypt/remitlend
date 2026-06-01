@@ -18,9 +18,12 @@ FROM node:22-alpine AS production
 
 WORKDIR /app
 
-# Install only production dependencies
+# Install only production dependencies. Drop the lockfile afterwards: it is a
+# build-time artifact, not needed at runtime, and if left in the image the
+# container scanner reads it and reports devDependency advisories (e.g. a
+# critical in handlebars) for packages that are never actually installed here.
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && rm -f package-lock.json
 
 # Copy compiled output from builder
 COPY --from=builder /app/dist ./dist
