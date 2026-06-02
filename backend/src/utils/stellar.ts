@@ -33,7 +33,7 @@ export function isValidStellarAddress(address: unknown): address is string {
   // Stellar public keys are exactly 56 characters, start with 'G'
   if (address.length !== 56 || !address.startsWith("G")) return false;
   // Check if it's valid base32 (only contains A-Z and 2-7)
-  return /^G[A-Z2-7]{54}$/.test(address);
+  return /^G[A-Z2-7]{55}$/.test(address);
 }
 
 /**
