@@ -9,7 +9,7 @@ let indexerInstance: EventIndexer | null = null;
  */
 export const startIndexer = (): void => {
   if (indexerInstance) {
-    logger.warn("Indexer already running");
+    logger.withContext().warn("Indexer already running");
     return;
   }
 
@@ -38,9 +38,11 @@ export const startIndexer = (): void => {
   const batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || "100");
 
   if (contractIds.length === 0) {
-    logger.warn(
-      "No contract IDs set for indexer. Set LOAN_MANAGER_CONTRACT_ID, LENDING_POOL_CONTRACT_ID, REMITTANCE_NFT_CONTRACT_ID, or MULTISIG_GOVERNANCE_CONTRACT_ID.",
-    );
+    logger
+      .withContext()
+      .warn(
+        "No contract IDs set for indexer. Set LOAN_MANAGER_CONTRACT_ID, LENDING_POOL_CONTRACT_ID, REMITTANCE_NFT_CONTRACT_ID, or MULTISIG_GOVERNANCE_CONTRACT_ID.",
+      );
     return;
   }
 
@@ -54,10 +56,10 @@ export const startIndexer = (): void => {
   });
 
   indexerInstance.start().catch((error) => {
-    logger.error("Failed to start indexer", { error });
+    logger.withContext().error("Failed to start indexer", { error });
   });
 
-  logger.info("Event indexer initialized", {
+  logger.withContext().info("Event indexer initialized", {
     rpcUrl,
     contractIds,
     pollIntervalMs,
@@ -72,7 +74,7 @@ export const stopIndexer = async (): Promise<void> => {
   if (indexerInstance) {
     await indexerInstance.stop();
     indexerInstance = null;
-    logger.info("Event indexer stopped");
+    logger.withContext().info("Event indexer stopped");
   }
 };
 

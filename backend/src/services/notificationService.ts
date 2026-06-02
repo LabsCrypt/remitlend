@@ -118,16 +118,18 @@ async function sendEmail(
   const fromEmail = process.env.FROM_EMAIL;
 
   if (!fromEmail) {
-    logger.info("[Email] FROM_EMAIL not set", { email, message });
+    logger.withContext().info("[Email] FROM_EMAIL not set", { email, message });
     return;
   }
 
   await ensureSendGrid();
 
   if (!process.env.SENDGRID_API_KEY) {
-    logger.info(
-      `[Email] SendGrid not configured. Would send to ${email}: ${message}`,
-    );
+    logger
+      .withContext()
+      .info(
+        `[Email] SendGrid not configured. Would send to ${email}: ${message}`,
+      );
     return;
   }
 
@@ -143,9 +145,11 @@ async function sendEmail(
       subject: template.subject,
       html: template.html,
     });
-    logger.info(`[Email] Sent to ${email}`, { subject: template.subject });
+    logger
+      .withContext()
+      .info(`[Email] Sent to ${email}`, { subject: template.subject });
   } catch (error) {
-    logger.error(`[Email] SendGrid failed for ${email}`, {
+    logger.withContext().error(`[Email] SendGrid failed for ${email}`, {
       error: error instanceof Error ? error.message : String(error),
     });
     // Swallow error — email failure must not break the main flow
@@ -155,9 +159,9 @@ async function sendEmail(
 async function sendSMS(phone: string, message: string) {
   const twilioClient = await getTwilioClient();
   if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
-    logger.warn(
-      `[SMS] Twilio not configured. Would send to ${phone}: ${message}`,
-    );
+    logger
+      .withContext()
+      .warn(`[SMS] Twilio not configured. Would send to ${phone}: ${message}`);
     return;
   }
 
@@ -167,9 +171,11 @@ async function sendSMS(phone: string, message: string) {
       from: process.env.TWILIO_PHONE_NUMBER,
       to: phone,
     });
-    logger.info(`[SMS] Sent to ${phone}: ${message}`, { sid: result.sid });
+    logger
+      .withContext()
+      .info(`[SMS] Sent to ${phone}: ${message}`, { sid: result.sid });
   } catch (error) {
-    logger.error(`[SMS] Failed to send to ${phone}`, {
+    logger.withContext().error(`[SMS] Failed to send to ${phone}`, {
       error: error instanceof Error ? error.message : String(error),
       phone,
     });
@@ -343,7 +349,9 @@ class NotificationService {
         await sendSMS(user.phone, message);
       }
     } catch (error) {
-      logger.error("Error sending external notifications", { userId, error });
+      logger
+        .withContext()
+        .error("Error sending external notifications", { userId, error });
     }
   }
 
@@ -472,10 +480,12 @@ class NotificationService {
     if (adminEmail) {
       await sendEmail(adminEmail, message);
     } else {
-      logger.warn("[Admin] ADMIN_EMAIL not set — logging dispute only", {
-        title,
-        message,
-      });
+      logger
+        .withContext()
+        .warn("[Admin] ADMIN_EMAIL not set — logging dispute only", {
+          title,
+          message,
+        });
     }
 
     // 2. Push SSE notification to every admin currently connected
@@ -498,9 +508,11 @@ class NotificationService {
         this.broadcast(adminId, notification);
       }
     } catch (err) {
-      logger.error("[Admin] Failed to persist/push admin notifications", {
-        err,
-      });
+      logger
+        .withContext()
+        .error("[Admin] Failed to persist/push admin notifications", {
+          err,
+        });
     }
 
     // 3. Optional webhook (Slack / Discord / custom)
@@ -513,7 +525,9 @@ class NotificationService {
           body: JSON.stringify({ text: `[RemitLend] ${title}: ${message}` }),
         });
       } catch (err) {
-        logger.error("[Admin] Webhook POST failed", { webhookUrl, err });
+        logger
+          .withContext()
+          .error("[Admin] Webhook POST failed", { webhookUrl, err });
       }
     }
   }
@@ -551,7 +565,7 @@ class NotificationService {
       try {
         res.write(data);
       } catch (err) {
-        logger.error("SSE write error", { userId, err });
+        logger.withContext().error("SSE write error", { userId, err });
         clients.delete(res);
       }
     }
@@ -571,16 +585,18 @@ class NotificationService {
       );
       const deletedCount = result.rowCount ?? 0;
       if (deletedCount > 0) {
-        logger.info(
-          `Notification cleanup completed: ${deletedCount} rows deleted`,
-          {
-            retentionDays,
-          },
-        );
+        logger
+          .withContext()
+          .info(
+            `Notification cleanup completed: ${deletedCount} rows deleted`,
+            {
+              retentionDays,
+            },
+          );
       }
       return deletedCount;
     } catch (error) {
-      logger.error("Error during notification cleanup", {
+      logger.withContext().error("Error during notification cleanup", {
         error,
         retentionDays,
       });
@@ -604,17 +620,21 @@ class NotificationService {
       );
       const deletedCount = result.rowCount ?? 0;
       if (deletedCount > 0) {
-        logger.info(
-          `Read/archived notification cleanup completed: ${deletedCount} rows deleted`,
-          { retentionDays },
-        );
+        logger
+          .withContext()
+          .info(
+            `Read/archived notification cleanup completed: ${deletedCount} rows deleted`,
+            { retentionDays },
+          );
       }
       return deletedCount;
     } catch (error) {
-      logger.error("Error during read/archived notification cleanup", {
-        error,
-        retentionDays,
-      });
+      logger
+        .withContext()
+        .error("Error during read/archived notification cleanup", {
+          error,
+          retentionDays,
+        });
       return 0;
     }
   }
@@ -675,7 +695,7 @@ export function startNotificationCleanupScheduler(): void {
     await notificationService.deleteReadAndArchived(readRetentionDays);
   }, intervalMs);
 
-  logger.info("Notification cleanup scheduler started", {
+  logger.withContext().info("Notification cleanup scheduler started", {
     retentionDays,
     readRetentionDays,
     intervalMs,
@@ -689,6 +709,6 @@ export function stopNotificationCleanupScheduler(): void {
   if (cleanupInterval) {
     clearInterval(cleanupInterval);
     cleanupInterval = undefined;
-    logger.info("Notification cleanup scheduler stopped");
+    logger.withContext().info("Notification cleanup scheduler stopped");
   }
 }

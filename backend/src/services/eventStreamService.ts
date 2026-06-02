@@ -56,7 +56,7 @@ class EventStreamService {
       }
 
       const counts = this.getConnectionCount();
-      logger.info("SSE heartbeat", {
+      logger.withContext().info("SSE heartbeat", {
         borrower: counts.borrower,
         admin: counts.admin,
         total: counts.total,
@@ -164,7 +164,7 @@ class EventStreamService {
     this.registerUserClient(userKey, res);
     this.startHeartbeat();
 
-    logger.info("SSE client subscribed to borrower events", {
+    logger.withContext().info("SSE client subscribed to borrower events", {
       address,
       userKey,
       activeConnections: this.getUserConnectionCount(userKey),
@@ -177,7 +177,7 @@ class EventStreamService {
       }
       this.unregisterUserClient(userKey, res);
       this.stopHeartbeatIfEmpty();
-      logger.info("SSE client unsubscribed from address events", {
+      logger.withContext().info("SSE client unsubscribed from address events", {
         address,
         userKey,
         activeConnections: this.getUserConnectionCount(userKey),
@@ -195,7 +195,7 @@ class EventStreamService {
     this.registerUserClient(userKey, res);
     this.startHeartbeat();
 
-    logger.info("SSE admin client subscribed to all events", {
+    logger.withContext().info("SSE admin client subscribed to all events", {
       userKey,
       activeConnections: this.getUserConnectionCount(userKey),
     });
@@ -204,10 +204,12 @@ class EventStreamService {
       adminClients.delete(clientInfo);
       this.unregisterUserClient(userKey, res);
       this.stopHeartbeatIfEmpty();
-      logger.info("SSE admin client unsubscribed from all events", {
-        userKey,
-        activeConnections: this.getUserConnectionCount(userKey),
-      });
+      logger
+        .withContext()
+        .info("SSE admin client unsubscribed from all events", {
+          userKey,
+          activeConnections: this.getUserConnectionCount(userKey),
+        });
     };
   }
 
@@ -227,7 +229,7 @@ class EventStreamService {
             // Verify user identity before sending (fixes #471)
             this.sendEvent(clientInfo.res, event);
           } catch (err) {
-            logger.error("SSE write error (address)", {
+            logger.withContext().error("SSE write error (address)", {
               address: event.address,
               userKey: clientInfo.userKey,
               err,
@@ -248,7 +250,7 @@ class EventStreamService {
       try {
         this.sendEvent(clientInfo.res, event);
       } catch (err) {
-        logger.error("SSE write error (admin)", {
+        logger.withContext().error("SSE write error (admin)", {
           userKey: clientInfo.userKey,
           err,
         });
@@ -296,7 +298,7 @@ class EventStreamService {
       try {
         clientInfo.res.write(shutdownPayload);
       } catch (err) {
-        logger.error("SSE shutdown write error", {
+        logger.withContext().error("SSE shutdown write error", {
           userKey: clientInfo.userKey,
           err,
         });
@@ -305,7 +307,7 @@ class EventStreamService {
       try {
         clientInfo.res.end();
       } catch (err) {
-        logger.error("SSE shutdown close error", {
+        logger.withContext().error("SSE shutdown close error", {
           userKey: clientInfo.userKey,
           err,
         });

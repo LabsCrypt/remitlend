@@ -164,7 +164,7 @@ export const streamNotifications = asyncHandler(
         );
       }
     } catch (err) {
-      logger.error("SSE init fetch error", { userId, err });
+      logger.withContext().error("SSE init fetch error", { userId, err });
     }
 
     const unsubscribe = notificationService.subscribe(userId, res);

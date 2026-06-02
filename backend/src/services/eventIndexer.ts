@@ -173,7 +173,9 @@ export class EventIndexer {
 
   async start(): Promise<void> {
     if (this.running) {
-      logger.warn("Indexer start requested while already running");
+      logger
+        .withContext()
+        .warn("Indexer start requested while already running");
       return;
     }
 
@@ -194,7 +196,9 @@ export class EventIndexer {
       try {
         await this.activePollPromise;
       } catch (error) {
-        logger.warn("Indexer stop awaited a failing poll iteration", { error });
+        logger
+          .withContext()
+          .warn("Indexer stop awaited a failing poll iteration", { error });
       } finally {
         this.activePollPromise = null;
       }
@@ -250,7 +254,7 @@ export class EventIndexer {
         this.activePollPromise = pollPromise;
         await pollPromise;
       } catch (error) {
-        logger.error("Indexer poll iteration failed", { error });
+        logger.withContext().error("Indexer poll iteration failed", { error });
       } finally {
         if (this.activePollPromise === pollPromise) {
           this.activePollPromise = null;
@@ -293,7 +297,9 @@ export class EventIndexer {
 
       return Number.isFinite(sequence) && sequence > 0 ? sequence : 0;
     } catch (error) {
-      logger.warn("Failed to fetch latest ledger sequence", { error });
+      logger
+        .withContext()
+        .warn("Failed to fetch latest ledger sequence", { error });
       return 0;
     }
   }
@@ -350,7 +356,7 @@ export class EventIndexer {
 
     return runWithRequestContext(correlationId, async () => {
       if (endLedger < startLedger) {
-        logger.warn("Skipping invalid ledger range", {
+        logger.withContext().warn("Skipping invalid ledger range", {
           startLedger,
           endLedger,
         });
@@ -380,7 +386,7 @@ export class EventIndexer {
           startLedger,
         );
 
-        logger.info("Indexer processed chunk", {
+        logger.withContext().info("Indexer processed chunk", {
           startLedger,
           endLedger,
           fetchedEvents: events.length,
@@ -393,7 +399,7 @@ export class EventIndexer {
           insertedEvents: storeResult.insertedCount,
         };
       } catch (error) {
-        logger.error("Error processing event chunk", {
+        logger.withContext().error("Error processing event chunk", {
           startLedger,
           endLedger,
           error,
@@ -461,7 +467,7 @@ export class EventIndexer {
           parsedEvents.push(parsed);
         }
       } catch (error) {
-        logger.warn("Failed to parse event", {
+        logger.withContext().warn("Failed to parse event", {
           eventId: event.id,
           error,
         });
@@ -612,7 +618,7 @@ export class EventIndexer {
 
     for (const event of insertedEvents) {
       webhookService.dispatch(event).catch((error) => {
-        logger.error("Webhook dispatch failed", {
+        logger.withContext().error("Webhook dispatch failed", {
           eventId: event.eventId,
           error,
         });
@@ -630,7 +636,7 @@ export class EventIndexer {
       });
 
       this.triggerNotification(event).catch((error) => {
-        logger.error("Notification trigger failed", {
+        logger.withContext().error("Notification trigger failed", {
           eventId: event.eventId,
           error,
         });
@@ -937,12 +943,14 @@ export class EventIndexer {
            updated_at = CURRENT_TIMESTAMP`,
         [userId, 500 + delta, delta],
       );
-      logger.info("Updated user score from indexed event", {
+      logger.withContext().info("Updated user score from indexed event", {
         userId,
         delta,
       });
     } catch (error) {
-      logger.error("Failed to update user score", { userId, error });
+      logger
+        .withContext()
+        .error("Failed to update user score", { userId, error });
     }
   }
 
@@ -1113,7 +1121,7 @@ export class EventIndexer {
       contractId: event.contractId,
     };
 
-    logger.warn("Quarantining malformed event", {
+    logger.withContext().warn("Quarantining malformed event", {
       eventId: event.id,
       ledger: event.ledger,
       txHash: event.txHash,
@@ -1136,7 +1144,7 @@ export class EventIndexer {
         ],
       );
     } catch (dbError) {
-      logger.error("Failed to quarantine malformed event", {
+      logger.withContext().error("Failed to quarantine malformed event", {
         eventId: event.id,
         dbError,
       });
@@ -1153,7 +1161,7 @@ export class EventIndexer {
       const previousCount = this.lastObservedQuarantineCount;
 
       if (totalCount > previousCount) {
-        logger.warn("Quarantine event count increased", {
+        logger.withContext().warn("Quarantine event count increased", {
           previousCount,
           totalCount,
           delta: totalCount - previousCount,
@@ -1164,16 +1172,20 @@ export class EventIndexer {
           previousCount < this.quarantineAlertThreshold &&
           totalCount >= this.quarantineAlertThreshold
         ) {
-          logger.error("Quarantine event count exceeded alert threshold", {
-            threshold: this.quarantineAlertThreshold,
-            totalCount,
-          });
+          logger
+            .withContext()
+            .error("Quarantine event count exceeded alert threshold", {
+              threshold: this.quarantineAlertThreshold,
+              totalCount,
+            });
         }
       }
 
       this.lastObservedQuarantineCount = Math.max(previousCount, totalCount);
     } catch (error) {
-      logger.error("Failed to check quarantine event count", { error });
+      logger
+        .withContext()
+        .error("Failed to check quarantine event count", { error });
     }
   }
 

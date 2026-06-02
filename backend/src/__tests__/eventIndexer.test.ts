@@ -28,7 +28,9 @@ const mockLogger = {
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
+  withContext: jest.fn(),
 };
+mockLogger.withContext.mockImplementation(() => mockLogger);
 const supportedWebhookEventTypes = [
   "LoanRequested",
   "LoanApproved",

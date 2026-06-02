@@ -333,7 +333,7 @@ export class DefaultChecker {
       txStatus = polled.status;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn("Default check transaction polling failed", {
+      logger.withContext().warn("Default check transaction polling failed", {
         txHash,
         message,
       });
@@ -389,7 +389,7 @@ export class DefaultChecker {
     }
 
     if (result.timedOut) {
-      logger.warn("Default check batch timed out", {
+      logger.withContext().warn("Default check batch timed out", {
         loanIds,
         timeoutMs: this.batchTimeoutMs,
       });
@@ -412,7 +412,9 @@ export class DefaultChecker {
       );
       return acquired;
     } catch (error) {
-      logger.error("Failed to acquire default checker lock", { error });
+      logger
+        .withContext()
+        .error("Failed to acquire default checker lock", { error });
       return false;
     }
   }
@@ -424,7 +426,9 @@ export class DefaultChecker {
     try {
       await cacheService.delete(LOCK_KEY);
     } catch (error) {
-      logger.error("Failed to release default checker lock", { error });
+      logger
+        .withContext()
+        .error("Failed to release default checker lock", { error });
     }
   }
 
@@ -442,9 +446,11 @@ export class DefaultChecker {
     // Try to acquire distributed lock to prevent overlapping runs
     const lockAcquired = await this.acquireLock();
     if (!lockAcquired) {
-      logger.warn(
-        "Default checker run skipped - another instance is already running",
-      );
+      logger
+        .withContext()
+        .warn(
+          "Default checker run skipped - another instance is already running",
+        );
       return null;
     }
 
@@ -468,7 +474,7 @@ export class DefaultChecker {
           ? explicitIds
           : await this.fetchOverdueLoanIds(currentLedger);
 
-      logger.info("default_check.run.start", {
+      logger.withContext().info("default_check.run.start", {
         runId,
         currentLedger,
         termLedgers: this.termLedgers,
@@ -496,7 +502,7 @@ export class DefaultChecker {
             batch,
           );
 
-          logger.info("default_check.batch", {
+          logger.withContext().info("default_check.batch", {
             runId,
             loanIds: result.loanIds,
             txHash: result.txHash,
@@ -518,7 +524,7 @@ export class DefaultChecker {
         (b) => b.error || !b.txHash,
       ).length;
 
-      logger.info("default_check.run.complete", {
+      logger.withContext().info("default_check.run.complete", {
         runId,
         batches: batchResults.length,
         loansChecked,
@@ -582,9 +588,11 @@ export function startDefaultCheckerScheduler(): void {
     !process.env.LOAN_MANAGER_CONTRACT_ID ||
     !process.env.LOAN_MANAGER_ADMIN_SECRET
   ) {
-    logger.warn(
-      "Default checker scheduler disabled (set LOAN_MANAGER_CONTRACT_ID and LOAN_MANAGER_ADMIN_SECRET)",
-    );
+    logger
+      .withContext()
+      .warn(
+        "Default checker scheduler disabled (set LOAN_MANAGER_CONTRACT_ID and LOAN_MANAGER_ADMIN_SECRET)",
+      );
     return;
   }
 
@@ -600,18 +608,22 @@ export function startDefaultCheckerScheduler(): void {
       try {
         await defaultChecker.checkOverdueLoans();
       } catch (error) {
-        logger.error("Default checker scheduled run failed", { error });
+        logger
+          .withContext()
+          .error("Default checker scheduled run failed", { error });
       } finally {
         inFlight = false;
       }
     })();
   }, intervalMs);
 
-  logger.info("Default checker scheduler started", { intervalMs });
+  logger
+    .withContext()
+    .info("Default checker scheduler started", { intervalMs });
 }
 
 export function stopDefaultCheckerScheduler(): void {
   if (interval) clearInterval(interval);
   interval = undefined;
-  logger.info("Default checker scheduler stopped");
+  logger.withContext().info("Default checker scheduler stopped");
 }

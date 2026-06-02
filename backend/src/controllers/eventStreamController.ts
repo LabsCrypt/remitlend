@@ -108,7 +108,9 @@ export const streamEvents = asyncHandler(
           );
         }
       } catch (err) {
-        logger.error("SSE replay fetch error", { borrower, lastEventId, err });
+        logger
+          .withContext()
+          .error("SSE replay fetch error", { borrower, lastEventId, err });
       }
 
       unsubscribe = eventStreamService.subscribeAddress(userKey, borrower, res);
@@ -135,7 +137,9 @@ export const streamEvents = asyncHandler(
           }
         }
       } catch (err) {
-        logger.error("SSE admin replay fetch error", { lastEventId, err });
+        logger
+          .withContext()
+          .error("SSE admin replay fetch error", { lastEventId, err });
       }
 
       const counts = eventStreamService.getConnectionCount();

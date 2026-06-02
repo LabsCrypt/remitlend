@@ -250,7 +250,7 @@ export const depositToPool = asyncHandler(
     // Invalidate stale pool stats cache now that a deposit has been initiated
     await invalidateOnDeposit(depositorPublicKey);
 
-    logger.info("Deposit transaction built", {
+    logger.withContext().info("Deposit transaction built", {
       depositor: depositorPublicKey,
       token,
       amount,
@@ -298,7 +298,7 @@ export const withdrawFromPool = asyncHandler(
     // Invalidate stale pool stats cache now that a withdrawal has been initiated
     await invalidateOnWithdraw(depositorPublicKey);
 
-    logger.info("Withdraw transaction built", {
+    logger.withContext().info("Withdraw transaction built", {
       depositor: depositorPublicKey,
       token,
       shares: amount,
@@ -386,7 +386,7 @@ export const submitPoolTransaction = asyncHandler(
           [sr.txHash, sr.status, req.user?.publicKey || null, "pool"],
         );
 
-        logger.info("Pool transaction submission recorded", {
+        logger.withContext().info("Pool transaction submission recorded", {
           txHash: sr.txHash,
           status: sr.status,
           submittedBy: req.user?.publicKey,
@@ -403,7 +403,7 @@ export const submitPoolTransaction = asyncHandler(
       resultXdr?: string;
     };
 
-    logger.info("Pool transaction submitted successfully", {
+    logger.withContext().info("Pool transaction submitted successfully", {
       txHash: sr.txHash,
       status: sr.status,
     });
