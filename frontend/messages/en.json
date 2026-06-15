@@ -288,6 +288,10 @@
       "submit": "Build, Sign & Submit"
     }
   },
+  "BuildInfo": {
+    "ariaLabel": "Build information",
+    "label": "v{version} · {network} · {sha}"
+  },
   "Lend": {
     "cooldownActive": "Withdraw available in about {minutes} minute(s) while cooldown is active."
   },
