@@ -1,5 +1,7 @@
-import { cacheService } from "./cacheService.js";
+import { createClient, type RedisClientType } from "redis";
 import logger from "../utils/logger.js";
+
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 interface RateLimitConfig {
   maxRequests: number;
@@ -15,13 +17,36 @@ interface RateLimitResult {
 
 /**
  * Redis-based rate limiting service for API endpoints.
- * Uses sliding window counters with TTL expiry.
+ * Uses fixed-window counters with atomic Redis INCR operations.
  */
 class RateLimitService {
   private static readonly DEFAULT_CONFIG: RateLimitConfig = {
     maxRequests: 10,
     windowSeconds: 86400, // 24 hours
   };
+
+  private client: RedisClientType;
+  private isConnected = false;
+
+  constructor() {
+    this.client = createClient({ url: REDIS_URL });
+    this.client.on("error", (error) => {
+      this.isConnected = false;
+      if (process.env.NODE_ENV !== "test") {
+        logger.withContext().error("Rate limit Redis client error", { error });
+      }
+    });
+    this.client.on("connect", () => {
+      this.isConnected = true;
+    });
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (!this.isConnected) {
+      await this.client.connect();
+      this.isConnected = true;
+    }
+  }
 
   /**
    * Check if a request is allowed based on rate limit rules.
@@ -35,51 +60,23 @@ class RateLimitService {
     config: RateLimitConfig = RateLimitService.DEFAULT_CONFIG,
   ): Promise<RateLimitResult> {
     const key = `rate_limit:${identifier}`;
-    const now = new Date();
-    const windowStart = new Date(now.getTime() - config.windowSeconds * 1000);
 
     try {
-      // Get current request count
-      const currentData = await cacheService.get<{
-        count: number;
-        firstRequest: string;
-      }>(key);
+      await this.ensureConnected();
 
-      let currentCount = 0;
-      let firstRequest = now.toISOString();
-
-      if (currentData) {
-        const firstRequestDate = new Date(currentData.firstRequest);
-
-        // If the window has expired, reset the counter
-        if (firstRequestDate < windowStart) {
-          currentCount = 1;
-          firstRequest = now.toISOString();
-        } else {
-          currentCount = currentData.count + 1;
-          firstRequest = currentData.firstRequest;
-        }
-      } else {
-        // First request in the window
-        currentCount = 1;
-        firstRequest = now.toISOString();
+      // Redis INCR is atomic, so concurrent requests cannot all read the same
+      // counter value and pass the boundary together.
+      const currentCount = await this.client.incr(key);
+      if (currentCount === 1) {
+        await this.client.expire(key, config.windowSeconds);
       }
 
-      // Check if rate limit is exceeded
+      const ttlSeconds = await this.client.ttl(key);
+      const resetTime = new Date(
+        Date.now() + (ttlSeconds > 0 ? ttlSeconds : config.windowSeconds) * 1000,
+      );
       const allowed = currentCount <= config.maxRequests;
       const remaining = Math.max(0, config.maxRequests - currentCount);
-      const resetTime = new Date(
-        new Date(firstRequest).getTime() + config.windowSeconds * 1000,
-      );
-
-      // Update the counter in Redis with TTL
-      if (allowed) {
-        await cacheService.set(
-          key,
-          { count: currentCount, firstRequest },
-          config.windowSeconds,
-        );
-      }
 
       return {
         allowed,
@@ -112,7 +109,8 @@ class RateLimitService {
   async resetRateLimit(identifier: string): Promise<void> {
     const key = `rate_limit:${identifier}`;
     try {
-      await cacheService.delete(key);
+      await this.ensureConnected();
+      await this.client.del(key);
       logger.withContext().info("Rate limit reset", { identifier });
     } catch (error) {
       logger
@@ -133,16 +131,12 @@ class RateLimitService {
     config: RateLimitConfig = RateLimitService.DEFAULT_CONFIG,
   ): Promise<Omit<RateLimitResult, "currentCount">> {
     const key = `rate_limit:${identifier}`;
-    const now = new Date();
-    const windowStart = new Date(now.getTime() - config.windowSeconds * 1000);
 
     try {
-      const currentData = await cacheService.get<{
-        count: number;
-        firstRequest: string;
-      }>(key);
+      await this.ensureConnected();
+      const currentValue = await this.client.get(key);
 
-      if (!currentData) {
+      if (!currentValue) {
         const resetTime = new Date(Date.now() + config.windowSeconds * 1000);
         return {
           allowed: true,
@@ -151,10 +145,8 @@ class RateLimitService {
         };
       }
 
-      const firstRequestDate = new Date(currentData.firstRequest);
-
-      // If the window has expired, consider it as reset
-      if (firstRequestDate < windowStart) {
+      const currentCount = Number.parseInt(currentValue, 10);
+      if (!Number.isFinite(currentCount)) {
         const resetTime = new Date(Date.now() + config.windowSeconds * 1000);
         return {
           allowed: true,
@@ -163,11 +155,12 @@ class RateLimitService {
         };
       }
 
+      const ttlSeconds = await this.client.ttl(key);
       const resetTime = new Date(
-        firstRequestDate.getTime() + config.windowSeconds * 1000,
+        Date.now() + (ttlSeconds > 0 ? ttlSeconds : config.windowSeconds) * 1000,
       );
-      const remaining = Math.max(0, config.maxRequests - currentData.count);
-      const allowed = currentData.count < config.maxRequests;
+      const remaining = Math.max(0, config.maxRequests - currentCount);
+      const allowed = currentCount < config.maxRequests;
 
       return {
         allowed,
