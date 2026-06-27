@@ -189,7 +189,7 @@ app.get(
   }),
 );
 
-app.get("/metrics", requireApiKey(), asyncHandler(metricsHandler));
+app.get("/metrics", requireApiKey("admin:indexer"), asyncHandler(metricsHandler));
 
 /**
  * GET /health/deep
