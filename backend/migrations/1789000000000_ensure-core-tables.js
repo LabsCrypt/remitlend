@@ -25,11 +25,16 @@ export const up = (pgm) => {
     END $$;
   `);
 
-  // Ensure loan_events table matches requested schema
+  // Ensure loan_events table matches requested schema.
+  // Use to_regclass instead of pg_tables: pg_tables only lists ordinary tables
+  // (relkind r/p) and excludes views, so the guard would evaluate TRUE when
+  // loan_events exists as a compat VIEW (created by migration
+  // 1788000000018_unified-contract-events), causing CREATE TABLE to fail with
+  // "relation loan_events already exists".
   pgm.sql(`
     DO $$
     BEGIN
-      IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'loan_events') THEN
+      IF to_regclass('public.loan_events') IS NULL THEN
         CREATE TABLE loan_events (
           id SERIAL PRIMARY KEY,
           loan_id INTEGER,

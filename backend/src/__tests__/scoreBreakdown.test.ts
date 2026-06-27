@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import request from "supertest";
+import jwt from "jsonwebtoken";
 
 // Mock the database connection module before any other imports
 jest.unstable_mockModule("../db/connection.js", () => ({
@@ -45,6 +46,24 @@ describe("GET /api/score/:userId/breakdown", () => {
   it("should reject unauthenticated requests", async () => {
     const response = await request(app).get("/api/score/user123/breakdown");
     expect(response.status).toBe(401);
+  });
+
+  it("should return 403 for a token lacking read:score scope", async () => {
+    const tokenWithoutReadScore = jwt.sign(
+      {
+        publicKey: "user123",
+        role: "lender",
+        scopes: ["read:loans", "read:pool"],
+      },
+      process.env.JWT_SECRET!,
+      { algorithm: "HS256", expiresIn: "1h" },
+    );
+
+    const response = await request(app)
+      .get("/api/score/user123/breakdown")
+      .set("Authorization", `Bearer ${tokenWithoutReadScore}`);
+
+    expect(response.status).toBe(403);
   });
 
   it("should return a breakdown for a valid userId", async () => {

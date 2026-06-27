@@ -148,6 +148,7 @@ router.get(
 router.get(
   "/:userId/breakdown",
   requireJwtAuth,
+  requireScopes("read:score"),
   requireWalletParamMatchesJwt("userId"),
   validate(getScoreSchema),
   getScoreBreakdown,

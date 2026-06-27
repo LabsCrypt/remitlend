@@ -183,6 +183,26 @@ describe("requireApiKey – scope support", () => {
     });
   });
 
+  describe("constant-time comparison", () => {
+    beforeEach(() => {
+      process.env.INTERNAL_API_KEY = "correctsecret";
+    });
+
+    it("rejects a wrong key that has the same length as the correct key", async () => {
+      const requireApiKey = await loadMiddleware();
+      const next = makeNext();
+      // "wrongsecreXX" has same byte-length as "correctsecret" (13 chars)
+      expect(() =>
+        requireApiKey()(
+          makeReq("wrongsecretXX") as Request,
+          makeRes() as Response,
+          next,
+        ),
+      ).toThrow();
+      expect(next.calls.length).toBe(0);
+    });
+  });
+
   describe("INTERNAL_API_KEY not set", () => {
     beforeEach(() => {
       delete process.env.INTERNAL_API_KEY;

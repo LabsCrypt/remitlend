@@ -68,16 +68,6 @@ if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
   );
 }
 
-// TEST/DEV ONLY: Mark a loan as defaulted for test setup
-if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
-  router.post(
-    "/:loanId/mark-defaulted",
-    requireJwtAuth,
-    requireLoanOwner,
-    markLoanDefaulted,
-  );
-}
-
 router.get("/config", getLoanConfigEndpoint);
 
 /**

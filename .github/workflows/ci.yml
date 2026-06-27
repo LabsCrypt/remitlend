@@ -69,6 +69,40 @@ jobs:
           INTERNAL_API_KEY: test_internal_api_key
           FRONTEND_URL: https://frontend.example.com
 
+  migration-check:
+    needs: supply-chain-audit
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pguser
+          POSTGRES_PASSWORD: pgpass
+          POSTGRES_DB: remitlend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pguser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Run full migration set against empty database
+        run: npm run migrate:up
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://pguser:pgpass@localhost:5432/remitlend_test
+
   frontend:
     needs: supply-chain-audit
     runs-on: ubuntu-latest

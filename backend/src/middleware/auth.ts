@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import { AppError } from "../errors/AppError.js";
 
@@ -89,7 +90,10 @@ export const requireApiKey = (requiredScope?: ApiKeyScope) => {
     const keyStr = Array.isArray(providedKey) ? providedKey[0] : providedKey;
 
     const match = configuredKeys.find((k) => {
-      if (k.secret !== keyStr) return false;
+      const expectedBuf = Buffer.from(k.secret);
+      const providedBuf = Buffer.from(keyStr);
+      if (expectedBuf.length !== providedBuf.length) return false;
+      if (!crypto.timingSafeEqual(expectedBuf, providedBuf)) return false;
       if (requiredScope === undefined) return true; // any valid key is fine
       if (k.scope === null) return true; // legacy key grants all scopes
       return k.scope === requiredScope;
