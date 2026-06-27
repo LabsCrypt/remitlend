@@ -48,6 +48,8 @@ pub enum DataKey {
     /// token → total principal deposited (net of withdrawals); used for
     /// utilisation stats and the MaxPoolSize cap
     TotalDeposits(Address),
+    /// token → total principal currently deployed in approved loans
+    TotalOutstanding(Address),
     /// token → number of active depositors
     DepositorCount(Address),
     /// token → cumulative yield explicitly distributed to the pool
@@ -112,6 +114,22 @@ impl LendingPool {
 
     fn read_pool_balance(env: &Env, token: &Address) -> i128 {
         TokenClient::new(env, token).balance(&env.current_contract_address())
+    }
+
+    fn read_total_outstanding(env: &Env, token: &Address) -> i128 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalOutstanding(token.clone()))
+            .unwrap_or(0)
+    }
+
+    fn total_pool_assets(env: &Env, token: &Address) -> i128 {
+        let idle_balance = Self::read_pool_balance(env, token);
+        let outstanding = Self::read_total_outstanding(env, token);
+        idle_balance
+            .checked_add(outstanding)
+            .expect("total assets overflow")
     }
 
     fn total_deposits(env: &Env, token: &Address) -> i128 {
@@ -191,7 +209,7 @@ impl LendingPool {
     /// The first depositor always receives a 1-for-1 allocation.  Subsequent
     /// depositors receive `amount * total_shares / total_assets_before` so
     /// that the exchange rate is preserved and existing holders are not
-    /// diluted.
+    /// diluted.  Total assets includes both idle balance and outstanding loans.
     fn calc_shares_to_mint(
         amount: i128,
         total_assets_before: i128,
@@ -211,6 +229,7 @@ impl LendingPool {
     ///
     /// Returns `shares * total_assets / total_shares`, which automatically
     /// includes any yield that has accumulated since the shares were minted.
+    /// Total assets includes both idle balance and outstanding loans.
     fn calc_assets_to_redeem(shares: i128, total_assets: i128, cur_total_shares: i128) -> i128 {
         shares
             .checked_mul(total_assets)
@@ -250,11 +269,16 @@ impl LendingPool {
         }
 
         let cur_total_shares = Self::total_shares(env, token);
-        let total_assets = Self::read_pool_balance(env, token);
+        let total_assets = Self::total_pool_assets(env, token);
         let assets_to_return = Self::calc_assets_to_redeem(shares, total_assets, cur_total_shares);
 
         if assets_to_return <= 0 {
             return Err(PoolError::InvalidAmount);
+        }
+
+        let idle_balance = Self::read_pool_balance(env, token);
+        if assets_to_return > idle_balance {
+            return Err(PoolError::InsufficientLiquidity);
         }
 
         TokenClient::new(env, token).transfer(
@@ -448,7 +472,7 @@ impl LendingPool {
 
         // Snapshot pool state *before* the transfer so the share price
         // reflects the pre-deposit pool composition.
-        let total_assets_before = Self::read_pool_balance(&env, &token);
+        let total_assets_before = Self::total_pool_assets(&env, &token);
         let cur_total_shares = Self::total_shares(&env, &token);
 
         let shares_to_mint =
@@ -515,6 +539,7 @@ impl LendingPool {
     /// Net yield = `current_asset_value - original_deposit`.  Since original
     /// deposit amounts are not stored per-depositor, callers derive yield by
     /// comparing `current_asset_value` against their own recorded cost basis.
+    /// Current asset value includes proportional share of outstanding loans.
     pub fn get_depositor_yield(env: Env, provider: Address, token: Address) -> (i128, i128) {
         let shares = Self::read_shares(&env, &provider, &token);
         if shares == 0 {
@@ -526,13 +551,14 @@ impl LendingPool {
         }
         let asset_value = Self::calc_assets_to_redeem(
             shares,
-            Self::read_pool_balance(&env, &token),
+            Self::total_pool_assets(&env, &token),
             cur_total_shares,
         );
         (shares, asset_value)
     }
 
     /// Underlying asset value of `provider`'s LP shares (principal + yield).
+    /// Includes proportional share of outstanding loans.
     pub fn get_deposit(env: Env, provider: Address, token: Address) -> i128 {
         let shares = Self::read_shares(&env, &provider, &token);
         if shares == 0 {
@@ -544,7 +570,7 @@ impl LendingPool {
         }
         Self::calc_assets_to_redeem(
             shares,
-            Self::read_pool_balance(&env, &token),
+            Self::total_pool_assets(&env, &token),
             cur_total_shares,
         )
     }
@@ -556,13 +582,14 @@ impl LendingPool {
 
     /// Current LP share price scaled by `SHARE_PRICE_SCALE`.
     /// `1_000_000` means 1.0 underlying asset per share.
+    /// Price includes proportional value of outstanding loans.
     pub fn get_share_price(env: Env, token: Address) -> i128 {
         let total_shares = Self::total_shares(&env, &token);
         if total_shares <= 0 {
             return Self::SHARE_PRICE_SCALE;
         }
 
-        Self::read_pool_balance(&env, &token)
+        Self::total_pool_assets(&env, &token)
             .checked_mul(Self::SHARE_PRICE_SCALE)
             .and_then(|v| v.checked_div(total_shares))
             .expect("share price overflow")
@@ -728,6 +755,32 @@ impl LendingPool {
             .instance()
             .get(&DataKey::Paused)
             .unwrap_or(false)
+    }
+
+    pub fn get_total_outstanding(env: Env, token: Address) -> i128 {
+        Self::read_total_outstanding(&env, &token)
+    }
+
+    pub fn adjust_outstanding(env: Env, token: Address, delta: i128) {
+        let lending_pool = Self::admin(&env);
+        lending_pool.require_auth();
+
+        if delta == 0 {
+            return;
+        }
+
+        let key = DataKey::TotalOutstanding(token.clone());
+        let current = Self::read_total_outstanding(&env, &token);
+        let updated = current
+            .checked_add(delta)
+            .expect("total outstanding overflow");
+
+        if updated < 0 {
+            panic!("total outstanding underflow");
+        }
+
+        env.storage().instance().set(&key, &updated);
+        Self::bump_instance_ttl(&env);
     }
 
     pub fn pool_balance(env: Env, token: Address) -> i128 {

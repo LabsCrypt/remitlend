@@ -26,6 +26,7 @@ pub trait RateOracleInterface {
 pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
     fn pool_balance(env: Env, token: Address) -> i128;
+    fn get_total_outstanding(env: Env, token: Address) -> i128;
 }
 
 mod events;

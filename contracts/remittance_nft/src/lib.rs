@@ -716,6 +716,10 @@ impl RemittanceNFT {
         Self::require_admin_or_authorized_minter(&env, minter)
             .unwrap_or_else(|_| panic!("unauthorized minter"));
 
+        if !Self::has_active_nft(&env, &user) {
+            return;
+        }
+
         let metadata_key = DataKey::Metadata(user.clone());
         let mut metadata = Self::get_or_migrate_metadata(&env, &user)
             .unwrap_or_else(|| panic!("user does not have an NFT"));
@@ -854,7 +858,7 @@ impl RemittanceNFT {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
-            return Err(NftError::NftNotFound);
+            return Ok(());
         }
 
         let default_key = DataKey::DefaultCount(user.clone());

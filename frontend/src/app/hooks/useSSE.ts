@@ -17,11 +17,14 @@ interface UseSSEOptions<T> {
   onError?: (error: Error) => void;
   /** Invoked while the hook is in fallback polling mode. */
   onFallbackPoll?: () => void | Promise<void>;
+  /** Polling interval in milliseconds when in fallback mode. Default: 30000 (30s) */
+  pollingInterval?: number;
 }
 
 /**
  * Generic SSE hook with exponential backoff reconnection using fetch + ReadableStream.
  * Supports custom Authorization header which the native EventSource API does not.
+ * Falls back to polling when SSE fails with configurable interval.
  */
 export function useSSE<T = unknown>({
   url,
@@ -29,6 +32,7 @@ export function useSSE<T = unknown>({
   onOpen,
   onError,
   onFallbackPoll,
+  pollingInterval = 30_000,
 }: UseSSEOptions<T>): RealtimeStatus {
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
   const token = useUserStore((s) => s.authToken);
@@ -36,6 +40,8 @@ export function useSSE<T = unknown>({
   const abortControllerRef = useRef<AbortController | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 3;
 
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
@@ -70,13 +76,12 @@ export function useSSE<T = unknown>({
       void onFallbackPollRef.current();
       pollingIntervalRef.current = setInterval(() => {
         void onFallbackPollRef.current?.();
-      }, 10_000);
+      }, pollingInterval);
     };
 
     async function connect() {
       if (cancelled) return;
 
-      // Clean up previous connection if any
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -110,6 +115,7 @@ export function useSSE<T = unknown>({
         stopPolling();
         setStatus("connected");
         retryDelay.current = 1_000;
+        reconnectAttempts.current = 0;
         onOpenRef.current?.();
 
         const reader = response.body.getReader();
@@ -144,8 +150,13 @@ export function useSSE<T = unknown>({
           return;
         }
 
-        startPolling();
+        reconnectAttempts.current += 1;
         onErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
+
+        if (reconnectAttempts.current >= maxReconnectAttempts) {
+          startPolling();
+          return;
+        }
 
         if (!cancelled) {
           const delay = Math.min(retryDelay.current, 5_000);
@@ -167,7 +178,7 @@ export function useSSE<T = unknown>({
       }
       stopPolling();
     };
-  }, [url, token]);
+  }, [url, token, pollingInterval]);
 
   return status;
 }
