@@ -116,9 +116,7 @@ describe("RemittanceForm", () => {
     await user.type(addressInput, VALID_ADDRESS);
     await user.type(amountInput, "100");
 
-    const memoInput = screen.getByPlaceholderText(
-      "Add a note for the recipient (max 28 characters)",
-    );
+    const memoInput = screen.getByLabelText(/^Memo/);
     // Use fireEvent.change to bypass the textarea's maxLength attribute
     fireEvent.change(memoInput, {
       target: { value: "This is a very long memo that exceeds the limit" },
@@ -136,9 +134,7 @@ describe("RemittanceForm", () => {
     const user = userEvent.setup();
     render(<RemittanceForm onSuccess={mockOnSuccess} />);
 
-    const memoInput = screen.getByPlaceholderText(
-      "Add a note for the recipient (max 28 characters)",
-    );
+    const memoInput = screen.getByLabelText(/^Memo/);
     await user.type(memoInput, "Test memo");
 
     await waitFor(() => {
@@ -150,7 +146,7 @@ describe("RemittanceForm", () => {
     const user = userEvent.setup();
     render(<RemittanceForm onSuccess={mockOnSuccess} />);
 
-    const tokenSelect = screen.getByDisplayValue("USDC");
+    const tokenSelect = screen.getByLabelText(/^Token/);
     expect(tokenSelect).toBeInTheDocument();
 
     await user.selectOptions(tokenSelect, "EURC");
