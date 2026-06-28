@@ -71,6 +71,26 @@ export const queryKeys = {
   borrowerLoans: {
     byAddress: (address: string) => ["borrowerLoans", address] as const,
   },
+  creditScore: {
+    byUser: (userId: string) => ["creditScore", userId] as const,
+  },
+  creditScoreHistory: {
+    byUser: (userId: string) => ["creditScoreHistory", userId] as const,
+  },
+  yieldHistory: {
+    byUser: (userId: string, days: number) => ["yieldHistory", userId, days] as const,
+  },
+  remittanceNft: {
+    byAddress: (walletAddress: string) => ["remittanceNft", walletAddress] as const,
+  },
+  notificationPreferences: {
+    all: () => ["notificationPreferences"] as const,
+  },
+  amortization: {
+    schedule: (loanId: string) => ["loans", loanId, "amortization"] as const,
+    preview: (amount: number, termDays: number) =>
+      ["loans", "amortization-preview", amount, termDays] as const,
+  },
   pool: {
     stats: () => ["pool", "stats"] as const,
     depositor: (address: string) => ["pool", "depositor", address] as const,
@@ -708,7 +728,7 @@ export function useLoanAmortizationSchedule(
   options?: Omit<UseQueryOptions<LoanAmortization>, "queryKey" | "queryFn">,
 ) {
   return useQuery<LoanAmortization>({
-    queryKey: [...queryKeys.loans.detail(id ?? ""), "amortization"],
+    queryKey: queryKeys.amortization.schedule(id ?? ""),
     queryFn: async () => {
       const response = await apiFetch<
         LoanAmortization | { success: boolean; amortization: LoanAmortization }
@@ -735,7 +755,7 @@ export function useLoanAmortizationPreview(
   options?: Omit<UseQueryOptions<LoanAmortization>, "queryKey" | "queryFn">,
 ) {
   return useQuery<LoanAmortization>({
-    queryKey: ["loans", "amortization-preview", params?.amount ?? 0, params?.termDays ?? 0],
+    queryKey: queryKeys.amortization.preview(params?.amount ?? 0, params?.termDays ?? 0),
     queryFn: async () => {
       const response = await apiFetch<
         LoanAmortization | { success: boolean; amortization: LoanAmortization }
@@ -986,7 +1006,7 @@ export function useCreditScoreHistory(
   options?: Omit<UseQueryOptions<CreditScoreHistory[]>, "queryKey" | "queryFn">,
 ) {
   return useQuery<CreditScoreHistory[]>({
-    queryKey: ["creditScoreHistory", userId],
+    queryKey: queryKeys.creditScoreHistory.byUser(userId ?? ""),
     queryFn: () => apiFetch<CreditScoreHistory[]>(`/score/${userId}/history`),
     enabled: !!userId,
     ...options,
@@ -1010,7 +1030,7 @@ export function useRemittanceNft(
   options?: Omit<UseQueryOptions<RemittanceNftMetadata | null>, "queryKey" | "queryFn">,
 ) {
   return useQuery<RemittanceNftMetadata | null>({
-    queryKey: ["remittanceNft", walletAddress],
+    queryKey: queryKeys.remittanceNft.byAddress(walletAddress ?? ""),
     queryFn: async () => {
       const response = await apiFetch<RemittanceNftResponse>(`/score/${walletAddress}/nft`);
       return response.nft;
@@ -1041,7 +1061,7 @@ export function useCreditScore(
   });
 
   const query = useQuery<number>({
-    queryKey: ["creditScore", userId],
+    queryKey: queryKeys.creditScore.byUser(userId ?? ""),
     queryFn: async () => {
       const response = await apiFetch<CreditScoreResponse>(`/score/${userId}`);
       return response.score;
@@ -1089,7 +1109,7 @@ export function useCreditScore(
             payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
 
           if (payload.borrower === walletAddress && scoreChangingEvent) {
-            const currentScore = queryClient.getQueryData<number>(["creditScore", userId]);
+            const currentScore = queryClient.getQueryData<number>(queryKeys.creditScore.byUser(userId ?? ""));
 
             setPreviousScoreState({
               walletAddress,
@@ -1097,7 +1117,7 @@ export function useCreditScore(
             });
 
             queryClient.invalidateQueries({
-              queryKey: ["creditScore", userId],
+              queryKey: queryKeys.creditScore.byUser(userId ?? ""),
             });
           }
         } catch {
@@ -1150,7 +1170,7 @@ export function useYieldHistory(
   const { days = 30, ...queryOptions } = options ?? {};
 
   return useQuery<YieldHistory[]>({
-    queryKey: ["yieldHistory", userId, days],
+    queryKey: queryKeys.yieldHistory.byUser(userId ?? "", days),
     queryFn: async () => {
       const response = await apiFetch<
         PoolApiResponse<
@@ -1340,7 +1360,7 @@ export function useNotificationPreferences(
   options?: Omit<UseQueryOptions<NotificationPreferences>, "queryKey" | "queryFn">,
 ) {
   return useQuery<NotificationPreferences>({
-    queryKey: ["notificationPreferences"],
+    queryKey: queryKeys.notificationPreferences.all(),
     queryFn: async () => apiFetch<NotificationPreferences>("/notifications/preferences"),
     ...options,
   });
@@ -1355,7 +1375,7 @@ export function useUpdateNotificationPreferences() {
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notificationPreferences"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences.all() });
     },
   });
 }
@@ -1475,9 +1495,13 @@ export function useResolveAdminDispute() {
 // ─── Optimistic mutations ─────────────────────────────────────────────────────
 
 /**
- * Repays a loan with optimistic UI update.
- * Instantly updates the cached loan detail and borrower loans, then rolls back
- * on failure and refetches on settle to confirm server state.
+ * Submits a loan repayment directly to the server and updates the cache
+ * with optimistic rollback on failure.
+ *
+ * This hook calls `/loans/{loanId}/repay` (a full server-side build+sign+submit
+ * flow). It is NOT a build-only hook — the mutation succeeds only when the
+ * server has submitted the transaction on-chain and returned a `txHash`.
+ * The optimistic loan-status update is rolled back automatically on error.
  */
 export function useRepayLoan() {
   const queryClient = useQueryClient();
@@ -1562,9 +1586,13 @@ export function useRepayLoan() {
 }
 
 /**
- * Deposits to the lending pool with optimistic UI update.
- * Instantly reflects the deposit in pool stats and depositor portfolio,
- * then rolls back on failure.
+ * Builds an unsigned deposit transaction XDR. Does NOT deposit — it only calls
+ * `/pool/build-deposit` and returns `{ unsignedTxXdr, networkPassphrase }`.
+ *
+ * Callers must pair this with `signTransaction` + `submitPoolTransaction` to
+ * complete the deposit (see `useDepositOperation` in useRepaymentOperation.ts).
+ * The optimistic UI update fires on build success, not on-chain confirmation —
+ * treat it as a UX hint only and always confirm via `onSettled` refetch.
  */
 export function useDepositToPool() {
   const queryClient = useQueryClient();
@@ -1632,9 +1660,13 @@ export function useDepositToPool() {
 }
 
 /**
- * Withdraws from the lending pool with optimistic UI update.
- * Instantly reflects the withdrawal in pool stats and depositor portfolio,
- * then rolls back on failure.
+ * Builds an unsigned withdrawal transaction XDR. Does NOT withdraw — it only calls
+ * `/pool/build-withdraw` and returns `{ unsignedTxXdr, networkPassphrase }`.
+ *
+ * Callers must pair this with `signTransaction` + `submitPoolTransaction` to
+ * complete the withdrawal (see `useWithdrawalOperation` in useRepaymentOperation.ts).
+ * The optimistic UI update fires on build success, not on-chain confirmation —
+ * treat it as a UX hint only and always confirm via `onSettled` refetch.
  */
 export function useWithdrawFromPool() {
   const queryClient = useQueryClient();
