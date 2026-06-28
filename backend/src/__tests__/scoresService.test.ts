@@ -91,4 +91,37 @@ describeIf_scoresService("Scores Service - bulk updates", () => {
     expect(rows2[userA]).toBe(Math.min(850, Math.max(300, 500 + 10 + 5)));
     expect(rows2[userB]).toBe(Math.min(850, Math.max(300, 500 - 20 - 10)));
   });
+
+  it("clamps an out-of-range delta to [300, 850] on first insert for a new user", async () => {
+    const userC = "G_TEST_USER_C";
+    await query("DELETE FROM scores WHERE user_id = $1", [userC]);
+
+    // A large negative delta on a brand-new user must not persist below MIN_SCORE.
+    await updateUserScoresBulk(new Map([[userC, -1000]]));
+
+    const res = await query(
+      "SELECT current_score FROM scores WHERE user_id = $1",
+      [userC],
+    );
+    expect(Number(res.rows[0].current_score)).toBe(300);
+
+    await query("DELETE FROM scores WHERE user_id = $1", [userC]);
+  });
+
+  it("clamps an out-of-range delta to [300, 850] on update for an existing user", async () => {
+    const userD = "G_TEST_USER_D";
+    await query("DELETE FROM scores WHERE user_id = $1", [userD]);
+
+    await updateUserScoresBulk(new Map([[userD, 0]]));
+    // Existing row starts at 500; push it far above MAX_SCORE.
+    await updateUserScoresBulk(new Map([[userD, 1000]]));
+
+    const res = await query(
+      "SELECT current_score FROM scores WHERE user_id = $1",
+      [userD],
+    );
+    expect(Number(res.rows[0].current_score)).toBe(850);
+
+    await query("DELETE FROM scores WHERE user_id = $1", [userD]);
+  });
 });

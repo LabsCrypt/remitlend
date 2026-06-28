@@ -6,11 +6,13 @@ import {
   resolveScopesForRole,
   type UserRole,
 } from "../auth/rbac.js";
+import { cacheService } from "./cacheService.js";
 
 export interface JwtPayload {
   publicKey: string;
   role: UserRole;
   scopes: string[];
+  jti: string;
   iat: number;
   exp: number;
 }
@@ -94,6 +96,7 @@ export function generateJwtToken(publicKey: string): string {
     publicKey,
     role,
     scopes,
+    jti: crypto.randomUUID(),
   };
 
   return jwt.sign(payload, secret, {
@@ -112,6 +115,39 @@ export function verifyJwtToken(token: string): JwtPayload | null {
     return decoded;
   } catch {
     return null;
+  }
+}
+
+const REVOKED_JTI_PREFIX = "revoked-jti:";
+
+/**
+ * Explicitly revokes a single token (e.g. on logout) by blacklisting its
+ * jti until the token's natural expiry. Cheap because the blacklist only
+ * ever needs to hold entries for tokens that were revoked early.
+ */
+export async function revokeToken(jti: string, exp: number): Promise<void> {
+  const ttlSeconds = exp - Math.floor(Date.now() / 1000);
+  if (ttlSeconds <= 0) return;
+
+  await cacheService.set(`${REVOKED_JTI_PREFIX}${jti}`, true, ttlSeconds);
+}
+
+// If the cache backend is unreachable we fail open (treat the token as not
+// revoked) rather than block every authenticated request — the same
+// fail-open posture idempotencyMiddleware takes when Redis is unavailable.
+const REVOCATION_CHECK_TIMEOUT_MS = 250;
+
+export async function isTokenRevoked(jti: string): Promise<boolean> {
+  try {
+    const revoked = await Promise.race([
+      cacheService.get<boolean>(`${REVOKED_JTI_PREFIX}${jti}`),
+      new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), REVOCATION_CHECK_TIMEOUT_MS),
+      ),
+    ]);
+    return revoked === true;
+  } catch {
+    return false;
   }
 }
 

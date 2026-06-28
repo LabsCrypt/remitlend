@@ -31,6 +31,7 @@ import {
   verifySignature,
   verifyChallengeTimestamp,
   generateJwtToken,
+  revokeToken,
 } from "../services/authService.js";
 import logger from "../utils/logger.js";
 
@@ -194,5 +195,19 @@ export const verify = (req: Request, res: Response): void => {
       scopes: req.user?.scopes,
       valid: true,
     },
+  });
+};
+
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.jti && req.user?.exp) {
+    await revokeToken(req.user.jti, req.user.exp);
+  }
+
+  const cookieName = process.env.JWT_COOKIE_NAME ?? "remitlend_jwt";
+  res.clearCookie(cookieName, { path: "/" });
+
+  res.status(200).json({
+    success: true,
+    data: { message: "Logged out" },
   });
 };
