@@ -5,6 +5,7 @@ import {
   requestChallenge,
   login,
   verify,
+  logout,
 } from "../controllers/authController.js";
 import {
   challengeRateLimiter,
@@ -121,5 +122,24 @@ router.post(
  *         description: Missing or invalid Bearer token
  */
 router.get("/verify", requireJwtAuth, verify);
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Revoke the current JWT
+ *     description: >
+ *       Blacklists the current token's jti so it is rejected by requireJwtAuth
+ *       even though it has not yet expired, and clears the auth cookie.
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ *       401:
+ *         description: Missing or invalid Bearer token
+ */
+router.post("/logout", requireJwtAuth, logout);
 
 export default router;

@@ -1,6 +1,7 @@
 import request from "supertest";
 import { jest } from "@jest/globals";
 import { Keypair } from "@stellar/stellar-sdk";
+import jwt from "jsonwebtoken";
 import { generateJwtToken } from "../services/authService.js";
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
@@ -124,6 +125,16 @@ const mockedQuery = mockQuery;
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,
+});
+
+// Mints a token with explicit scopes, bypassing rbac.ts role resolution,
+// so we can simulate a caller missing a required write scope.
+const bearerWithScopes = (publicKey: string, scopes: string[]) => ({
+  Authorization: `Bearer ${jwt.sign(
+    { publicKey, role: "borrower", scopes },
+    process.env.JWT_SECRET!,
+    { algorithm: "HS256", expiresIn: "1h" },
+  )}`,
 });
 
 beforeEach(() => {
@@ -532,6 +543,16 @@ describe("POST /api/loans/:loanId/repay", () => {
       .send({ borrowerPublicKey: TEST_BORROWER });
 
     expect(response.status).toBe(400);
+  });
+
+  it("should reject a token missing the write:loans scope", async () => {
+    const response = await request(app)
+      .post("/api/loans/1/repay")
+      .set(bearerWithScopes(TEST_BORROWER, ["read:loans"]))
+      .send({ amount: 500, borrowerPublicKey: TEST_BORROWER });
+
+    expect(response.status).toBe(403);
+    expect(mockBuildRepayTx).not.toHaveBeenCalled();
   });
 });
 
