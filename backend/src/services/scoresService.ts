@@ -9,7 +9,7 @@ import logger from "../utils/logger.js";
  * All rows are upserted in a single query for efficiency.
  *
  * When `client` is supplied the query runs on that pinned connection so it
- * participates in the caller's open transaction.  When omitted the shared
+ * participates in the caller's open transaction. When omitted the shared
  * pool `query()` is used (standalone use).
  */
 export async function updateUserScoresBulk(
@@ -30,8 +30,10 @@ export async function updateUserScoresBulk(
 
   if (params.length === 0) return;
 
+  // Clamped the initial raw value payload insertion step to prevent violating constraints on initial inserts
   const valuePlaceholders = Array.from(
     { length: params.length / 2 },
+    (_, i) => `($${i * 2 + 1}, LEAST(850, GREATEST(300, 500 + $${i * 2 + 2})))`,
     (_, i) =>
       `($${i * 2 + 1}, LEAST(850, GREATEST(300, 500 + $${i * 2 + 2})))`,
   ).join(", ");
@@ -89,15 +91,17 @@ export async function setAbsoluteUserScoresBulk(
 
   if (valuePlaceholders.length === 0) return;
 
+  // Added explicit application-level LEAST/GREATEST clamping on selection and overwrite paths 
+  // to ensure out-of-bounds calculations from external sources never trigger CHECK runtime failures.
   const sql = `
     WITH reconciled_scores (user_id, current_score) AS (
       VALUES ${valuePlaceholders.join(",")}
     )
     INSERT INTO scores (user_id, current_score)
-    SELECT user_id, current_score FROM reconciled_scores
+    SELECT user_id, LEAST(850, GREATEST(300, current_score)) FROM reconciled_scores
     ON CONFLICT (user_id)
     DO UPDATE SET
-      current_score = EXCLUDED.current_score,
+      current_score = LEAST(850, GREATEST(300, EXCLUDED.current_score)),
       updated_at = CURRENT_TIMESTAMP
   `;
 
