@@ -6,10 +6,19 @@ import { jobMetricsService } from './jobMetricsService.js';
 let retryProcessorInterval: NodeJS.Timeout | null = null;
 
 /**
- * Starts the webhook retry processor that periodically checks for failed
- * webhook deliveries and retries them with exponential backoff.
+ * Starts the webhook retry processor.
  *
- * Runs every 10 seconds to process pending retries.
+ * Polls every 10 seconds and delegates to WebhookService.processRetries,
+ * which queries for deliveries whose next_retry_at <= now and applies the
+ * backoff schedule defined in webhookService.ts:
+ *   attempt 1 → retry after 5 min
+ *   attempt 2 → retry after 15 min
+ *   attempt 3 → retry after 45 min
+ *   attempt 4+ → permanently failed (MAX_RETRY_ATTEMPTS = 4)
+ *
+ * This is the single retry implementation wired in index.ts.
+ * webhookRetryScheduler.ts (which used a different backoff and ignored
+ * next_retry_at) has been removed.
  */
 export function startWebhookRetryProcessor(): void {
   if (retryProcessorInterval) {

@@ -254,6 +254,14 @@ export class EventIndexer {
     const lastIndexedLedger = await this.getLastIndexedLedger();
     const latestLedger = await this.getLatestLedgerSequence();
 
+    // latestLedger === 0 means getLatestLedgerSequence failed (RPC error or
+    // non-finite response).  Publishing lag=0 / chainTip=0 during an outage
+    // would silently defeat the behind-chain-tip alert, so skip the metric
+    // update and leave gauges at their last known values.
+    if (latestLedger === 0) {
+      return;
+    }
+
     if (latestLedger <= lastIndexedLedger) {
       recordIndexerLedgers(lastIndexedLedger, latestLedger);
       return;

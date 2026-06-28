@@ -91,6 +91,7 @@ export class DefaultChecker {
   private pollAttempts: number;
   private pollSleepMs: number;
   private concurrency: number;
+  private currentLockValue: string | null = null;
 
   constructor() {
     this.contractId = process.env.LOAN_MANAGER_CONTRACT_ID || '';
@@ -385,7 +386,14 @@ export class DefaultChecker {
   private async acquireLock(): Promise<boolean> {
     try {
       const lockValue = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const acquired = await cacheService.setNotExists(LOCK_KEY, lockValue, LOCK_TTL_SECONDS);
+      const acquired = await cacheService.setNotExists(
+        LOCK_KEY,
+        lockValue,
+        LOCK_TTL_SECONDS,
+      );
+      if (acquired) {
+        this.currentLockValue = lockValue;
+      }
       return acquired;
     } catch (error) {
       logger.withContext().error('Failed to acquire default checker lock', { error });
@@ -394,11 +402,25 @@ export class DefaultChecker {
   }
 
   /**
-   * Releases the distributed lock.
+   * Releases the distributed lock only when the stored value matches the value
+   * this instance set at acquire time.  A run that outlives the TTL cannot
+   * delete a lock that now belongs to a different instance.
    */
   private async releaseLock(): Promise<void> {
+    const value = this.currentLockValue;
+    this.currentLockValue = null;
+
+    if (!value) return;
+
     try {
-      await cacheService.delete(LOCK_KEY);
+      const released = await cacheService.deleteIfMatch(LOCK_KEY, value);
+      if (!released) {
+        logger
+          .withContext()
+          .warn(
+            "default_checker: lock already expired or owned by another instance — skipping delete",
+          );
+      }
     } catch (error) {
       logger.withContext().error('Failed to release default checker lock', { error });
     }
