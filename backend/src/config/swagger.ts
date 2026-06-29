@@ -75,7 +75,7 @@ export function mountSwaggerDocs(app: Express): void {
     docsRouter(req, res, next);
   });
 
-  app.get('/docs.json', (req: Request, res: Response, next: NextFunction) => {
+  app.get('/docs.json', (_req: Request, res: Response, next: NextFunction) => {
     if (!isSwaggerEnabled()) {
       next();
       return;

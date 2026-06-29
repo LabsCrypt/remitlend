@@ -9,7 +9,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
  * Returns 404 when the loan is missing and 403 when it belongs to a different
  * borrower.
  */
-export const requireLoanBorrowerAccess = asyncHandler(async (req, res, next) => {
+export const requireLoanBorrowerAccess = asyncHandler(async (req, _res, next) => {
   const loanId = req.params.loanId;
   const pk = req.user?.publicKey;
   const role = req.user?.role;
@@ -44,7 +44,7 @@ export const requireLoanBorrowerAccess = asyncHandler(async (req, res, next) => 
  * Supports both `loanId` and `id` as parameter names.
  * Returns 404 when the loan is missing and 403 when it belongs to a different borrower.
  */
-export const requireLoanOwner = asyncHandler(async (req, res, next) => {
+export const requireLoanOwner = asyncHandler(async (req, _res, next) => {
   const loanId = req.params.loanId || req.params.id;
   const pk = req.user?.publicKey;
 

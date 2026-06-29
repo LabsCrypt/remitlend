@@ -229,8 +229,8 @@ describeIf('Database Services', () => {
       });
 
       expect(event).toBeDefined();
-      expect(event.event_id).toBe('event_test_001');
-      expect(event.processed).toBe(false);
+      expect(event?.event_id).toBe('event_test_001');
+      expect(event?.processed).toBe(false);
     });
 
     it('should find unprocessed events', async () => {

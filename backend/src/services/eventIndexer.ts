@@ -896,7 +896,7 @@ export class EventIndexer {
     };
   }
 
-  private async updateUserScore(userId: string, delta: number): Promise<void> {
+  /* private async _updateUserScore(userId: string, delta: number): Promise<void> {
     if (!userId) return;
     try {
       await query(
@@ -915,7 +915,7 @@ export class EventIndexer {
     } catch (error) {
       logger.withContext().error('Failed to update user score', { userId, error });
     }
-  }
+  } */
 
   private async triggerNotification(event: ContractEvent): Promise<void> {
     if (!event.address) return;

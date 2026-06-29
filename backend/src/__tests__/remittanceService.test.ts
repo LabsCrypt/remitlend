@@ -138,7 +138,7 @@ describe('remittanceService.createRemittance', () => {
 
     expect(mockGetAccount).toHaveBeenCalledWith(SENDER);
 
-    const tx = TransactionBuilder.fromXDR(remittance.xdr!, Networks.TESTNET);
+    const tx = TransactionBuilder.fromXDR(remittance.xdr!, Networks.TESTNET) as import('@stellar/stellar-sdk').Transaction;
     expect(tx.source).toBe(SENDER);
     expect(tx.sequence).toBe('12346');
   });

@@ -347,7 +347,7 @@ export class WebhookService {
     callbackUrl: string,
     secret: string | undefined,
     eventId: string,
-    eventType: WebhookEventType,
+    _eventType: WebhookEventType,
     payload: Record<string, unknown>,
     attemptCount: number,
   ): Promise<void> {
