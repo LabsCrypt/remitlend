@@ -34,18 +34,26 @@ describe('Audit Log Middleware', () => {
       socket: {} as import('net').Socket,
       params: {},
     };
-    res = {};
+    res = {
+      statusCode: 200,
+      on: jest.fn((event: string, callback: () => void) => {
+        if (event === 'finish') {
+          setTimeout(callback, 0);
+        }
+        return res as Response;
+      }),
+    };
     next = jest.fn();
     jest.clearAllMocks();
   });
 
   it('should log admin action to audit_logs table', async () => {
-    await auditLog(req as Request, res as Response, next);
+    auditLog(req as Request, res as Response, next);
 
     expect(next).toHaveBeenCalled();
 
     // The query is called asynchronously (void ...), so we might need to wait a tick
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(mockedQuery).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO audit_logs'),
@@ -55,18 +63,26 @@ describe('Audit Log Middleware', () => {
         'LoanIDs:[1,2,3]',
         expect.stringContaining('"loanIds":[1,2,3]'),
         '127.0.0.1',
+        200,
       ]),
     );
   });
 
-  it('should redact sensitive fields in payload', async () => {
+  it('should redact sensitive fields in payload at any depth', async () => {
     req.body = {
       secret: 'sensitive-data',
       loanId: 123,
+      tx: {
+        signedTxXdr: 'nested-sensitive-data',
+        details: {
+          token: 'deep-secret',
+          publicInfo: 'safe',
+        },
+      },
     };
 
-    await auditLog(req as Request, res as Response, next);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    auditLog(req as Request, res as Response, next);
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(mockedQuery).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO audit_logs'),
@@ -76,6 +92,7 @@ describe('Audit Log Middleware', () => {
         'LoanID:123',
         expect.stringContaining('[REDACTED]'),
         expect.anything(),
+        200,
       ]),
     );
 
@@ -86,6 +103,9 @@ describe('Audit Log Middleware', () => {
       const parsedPayload = JSON.parse(callPayload);
       expect(parsedPayload.secret).toBe('[REDACTED]');
       expect(parsedPayload.loanId).toBe(123);
+      expect(parsedPayload.tx.signedTxXdr).toBe('[REDACTED]');
+      expect(parsedPayload.tx.details.token).toBe('[REDACTED]');
+      expect(parsedPayload.tx.details.publicInfo).toBe('safe');
     } else {
       throw new Error('Payload was not recorded as a string');
     }
@@ -97,8 +117,8 @@ describe('Audit Log Middleware', () => {
       role: 'admin',
     };
 
-    await auditLog(req as Request, res as Response, next);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    auditLog(req as Request, res as Response, next);
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(mockedQuery).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO audit_logs'),
@@ -108,6 +128,26 @@ describe('Audit Log Middleware', () => {
         expect.anything(),
         expect.anything(),
         expect.anything(),
+        200,
+      ]),
+    );
+  });
+
+  it('should capture a denied admin request', async () => {
+    res.statusCode = 403; // Simulate a denied request
+
+    auditLog(req as Request, res as Response, next);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockedQuery).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_logs'),
+      expect.arrayContaining([
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        403,
       ]),
     );
   });

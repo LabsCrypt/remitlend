@@ -512,11 +512,13 @@ describe('EventIndexer – transaction atomicity via ingestRawEvents', () => {
     // Exactly one audit_logs INSERT must have been made
     expect(auditInsertCalls).toHaveLength(1);
 
-    const [actor, action, target, payload] = auditInsertCalls[0] as [
+    const [actor, action, target, payload, ip_address, status] = auditInsertCalls[0] as [
       string,
       string,
       string,
       string,
+      string | null,
+      number,
     ];
 
     // actor = admin address from topic[1]
@@ -525,6 +527,8 @@ describe('EventIndexer – transaction atomicity via ingestRawEvents', () => {
     expect(action).toBe('loan_approved');
     // target = 'loan:<loanId>'
     expect(target).toBe('loan:42');
+    // status = 200
+    expect(status).toBe(200);
 
     // payload JSON must contain loanId, borrower, txHash
     const parsed = JSON.parse(payload);

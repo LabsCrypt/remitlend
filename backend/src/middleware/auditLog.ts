@@ -8,17 +8,21 @@ import logger from '../utils/logger.js';
 function sanitizePayload(body: unknown): unknown {
   if (!body || typeof body !== 'object') return body;
 
+  if (Array.isArray(body)) {
+    return body.map(sanitizePayload);
+  }
+
   const sanitized = { ...body } as Record<string, unknown>;
-  // List of fields that should be redacted in audit logs
   const sensitiveFields = ['secret', 'apiKey', 'password', 'token', 'signedTxXdr', 'x-api-key'];
 
-  for (const field of sensitiveFields) {
-    if (field in sanitized) {
-      sanitized[field] = '[REDACTED]';
+  for (const key of Object.keys(sanitized)) {
+    if (sensitiveFields.includes(key)) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof sanitized[key] === 'object' && sanitized[key] !== null) {
+      sanitized[key] = sanitizePayload(sanitized[key]);
     }
   }
 
-  // Handle nested objects if necessary (shallow for now)
   return sanitized;
 }
 
@@ -52,7 +56,7 @@ function extractTarget(req: Request): string | undefined {
  * It identifies the actor (JWT user or API key), the action (method+path),
  * any target entity, and the sanitized request payload.
  */
-export const auditLog = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+export const auditLog = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const actor =
       req.user?.publicKey ?? (req.headers['x-api-key'] ? 'INTERNAL_API_KEY' : 'unknown');
@@ -67,29 +71,32 @@ export const auditLog = async (req: Request, _res: Response, next: NextFunction)
       )?.split(',')[0] ||
       req.socket.remoteAddress;
 
-    // Log the action asynchronously to avoid blocking the main request thread
-    void (async () => {
-      try {
-        await query(
-          `INSERT INTO audit_logs (actor, action, target, payload, ip_address)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [
+    res.on('finish', () => {
+      // Log the action asynchronously to avoid blocking the main request thread
+      void (async () => {
+        try {
+          await query(
+            `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+              actor,
+              action,
+              target ?? null,
+              payload ? JSON.stringify(payload) : null,
+              ipAddress ?? null,
+              res.statusCode,
+            ],
+          );
+        } catch (err) {
+          logger.error('Audit logging failure', {
+            err,
             actor,
             action,
-            target ?? null,
-            payload ? JSON.stringify(payload) : null,
-            ipAddress ?? null,
-          ],
-        );
-      } catch (err) {
-        logger.error('Audit logging failure', {
-          err,
-          actor,
-          action,
-          target,
-        });
-      }
-    })();
+            target,
+          });
+        }
+      })();
+    });
   } catch (err) {
     // If the audit log logic fails, we still want to proceed with the request
     logger.warn('Audit log middleware error', { err });

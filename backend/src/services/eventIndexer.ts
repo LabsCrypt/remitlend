@@ -510,12 +510,12 @@ export class EventIndexer {
 
           if (this.isAdminConfigEventType(event.eventType)) {
             await client.query(
-              `INSERT INTO audit_logs (actor, action, target, payload, ip_address)
-               VALUES ($1, $2, $3, $4::jsonb, $5)`,
+              `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6)`,
               [
                 event.address ?? 'SYSTEM',
                 `ADMIN_CONFIG_${event.eventType}`,
-                `contract:${event.contractId}`,
+                null,
                 JSON.stringify({
                   eventId: event.eventId,
                   eventType: event.eventType,
@@ -524,7 +524,8 @@ export class EventIndexer {
                   ledger: event.ledger,
                   txHash: event.txHash,
                 }),
-                null,
+                'internal-indexer',
+                200,
               ],
             );
           }
@@ -541,8 +542,8 @@ export class EventIndexer {
            */
           if (event.eventType === 'LoanApprv') {
             await client.query(
-              `INSERT INTO audit_logs (actor, action, target, payload, ip_address)
-               VALUES ($1, $2, $3, $4::jsonb, $5)`,
+              `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6)`,
               [
                 event.adminAddress ?? 'SYSTEM',
                 'loan_approved',
@@ -554,6 +555,7 @@ export class EventIndexer {
                   txHash: event.txHash,
                 }),
                 null,
+                200, // Loan approved on-chain
               ],
             );
           }
