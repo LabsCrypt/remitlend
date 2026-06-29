@@ -91,6 +91,7 @@ export class DefaultChecker {
   private pollAttempts: number;
   private pollSleepMs: number;
   private concurrency: number;
+  private lockToken: string | null = null;
 
   constructor() {
     this.contractId = process.env.LOAN_MANAGER_CONTRACT_ID || '';
@@ -380,12 +381,16 @@ export class DefaultChecker {
 
   /**
    * Acquires a distributed lock using Redis SET NX with TTL.
+   * Stores a unique fencing token so releaseLock can safely compare-and-delete.
    * Returns true if lock acquired, false if another instance is running.
    */
   private async acquireLock(): Promise<boolean> {
     try {
       const lockValue = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const acquired = await cacheService.setNotExists(LOCK_KEY, lockValue, LOCK_TTL_SECONDS);
+      if (acquired) {
+        this.lockToken = lockValue;
+      }
       return acquired;
     } catch (error) {
       logger.withContext().error('Failed to acquire default checker lock', { error });
@@ -394,11 +399,16 @@ export class DefaultChecker {
   }
 
   /**
-   * Releases the distributed lock.
+   * Releases the distributed lock only if the stored token still matches.
+   * Uses an atomic Lua compare-and-delete to avoid releasing a lock acquired
+   * by a different instance after this run's TTL expired.
    */
   private async releaseLock(): Promise<void> {
+    const token = this.lockToken;
+    this.lockToken = null;
+    if (!token) return;
     try {
-      await cacheService.delete(LOCK_KEY);
+      await cacheService.deleteIfEqual(LOCK_KEY, token);
     } catch (error) {
       logger.withContext().error('Failed to release default checker lock', { error });
     }

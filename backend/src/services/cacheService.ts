@@ -130,6 +130,34 @@ class CacheService {
   }
 
   /**
+   * Atomically delete a key only if its stored value matches expectedValue.
+   * Uses a Lua script to ensure the compare-and-delete is atomic, preventing
+   * a lock owner from releasing a lock it no longer holds (e.g. after TTL expiry).
+   * @param key The cache key
+   * @param expectedValue The value that must be present for the key to be deleted
+   * @returns true if the key was deleted, false if the value did not match or key was absent
+   */
+  async deleteIfEqual(key: string, expectedValue: string): Promise<boolean> {
+    const lua = `
+      if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+      else
+        return 0
+      end
+    `;
+    try {
+      await this.ensureConnected();
+      const result = await this.client!.eval(lua, { keys: [key], arguments: [expectedValue] });
+      return result === 1;
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'test') {
+        logger.withContext().error(`Error in deleteIfEqual for key ${key}`, { error });
+      }
+      return false;
+    }
+  }
+
+  /**
    * Invalidate multiple keys by a pattern (e.g. prefix)
    * Note: KEYS is generally not recommended in production, but suitable for exact or bounded patterns.
    */
