@@ -1,7 +1,7 @@
 /**
  * stores/stores.test.ts
  *
- * Unit tests for all three Zustand stores.
+ * Unit tests for all Zustand stores.
  * Tests run against the store's actions and derived state.
  */
 
@@ -10,6 +10,11 @@ import { useWalletStore } from "./useWalletStore";
 import { useUIStore } from "./useUIStore";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { useThemeStore } from "./useThemeStore";
+import {
+  getNextLevelInfo,
+  LEVEL_THRESHOLDS,
+  useGamificationStore,
+} from "./useGamificationStore";
 import type { ModalId } from "./useUIStore";
 
 // Reset store state between tests
@@ -37,6 +42,7 @@ beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.classList.remove("dark");
   delete document.documentElement.dataset.theme;
+  useGamificationStore.getState().resetGamification();
 });
 
 // ─── useUserStore ────────────────────────────────────────────────────────────
@@ -261,5 +267,150 @@ describe("useThemeStore", () => {
     expect(theme).toBe("light");
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
+});
+
+// ─── useGamificationStore ────────────────────────────────────────────────────
+
+describe("useGamificationStore", () => {
+  describe("addXP / checkLevelUp", () => {
+    it.each(
+      LEVEL_THRESHOLDS.slice(1).map((threshold) => {
+        const previousThreshold = LEVEL_THRESHOLDS[threshold.level - 2];
+        return {
+          fromXp: threshold.xpRequired - 1,
+          addAmount: 1,
+          expectedLevel: threshold.level,
+          expectedTitle: threshold.title,
+          expectedReward: threshold,
+        };
+      }),
+    )(
+      "crossing level $expectedLevel threshold ($expectedTitle) updates level-up state",
+      ({ fromXp, addAmount, expectedLevel, expectedTitle, expectedReward }) => {
+        const previousLevel = expectedLevel - 1;
+        const previousTitle = LEVEL_THRESHOLDS[previousLevel - 1].title;
+
+        useGamificationStore.setState({
+          xp: fromXp,
+          level: previousLevel,
+          kingdomTitle: previousTitle,
+          showLevelUpModal: false,
+          pendingLevelUp: null,
+        });
+
+        useGamificationStore.getState().addXP(addAmount);
+
+        const state = useGamificationStore.getState();
+        expect(state.xp).toBe(fromXp + addAmount);
+        expect(state.level).toBe(expectedLevel);
+        expect(state.kingdomTitle).toBe(expectedTitle);
+        expect(state.showLevelUpModal).toBe(true);
+        expect(state.pendingLevelUp).toEqual(expectedReward);
+      },
+    );
+
+    it("does not trigger level-up when XP stays within the current level", () => {
+      useGamificationStore.setState({
+        xp: 50,
+        level: 1,
+        kingdomTitle: "Peasant",
+        showLevelUpModal: false,
+        pendingLevelUp: null,
+      });
+
+      useGamificationStore.getState().addXP(10);
+
+      const state = useGamificationStore.getState();
+      expect(state.xp).toBe(60);
+      expect(state.level).toBe(1);
+      expect(state.kingdomTitle).toBe("Peasant");
+      expect(state.showLevelUpModal).toBe(false);
+      expect(state.pendingLevelUp).toBeNull();
+    });
+
+    it("dismissLevelUp clears the modal and pending reward", () => {
+      useGamificationStore.getState().addXP(100);
+      useGamificationStore.getState().dismissLevelUp();
+
+      const state = useGamificationStore.getState();
+      expect(state.showLevelUpModal).toBe(false);
+      expect(state.pendingLevelUp).toBeNull();
+      expect(state.level).toBe(2);
+    });
+  });
+
+  describe("getNextLevelInfo / calculateLevel", () => {
+    it.each([
+      { xp: 0, currentLevel: 1, nextLevel: 2, xpToNext: 100, progress: 0 },
+      { xp: 50, currentLevel: 1, nextLevel: 2, xpToNext: 50, progress: 50 },
+      { xp: 99, currentLevel: 1, nextLevel: 2, xpToNext: 1, progress: 99 },
+      { xp: 100, currentLevel: 2, nextLevel: 3, xpToNext: 200, progress: 0 },
+      { xp: 299, currentLevel: 2, nextLevel: 3, xpToNext: 1, progress: 99.5 },
+      { xp: 600, currentLevel: 4, nextLevel: 5, xpToNext: 400, progress: 0 },
+      { xp: 2499, currentLevel: 6, nextLevel: 7, xpToNext: 1, progress: 99.9 },
+      { xp: 2500, currentLevel: 7, nextLevel: 7, xpToNext: 0, progress: 100 },
+      { xp: 5000, currentLevel: 7, nextLevel: 7, xpToNext: 0, progress: 100 },
+    ])("at $xp XP returns correct level progression info", ({ xp, ...expected }) => {
+      expect(getNextLevelInfo(xp)).toEqual(expected);
+    });
+
+    it("clamps progress to 0 when XP is below the current level floor", () => {
+      expect(getNextLevelInfo(-10)).toEqual({
+        currentLevel: 1,
+        nextLevel: 2,
+        xpToNext: 110,
+        progress: 0,
+      });
+    });
+  });
+
+  describe("unlockAchievement", () => {
+    it("sets unlockedAt and maxes progress for the target achievement", () => {
+      useGamificationStore.getState().unlockAchievement("first_loan");
+
+      const achievement = useGamificationStore
+        .getState()
+        .achievements.find((a) => a.id === "first_loan");
+
+      expect(achievement?.unlockedAt).toBeDefined();
+      expect(achievement?.progress).toBe(achievement?.maxProgress);
+    });
+  });
+
+  describe("updateAchievementProgress", () => {
+    it("sets unlockedAt exactly once when progress reaches maxProgress", () => {
+      const { updateAchievementProgress } = useGamificationStore.getState();
+
+      updateAchievementProgress("first_loan", 0);
+      let achievement = useGamificationStore
+        .getState()
+        .achievements.find((a) => a.id === "first_loan");
+      expect(achievement?.unlockedAt).toBeUndefined();
+
+      updateAchievementProgress("first_loan", 1);
+      achievement = useGamificationStore
+        .getState()
+        .achievements.find((a) => a.id === "first_loan");
+      const firstUnlock = achievement?.unlockedAt;
+      expect(firstUnlock).toBeDefined();
+
+      updateAchievementProgress("first_loan", 1);
+      achievement = useGamificationStore
+        .getState()
+        .achievements.find((a) => a.id === "first_loan");
+      expect(achievement?.unlockedAt).toBe(firstUnlock);
+    });
+
+    it("clamps progress to maxProgress", () => {
+      useGamificationStore.getState().updateAchievementProgress("five_loans", 10);
+
+      const achievement = useGamificationStore
+        .getState()
+        .achievements.find((a) => a.id === "five_loans");
+
+      expect(achievement?.progress).toBe(5);
+      expect(achievement?.unlockedAt).toBeDefined();
+    });
   });
 });
