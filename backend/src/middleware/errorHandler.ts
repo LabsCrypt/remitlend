@@ -94,6 +94,19 @@ export const errorHandler = (
     return;
   }
 
+  // ── Payload Too Large (body-parser) ────────────────────────
+  if ('type' in err && (err as any).type === 'entity.too.large') {
+    res.status(413).json({
+      success: false,
+      message: 'Request payload too large',
+      error: {
+        code: ErrorCode.VALIDATION_ERROR, // Or a dedicated code if defined
+        message: 'Request payload too large',
+      },
+    });
+    return;
+  }
+
   // ── Unexpected / Programming Errors ──────────────────────────
   logger.error('Unhandled error', {
     requestId: req.requestId,

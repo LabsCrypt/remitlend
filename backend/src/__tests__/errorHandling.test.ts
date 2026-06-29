@@ -75,6 +75,25 @@ describe('Centralized Error Handling', () => {
     });
   });
 
+  describe("Request Payload Size Limit", () => {
+    it("should return 413 when payload exceeds the configured limit", async () => {
+      // Create a payload larger than 100kb
+      const largePayload = {
+        data: "x".repeat(1024 * 150) // 150kb string
+      };
+
+      const response = await request(app)
+        .post("/api/simulate")
+        .set("Authorization", authHeader)
+        .send(largePayload);
+
+      expect(response.status).toBe(413);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.body.error.message).toMatch(/payload too large/i);
+    });
+  });
+
   /* ── Consistent JSON structure ────────────────────────────── */
 
   describe('Response structure consistency', () => {

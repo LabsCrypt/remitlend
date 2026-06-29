@@ -110,7 +110,8 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 app.use(compression());
-app.use(express.json());
+// Explicit request body size limit set to 100kb to mitigate payload-based DoS and unbounded audit log writes.
+app.use(express.json({ limit: '100kb' }));
 app.use(globalRateLimiter);
 app.use(requestIdMiddleware);
 app.use(requestLogger);
