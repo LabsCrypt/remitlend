@@ -19,8 +19,8 @@ import {
 import {
   startWebhookRetryProcessor,
   stopWebhookRetryProcessor,
-} from "./services/webhookRetryProcessor.js";
-import { eventStreamService } from "./services/eventStreamService.js";
+} from './services/webhookRetryProcessor.js';
+import { eventStreamService } from './services/eventStreamService.js';
 import {
   startNotificationCleanupScheduler,
   stopNotificationCleanupScheduler,
