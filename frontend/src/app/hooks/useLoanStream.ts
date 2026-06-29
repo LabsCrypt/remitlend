@@ -43,6 +43,10 @@ export function useLoanStream(loanId: string | undefined): RealtimeStatus {
       queryClient.invalidateQueries({
         queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress),
       });
+      // Also invalidate paginated borrower loans so both namespaces stay in sync (#1219)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.loans.borrowerPagePrefix(borrowerAddress),
+      });
     }
   }, [borrowerAddress, loanId, queryClient]);
 

@@ -44,6 +44,8 @@ export const queryKeys = {
     liquidatable: () => ["loans", "liquidatable"] as const,
     borrowerPage: (address: string, params: Record<string, unknown>) =>
       ["loans", "borrower", address, params] as const,
+    // Prefix key that matches all borrowerPage entries for an address regardless of pagination params
+    borrowerPagePrefix: (address: string) => ["loans", "borrower", address] as const,
   },
   remittances: {
     all: () => ["remittances"] as const,
@@ -858,6 +860,7 @@ export function useCreateLoan(
   >,
 ) {
   const queryClient = useQueryClient();
+  const walletAddress = useUserStore((s) => s.user?.walletAddress);
 
   return useMutation<Loan & { txHash?: string }, Error, Omit<Loan, "id" | "createdAt" | "status">>({
     mutationFn: (data) =>
@@ -866,8 +869,13 @@ export function useCreateLoan(
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      // Invalidate the loans list so it refetches with the new entry
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all() });
+      // Also invalidate borrowerLoans.byAddress so both borrower-loan lists stay consistent (#1219)
+      if (walletAddress) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.borrowerLoans.byAddress(walletAddress),
+        });
+      }
     },
     ...options,
   });
@@ -1595,6 +1603,10 @@ export function useRepayLoan() {
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(String(loanId)) });
       queryClient.invalidateQueries({
         queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress),
+      });
+      // Also invalidate paginated borrower loans (borrowerPage) so both namespaces stay in sync (#1219)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.loans.borrowerPagePrefix(borrowerAddress),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
     },
