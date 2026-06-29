@@ -13,7 +13,7 @@ import { notificationService, type NotificationType } from './notificationServic
 import { sorobanService } from './sorobanService.js';
 import { updateUserScoresBulk } from './scoresService.js';
 import { AppError } from '../errors/AppError.js';
-import { recordIndexerLedgers } from '../middleware/metrics.js';
+import { recordIndexerLedgers, incrementIndexerRpcFetchErrors } from '../middleware/metrics.js';
 
 const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
   Mint: 'NFTMinted',
@@ -254,6 +254,12 @@ export class EventIndexer {
     const lastIndexedLedger = await this.getLastIndexedLedger();
     const latestLedger = await this.getLatestLedgerSequence();
 
+    if (latestLedger === null) {
+      // RPC fetch failed — skip metrics so we do not reset the lag gauge to 0
+      // and misrepresent an outage as a healthy (caught-up) state.
+      return;
+    }
+
     if (latestLedger <= lastIndexedLedger) {
       recordIndexerLedgers(lastIndexedLedger, latestLedger);
       return;
@@ -267,7 +273,7 @@ export class EventIndexer {
     recordIndexerLedgers(result.lastProcessedLedger, latestLedger);
   }
 
-  private async getLatestLedgerSequence(): Promise<number> {
+  private async getLatestLedgerSequence(): Promise<number | null> {
     try {
       const latest = (await (
         this.rpc as unknown as {
@@ -278,10 +284,18 @@ export class EventIndexer {
       const candidate = latest.sequence ?? latest.sequenceNumber ?? latest.seq ?? latest.id;
       const sequence = Number(candidate);
 
-      return Number.isFinite(sequence) && sequence > 0 ? sequence : 0;
+      if (!Number.isFinite(sequence) || sequence <= 0) {
+        incrementIndexerRpcFetchErrors();
+        logger.withContext().warn('Latest ledger sequence is not a positive finite number', {
+          candidate,
+        });
+        return null;
+      }
+      return sequence;
     } catch (error) {
+      incrementIndexerRpcFetchErrors();
       logger.withContext().warn('Failed to fetch latest ledger sequence', { error });
-      return 0;
+      return null;
     }
   }
 

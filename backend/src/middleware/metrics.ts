@@ -25,6 +25,16 @@ export const indexerLagLedgersGauge = new client.Gauge({
   registers: [metricsRegistry],
 });
 
+export const indexerRpcFetchErrorsCounter = new client.Counter({
+  name: 'indexer_rpc_fetch_errors_total',
+  help: 'Total number of failures fetching the latest ledger sequence from the RPC endpoint.',
+  registers: [metricsRegistry],
+});
+
+export function incrementIndexerRpcFetchErrors(): void {
+  indexerRpcFetchErrorsCounter.inc();
+}
+
 export const webhookRetryQueueDepthGauge = new client.Gauge({
   name: 'webhook_retry_queue_depth',
   help: 'Number of webhook deliveries currently waiting for retry.',
