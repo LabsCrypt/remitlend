@@ -13,7 +13,7 @@ This document lists every environment variable used by the RemitLend platform. E
 | `FRONTEND_URL` | ✓ | ✓ | ✓ | `http://localhost:3000` | Frontend base URL used for links | `backend/src/config/index.ts` |
 | `DATABASE_URL` | ✓ | ✓ | ✓ | `postgres://postgres:postgres@db:5432/remitlend` | PostgreSQL connection string | `backend/src/db/connection.js` |
 | `REDIS_URL` | ✓ | ✓ | ✓ | `redis://redis:6379` | Redis connection string | `backend/src/services/cacheService.ts` |
-| `STELLAR_NETWORK` | ✓ | ✓ | ✓ | `testnet` | Stellar network name (`testnet`, `pubnet`, `sandbox`) | `backend/src/config/stellar.ts` |
+| `STELLAR_NETWORK` | ✓ | ✓ | ✓ | `testnet` | Stellar network name (`testnet`, `mainnet`) | `backend/src/config/stellar.ts` |
 | `STELLAR_RPC_URL` | ✓ | ✓ | ✓ | `https://soroban-testnet.stellar.org` | Soroban RPC endpoint | `backend/src/config/stellar.ts` |
 | `STELLAR_NETWORK_PASSPHRASE` | ✓ | ✓ | ✓ | `Test SDF Network ; September 2015` | Network passphrase for transaction signing | `backend/src/config/stellar.ts` |
 | `LOAN_MANAGER_CONTRACT_ID` | ✓ | ✓ | ✓ | — | Deployed loan manager contract address | `backend/src/config/stellar.ts` |
