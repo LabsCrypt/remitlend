@@ -11,7 +11,7 @@ export const up = (pgm) => {
   pgm.createTable('webhook_subscriptions', {
     id: 'id',
     callback_url: { type: 'text', notNull: true },
-    event_types: { type: 'jsonb', notNull: true, default: '[]::jsonb' },
+    event_types: { type: 'jsonb', notNull: true, default: pgm.func("'[]'::jsonb") },
     secret: { type: 'varchar(255)' },
     is_active: { type: 'boolean', notNull: true, default: true },
     created_at: {
