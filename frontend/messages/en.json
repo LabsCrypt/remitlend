@@ -13,6 +13,7 @@
     "activity": {
       "title": "Recent Activity",
       "viewAll": "View All",
+      "emptyTitle": "No activity yet",
       "empty": "No recent activity yet. Your transactions will appear here."
     },
     "quickActions": {

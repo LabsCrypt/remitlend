@@ -13,6 +13,7 @@
     "activity": {
       "title": "Kamakailang aktibidad",
       "viewAll": "Tingnan lahat",
+      "emptyTitle": "Wala pang aktibidad",
       "empty": "Wala pang kamakailang aktibidad. Lalabas dito ang iyong mga transaksyon."
     },
     "quickActions": {
