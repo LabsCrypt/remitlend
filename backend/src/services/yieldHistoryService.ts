@@ -241,7 +241,16 @@ export async function buildDepositorYieldHistory(
     });
   }
 
-  return points.filter((point) => point.depositedValue > 0 || point.currentValue > 0);
+  // Trim leading buckets that predate any depositor activity, but keep the
+  // tail so a full withdraw (state collapses back to zero) still shows up in
+  // the chart instead of being silently dropped.
+  const firstActiveIdx = points.findIndex(
+    (point) => point.depositedValue > 0 || point.currentValue > 0,
+  );
+  if (firstActiveIdx === -1) {
+    return [];
+  }
+  return points.slice(firstActiveIdx);
 }
 
 export { MAX_POINTS, computeApy };

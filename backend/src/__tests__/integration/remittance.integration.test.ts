@@ -1,9 +1,20 @@
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import { query } from '../../db/connection.js';
-import { sorobanService } from '../../services/sorobanService.js';
-import app from '../../app.js';
 
-jest.mock('../../services/sorobanService.js');
+// Mocking with jest.unstable_mockModule (the ESM-safe path under
+// node --experimental-vm-modules) requires the mock be registered before
+// importing the consuming module, so app.js and sorobanService.js are
+// imported dynamically below.
+const mockSubmitSignedTx = jest.fn();
+jest.unstable_mockModule('../../services/sorobanService.js', () => ({
+  sorobanService: { submitSignedTx: mockSubmitSignedTx },
+}));
+
+const { sorobanService } = (await import('../../services/sorobanService.js')) as {
+  sorobanService: { submitSignedTx: jest.Mock };
+};
+const { default: app } = await import('../../app.js');
 
 describe('Integration: Remittance Submit Flow', () => {
   let authToken: string;
