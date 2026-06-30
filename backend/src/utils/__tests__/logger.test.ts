@@ -19,7 +19,9 @@ describe('logger level resolution', () => {
     process.env.NODE_ENV = 'production';
     jest.resetModules();
     const { default: logger } = await import('../logger.js');
-    expect(logger.level).toBe('info');
+    // Non-development environments default to 'http' so priority 3 (http)
+    // logs pass through in staging/production (see logger.ts:17).
+    expect(logger.level).toBe('http');
   });
 
   it('falls back to the NODE_ENV default when LOG_LEVEL is invalid', async () => {

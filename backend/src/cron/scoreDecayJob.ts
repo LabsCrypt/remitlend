@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { jobMetricsService } from '../services/jobMetricsService.js';
+import { applyScoreDecay, getInactiveBorrowers } from '../services/scoreDecayService.js';
 import logger from '../utils/logger.js';
 
 // In-memory guard to prevent overlapping execution states
@@ -22,10 +23,21 @@ export async function runScoreDecayJob(): Promise<void> {
   try {
     logger.withContext().info('Starting scheduled score decay processing pass...');
 
-    // ... Existing internal logic processing your decay calculations goes here ...
+    const borrowers = await getInactiveBorrowers();
+    for (const borrower of borrowers) {
+      try {
+        await applyScoreDecay(borrower);
+      } catch (err) {
+        logger
+          .withContext()
+          .error('Score decay failed for borrower', { borrower: borrower.borrower, err });
+      }
+    }
 
     await jobMetricsService.recordSuccess('score-decay-job', Date.now() - startTime);
-    logger.withContext().info('Score decay processing pass completed successfully.');
+    logger
+      .withContext()
+      .info('Score decay processing pass completed successfully.', { processed: borrowers.length });
   } catch (error: any) {
     await jobMetricsService.recordFailure(
       'score-decay-job',
