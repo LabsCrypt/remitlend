@@ -8,7 +8,7 @@ const locales = ["en", "es", "tl"] as const;
 function getAlternates(path: string) {
   return {
     languages: Object.fromEntries(
-      locales.map((locale) => [locale, `${BASE_URL}/${locale}${path}`])
+      locales.map((locale) => [locale, `${BASE_URL}/${locale}${path}`]),
     ),
   };
 }

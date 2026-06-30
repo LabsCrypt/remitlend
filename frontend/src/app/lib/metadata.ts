@@ -35,7 +35,7 @@ export function buildPageMetadata({
   const ogImage = new URL(OG_IMAGE_PATH, siteUrl).toString();
 
   const languages = Object.fromEntries(
-    LOCALES.map((loc) => [loc, new URL(`/${loc}${normalizedPath}`, siteUrl).toString()])
+    LOCALES.map((loc) => [loc, new URL(`/${loc}${normalizedPath}`, siteUrl).toString()]),
   );
   languages["x-default"] = new URL(`/en${normalizedPath}`, siteUrl).toString();
 

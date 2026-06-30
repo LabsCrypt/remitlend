@@ -2,7 +2,7 @@ import {
     Keypair,
     Operation,
     TransactionBuilder,
-    Rpc,
+    rpc as Rpc,
     Address,
     nativeToScVal,
     xdr,
@@ -40,7 +40,9 @@ function extractContractId(resultMeta: xdr.TransactionMeta): string {
             if (cd.key().switch().name !== 'scvLedgerKeyContractInstance') continue;
             const contract = cd.contract();
             if (contract.switch().name === 'scAddressTypeContract') {
-                return StrKey.encodeContract(contract.contractId());
+                return StrKey.encodeContract(
+                    Buffer.from(contract.contractId() as unknown as Uint8Array),
+                );
             }
         }
     }

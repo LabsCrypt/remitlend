@@ -46,7 +46,6 @@ export const down = (pgm) => {
   pgm.dropTable('scores');
 };
 
-
 exports.up = async (pgm) => {
   // 1. Data Backfill: Safely clamp any legacy database rows before applying the constraint
   await pgm.sql(`

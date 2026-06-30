@@ -27,9 +27,7 @@ export default function robots(): MetadataRoute.Robots {
         allow: ["/"],
         disallow: [
           "/api/",
-          ...locales.flatMap((locale) =>
-            privateRoutes.map((route) => `/${locale}${route}`)
-          ),
+          ...locales.flatMap((locale) => privateRoutes.map((route) => `/${locale}${route}`)),
         ],
       },
     ],

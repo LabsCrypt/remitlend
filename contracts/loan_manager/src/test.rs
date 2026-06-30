@@ -3660,10 +3660,8 @@ fn test_set_rate_oracle_emits_rate_oracle_updated_event() {
             && topics
                 .get(0)
                 .map(|t| {
-                    t == soroban_sdk::Val::from_val(
-                        &env,
-                        &soroban_sdk::Symbol::new(&env, "RateOracleUpdated"),
-                    )
+                    soroban_sdk::Symbol::from_val(&env, &t)
+                        == soroban_sdk::Symbol::new(&env, "RateOracleUpdated")
                 })
                 .unwrap_or(false)
     });

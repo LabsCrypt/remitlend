@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   });
 }
 
-"use client";
+("use client");
 
 import Link from "next/link";
 import {

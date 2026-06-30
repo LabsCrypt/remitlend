@@ -89,8 +89,8 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
 
     if (numAmount > totalOwed) {
       setError(
-  `Amount cannot exceed total owed (${formatCurrency(totalOwed).replace("$", "")} USDC)`
-);
+        `Amount cannot exceed total owed (${formatCurrency(totalOwed).replace("$", "")} USDC)`,
+      );
       return false;
     }
 

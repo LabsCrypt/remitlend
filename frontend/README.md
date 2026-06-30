@@ -16,22 +16,22 @@ The frontend is a modern React application built with Next.js that enables:
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16 (App Router) |
-| React | 19.2.3 |
-| Language | TypeScript |
-| Styling | Tailwind CSS 4 (`@import "tailwindcss"` in globals.css, no config file) |
-| State management | Zustand 5 |
-| Server state / caching | TanStack React Query 5 |
-| Wallet integration | `@stellar/freighter-api` |
-| Blockchain SDK | `@stellar/stellar-sdk` |
-| Internationalisation | next-intl 4 (locales: `en`, `es`, `tl`) |
-| Charts | Recharts |
-| Animation | Framer Motion |
-| Notifications | Sonner |
-| Monitoring | Sentry |
-| PWA | Serwist |
+| Layer                  | Technology                                                              |
+| ---------------------- | ----------------------------------------------------------------------- |
+| Framework              | Next.js 16 (App Router)                                                 |
+| React                  | 19.2.3                                                                  |
+| Language               | TypeScript                                                              |
+| Styling                | Tailwind CSS 4 (`@import "tailwindcss"` in globals.css, no config file) |
+| State management       | Zustand 5                                                               |
+| Server state / caching | TanStack React Query 5                                                  |
+| Wallet integration     | `@stellar/freighter-api`                                                |
+| Blockchain SDK         | `@stellar/stellar-sdk`                                                  |
+| Internationalisation   | next-intl 4 (locales: `en`, `es`, `tl`)                                 |
+| Charts                 | Recharts                                                                |
+| Animation              | Framer Motion                                                           |
+| Notifications          | Sonner                                                                  |
+| Monitoring             | Sentry                                                                  |
+| PWA                    | Serwist                                                                 |
 
 ## Getting Started
 
@@ -130,39 +130,39 @@ frontend/
 
 All pages are nested under the `[locale]` segment, so every URL is prefixed with the active locale:
 
-| Route | Description |
-|---|---|
-| `/[locale]` | Landing page |
-| `/[locale]/wallet` | Wallet connection |
-| `/[locale]/loans` | Loan list |
-| `/[locale]/loans/[loanId]` | Loan detail |
-| `/[locale]/lend` | Lender dashboard |
-| `/[locale]/request-loan` | New loan request |
-| `/[locale]/repay` | Repayment flow |
-| `/[locale]/remittances` | Remittance NFT gallery |
-| `/[locale]/send-remittance` | Send remittance |
-| `/[locale]/notifications` | Notification inbox |
-| `/[locale]/activity` | Activity log |
-| `/[locale]/analytics` | Analytics dashboard |
-| `/[locale]/settings` | User settings |
-| `/[locale]/liquidations` | Liquidation queue |
-| `/[locale]/kingdom` | Gamification / Kingdom view |
-| `/[locale]/admin` | Governance admin |
-| `/[locale]/ui-demo` | Dev-only component gallery |
-| `/[locale]/not-found` | 404 page |
+| Route                       | Description                 |
+| --------------------------- | --------------------------- |
+| `/[locale]`                 | Landing page                |
+| `/[locale]/wallet`          | Wallet connection           |
+| `/[locale]/loans`           | Loan list                   |
+| `/[locale]/loans/[loanId]`  | Loan detail                 |
+| `/[locale]/lend`            | Lender dashboard            |
+| `/[locale]/request-loan`    | New loan request            |
+| `/[locale]/repay`           | Repayment flow              |
+| `/[locale]/remittances`     | Remittance NFT gallery      |
+| `/[locale]/send-remittance` | Send remittance             |
+| `/[locale]/notifications`   | Notification inbox          |
+| `/[locale]/activity`        | Activity log                |
+| `/[locale]/analytics`       | Analytics dashboard         |
+| `/[locale]/settings`        | User settings               |
+| `/[locale]/liquidations`    | Liquidation queue           |
+| `/[locale]/kingdom`         | Gamification / Kingdom view |
+| `/[locale]/admin`           | Governance admin            |
+| `/[locale]/ui-demo`         | Dev-only component gallery  |
+| `/[locale]/not-found`       | 404 page                    |
 
 ## State Management
 
 Global state is managed with **Zustand 5** stores:
 
-| Store | Responsibility |
-|---|---|
-| `useWalletStore` | Freighter wallet connection, public key, signing |
-| `useUserStore` | User profile and credit score |
-| `useThemeStore` | Light / dark / system theme with `localStorage` persistence |
-| `useUIStore` | Modal and sidebar open/close state |
-| `useToastStore` | Toast queue used by `useToast` hook |
-| `useGamificationStore` | Kingdom / XP state |
+| Store                  | Responsibility                                              |
+| ---------------------- | ----------------------------------------------------------- |
+| `useWalletStore`       | Freighter wallet connection, public key, signing            |
+| `useUserStore`         | User profile and credit score                               |
+| `useThemeStore`        | Light / dark / system theme with `localStorage` persistence |
+| `useUIStore`           | Modal and sidebar open/close state                          |
+| `useToastStore`        | Toast queue used by `useToast` hook                         |
+| `useGamificationStore` | Kingdom / XP state                                          |
 
 TanStack React Query handles server-state caching and background refetching for all API calls.
 
@@ -186,39 +186,39 @@ Design-system primitives live in [`src/app/components/ui/`](src/app/components/u
 
 ### Core primitives
 
-| Component | Props | Description |
-|---|---|---|
-| `Button` | `variant` (`primary`\|`secondary`\|`outline`\|`ghost`\|`danger`), `size` (`sm`\|`md`\|`lg`\|`icon`), `isLoading`, `leftIcon`, `rightIcon` | Polymorphic button with loading spinner |
-| `Input` | `label`, `error`, `helperText`, `leftIcon`, `rightIcon` | Labelled text input with accessible error/helper text |
-| `Card` / `CardHeader` / `CardTitle` / `CardDescription` / `CardContent` / `CardFooter` | `className` | Compound card layout |
-| `Modal` | `isOpen`, `onClose`, `title`, `size` (`sm`\|`md`\|`lg`\|`xl`), `ariaLabel` | Focus-trapped animated dialog |
+| Component                                                                              | Props                                                                                                                                     | Description                                           |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `Button`                                                                               | `variant` (`primary`\|`secondary`\|`outline`\|`ghost`\|`danger`), `size` (`sm`\|`md`\|`lg`\|`icon`), `isLoading`, `leftIcon`, `rightIcon` | Polymorphic button with loading spinner               |
+| `Input`                                                                                | `label`, `error`, `helperText`, `leftIcon`, `rightIcon`                                                                                   | Labelled text input with accessible error/helper text |
+| `Card` / `CardHeader` / `CardTitle` / `CardDescription` / `CardContent` / `CardFooter` | `className`                                                                                                                               | Compound card layout                                  |
+| `Modal`                                                                                | `isOpen`, `onClose`, `title`, `size` (`sm`\|`md`\|`lg`\|`xl`), `ariaLabel`                                                                | Focus-trapped animated dialog                         |
 
 ### Feedback & status
 
-| Component | Props | Description |
-|---|---|---|
-| `Skeleton` / `SkeletonText` / `SkeletonCard` / `SkeletonRow` / `SkeletonChart` / `SkeletonAvatar` | `className`, `lines` (SkeletonText) | Loading placeholders |
-| `EmptyState` | `icon`, `title`, `description`, `actionLabel`, `actionHref` \| `onAction`, `actionIcon` | Zero-state placeholder with optional CTA |
-| `StatusIndicator` | `label`, `tone` (`success`\|`danger`\|`warning`\|`info`\|`neutral`), `icon`, `iconOnly` | Coloured badge pill |
-| `LoanStatusBadge` | `status` (`active`\|`pending`\|`repaid`\|`defaulted`\|`liquidated`) | Domain-specific status badge |
-| `Toast` / `Toaster` | — | Toast notification components backed by `useToastStore` |
+| Component                                                                                         | Props                                                                                   | Description                                             |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `Skeleton` / `SkeletonText` / `SkeletonCard` / `SkeletonRow` / `SkeletonChart` / `SkeletonAvatar` | `className`, `lines` (SkeletonText)                                                     | Loading placeholders                                    |
+| `EmptyState`                                                                                      | `icon`, `title`, `description`, `actionLabel`, `actionHref` \| `onAction`, `actionIcon` | Zero-state placeholder with optional CTA                |
+| `StatusIndicator`                                                                                 | `label`, `tone` (`success`\|`danger`\|`warning`\|`info`\|`neutral`), `icon`, `iconOnly` | Coloured badge pill                                     |
+| `LoanStatusBadge`                                                                                 | `status` (`active`\|`pending`\|`repaid`\|`defaulted`\|`liquidated`)                     | Domain-specific status badge                            |
+| `Toast` / `Toaster`                                                                               | —                                                                                       | Toast notification components backed by `useToastStore` |
 
 ### Controls & utilities
 
-| Component | Props | Description |
-|---|---|---|
-| `Tooltip` | `content`, `label`, `iconClassName` | Hover/focus tooltip with info icon |
-| `PaginationControls` | `currentPage`, `totalPages`, `hasPrevious`, `hasNext`, `onPageChange`, `onPrevious`, `onNext`, `summary` | Page navigation with ellipsis windowing |
-| `CopyButton` | `value` | Clipboard copy with check feedback |
-| `TxHashLink` | `txHash`, `chars` | Truncated hash with copy + Stellar Explorer link |
-| `ThemeToggle` | — | Light / dark / system switcher |
-| `ConfirmTransactionDialog` | — | Pre-submit transaction confirmation modal |
-| `OperationProgress` | — | Multi-step operation stepper |
-| `RepaymentProgress` | — | Loan repayment progress bar |
-| `LoanTimeline` | — | Chronological loan event list |
-| `TransactionStatusTracker` | — | Live transaction polling status |
-| `CreditScoreGauge` | — | Circular credit score visualisation |
-| `CreditScoreBreakdown` | — | Score factor breakdown chart |
+| Component                  | Props                                                                                                    | Description                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `Tooltip`                  | `content`, `label`, `iconClassName`                                                                      | Hover/focus tooltip with info icon               |
+| `PaginationControls`       | `currentPage`, `totalPages`, `hasPrevious`, `hasNext`, `onPageChange`, `onPrevious`, `onNext`, `summary` | Page navigation with ellipsis windowing          |
+| `CopyButton`               | `value`                                                                                                  | Clipboard copy with check feedback               |
+| `TxHashLink`               | `txHash`, `chars`                                                                                        | Truncated hash with copy + Stellar Explorer link |
+| `ThemeToggle`              | —                                                                                                        | Light / dark / system switcher                   |
+| `ConfirmTransactionDialog` | —                                                                                                        | Pre-submit transaction confirmation modal        |
+| `OperationProgress`        | —                                                                                                        | Multi-step operation stepper                     |
+| `RepaymentProgress`        | —                                                                                                        | Loan repayment progress bar                      |
+| `LoanTimeline`             | —                                                                                                        | Chronological loan event list                    |
+| `TransactionStatusTracker` | —                                                                                                        | Live transaction polling status                  |
+| `CreditScoreGauge`         | —                                                                                                        | Circular credit score visualisation              |
+| `CreditScoreBreakdown`     | —                                                                                                        | Score factor breakdown chart                     |
 
 > A live, interactive gallery is available in development at `/[locale]/ui-demo` (returns 404 in production).
 

@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   });
 }
 
-"use client";
+("use client");
 
 import { useState } from "react";
 import { AlertTriangle, RefreshCw, ShieldAlert } from "lucide-react";

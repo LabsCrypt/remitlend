@@ -81,14 +81,12 @@ test.describe("Send Remittance Flow", () => {
 
     await expect(page.locator("text=Send Remittance")).toBeVisible();
 
-    await page.fill('#recipientAddress', "invalid-address");
-    await page.fill('#amount', "100");
+    await page.fill("#recipientAddress", "invalid-address");
+    await page.fill("#amount", "100");
 
     await page.getByRole("button", { name: /Review & Send/i }).click();
 
-    await expect(
-      page.locator("text=Invalid Stellar address format"),
-    ).toBeVisible();
+    await expect(page.locator("text=Invalid Stellar address format")).toBeVisible();
   });
 
   test("sends a remittance successfully and redirects to history", async ({ page }) => {
@@ -120,8 +118,8 @@ test.describe("Send Remittance Flow", () => {
 
     await expect(page.locator("text=Send Remittance")).toBeVisible();
 
-    await page.fill('#recipientAddress', VALID_RECIPIENT);
-    await page.fill('#amount', "250");
+    await page.fill("#recipientAddress", VALID_RECIPIENT);
+    await page.fill("#amount", "250");
 
     await page.getByRole("button", { name: /Review & Send/i }).click();
 

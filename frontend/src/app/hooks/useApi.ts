@@ -1156,7 +1156,9 @@ export function useCreditScore(
                     payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
 
                   if (payload.borrower === walletAddress && scoreChangingEvent) {
-                    const currentScore = queryClient.getQueryData<number>(queryKeys.creditScore.byUser(userId ?? ""));
+                    const currentScore = queryClient.getQueryData<number>(
+                      queryKeys.creditScore.byUser(userId ?? ""),
+                    );
 
                     setPreviousScoreState({
                       walletAddress,
@@ -1345,7 +1347,11 @@ export function useDepositorPortfolio(
 // ─── Notification types & hooks ───────────────────────────────────────────────
 
 export type NotificationType =
-  "loan_approved" | "repayment_due" | "repayment_confirmed" | "loan_defaulted" | "score_changed";
+  | "loan_approved"
+  | "repayment_due"
+  | "repayment_confirmed"
+  | "loan_defaulted"
+  | "score_changed";
 
 export interface AppNotification {
   id: number;
@@ -1905,7 +1911,7 @@ export function useDepositCollateral() {
       toast.success("Collateral deposited successfully");
     },
 
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message ?? "Failed to deposit collateral");
     },
   });
@@ -1926,7 +1932,7 @@ export function useReleaseCollateral() {
       toast.success("Collateral released successfully");
     },
 
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message ?? "Failed to release collateral");
     },
   });

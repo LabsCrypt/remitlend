@@ -10,11 +10,7 @@ import { useWalletStore } from "./useWalletStore";
 import { useUIStore } from "./useUIStore";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { useThemeStore } from "./useThemeStore";
-import {
-  getNextLevelInfo,
-  LEVEL_THRESHOLDS,
-  useGamificationStore,
-} from "./useGamificationStore";
+import { getNextLevelInfo, LEVEL_THRESHOLDS, useGamificationStore } from "./useGamificationStore";
 import type { ModalId } from "./useUIStore";
 
 // Reset store state between tests
@@ -389,16 +385,12 @@ describe("useGamificationStore", () => {
       expect(achievement?.unlockedAt).toBeUndefined();
 
       updateAchievementProgress("first_loan", 1);
-      achievement = useGamificationStore
-        .getState()
-        .achievements.find((a) => a.id === "first_loan");
+      achievement = useGamificationStore.getState().achievements.find((a) => a.id === "first_loan");
       const firstUnlock = achievement?.unlockedAt;
       expect(firstUnlock).toBeDefined();
 
       updateAchievementProgress("first_loan", 1);
-      achievement = useGamificationStore
-        .getState()
-        .achievements.find((a) => a.id === "first_loan");
+      achievement = useGamificationStore.getState().achievements.find((a) => a.id === "first_loan");
       expect(achievement?.unlockedAt).toBe(firstUnlock);
     });
 
