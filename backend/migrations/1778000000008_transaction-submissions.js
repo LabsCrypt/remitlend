@@ -2,6 +2,19 @@
  * @param { import("node-pg-migrate").MigrationBuilder } @param pgm {import("node-pg-migrate").MigrationBuilder}
  */
 export const up = (pgm) => {
+  // The trigger below references update_updated_at_column(), but no earlier
+  // migration creates it. Define it here (idempotent) so a fresh migrate up
+  // from an empty schema works.
+  pgm.sql(`
+    CREATE OR REPLACE FUNCTION update_updated_at_column()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
   pgm.createTable('transaction_submissions', {
     id: {
       type: 'serial',
