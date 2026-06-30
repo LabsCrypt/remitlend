@@ -1,15 +1,15 @@
-import { jest } from "@jest/globals";
-import request from "supertest";
-import { Keypair } from "@stellar/stellar-sdk";
-import { generateJwtToken } from "../services/authService.js";
-import app from "../app.js";
+import { jest } from '@jest/globals';
+import request from 'supertest';
+import { Keypair } from '@stellar/stellar-sdk';
+import { generateJwtToken } from '../services/authService.js';
+import app from '../app.js';
 
 jest.setTimeout(20000);
 
-process.env.JWT_SECRET = "test-jwt-secret-min-32-chars-long!!";
+process.env.JWT_SECRET = 'test-jwt-secret-min-32-chars-long!!';
 const authHeader = `Bearer ${generateJwtToken(Keypair.random().publicKey())}`;
 
-describe("Centralized Error Handling", () => {
+describe('Centralized Error Handling', () => {
   /* ── 404 Not Found ────────────────────────────────────────── */
 
   describe('404 catch-all', () => {
@@ -37,11 +37,11 @@ describe("Centralized Error Handling", () => {
 
   /* ── Validation Errors (backward compatibility) ───────────── */
 
-  describe("Zod validation errors", () => {
-    it("should return 400 with validation failed message and error code", async () => {
+  describe('Zod validation errors', () => {
+    it('should return 400 with validation failed message and error code', async () => {
       const response = await request(app)
-        .post("/api/simulate")
-        .set("Authorization", authHeader)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
         .send({});
 
       expect(response.status).toBe(400);
@@ -57,10 +57,10 @@ describe("Centralized Error Handling", () => {
       expect(Array.isArray(response.body.error.details)).toBe(true);
     });
 
-    it("should include field and message in each validation error detail", async () => {
+    it('should include field and message in each validation error detail', async () => {
       const response = await request(app)
-        .post("/api/simulate")
-        .set("Authorization", authHeader)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
         .send({});
 
       expect(response.status).toBe(400);

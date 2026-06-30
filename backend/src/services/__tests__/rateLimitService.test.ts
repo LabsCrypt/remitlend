@@ -3,8 +3,7 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 const mockConnect = jest.fn<() => Promise<void>>();
 const mockOn = jest.fn();
 const mockIncr = jest.fn<(key: string) => Promise<number>>();
-const mockExpire =
-  jest.fn<(key: string, seconds: number) => Promise<boolean>>();
+const mockExpire = jest.fn<(key: string, seconds: number) => Promise<boolean>>();
 const mockTtl = jest.fn<(key: string) => Promise<number>>();
 const mockGet = jest.fn<(key: string) => Promise<string | null>>();
 const mockDel = jest.fn<(key: string) => Promise<number>>();
@@ -21,8 +20,7 @@ jest.unstable_mockModule('redis', () => ({
   }),
 }));
 
-const { rateLimitService, SCORE_UPDATE_RATE_LIMIT } =
-  await import("../rateLimitService.js");
+const { rateLimitService, SCORE_UPDATE_RATE_LIMIT } = await import('../rateLimitService.js');
 
 describe('rateLimitService', () => {
   beforeEach(() => {

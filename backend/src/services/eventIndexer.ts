@@ -307,7 +307,7 @@ export class EventIndexer {
   }
 
   private getContractId(): string {
-    return this.contractIds[0] ?? "default";
+    return this.contractIds[0] ?? 'default';
   }
 
   private async getLastIndexedLedger(): Promise<number> {

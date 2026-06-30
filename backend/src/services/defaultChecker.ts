@@ -386,11 +386,7 @@ export class DefaultChecker {
   private async acquireLock(): Promise<boolean> {
     try {
       const lockValue = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const acquired = await cacheService.setNotExists(
-        LOCK_KEY,
-        lockValue,
-        LOCK_TTL_SECONDS,
-      );
+      const acquired = await cacheService.setNotExists(LOCK_KEY, lockValue, LOCK_TTL_SECONDS);
       if (acquired) {
         this.currentLockValue = lockValue;
       }
@@ -418,7 +414,7 @@ export class DefaultChecker {
         logger
           .withContext()
           .warn(
-            "default_checker: lock already expired or owned by another instance — skipping delete",
+            'default_checker: lock already expired or owned by another instance — skipping delete',
           );
       }
     } catch (error) {

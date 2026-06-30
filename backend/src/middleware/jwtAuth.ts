@@ -1,16 +1,12 @@
-import type { Request, Response, NextFunction } from "express";
-import { AppError } from "../errors/AppError.js";
-import {
-  resolveRoleForWallet,
-  resolveScopesForRole,
-  type UserRole,
-} from "../auth/rbac.js";
+import type { Request, Response, NextFunction } from 'express';
+import { AppError } from '../errors/AppError.js';
+import { resolveRoleForWallet, resolveScopesForRole, type UserRole } from '../auth/rbac.js';
 import {
   verifyJwtToken,
   extractBearerToken,
   isTokenRevoked,
   type JwtPayload,
-} from "../services/authService.js";
+} from '../services/authService.js';
 
 const DEFAULT_JWT_COOKIE_NAME = 'remitlend_jwt';
 
@@ -62,9 +58,7 @@ declare module 'express' {
 function capPayloadToCurrentRole(payload: JwtPayload): JwtPayload {
   const currentRole = resolveRoleForWallet(payload.publicKey);
   const currentRoleScopes = new Set(resolveScopesForRole(currentRole));
-  const cappedScopes = (payload.scopes ?? []).filter((scope) =>
-    currentRoleScopes.has(scope),
-  );
+  const cappedScopes = (payload.scopes ?? []).filter((scope) => currentRoleScopes.has(scope));
 
   return { ...payload, role: currentRole, scopes: cappedScopes };
 }
@@ -90,7 +84,7 @@ export const requireJwtAuth = async (
   }
 
   if (payload.jti && (await isTokenRevoked(payload.jti))) {
-    throw AppError.unauthorized("Token has been revoked");
+    throw AppError.unauthorized('Token has been revoked');
   }
 
   req.user = capPayloadToCurrentRole(payload);

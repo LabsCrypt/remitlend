@@ -36,7 +36,7 @@ function parseDocKeys(filePath) {
   const content = readFileSync(filePath, "utf-8");
   const keys = [];
   for (const line of content.split("\n")) {
-    const match = line.match(/^\| `([A-Z_][A-Z0-9_]*)` \|/);
+    const match = line.match(/^\|\s*`([A-Z_][A-Z0-9_]*)`\s*\|/);
     if (match) {
       keys.push(match[1]);
     }

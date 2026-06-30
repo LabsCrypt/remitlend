@@ -34,7 +34,7 @@ export async function updateUserScoresBulk(
   const valuePlaceholders = Array.from(
     { length: params.length / 2 },
     (_, i) => `($${i * 2 + 1}, LEAST(850, GREATEST(300, 500 + $${i * 2 + 2})))`,
-  ).join(", ");
+  ).join(', ');
 
   const sql = `
     INSERT INTO scores (user_id, current_score)
@@ -85,7 +85,7 @@ export async function setAbsoluteUserScoresBulk(scores: Map<string, number>): Pr
 
   if (valuePlaceholders.length === 0) return;
 
-  // Added explicit application-level LEAST/GREATEST clamping on selection and overwrite paths 
+  // Added explicit application-level LEAST/GREATEST clamping on selection and overwrite paths
   // to ensure out-of-bounds calculations from external sources never trigger CHECK runtime failures.
   const sql = `
     WITH reconciled_scores (user_id, current_score) AS (

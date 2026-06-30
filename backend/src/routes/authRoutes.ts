@@ -1,12 +1,7 @@
-import { registerTestUser } from "../controllers/authController.js";
-import { Router } from "express";
-import { z } from "zod";
-import {
-  requestChallenge,
-  login,
-  verify,
-  logout,
-} from "../controllers/authController.js";
+import { registerTestUser } from '../controllers/authController.js';
+import { Router } from 'express';
+import { z } from 'zod';
+import { requestChallenge, login, verify, logout } from '../controllers/authController.js';
 import {
   challengeRateLimiter,
   loginRateLimiter,
@@ -129,6 +124,6 @@ router.get('/verify', requireJwtAuth, verify);
  *       401:
  *         description: Missing or invalid Bearer token
  */
-router.post("/logout", requireJwtAuth, logout);
+router.post('/logout', requireJwtAuth, logout);
 
 export default router;

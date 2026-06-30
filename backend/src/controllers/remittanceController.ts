@@ -16,8 +16,8 @@ import logger from '../utils/logger.js';
 export const createRemittance = asyncHandler(async (req: Request, res: Response) => {
   const { recipientAddress, amount, fromCurrency, toCurrency, memo } = req.body;
 
-    // Get sender address from JWT (added by requireJwtAuth middleware)
-    const senderAddress = req.user?.publicKey;
+  // Get sender address from JWT (added by requireJwtAuth middleware)
+  const senderAddress = req.user?.publicKey;
 
   if (!senderAddress) {
     throw AppError.unauthorized('Wallet address not found in request');
@@ -52,9 +52,8 @@ export const createRemittance = asyncHandler(async (req: Request, res: Response)
  * Returns paginated list of remittances for the authenticated user
  * Supports filtering by status, date range, and search by recipient/reference
  */
-export const getRemittances = asyncHandler(
-  async (req: Request, res: Response) => {
-    const senderAddress = req.user?.publicKey as string;
+export const getRemittances = asyncHandler(async (req: Request, res: Response) => {
+  const senderAddress = req.user?.publicKey as string;
 
   if (!senderAddress) {
     throw AppError.unauthorized('Wallet address not found in request');
@@ -93,10 +92,9 @@ export const getRemittances = asyncHandler(
  *
  * Returns detailed information about a specific remittance
  */
-export const getRemittance = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params as { id: string };
-    const senderAddress = req.user?.publicKey as string;
+export const getRemittance = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const senderAddress = req.user?.publicKey as string;
 
   if (!senderAddress) {
     throw AppError.unauthorized('Wallet address not found in request');
@@ -124,11 +122,10 @@ export const getRemittance = asyncHandler(
  *
  * Accepts a signed XDR from Freighter wallet and submits it to Stellar
  */
-export const submitRemittanceTransaction = asyncHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params as { id: string };
-    const { signedXdr } = req.body as { signedXdr: string };
-    const senderAddress = req.user?.publicKey as string;
+export const submitRemittanceTransaction = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const { signedXdr } = req.body as { signedXdr: string };
+  const senderAddress = req.user?.publicKey as string;
 
   if (!senderAddress) {
     throw AppError.unauthorized('Wallet address not found in request');

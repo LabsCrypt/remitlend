@@ -38,9 +38,9 @@ export async function applyScoreDecay(borrower: InactiveBorrower) {
   }
   const decay = monthsInactive * DECAY_PER_MONTH;
   const newScore = Math.max(MIN_SCORE, borrower.score - decay);
-  await query(
-    `UPDATE scores SET score = $1, updated_at = CURRENT_TIMESTAMP WHERE borrower = $2`,
-    [newScore, borrower.borrower],
-  );
+  await query(`UPDATE scores SET score = $1, updated_at = CURRENT_TIMESTAMP WHERE borrower = $2`, [
+    newScore,
+    borrower.borrower,
+  ]);
   return newScore;
 }

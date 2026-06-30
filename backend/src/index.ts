@@ -28,15 +28,12 @@ import {
 import {
   startScoreReconciliationScheduler,
   stopScoreReconciliationScheduler,
-} from "./services/scoreReconciliationService.js";
-import { sorobanService } from "./services/sorobanService.js";
-import { validateLoanConfig } from "./config/loanConfig.js";
-import {
-  startLoanDueCheckCron,
-  stopLoanDueCheckCron,
-} from "./cron/loanCheckCron.js";
+} from './services/scoreReconciliationService.js';
+import { sorobanService } from './services/sorobanService.js';
+import { validateLoanConfig } from './config/loanConfig.js';
+import { startLoanDueCheckCron, stopLoanDueCheckCron } from './cron/loanCheckCron.js';
 // Imported the score decay scheduler initialization wrapper
-import { startScoreDecayScheduler } from "./cron/scoreDecayJob.js";
+import { startScoreDecayScheduler } from './cron/scoreDecayJob.js';
 
 const port = process.env.PORT || 3001;
 
@@ -138,5 +135,5 @@ const shutdown = async (signal: 'SIGTERM' | 'SIGINT') => {
   }
 };
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

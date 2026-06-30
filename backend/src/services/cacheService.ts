@@ -155,10 +155,8 @@ class CacheService {
       await this.client!.del(key);
       return true;
     } catch (error) {
-      if (process.env.NODE_ENV !== "test") {
-        logger
-          .withContext()
-          .error(`Error in deleteIfMatch for key ${key}`, { error });
+      if (process.env.NODE_ENV !== 'test') {
+        logger.withContext().error(`Error in deleteIfMatch for key ${key}`, { error });
       }
       return false;
     }

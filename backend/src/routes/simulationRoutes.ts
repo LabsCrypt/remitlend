@@ -1,18 +1,9 @@
-import { Router } from "express";
-import {
-  getRemittanceHistory,
-  simulatePayment,
-} from "../controllers/simulationController.js";
-import { validate } from "../middleware/validation.js";
-import {
-  getRemittanceHistorySchema,
-  simulatePaymentSchema,
-} from "../schemas/simulationSchemas.js";
-import { simulationRateLimiter } from "../middleware/rateLimiter.js";
-import {
-  requireJwtAuth,
-  requireWalletParamMatchesJwt,
-} from "../middleware/jwtAuth.js";
+import { Router } from 'express';
+import { getRemittanceHistory, simulatePayment } from '../controllers/simulationController.js';
+import { validate } from '../middleware/validation.js';
+import { getRemittanceHistorySchema, simulatePaymentSchema } from '../schemas/simulationSchemas.js';
+import { simulationRateLimiter } from '../middleware/rateLimiter.js';
+import { requireJwtAuth, requireWalletParamMatchesJwt } from '../middleware/jwtAuth.js';
 
 const router = Router();
 
@@ -62,7 +53,7 @@ router.get(
   '/history/:userId',
   simulationRateLimiter,
   requireJwtAuth,
-  requireWalletParamMatchesJwt("userId"),
+  requireWalletParamMatchesJwt('userId'),
   validate(getRemittanceHistorySchema),
   getRemittanceHistory,
 );
@@ -109,7 +100,7 @@ router.get(
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post(
-  "/simulate",
+  '/simulate',
   simulationRateLimiter,
   requireJwtAuth,
   validate(simulatePaymentSchema),

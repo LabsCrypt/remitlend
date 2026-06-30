@@ -4,15 +4,15 @@ export type UserRole = (typeof USER_ROLES)[number];
 export const ROLE_SCOPES: Record<UserRole, string[]> = {
   admin: ['admin:all'],
   borrower: [
-    "read:loans",
-    "write:loans",
-    "read:score",
-    "read:notifications",
-    "write:notifications",
-    "read:remittances",
-    "write:remittances",
+    'read:loans',
+    'write:loans',
+    'read:score',
+    'read:notifications',
+    'write:notifications',
+    'read:remittances',
+    'write:remittances',
   ],
-  lender: ["read:loans", "read:pool", "write:loans"],
+  lender: ['read:loans', 'read:pool', 'write:loans'],
 };
 
 const parseWalletSet = (wallets: string | undefined): Set<string> => {

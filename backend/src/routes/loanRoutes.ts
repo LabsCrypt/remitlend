@@ -359,7 +359,7 @@ router.get(
 router.post(
   '/request',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   validateBody(requestLoanSchema),
   idempotencyMiddleware,
   requestLoan,
@@ -412,7 +412,7 @@ router.post(
 router.post(
   '/:loanId/build-deposit-collateral',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(depositCollateralSchema),
@@ -463,7 +463,7 @@ router.post(
 router.post(
   '/:loanId/build-release-collateral',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(releaseCollateralSchema),
@@ -522,7 +522,7 @@ router.post(
 router.post(
   '/:loanId/build-refinance',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(refinanceLoanSchema),
@@ -577,7 +577,7 @@ router.post(
 router.post(
   '/:loanId/build-extend',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(extendLoanSchema),
@@ -628,7 +628,7 @@ router.post(
 router.post(
   '/:loanId/liquidate/build',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   validateParams(repayLoanParamsSchema),
   validateBody(liquidateLoanSchema),
   idempotencyMiddleware,
@@ -672,7 +672,7 @@ router.post(
 router.post(
   '/submit',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   validateBody(submitTxSchema),
   idempotencyMiddleware,
   submitTransaction,
@@ -733,7 +733,7 @@ router.post(
 router.post(
   '/:loanId/repay',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(repayLoanSchema),
@@ -789,7 +789,7 @@ router.post(
 router.post(
   '/:loanId/submit',
   requireJwtAuth,
-  requireScopes("write:loans"),
+  requireScopes('write:loans'),
   requireLoanOwner,
   validateParams(repayLoanParamsSchema),
   validateBody(submitTxSchema),

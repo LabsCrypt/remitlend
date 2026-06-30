@@ -12,9 +12,9 @@ const levels = {
 const validLevels = Object.keys(levels);
 
 const defaultLevelForEnv = () => {
-  const env = process.env.NODE_ENV || "development";
+  const env = process.env.NODE_ENV || 'development';
   // Changed from "info" to "http" so priority 3 (http) logs pass in staging/production
-  return env === "development" ? "debug" : "http";
+  return env === 'development' ? 'debug' : 'http';
 };
 
 const level = () => {
@@ -94,14 +94,10 @@ const withContext = (context: LogContext = {}) => {
   if (context.loanId) baseMeta.loanId = context.loanId;
 
   return {
-    info: (message: string, meta?: any) =>
-      logger.info(message, { ...baseMeta, ...meta }),
-    warn: (message: string, meta?: any) =>
-      logger.warn(message, { ...baseMeta, ...meta }),
-    error: (message: string, meta?: any) =>
-      logger.error(message, { ...baseMeta, ...meta }),
-    http: (message: string, meta?: any) =>
-      logger.http(message, { ...baseMeta, ...meta }),
+    info: (message: string, meta?: any) => logger.info(message, { ...baseMeta, ...meta }),
+    warn: (message: string, meta?: any) => logger.warn(message, { ...baseMeta, ...meta }),
+    error: (message: string, meta?: any) => logger.error(message, { ...baseMeta, ...meta }),
+    http: (message: string, meta?: any) => logger.http(message, { ...baseMeta, ...meta }),
   };
 };
 

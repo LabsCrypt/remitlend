@@ -6,9 +6,8 @@ jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
 }));
 
-const { buildDepositorYieldHistory, computeApy, normalizeYieldHistoryDays } = await import(
-  '../yieldHistoryService.js'
-);
+const { buildDepositorYieldHistory, computeApy, normalizeYieldHistoryDays } =
+  await import('../yieldHistoryService.js');
 
 describe('yieldHistoryService', () => {
   beforeEach(() => {
@@ -80,7 +79,7 @@ describe('yieldHistoryService', () => {
 
   // Issue #1171 — previously uncovered paths
 
-  it("Withdraw reduces cost basis proportionally", async () => {
+  it('Withdraw reduces cost basis proportionally', async () => {
     const now = new Date();
     const t1 = new Date(now);
     t1.setUTCDate(t1.getUTCDate() - 2);
@@ -90,19 +89,19 @@ describe('yieldHistoryService', () => {
     // Pool events: Deposit 1000 then Withdraw 500 (value=null → shares=amount)
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { event_type: "Deposit", amount: "1000", ledger_closed_at: t1, value: null },
-        { event_type: "Withdraw", amount: "500", ledger_closed_at: t2, value: null },
+        { event_type: 'Deposit', amount: '1000', ledger_closed_at: t1, value: null },
+        { event_type: 'Withdraw', amount: '500', ledger_closed_at: t2, value: null },
       ],
     });
     // Depositor events: same
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { event_type: "Deposit", amount: "1000", ledger_closed_at: t1, value: null },
-        { event_type: "Withdraw", amount: "500", ledger_closed_at: t2, value: null },
+        { event_type: 'Deposit', amount: '1000', ledger_closed_at: t1, value: null },
+        { event_type: 'Withdraw', amount: '500', ledger_closed_at: t2, value: null },
       ],
     });
 
-    const history = await buildDepositorYieldHistory("GDep", "GTok", 7, 500_000);
+    const history = await buildDepositorYieldHistory('GDep', 'GTok', 7, 500_000);
     expect(history.length).toBeGreaterThan(0);
     // After withdrawing half the shares the cost basis should have halved
     const latest = history[history.length - 1]!;
@@ -110,7 +109,7 @@ describe('yieldHistoryService', () => {
     expect(latest.netYield).toBeGreaterThanOrEqual(-1); // may be slightly negative due to share price
   });
 
-  it("EmergencyWithdraw follows the same cost-basis reduction path as Withdraw", async () => {
+  it('EmergencyWithdraw follows the same cost-basis reduction path as Withdraw', async () => {
     const now = new Date();
     const t1 = new Date(now);
     t1.setUTCDate(t1.getUTCDate() - 2);
@@ -119,18 +118,18 @@ describe('yieldHistoryService', () => {
 
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { event_type: "Deposit", amount: "1000", ledger_closed_at: t1, value: null },
-        { event_type: "EmergencyWithdraw", amount: "1000", ledger_closed_at: t2, value: null },
+        { event_type: 'Deposit', amount: '1000', ledger_closed_at: t1, value: null },
+        { event_type: 'EmergencyWithdraw', amount: '1000', ledger_closed_at: t2, value: null },
       ],
     });
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { event_type: "Deposit", amount: "1000", ledger_closed_at: t1, value: null },
-        { event_type: "EmergencyWithdraw", amount: "1000", ledger_closed_at: t2, value: null },
+        { event_type: 'Deposit', amount: '1000', ledger_closed_at: t1, value: null },
+        { event_type: 'EmergencyWithdraw', amount: '1000', ledger_closed_at: t2, value: null },
       ],
     });
 
-    const history = await buildDepositorYieldHistory("GDep", "GTok", 7, 0);
+    const history = await buildDepositorYieldHistory('GDep', 'GTok', 7, 0);
     // Full emergency withdraw → depositor has 0 shares → currentValue = 0
     if (history.length > 0) {
       const latest = history[history.length - 1]!;
@@ -138,12 +137,12 @@ describe('yieldHistoryService', () => {
     }
   });
 
-  it("decodes shares from base64 XDR value (BigInt conversion path)", async () => {
+  it('decodes shares from base64 XDR value (BigInt conversion path)', async () => {
     // XDR encodes [assetAmount=1000, shares=500] as a 2-element Vec of i128
     // Generated with: nativeToScVal([BigInt(1000), BigInt(500)]).toXDR('base64')
-    const xdrDeposit = "AAAAEAAAAAEAAAACAAAABQAAAAAAAAPoAAAABQAAAAAAAAH0";
+    const xdrDeposit = 'AAAAEAAAAAEAAAACAAAABQAAAAAAAAPoAAAABQAAAAAAAAH0';
     // [assetAmount=2000, shares=800]
-    const xdrWithdraw = "AAAAEAAAAAEAAAACAAAABQAAAAAAAAfQAAAABQAAAAAAAAMg";
+    const xdrWithdraw = 'AAAAEAAAAAEAAAACAAAABQAAAAAAAAfQAAAABQAAAAAAAAMg';
 
     const now = new Date();
     const t1 = new Date(now);
@@ -153,48 +152,46 @@ describe('yieldHistoryService', () => {
 
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { event_type: "Deposit", amount: "1000", ledger_closed_at: t1, value: xdrDeposit },
-        { event_type: "Withdraw", amount: "500", ledger_closed_at: t2, value: xdrWithdraw },
+        { event_type: 'Deposit', amount: '1000', ledger_closed_at: t1, value: xdrDeposit },
+        { event_type: 'Withdraw', amount: '500', ledger_closed_at: t2, value: xdrWithdraw },
       ],
     });
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { event_type: "Deposit", amount: "1000", ledger_closed_at: t1, value: xdrDeposit },
-        { event_type: "Withdraw", amount: "500", ledger_closed_at: t2, value: xdrWithdraw },
+        { event_type: 'Deposit', amount: '1000', ledger_closed_at: t1, value: xdrDeposit },
+        { event_type: 'Withdraw', amount: '500', ledger_closed_at: t2, value: xdrWithdraw },
       ],
     });
 
     // Should not throw even with non-null XDR values
-    const history = await buildDepositorYieldHistory("GDep", "GTok", 7, 1_000_000);
+    const history = await buildDepositorYieldHistory('GDep', 'GTok', 7, 1_000_000);
     expect(history.length).toBeGreaterThan(0);
   });
 
-  it("falls back gracefully when XDR value is malformed", async () => {
+  it('falls back gracefully when XDR value is malformed', async () => {
     const now = new Date();
     mockQuery.mockResolvedValueOnce({
       rows: [
         {
-          event_type: "Deposit",
-          amount: "1000",
+          event_type: 'Deposit',
+          amount: '1000',
           ledger_closed_at: now,
-          value: "not-valid-base64-xdr!!!",
+          value: 'not-valid-base64-xdr!!!',
         },
       ],
     });
     mockQuery.mockResolvedValueOnce({
       rows: [
         {
-          event_type: "Deposit",
-          amount: "1000",
+          event_type: 'Deposit',
+          amount: '1000',
           ledger_closed_at: now,
-          value: "not-valid-base64-xdr!!!",
+          value: 'not-valid-base64-xdr!!!',
         },
       ],
     });
 
     // Should not throw — falls back to assetAmount as shares
-    await expect(
-      buildDepositorYieldHistory("GDep", "GTok", 7),
-    ).resolves.toBeDefined();
+    await expect(buildDepositorYieldHistory('GDep', 'GTok', 7)).resolves.toBeDefined();
   });
 });

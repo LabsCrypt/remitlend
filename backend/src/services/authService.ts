@@ -1,12 +1,8 @@
-import jwt from "jsonwebtoken";
-import { Keypair, StrKey } from "@stellar/stellar-sdk";
-import crypto from "crypto";
-import {
-  resolveRoleForWallet,
-  resolveScopesForRole,
-  type UserRole,
-} from "../auth/rbac.js";
-import { cacheService } from "./cacheService.js";
+import jwt from 'jsonwebtoken';
+import { Keypair, StrKey } from '@stellar/stellar-sdk';
+import crypto from 'crypto';
+import { resolveRoleForWallet, resolveScopesForRole, type UserRole } from '../auth/rbac.js';
+import { cacheService } from './cacheService.js';
 
 export interface JwtPayload {
   publicKey: string;
@@ -111,7 +107,7 @@ export function verifyJwtToken(token: string): JwtPayload | null {
   }
 }
 
-const REVOKED_JTI_PREFIX = "revoked-jti:";
+const REVOKED_JTI_PREFIX = 'revoked-jti:';
 
 /**
  * Explicitly revokes a single token (e.g. on logout) by blacklisting its
@@ -134,9 +130,7 @@ export async function isTokenRevoked(jti: string): Promise<boolean> {
   try {
     const revoked = await Promise.race([
       cacheService.get<boolean>(`${REVOKED_JTI_PREFIX}${jti}`),
-      new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), REVOCATION_CHECK_TIMEOUT_MS),
-      ),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), REVOCATION_CHECK_TIMEOUT_MS)),
     ]);
     return revoked === true;
   } catch {

@@ -450,8 +450,8 @@ class NotificationService {
 
     // 2. Push SSE notification to every admin currently connected
     try {
-      const adminWallets = (process.env.ADMIN_WALLETS ?? "")
-        .split(",")
+      const adminWallets = (process.env.ADMIN_WALLETS ?? '')
+        .split(',')
         .map((w) => w.trim())
         .filter((w) => w.length > 0);
 

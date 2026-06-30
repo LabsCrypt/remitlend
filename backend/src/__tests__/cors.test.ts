@@ -77,9 +77,7 @@ describe('CORS middleware', () => {
 
     const { default: app } = await loadApp();
 
-    const response = await request(app)
-      .get('/health')
-      .set('Origin', 'https://evil-corp.io');
+    const response = await request(app).get('/health').set('Origin', 'https://evil-corp.io');
 
     expect(response.status).toBe(403);
     expect(response.body.error?.message).toBe('Origin is not allowed by CORS policy');
@@ -91,9 +89,7 @@ describe('CORS middleware', () => {
 
     const { default: app } = await loadApp();
 
-    const response = await request(app)
-      .get('/health')
-      .set('Origin', 'http://127.0.0.1:3000');
+    const response = await request(app).get('/health').set('Origin', 'http://127.0.0.1:3000');
 
     expect(response.status).toBe(200);
     expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3000');

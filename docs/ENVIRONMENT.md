@@ -11,6 +11,7 @@ This document lists every environment variable used by the RemitLend platform. E
 | `LOG_LEVEL` | — | — | — | `debug` (dev) / `info` (other envs) | Winston log level override (`error`, `warn`, `info`, `http`, `debug`). Falls back to the `NODE_ENV` default when unset or invalid. | `backend/src/utils/logger.ts` |
 | `CORS_ALLOWED_ORIGINS` | ✓ | ✓ | ✓ | `http://localhost:3000,http://localhost:3001` | Comma-separated origins allowed by CORS | `backend/src/config/index.ts` |
 | `FRONTEND_URL` | ✓ | ✓ | ✓ | `http://localhost:3000` | Frontend base URL used for links | `backend/src/config/index.ts` |
+| `PORT` | ✓ | ✓ | ✓ | `3001` | HTTP port the API listens on | `backend/src/index.ts` |
 | `DATABASE_URL` | ✓ | ✓ | ✓ | `postgres://postgres:postgres@db:5432/remitlend` | PostgreSQL connection string | `backend/src/db/connection.js` |
 | `DB_CONN_TIMEOUT_MS` | — | ✓ | ✓ | `10000` | Pool connection timeout in ms; pool.connect() rejects instead of hanging | `backend/src/db/connection.ts` |
 | `DB_STATEMENT_TIMEOUT_MS` | — | ✓ | ✓ | `30000` | Per-query statement_timeout in ms; a stuck query never holds a connection indefinitely | `backend/src/db/connection.ts` |
@@ -37,6 +38,7 @@ This document lists every environment variable used by the RemitLend platform. E
 | `SCORE_DELTA_LATE` | ✓ | ✓ | ✓ | `5` | Points deducted on late payment | `backend/src/config/scores.ts` |
 | `INDEXER_POLL_INTERVAL_MS` | ✓ | ✓ | ✓ | `30000` | Event indexer poll interval in milliseconds | `backend/src/config/indexer.ts` |
 | `INDEXER_BATCH_SIZE` | ✓ | ✓ | ✓ | `100` | Events fetched per poll cycle | `backend/src/config/indexer.ts` |
+| `INDEXER_HEALTH_LAG_LIMIT` | ✓ | ✓ | ✓ | `100` | Maximum ledger lag before `/health/deep` reports the indexer as degraded | `backend/src/services/healthService.ts` |
 | `DEFAULT_CHECK_INTERVAL_MS` | ✓ | ✓ | ✓ | `1800000` | Default checker interval (30 min) | `backend/src/services/defaultChecker.ts` |
 | `DEFAULT_CHECK_MAX_LOANS_PER_RUN` | ✓ | ✓ | ✓ | `500` | Max loans processed per default check run | `backend/src/services/defaultChecker.ts` |
 | `DEFAULT_CHECK_BATCH_SIZE` | ✓ | ✓ | ✓ | `25` | Loans per batch during default check | `backend/src/services/defaultChecker.ts` |
@@ -75,6 +77,7 @@ This document lists every environment variable used by the RemitLend platform. E
 | Variable                           | Dev | Staging | Prod | Default                                   | Description                                            | Source                                      |
 | ---------------------------------- | --- | ------- | ---- | ----------------------------------------- | ------------------------------------------------------ | ------------------------------------------- |
 | `NEXT_PUBLIC_API_URL`              | ✓   | ✓       | ✓    | `http://localhost:3001`                   | Backend API base URL                                   | `frontend/src/app/hooks/useApi.ts`          |
+| `NEXT_PUBLIC_APP_URL`              | ✓   | ✓       | ✓    | `https://remitlend.com`                   | Public-facing app URL used for absolute links          | `frontend/src/lib/canonicalUrl.ts`          |
 | `NEXT_PUBLIC_SENTRY_DSN`           | —   | ✓       | ✓    | —                                         | Sentry DSN for frontend error tracking                 | `frontend/src/sentry.client.config.ts`      |
 | `SENTRY_DSN`                       | —   | ✓       | ✓    | —                                         | Sentry DSN server-side                                 | `frontend/src/sentry.server.config.ts`      |
 | `SENTRY_ORG`                       | —   | ✓       | ✓    | —                                         | Sentry organization slug                               | `frontend/sentry.client.config.ts`          |

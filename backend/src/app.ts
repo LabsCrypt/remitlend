@@ -69,12 +69,12 @@ app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
-        "default-src": ["'self'"],
-        "script-src": ["'self'"],
-        "style-src": ["'self'", "https:", "'unsafe-inline'"],
-        "img-src": ["'self'", "data:", "https:"],
-        "font-src": ["'self'", "https:", "data:"],
-        "frame-ancestors": ["'self'"],
+        'default-src': ["'self'"],
+        'script-src': ["'self'"],
+        'style-src': ["'self'", 'https:', "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:', 'https:'],
+        'font-src': ["'self'", 'https:', 'data:'],
+        'frame-ancestors': ["'self'"],
       },
     },
     strictTransportSecurity: isProduction
@@ -180,11 +180,7 @@ app.get(
   }),
 );
 
-app.get(
-  "/metrics",
-  requireApiKey("admin:indexer"),
-  asyncHandler(metricsHandler),
-);
+app.get('/metrics', requireApiKey('admin:indexer'), asyncHandler(metricsHandler));
 
 /**
  * GET /health/deep

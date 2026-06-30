@@ -3,7 +3,9 @@ use lending_pool::{LendingPool, LendingPoolClient};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::{Events, Ledger as _};
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
-use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, FromVal, String};
+use soroban_sdk::{
+    contract, contractimpl, testutils::Address as _, Address, BytesN, Env, FromVal, String,
+};
 
 // Mock RateOracle contract for testing the oracle interest-rate code path.
 #[contract]
@@ -3665,5 +3667,8 @@ fn test_set_rate_oracle_emits_rate_oracle_updated_event() {
                 })
                 .unwrap_or(false)
     });
-    assert!(has_oracle_event, "RateOracleUpdated event should be emitted");
+    assert!(
+        has_oracle_event,
+        "RateOracleUpdated event should be emitted"
+    );
 }

@@ -75,25 +75,23 @@ describe('Swagger docs', () => {
     await request(app).get('/docs.json').expect(200);
   });
 
-  it("API routes do not have unsafe-inline in script-src CSP", async () => {
-    process.env.NODE_ENV = "test";
+  it('API routes do not have unsafe-inline in script-src CSP', async () => {
+    process.env.NODE_ENV = 'test';
     delete process.env.ENABLE_SWAGGER;
 
-    const res = await request(app).get("/");
-    const csp = res.headers["content-security-policy"] ?? "";
-    const scriptSrc =
-      csp.split(";").find((d) => d.trim().startsWith("script-src")) ?? "";
+    const res = await request(app).get('/');
+    const csp = res.headers['content-security-policy'] ?? '';
+    const scriptSrc = csp.split(';').find((d) => d.trim().startsWith('script-src')) ?? '';
     expect(scriptSrc).not.toContain("'unsafe-inline'");
   });
 
-  it("/docs route has unsafe-inline in script-src for Swagger UI", async () => {
-    process.env.NODE_ENV = "test";
+  it('/docs route has unsafe-inline in script-src for Swagger UI', async () => {
+    process.env.NODE_ENV = 'test';
     delete process.env.ENABLE_SWAGGER;
 
-    const res = await request(app).get("/docs/");
-    const csp = res.headers["content-security-policy"] ?? "";
-    const scriptSrc =
-      csp.split(";").find((d) => d.trim().startsWith("script-src")) ?? "";
+    const res = await request(app).get('/docs/');
+    const csp = res.headers['content-security-policy'] ?? '';
+    const scriptSrc = csp.split(';').find((d) => d.trim().startsWith('script-src')) ?? '';
     expect(scriptSrc).toContain("'unsafe-inline'");
   });
 });

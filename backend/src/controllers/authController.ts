@@ -27,8 +27,8 @@ import {
   verifyChallengeTimestamp,
   generateJwtToken,
   revokeToken,
-} from "../services/authService.js";
-import logger from "../utils/logger.js";
+} from '../services/authService.js';
+import logger from '../utils/logger.js';
 
 const logAuthFailure = (req: Request, publicKey: string | undefined, reason: string): void => {
   logger.warn('Auth attempt failed', {
@@ -127,7 +127,11 @@ export const login = (req: Request, res: Response): void => {
   });
 };
 
-export async function listAuditLogs(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function listAuditLogs(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const result = await getAuditLogs({
       actor: req.query.actor as string | undefined,
@@ -164,11 +168,11 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     await revokeToken(req.user.jti, req.user.exp);
   }
 
-  const cookieName = process.env.JWT_COOKIE_NAME ?? "remitlend_jwt";
-  res.clearCookie(cookieName, { path: "/" });
+  const cookieName = process.env.JWT_COOKIE_NAME ?? 'remitlend_jwt';
+  res.clearCookie(cookieName, { path: '/' });
 
   res.status(200).json({
     success: true,
-    data: { message: "Logged out" },
+    data: { message: 'Logged out' },
   });
 };

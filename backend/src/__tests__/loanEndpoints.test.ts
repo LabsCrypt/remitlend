@@ -1,8 +1,8 @@
-import request from "supertest";
-import { jest } from "@jest/globals";
-import { Keypair } from "@stellar/stellar-sdk";
-import jwt from "jsonwebtoken";
-import { generateJwtToken } from "../services/authService.js";
+import request from 'supertest';
+import { jest } from '@jest/globals';
+import { Keypair } from '@stellar/stellar-sdk';
+import jwt from 'jsonwebtoken';
+import { generateJwtToken } from '../services/authService.js';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
 
@@ -127,9 +127,9 @@ const bearer = (publicKey: string) => ({
 // so we can simulate a caller missing a required write scope.
 const bearerWithScopes = (publicKey: string, scopes: string[]) => ({
   Authorization: `Bearer ${jwt.sign(
-    { publicKey, role: "borrower", scopes },
+    { publicKey, role: 'borrower', scopes },
     process.env.JWT_SECRET!,
-    { algorithm: "HS256", expiresIn: "1h" },
+    { algorithm: 'HS256', expiresIn: '1h' },
   )}`,
 });
 
@@ -355,28 +355,26 @@ describe('GET /api/loans/:loanId', () => {
 
 describe('GET /api/loans/:loanId/amortization-schedule', () => {
   it('should return amortization schedule for an approved loan', async () => {
-    mockedQuery
-      .mockResolvedValueOnce({ rows: [{ borrower: "GABC123" }] })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            event_type: 'LoanRequested',
-            amount: '1000',
-            ledger_closed_at: '2025-01-01T00:00:00.000Z',
-          },
-          {
-            event_type: 'LoanApproved',
-            amount: null,
-            ledger_closed_at: '2025-01-01T00:00:00.000Z',
-            interest_rate_bps: 1200,
-            term_ledgers: 518400,
-          },
-        ],
-      });
+    mockedQuery.mockResolvedValueOnce({ rows: [{ borrower: 'GABC123' }] }).mockResolvedValueOnce({
+      rows: [
+        {
+          event_type: 'LoanRequested',
+          amount: '1000',
+          ledger_closed_at: '2025-01-01T00:00:00.000Z',
+        },
+        {
+          event_type: 'LoanApproved',
+          amount: null,
+          ledger_closed_at: '2025-01-01T00:00:00.000Z',
+          interest_rate_bps: 1200,
+          term_ledgers: 518400,
+        },
+      ],
+    });
 
     const response = await request(app)
-      .get("/api/loans/123/amortization-schedule")
-      .set(bearer("GABC123"));
+      .get('/api/loans/123/amortization-schedule')
+      .set(bearer('GABC123'));
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
@@ -390,21 +388,19 @@ describe('GET /api/loans/:loanId/amortization-schedule', () => {
   });
 
   it('should return 404 when loan is not fully approved', async () => {
-    mockedQuery
-      .mockResolvedValueOnce({ rows: [{ borrower: "GABC123" }] })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            event_type: 'LoanRequested',
-            amount: '1000',
-            ledger_closed_at: '2025-01-01T00:00:00.000Z',
-          },
-        ],
-      });
+    mockedQuery.mockResolvedValueOnce({ rows: [{ borrower: 'GABC123' }] }).mockResolvedValueOnce({
+      rows: [
+        {
+          event_type: 'LoanRequested',
+          amount: '1000',
+          ledger_closed_at: '2025-01-01T00:00:00.000Z',
+        },
+      ],
+    });
 
     const response = await request(app)
-      .get("/api/loans/123/amortization-schedule")
-      .set(bearer("GABC123"));
+      .get('/api/loans/123/amortization-schedule')
+      .set(bearer('GABC123'));
 
     expect(response.status).toBe(404);
   });
@@ -535,10 +531,10 @@ describe('POST /api/loans/:loanId/repay', () => {
     expect(response.status).toBe(400);
   });
 
-  it("should reject a token missing the write:loans scope", async () => {
+  it('should reject a token missing the write:loans scope', async () => {
     const response = await request(app)
-      .post("/api/loans/1/repay")
-      .set(bearerWithScopes(TEST_BORROWER, ["read:loans"]))
+      .post('/api/loans/1/repay')
+      .set(bearerWithScopes(TEST_BORROWER, ['read:loans']))
       .send({ amount: 500, borrowerPublicKey: TEST_BORROWER });
 
     expect(response.status).toBe(403);
