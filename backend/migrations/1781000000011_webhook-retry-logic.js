@@ -8,29 +8,23 @@ export const shorthands = undefined;
  * @returns {Promise<void> | void}
  */
 export const up = (pgm) => {
-  // Add payload column to webhook_deliveries table
-  pgm.addColumn('webhook_deliveries', {
-    payload: {
-      type: 'jsonb',
-      notNull: false,
-    },
-  });
+  // payload and next_retry_at are already created by the original
+  // webhook-subscriptions migration. Guard with IF NOT EXISTS so a fresh
+  // migrate up from an empty schema converges instead of erroring on a
+  // duplicate column add.
+  pgm.sql(`ALTER TABLE webhook_deliveries ADD COLUMN IF NOT EXISTS payload jsonb;`);
+  pgm.sql(`ALTER TABLE webhook_deliveries ADD COLUMN IF NOT EXISTS next_retry_at timestamp;`);
 
-  // Add next_retry_at column to track when to retry
-  pgm.addColumn('webhook_deliveries', {
-    next_retry_at: {
-      type: 'timestamp',
-      notNull: false,
-    },
-  });
+  pgm.sql(`
+    CREATE INDEX IF NOT EXISTS webhook_deliveries_next_retry_at_index
+      ON webhook_deliveries (next_retry_at)
+      WHERE next_retry_at IS NOT NULL AND delivered_at IS NULL;
+  `);
 
-  // Add index for efficient retry polling
-  pgm.createIndex('webhook_deliveries', ['next_retry_at'], {
-    where: 'next_retry_at IS NOT NULL AND delivered_at IS NULL',
-  });
-
-  // Add index for subscription + event tracking
-  pgm.createIndex('webhook_deliveries', ['subscription_id', 'event_id']);
+  pgm.sql(`
+    CREATE INDEX IF NOT EXISTS webhook_deliveries_subscription_id_event_id_index
+      ON webhook_deliveries (subscription_id, event_id);
+  `);
 };
 
 /**
@@ -38,8 +32,8 @@ export const up = (pgm) => {
  * @returns {Promise<void> | void}
  */
 export const down = (pgm) => {
-  pgm.dropIndex('webhook_deliveries', ['subscription_id', 'event_id']);
-  pgm.dropIndex('webhook_deliveries', ['next_retry_at']);
-  pgm.dropColumn('webhook_deliveries', 'next_retry_at');
-  pgm.dropColumn('webhook_deliveries', 'payload');
+  // payload and next_retry_at are owned by the webhook-subscriptions migration;
+  // leave them in place on rollback so we don't drop columns we didn't create.
+  pgm.sql(`DROP INDEX IF EXISTS webhook_deliveries_subscription_id_event_id_index;`);
+  pgm.sql(`DROP INDEX IF EXISTS webhook_deliveries_next_retry_at_index;`);
 };
