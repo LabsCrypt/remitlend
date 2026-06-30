@@ -28,7 +28,7 @@ function parseNumeric(value: unknown): number {
 }
 
 function parseDepositWithdrawAmounts(
-  eventType: string,
+  _eventType: string,
   amount: string | null,
   valueXdr: string | null,
 ): { assetAmount: number; shares: number } {

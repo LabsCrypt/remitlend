@@ -127,7 +127,7 @@ export const login = (req: Request, res: Response): void => {
   });
 };
 
-export async function listAuditLogs(req: Request, res: Response, next: NextFunction) {
+export async function listAuditLogs(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await getAuditLogs({
       actor: req.query.actor as string | undefined,
@@ -139,9 +139,11 @@ export async function listAuditLogs(req: Request, res: Response, next: NextFunct
       withTotal: req.query.withTotal === 'true',
     } as AuditLogFilters);
 
-    return res.json(result);
+    res.json(result);
+    return;
   } catch (error) {
     next(error);
+    return;
   }
 }
 

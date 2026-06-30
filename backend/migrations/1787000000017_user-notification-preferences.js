@@ -8,10 +8,27 @@ export const shorthands = undefined;
  * @returns {Promise<void> | void}
  */
 export const up = (pgm) => {
-  pgm.addColumns('user_profiles', {
+  pgm.createTable('user_notification_preferences', {
+    user_id: {
+      type: 'varchar(255)',
+      notNull: true,
+      primaryKey: true,
+      references: '"user_profiles"("public_key")',
+      onDelete: 'CASCADE',
+    },
     email_enabled: { type: 'boolean', notNull: true, default: false },
     sms_enabled: { type: 'boolean', notNull: true, default: false },
     phone: { type: 'varchar(20)' },
+    created_at: {
+      type: 'timestamptz',
+      notNull: true,
+      default: pgm.func('now()'),
+    },
+    updated_at: {
+      type: 'timestamptz',
+      notNull: true,
+      default: pgm.func('now()'),
+    },
   });
 };
 
@@ -20,5 +37,5 @@ export const up = (pgm) => {
  * @returns {Promise<void> | void}
  */
 export const down = (pgm) => {
-  pgm.dropColumns('user_profiles', ['email_enabled', 'sms_enabled', 'phone']);
+  pgm.dropTable('user_notification_preferences');
 };

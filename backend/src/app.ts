@@ -55,6 +55,16 @@ if (isProduction && allowedOriginsList.length === 0) {
 
 const allowedOrigins = new Set(allowedOriginsList);
 
+// In non-production environments, additionally allow common localhost origins
+// used during development. Without this, staging/preview deployments that run
+// with NODE_ENV !== 'production' would blindly reflect every origin.
+const devOrigins = new Set([
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+]);
+
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -87,7 +97,7 @@ const corsOptions: cors.CorsOptions = {
       return callback(null, true);
     }
 
-    if (!isProduction) {
+    if (!isProduction && devOrigins.has(origin)) {
       return callback(null, true);
     }
 
@@ -106,7 +116,7 @@ app.use(requestIdMiddleware);
 app.use(requestLogger);
 app.use(metricsMiddleware);
 
-app.get('/', (req: Request, res: Response) => {
+app.get('/', (_req: Request, res: Response) => {
   res.send('RemitLend Backend is running');
 });
 

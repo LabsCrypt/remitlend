@@ -25,7 +25,7 @@ export async function runScoreDecayJob(): Promise<void> {
     await jobMetricsService.recordSuccess("score-decay-job", Date.now() - startTime);
     logger.withContext().info("Score decay processing pass completed successfully.");
   } catch (error: any) {
-    await jobMetricsService.recordFailure("score-decay-job", Date.now() - startTime, error?.message || String(error));
+    await jobMetricsService.recordFailure("score-decay-job", error instanceof Error ? error : String(error), Date.now() - startTime);
     logger.withContext().error("Score decay processing pass encountered an unhandled exception", { error });
   } finally {
     isRunning = false;

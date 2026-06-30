@@ -77,6 +77,7 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
     });
   } catch (error) {
     next(error);
+    return;
   }
 };
 
@@ -113,6 +114,7 @@ export const buildRejectLoanTx = async (req: Request, res: Response, next: NextF
     });
   } catch (error) {
     next(error);
+    return;
   }
 };
 /**

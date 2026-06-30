@@ -70,4 +70,32 @@ describe('CORS middleware', () => {
     expect(response.status).toBe(403);
     expect(response.body.error?.message).toBe('Origin is not allowed by CORS policy');
   });
+
+  it('rejects unknown origins even when NODE_ENV is not production', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.FRONTEND_URL = 'http://localhost:3000';
+
+    const { default: app } = await loadApp();
+
+    const response = await request(app)
+      .get('/health')
+      .set('Origin', 'https://evil-corp.io');
+
+    expect(response.status).toBe(403);
+    expect(response.body.error?.message).toBe('Origin is not allowed by CORS policy');
+  });
+
+  it('allows localhost origins when NODE_ENV is not production', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.FRONTEND_URL = 'http://localhost:3000';
+
+    const { default: app } = await loadApp();
+
+    const response = await request(app)
+      .get('/health')
+      .set('Origin', 'http://127.0.0.1:3000');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3000');
+  });
 });

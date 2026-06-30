@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { query } from '../../db/connection.js';
 import { sorobanService } from '../../services/sorobanService.js';
-import { app } from '../../app.js';
+import app from '../../app.js';
 
 jest.mock('../../services/sorobanService.js');
 

@@ -11,12 +11,19 @@ const minPoolSize = process.env.DB_POOL_MIN ? parseInt(process.env.DB_POOL_MIN, 
 const idleTimeoutMillis = process.env.DB_IDLE_TIMEOUT_MS
   ? parseInt(process.env.DB_IDLE_TIMEOUT_MS, 10)
   : 30000;
+const connectionTimeoutMillis = process.env.DB_CONN_TIMEOUT_MS
+  ? parseInt(process.env.DB_CONN_TIMEOUT_MS, 10)
+  : 10000;
+const statementTimeoutMillis = process.env.DB_STATEMENT_TIMEOUT_MS
+  ? parseInt(process.env.DB_STATEMENT_TIMEOUT_MS, 10)
+  : 30000;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   min: minPoolSize,
   max: maxPoolSize,
   idleTimeoutMillis,
+  connectionTimeoutMillis,
 });
 
 let isShuttingDown = false;
@@ -33,6 +40,11 @@ const metricsInterval = setInterval(() => {
 
 // Unref the interval so it doesn't keep the process alive
 metricsInterval.unref();
+
+// Set statement_timeout on every newly acquired connection
+pool.on('connect', (client) => {
+  client.query(`SET statement_timeout = ${statementTimeoutMillis}`);
+});
 
 // Log idle client errors
 pool.on('error', (err: Error) => {

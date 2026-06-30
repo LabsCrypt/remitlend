@@ -214,8 +214,8 @@ describe('notificationService', () => {
       expect(sqls.some((s) => s.includes("WHERE role"))).toBe(false);
       expect(mockQuery).toHaveBeenCalledTimes(2);
 
-      const params0 = mockQuery.mock.calls[0][1] as unknown[];
-      const params1 = mockQuery.mock.calls[1][1] as unknown[];
+      const params0 = (mockQuery.mock.calls[0]?.[1] ?? []) as unknown[];
+      const params1 = (mockQuery.mock.calls[1]?.[1] ?? []) as unknown[];
       expect(params0[0]).toBe("wallet1");
       expect(params1[0]).toBe("wallet2");
     });

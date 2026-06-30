@@ -395,7 +395,7 @@ router.get('/webhooks/:id/deliveries', requireApiKey('admin:webhooks'), getWebho
 router.get(
   '/webhooks/retry-status',
   requireApiKey('admin:webhooks'),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (_req, res) => {
     const result = await query(`
       SELECT 
         COUNT(*) as total_failed,

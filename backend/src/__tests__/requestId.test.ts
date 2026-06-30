@@ -29,7 +29,7 @@ describe('Request ID middleware', () => {
   it('correlates logger requestId with x-request-id via withContext', async () => {
     const tempApp = express();
     tempApp.use(requestIdMiddleware);
-    tempApp.get('/test', (req, res) => {
+    tempApp.get('/test', (_req, res) => {
       logger.withContext().info('Testing withContext correlation');
       res.sendStatus(200);
     });
