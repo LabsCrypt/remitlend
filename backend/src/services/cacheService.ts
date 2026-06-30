@@ -130,6 +130,41 @@ class CacheService {
   }
 
   /**
+   * Delete a key only when its stored value matches `expectedValue` (fenced
+   * compare-and-delete).  Used by distributed locks so a run that outlives the
+   * TTL cannot delete a lock acquired by a different instance.
+   *
+   * @returns true if the key existed and the value matched (key deleted),
+   *          false if the key was absent or the value did not match.
+   */
+  async deleteIfMatch(key: string, expectedValue: string): Promise<boolean> {
+    try {
+      await this.ensureConnected();
+      const stored = await this.client!.get(key);
+      if (stored === null) return false;
+
+      let storedValue: unknown;
+      try {
+        storedValue = JSON.parse(stored);
+      } catch {
+        storedValue = stored;
+      }
+
+      if (storedValue !== expectedValue) return false;
+
+      await this.client!.del(key);
+      return true;
+    } catch (error) {
+      if (process.env.NODE_ENV !== "test") {
+        logger
+          .withContext()
+          .error(`Error in deleteIfMatch for key ${key}`, { error });
+      }
+      return false;
+    }
+  }
+
+  /**
    * Invalidate multiple keys by a pattern (e.g. prefix)
    * Note: KEYS is generally not recommended in production, but suitable for exact or bounded patterns.
    */
