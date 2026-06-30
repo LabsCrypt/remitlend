@@ -1,7 +1,7 @@
 /**
  * @param { import("node-pg-migrate").MigrationBuilder } @param pgm {import("node-pg-migrate").MigrationBuilder}
  */
-exports.up = (pgm) => {
+export const up = (pgm) => {
   pgm.createTable('transaction_submissions', {
     id: {
       type: 'serial',
@@ -63,6 +63,6 @@ exports.up = (pgm) => {
 /**
  * @param { import("node-pg-migrate").MigrationBuilder } @param pgm {import("node-pg-migrate").MigrationBuilder}
  */
-exports.down = (pgm) => {
+export const down = (pgm) => {
   pgm.dropTable('transaction_submissions');
 };

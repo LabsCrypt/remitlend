@@ -7,7 +7,7 @@
  */
 
 /** @type {import('node-pg-migrate').MigrationBuilder} */
-exports.up = async (pgm) => {
+export const up = async (pgm) => {
   pgm.noTransaction();
   pgm.sql(`
     CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_loan_events_type_created_at
@@ -16,7 +16,7 @@ exports.up = async (pgm) => {
 };
 
 /** @type {import('node-pg-migrate').MigrationBuilder} */
-exports.down = async (pgm) => {
+export const down = async (pgm) => {
   pgm.noTransaction();
   pgm.sql(`
     DROP INDEX CONCURRENTLY IF EXISTS idx_loan_events_type_created_at

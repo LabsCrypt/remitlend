@@ -1106,8 +1106,8 @@ export function useCreditScore(
           Accept: "text/event-stream",
         };
 
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
+        if (authToken) {
+          headers["Authorization"] = `Bearer ${authToken}`;
         }
 
         const response = await fetch(url, {

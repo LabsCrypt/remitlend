@@ -1,4 +1,4 @@
-exports.up = (pgm) => {
+export const up = (pgm) => {
   pgm.addColumns('loan_events', {
     interest_rate_bps: { type: 'integer', default: null },
     term_ledgers: { type: 'integer', default: null },
@@ -8,6 +8,6 @@ exports.up = (pgm) => {
   // but for now we'll just track the rate per-loan event.
 };
 
-exports.down = (pgm) => {
+export const down = (pgm) => {
   pgm.dropColumns('loan_events', ['interest_rate_bps', 'term_ledgers']);
 };

@@ -1,41 +1,30 @@
-// Migration: Add loan_disputes table and support for disputed loan status
+// Migration: Add loan_disputes table and support for disputed loan status.
+// Uses node-pg-migrate's pgm.sql instead of the foreign db.query API the
+// original CJS module was written against.
 
-module.exports = {
-  async up(db) {
-    // 1. Create loan_disputes table
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS loan_disputes (
-        id SERIAL PRIMARY KEY,
-        loan_id INTEGER NOT NULL REFERENCES loan_events(loan_id),
-        borrower TEXT NOT NULL,
-        reason TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'open', -- open, resolved, rejected
-        admin_note TEXT,
-        resolution TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        resolved_at TIMESTAMP WITH TIME ZONE
-      );
-    `);
+export const up = (pgm) => {
+  // loan_id is the on-chain loan identifier. loan_events has many rows per
+  // loan, so a FK there would require a unique constraint Postgres can't
+  // satisfy. Store the id as a plain integer and index it for lookup.
+  pgm.sql(`
+    CREATE TABLE IF NOT EXISTS loan_disputes (
+      id SERIAL PRIMARY KEY,
+      loan_id INTEGER NOT NULL,
+      borrower TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      admin_note TEXT,
+      resolution TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      resolved_at TIMESTAMP WITH TIME ZONE
+    );
+  `);
 
-    // 2. Add indexes for efficient querying
-    await db.query(`
-      CREATE INDEX IF NOT EXISTS idx_loan_disputes_status ON loan_disputes(status);
-    `);
-    await db.query(`
-      CREATE INDEX IF NOT EXISTS idx_loan_disputes_borrower ON loan_disputes(borrower);
-    `);
-    await db.query(`
-      CREATE INDEX IF NOT EXISTS idx_loan_disputes_loan_id ON loan_disputes(loan_id);
-    `);
+  pgm.sql(`CREATE INDEX IF NOT EXISTS idx_loan_disputes_status ON loan_disputes(status);`);
+  pgm.sql(`CREATE INDEX IF NOT EXISTS idx_loan_disputes_borrower ON loan_disputes(borrower);`);
+  pgm.sql(`CREATE INDEX IF NOT EXISTS idx_loan_disputes_loan_id ON loan_disputes(loan_id);`);
+};
 
-    // 3. Add disputed status to loan_events (if using status enum, update it)
-    // If status is a string, no migration needed. If enum, alter type here.
-    // Example for enum:
-    // await db.query(`ALTER TYPE loan_status_enum ADD VALUE IF NOT EXISTS 'disputed';`);
-  },
-
-  async down(db) {
-    await db.query(`DROP TABLE IF EXISTS loan_disputes;`);
-    // No need to remove enum value (Postgres doesn't support removing enum values easily)
-  },
+export const down = (pgm) => {
+  pgm.sql(`DROP TABLE IF EXISTS loan_disputes;`);
 };
