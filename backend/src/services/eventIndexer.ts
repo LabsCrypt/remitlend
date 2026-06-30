@@ -166,8 +166,21 @@ export class EventIndexer {
     }
 
     this.running = true;
-    this.activePollPromise = this.pollOnce();
-    await this.activePollPromise;
+
+    try {
+      this.activePollPromise = this.pollOnce();
+      await this.activePollPromise;
+    } catch (error) {
+      logger.withContext().error('Indexer initial poll failed, will retry on next cycle', {
+        error,
+      });
+      // Keep running=true so scheduleNextPoll will still fire; reset the
+      // promise so stop() does not await a rejected promise indefinitely.
+      this.activePollPromise = null;
+      this.scheduleNextPoll();
+      return;
+    }
+
     this.activePollPromise = null;
     this.scheduleNextPoll();
   }

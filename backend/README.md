@@ -78,6 +78,9 @@ Core tables are created by these migrations (run in filename order):
 
 With Docker Compose from the repo root, the `backend` service runs `migrate:up` before `npm run dev` so the schema is applied automatically when the database is healthy.
 
+Full database schema documentation, including every table, column, index, and
+historical renames, is available in [`docs/DATABASE.md`](../docs/DATABASE.md).
+
 ### Environment Variables
 
 Create a `.env` file in the backend directory:

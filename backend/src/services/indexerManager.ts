@@ -52,6 +52,7 @@ export const startIndexer = (): void => {
 
   indexerInstance.start().catch((error) => {
     logger.withContext().error('Failed to start indexer', { error });
+    indexerInstance = null;
   });
 
   logger.withContext().info('Event indexer initialized', {

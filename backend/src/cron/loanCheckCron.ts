@@ -1,17 +1,34 @@
 import cron from 'node-cron';
 import { query } from '../db/connection.js';
 import { notificationService } from '../services/notificationService.js';
+import { jobMetricsService } from '../services/jobMetricsService.js';
 import logger from '../utils/logger.js';
+
+let scheduledTask: cron.ScheduledTask | null = null;
+let inFlight = false;
 
 /**
  * Checks for loans that are due soon (e.g., within 24 hours) and notifies borrowers.
  * Runs every hour at the top of the hour.
  */
 export function startLoanDueCheckCron() {
-  cron.schedule('0 * * * *', async () => {
-    logger.info('Running loan due check cron...');
+  if (scheduledTask) return;
+
+  scheduledTask = cron.schedule('0 * * * *', async () => {
+    if (inFlight) {
+      logger
+        .withContext()
+        .warn('Loan due check cron skipped because a previous run is still in flight');
+      return;
+    }
+
+    const startTime = Date.now();
+    const jobName = 'loanDueCheckCron';
+    inFlight = true;
 
     try {
+      logger.withContext().info('Running loan due check cron...');
+
       // Find loans where a repayment is due in the next 24 hours
       // This is a simplified query; in a real app, you'd check against a repayment schedule table
       const result = await query(`
@@ -35,9 +52,25 @@ export function startLoanDueCheckCron() {
         });
       }
 
-      logger.info(`Loan due check completed. Notified ${result.rows.length} borrowers.`);
+      const durationMs = Date.now() - startTime;
+      jobMetricsService.recordSuccess(jobName, durationMs);
+      logger
+        .withContext()
+        .info(`Loan due check completed. Notified ${result.rows.length} borrowers.`);
     } catch (error) {
-      logger.error('Error in loan due check cron', { error });
+      const durationMs = Date.now() - startTime;
+      jobMetricsService.recordFailure(jobName, error as Error | string, durationMs);
+      logger.withContext().error('Error in loan due check cron', { error });
+    } finally {
+      inFlight = false;
     }
   });
+}
+
+export function stopLoanDueCheckCron(): void {
+  if (scheduledTask) {
+    scheduledTask.stop();
+    scheduledTask = null;
+    logger.withContext().info('Loan due check cron stopped');
+  }
 }

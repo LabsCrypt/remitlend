@@ -31,7 +31,10 @@ import {
 } from "./services/scoreReconciliationService.js";
 import { sorobanService } from "./services/sorobanService.js";
 import { validateLoanConfig } from "./config/loanConfig.js";
-import { startLoanDueCheckCron } from "./cron/loanCheckCron.js";
+import {
+  startLoanDueCheckCron,
+  stopLoanDueCheckCron,
+} from "./cron/loanCheckCron.js";
 // Imported the score decay scheduler initialization wrapper
 import { startScoreDecayScheduler } from "./cron/scoreDecayJob.js";
 
@@ -98,6 +101,7 @@ const shutdown = async (signal: 'SIGTERM' | 'SIGINT') => {
       scoreDecaySchedulerHandle.stop();
     }
 
+    stopLoanDueCheckCron();
     await stopIndexer();
     stopDefaultCheckerScheduler();
     stopWebhookRetryProcessor();
