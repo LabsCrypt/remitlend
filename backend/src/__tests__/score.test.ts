@@ -26,7 +26,14 @@ jest.unstable_mockModule('../services/cacheService.js', () => ({
 jest.unstable_mockModule('../services/rateLimitService.js', () => ({
   rateLimitService: {
     checkRateLimit: jest
-      .fn<() => Promise<{ allowed: boolean; remaining: number; resetTime: Date; currentCount: number }>>()
+      .fn<
+        () => Promise<{
+          allowed: boolean;
+          remaining: number;
+          resetTime: Date;
+          currentCount: number;
+        }>
+      >()
       .mockResolvedValue({
         allowed: true,
         remaining: 100,
