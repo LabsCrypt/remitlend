@@ -9,12 +9,15 @@
  * rejected because borrowers lack even read:pool.
  */
 
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import app from '../app.js';
 
-const JWT_SECRET = 'test-jwt-secret-poolscopes';
+// Sign with the same secret jwtAuth verifies against; falls back to a fixed
+// value if env wasn't loaded so the test doesn't silently sign an HS256
+// payload that the middleware can't decode.
+const JWT_SECRET = process.env.JWT_SECRET ?? 'test-jwt-secret-poolscopes';
 
 function mintToken(
   publicKey: string,

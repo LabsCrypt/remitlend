@@ -11,6 +11,8 @@ const mockSetNotExists: jest.MockedFunction<
   (key: string, value: unknown, ttlSeconds: number) => Promise<boolean>
 > = jest.fn();
 const mockDelete: jest.MockedFunction<(key: string) => Promise<void>> = jest.fn();
+const mockDeleteIfMatch: jest.MockedFunction<(key: string, value: unknown) => Promise<boolean>> =
+  jest.fn();
 
 const mockRecordSuccess = jest.fn();
 const mockRecordFailure = jest.fn();
@@ -36,6 +38,12 @@ jest.unstable_mockModule('../cacheService.js', () => ({
   cacheService: {
     setNotExists: mockSetNotExists,
     delete: mockDelete,
+    // releaseLock() calls deleteIfMatch; route it through mockDelete so the
+    // existing test assertions on mockDelete still work.
+    deleteIfMatch: mockDeleteIfMatch.mockImplementation(async (key) => {
+      await mockDelete(key);
+      return true;
+    }),
   },
 }));
 

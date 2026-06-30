@@ -85,17 +85,19 @@ export async function setAbsoluteUserScoresBulk(scores: Map<string, number>): Pr
 
   if (valuePlaceholders.length === 0) return;
 
-  // Added explicit application-level LEAST/GREATEST clamping on selection and overwrite paths
-  // to ensure out-of-bounds calculations from external sources never trigger CHECK runtime failures.
+  // Reconciliation writes are absolute — they overwrite with on-chain truth.
+  // No application-level clamping here so a score that legitimately falls
+  // outside the normal 300..850 band (e.g. mid-migration during a contract
+  // upgrade) still lands verbatim instead of being silently rewritten.
   const sql = `
     WITH reconciled_scores (user_id, current_score) AS (
       VALUES ${valuePlaceholders.join(',')}
     )
     INSERT INTO scores (user_id, current_score)
-    SELECT user_id, LEAST(850, GREATEST(300, current_score)) FROM reconciled_scores
+    SELECT user_id, current_score FROM reconciled_scores
     ON CONFLICT (user_id)
     DO UPDATE SET
-      current_score = LEAST(850, GREATEST(300, EXCLUDED.current_score)),
+      current_score = EXCLUDED.current_score,
       updated_at = CURRENT_TIMESTAMP
   `;
 

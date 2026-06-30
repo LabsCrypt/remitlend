@@ -355,7 +355,7 @@ describe('GET /api/loans/:loanId', () => {
 
 describe('GET /api/loans/:loanId/amortization-schedule', () => {
   it('should return amortization schedule for an approved loan', async () => {
-    mockedQuery.mockResolvedValueOnce({ rows: [{ borrower: 'GABC123' }] }).mockResolvedValueOnce({
+    mockedQuery.mockResolvedValueOnce({ rows: [{ address: 'GABC123' }] }).mockResolvedValueOnce({
       rows: [
         {
           event_type: 'LoanRequested',
@@ -388,7 +388,7 @@ describe('GET /api/loans/:loanId/amortization-schedule', () => {
   });
 
   it('should return 404 when loan is not fully approved', async () => {
-    mockedQuery.mockResolvedValueOnce({ rows: [{ borrower: 'GABC123' }] }).mockResolvedValueOnce({
+    mockedQuery.mockResolvedValueOnce({ rows: [{ address: 'GABC123' }] }).mockResolvedValueOnce({
       rows: [
         {
           event_type: 'LoanRequested',

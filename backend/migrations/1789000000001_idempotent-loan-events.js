@@ -56,8 +56,18 @@ export const up = (pgm) => {
  * @param pgm {import('node-pg-migrate').MigrationBuilder}
  */
 export const down = (pgm) => {
+  // ALTER TABLE IF EXISTS still errors when the relation exists but isn't a
+  // TABLE — and loan_events is a backward-compat VIEW after migration 1788.
+  // Guard each drop on pg_tables so we only ALTER actual tables.
   pgm.sql(`
-    ALTER TABLE IF EXISTS contract_events DROP CONSTRAINT IF EXISTS uq_contract_events_loan_type_ledger;
-    ALTER TABLE IF EXISTS loan_events DROP CONSTRAINT IF EXISTS uq_loan_events_loan_type_ledger;
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'contract_events') THEN
+        ALTER TABLE contract_events DROP CONSTRAINT IF EXISTS uq_contract_events_loan_type_ledger;
+      END IF;
+      IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'loan_events') THEN
+        ALTER TABLE loan_events DROP CONSTRAINT IF EXISTS uq_loan_events_loan_type_ledger;
+      END IF;
+    END $$;
   `);
 };
