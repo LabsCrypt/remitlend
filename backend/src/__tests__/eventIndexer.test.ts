@@ -647,12 +647,17 @@ describe('EventIndexer', () => {
     const stateWrites: number[] = [];
 
     mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('SELECT last_indexed_ledger')) {
+      if (sql.includes('SELECT last_ledger')) {
         return { rows: [], rowCount: 0 };
       }
 
       if (sql.includes('INSERT INTO indexer_state')) {
-        stateWrites.push(Number(params[0] ?? 0));
+        if (sql.includes('$1, $2')) {
+          stateWrites.push(Number(params[1] ?? 0));
+        } else {
+          const match = sql.match(/VALUES\s*\(\$1,\s*(\d+)\)/);
+          stateWrites.push(match ? Number(match[1] ?? 0) : Number(params[0] ?? 0));
+        }
         return { rows: [], rowCount: 1 };
       }
 

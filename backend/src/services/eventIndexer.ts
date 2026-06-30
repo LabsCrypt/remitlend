@@ -293,46 +293,48 @@ export class EventIndexer {
     }
   }
 
+  private getContractId(): string {
+    return this.contractIds[0] ?? "default";
+  }
+
   private async getLastIndexedLedger(): Promise<number> {
+    const contract = this.getContractId();
     const result = await query(
-      `SELECT last_indexed_ledger
+      `SELECT last_ledger
        FROM indexer_state
+       WHERE contract = $1
        ORDER BY id DESC
        LIMIT 1`,
-      [],
+      [contract],
     );
 
     if (!result.rows.length) {
       await query(
-        `INSERT INTO indexer_state (last_indexed_ledger)
-         VALUES (0)`,
-        [],
+        `INSERT INTO indexer_state (contract, last_ledger)
+         VALUES ($1, 0)`,
+        [contract],
       );
       return 0;
     }
 
-    return Number(result.rows[0]?.last_indexed_ledger ?? 0);
+    return Number(result.rows[0]?.last_ledger ?? 0);
   }
 
   private async updateLastIndexedLedger(ledger: number): Promise<void> {
+    const contract = this.getContractId();
     const updateResult = await query(
       `UPDATE indexer_state
-       SET last_indexed_ledger = GREATEST(last_indexed_ledger, $1),
+       SET last_ledger = GREATEST(last_ledger, $1),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = (
-         SELECT id
-         FROM indexer_state
-         ORDER BY id DESC
-         LIMIT 1
-       )`,
-      [ledger],
+       WHERE contract = $2`,
+      [ledger, contract],
     );
 
     if ((updateResult.rowCount ?? 0) === 0) {
       await query(
-        `INSERT INTO indexer_state (last_indexed_ledger)
-         VALUES ($1)`,
-        [ledger],
+        `INSERT INTO indexer_state (contract, last_ledger)
+         VALUES ($1, $2)`,
+        [contract, ledger],
       );
     }
   }
