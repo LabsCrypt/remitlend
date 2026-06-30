@@ -194,21 +194,20 @@ describe('WebhookService', () => {
   describe('HMAC signature', () => {
     it('sets X-RemitLend-Signature with sha256= prefix for a known body+secret', async () => {
       const secret = 'test-secret-key';
-      const knownBody = JSON.stringify({
-        eventId: 'evt-known',
-        eventType: 'LoanApproved',
-      });
-
       const crypto = await import('node:crypto');
-      const expectedHex = crypto.createHmac('sha256', secret).update(knownBody).digest('hex');
-      const expectedHeader = `sha256=${expectedHex}`;
 
-      // Directly inspect the header value by spying on fetch
+      // The webhook service signs the full JSON.stringify(payload) sent to the
+      // callback, not just {eventId, eventType}. Capture the body the service
+      // actually sends and assert the signature matches HMAC-SHA256 over it.
       const fetchMock =
         jest.fn<(_url: string, opts: RequestInit) => Promise<{ ok: boolean; status: number }>>();
       fetchMock.mockImplementation(async (_url: string, opts: RequestInit) => {
         const hdrs = opts.headers as Record<string, string>;
-        expect(hdrs['x-remitlend-signature']).toBe(expectedHeader);
+        const expectedHex = crypto
+          .createHmac('sha256', secret)
+          .update(opts.body as string)
+          .digest('hex');
+        expect(hdrs['x-remitlend-signature']).toBe(`sha256=${expectedHex}`);
         return { ok: true, status: 200 };
       });
       global.fetch = fetchMock as unknown as typeof fetch;

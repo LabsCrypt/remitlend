@@ -338,5 +338,30 @@
       "health": "Kalusugan",
       "action": "Aksyon"
     }
+  },
+  "RecentTransactions": {
+    "open": "Buksan ang mga kamakailang transaksyon",
+    "close": "Isara",
+    "title": "Kamakailang transaksyon",
+    "description": "Ang pinakabagong aktibidad mo sa mga loan, remittance, at pool.",
+    "loading": "Naglo-load ng kamakailang aktibidad...",
+    "error": "Hindi ma-load ang mga kamakailang transaksyon.",
+    "empty": "Wala pang kamakailang aktibidad."
+  },
+  "Governance": {
+    "title": "Pamamahala",
+    "description": "Mga nakabinbing multisig na panukala at paglilipat ng admin.",
+    "forbidden": "Wala kang access sa bahaging ito.",
+    "loading": "Naglo-load ng mga panukala...",
+    "error": "Hindi ma-load ang governance state.",
+    "empty": "Walang nakabinbing panukala.",
+    "pending": "Nakabinbin",
+    "approved": "Naaprubahan",
+    "pendingProposal": "Nakabinbing panukala",
+    "approvals": "Mga pag-apruba",
+    "currentAdmin": "Kasalukuyang admin",
+    "targetContract": "Target na kontrata",
+    "expiresAt": "Mawawalan ng bisa",
+    "timeToExecutable": "Oras hanggang sa maipatupad"
   }
 }

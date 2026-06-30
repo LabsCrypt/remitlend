@@ -338,5 +338,30 @@
       "health": "Health",
       "action": "Action"
     }
+  },
+  "RecentTransactions": {
+    "open": "Open recent transactions",
+    "close": "Close",
+    "title": "Recent transactions",
+    "description": "Your latest activity across loans, remittances, and pool operations.",
+    "loading": "Loading recent activity…",
+    "error": "Could not load recent transactions. Please try again.",
+    "empty": "No recent activity yet."
+  },
+  "Governance": {
+    "title": "Governance",
+    "description": "Pending multisig proposals and admin transitions.",
+    "forbidden": "You don't have access to this area.",
+    "loading": "Loading proposals…",
+    "error": "Could not load governance state.",
+    "empty": "No pending proposals.",
+    "pending": "Pending",
+    "approved": "Approved",
+    "pendingProposal": "Pending proposal",
+    "approvals": "Approvals",
+    "currentAdmin": "Current admin",
+    "targetContract": "Target contract",
+    "expiresAt": "Expires at",
+    "timeToExecutable": "Time to executable"
   }
 }

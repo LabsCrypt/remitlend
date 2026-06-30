@@ -338,5 +338,30 @@
       "health": "Salud",
       "action": "Accion"
     }
+  },
+  "RecentTransactions": {
+    "open": "Abrir transacciones recientes",
+    "close": "Cerrar",
+    "title": "Transacciones recientes",
+    "description": "Tu actividad mas reciente en prestamos, remesas y operaciones del pool.",
+    "loading": "Cargando actividad reciente...",
+    "error": "No se pudieron cargar las transacciones recientes.",
+    "empty": "Aun no hay actividad reciente."
+  },
+  "Governance": {
+    "title": "Gobernanza",
+    "description": "Propuestas multisig pendientes y transiciones de administrador.",
+    "forbidden": "No tienes acceso a esta seccion.",
+    "loading": "Cargando propuestas...",
+    "error": "No se pudo cargar el estado de gobernanza.",
+    "empty": "No hay propuestas pendientes.",
+    "pending": "Pendiente",
+    "approved": "Aprobada",
+    "pendingProposal": "Propuesta pendiente",
+    "approvals": "Aprobaciones",
+    "currentAdmin": "Administrador actual",
+    "targetContract": "Contrato objetivo",
+    "expiresAt": "Expira",
+    "timeToExecutable": "Tiempo hasta ejecutable"
   }
 }

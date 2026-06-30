@@ -143,7 +143,7 @@ fuzz_target!(|data: FuzzAction| {
 
             // First mint an NFT for the user
             let history_hash = BytesN::from_array(&env, &[0u8; 32]);
-            nft_client.mint(&user, &100, &history_hash, &None);
+            nft_client.mint(&user, &100u32, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
 
             if let Some(ref m) = minter {
                 nft_client.authorize_minter(m);
@@ -175,7 +175,7 @@ fuzz_target!(|data: FuzzAction| {
 
             // First mint an NFT for the user
             let history_hash = BytesN::from_array(&env, &[0u8; 32]);
-            nft_client.mint(&user, &100, &history_hash, &None);
+            nft_client.mint(&user, &100u32, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
 
             if let Some(ref m) = minter {
                 nft_client.authorize_minter(m);

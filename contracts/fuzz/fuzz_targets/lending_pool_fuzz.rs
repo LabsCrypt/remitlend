@@ -55,7 +55,7 @@ fuzz_target!(|data: FuzzAction| {
 
     // 3. Initialize LendingPool with Token
     let pool_admin = Address::generate(&env);
-    pool_client.initialize(&token_id, &pool_admin);
+    pool_client.initialize(&pool_admin);
 
     match data {
         FuzzAction::Deposit { user_id, amount } => {
@@ -73,7 +73,7 @@ fuzz_target!(|data: FuzzAction| {
 
             if result.is_ok() {
                 // Verify invariant: deposit should increase user balance
-                let balance = pool_client.get_deposit(&user);
+                let balance = pool_client.get_deposit(&user, &token_id);
                 assert!(balance >= 0, "Balance should never be negative");
                 assert_eq!(balance, amount, "Balance should match deposited amount");
                 
@@ -96,13 +96,13 @@ fuzz_target!(|data: FuzzAction| {
                 None => return,
             };
             stellar_asset_client.mint(&user, &deposit_amount);
-            pool_client.deposit(&user, &deposit_amount);
+            pool_client.deposit(&user, &token_id, &deposit_amount);
 
-            let balance_before = pool_client.get_deposit(&user);
+            let balance_before = pool_client.get_deposit(&user, &token_id);
             let result = rcall!(&env, pool_client, "withdraw", (user, amount));
 
             if result.is_ok() {
-                let balance_after = pool_client.get_deposit(&user);
+                let balance_after = pool_client.get_deposit(&user, &token_id);
 
                 // Verify invariant: balance should decrease by withdrawal amount
                 assert_eq!(
@@ -119,7 +119,7 @@ fuzz_target!(|data: FuzzAction| {
 
         FuzzAction::GetDeposit { user_id } => {
             let user = Address::generate(&env);
-            let balance = pool_client.get_deposit(&user);
+            let balance = pool_client.get_deposit(&user, &token_id);
 
             // Verify invariant: balance should never be negative
             assert!(balance >= 0, "Balance should never be negative");
@@ -149,7 +149,7 @@ fuzz_target!(|data: FuzzAction| {
                         total_expected_deposits -= op.amount;
                     } else {
                         // If it fails, balance should be verified or we just continue
-                        let balance = pool_client.get_deposit(&user_addr);
+                        let balance = pool_client.get_deposit(&user_addr, &token_id);
                         if balance < op.amount {
                             // Expected failure
                         } else {
@@ -168,7 +168,7 @@ fuzz_target!(|data: FuzzAction| {
             
             // Verify all individual balances are non-negative
             for (_, user_addr) in users {
-                assert!(pool_client.get_deposit(&user_addr) >= 0, "Individual balance should never be negative");
+                assert!(pool_client.get_deposit(&user_addr, &token_id) >= 0, "Individual balance should never be negative");
             }
         }
     }
