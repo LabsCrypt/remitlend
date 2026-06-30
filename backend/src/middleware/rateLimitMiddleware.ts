@@ -56,12 +56,6 @@ export const createRateLimitMiddleware = (options: RateLimitMiddlewareOptions = 
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Skip rate limiting under test runners: Redis isn't mocked by default
-      // and waiting on cacheService here causes test timeouts.
-      if (process.env.NODE_ENV === 'test') {
-        return next();
-      }
-
       // Skip rate limiting if condition is met
       if (skipIf(req)) {
         return next();

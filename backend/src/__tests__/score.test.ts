@@ -21,6 +21,22 @@ jest.unstable_mockModule('../services/cacheService.js', () => ({
   },
 }));
 
+// rateLimitService talks to Redis. Without an explicit mock the middleware
+// blocks waiting on the (unmocked) client and the test hits its 5s timeout.
+jest.unstable_mockModule('../services/rateLimitService.js', () => ({
+  rateLimitService: {
+    checkRateLimit: jest
+      .fn<() => Promise<{ allowed: boolean; remaining: number; resetTime: Date; currentCount: number }>>()
+      .mockResolvedValue({
+        allowed: true,
+        remaining: 100,
+        resetTime: new Date(Date.now() + 60_000),
+        currentCount: 0,
+      }),
+  },
+  SCORE_UPDATE_RATE_LIMIT: { maxRequests: 100, windowSeconds: 60 },
+}));
+
 // Dynamic imports to ensure mocks are applied
 const { query } = await import('../db/connection.js');
 const { generateJwtToken } = await import('../services/authService.js');

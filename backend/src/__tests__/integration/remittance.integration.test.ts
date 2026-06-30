@@ -16,7 +16,13 @@ const { sorobanService } = (await import('../../services/sorobanService.js')) as
 };
 const { default: app } = await import('../../app.js');
 
-describe('Integration: Remittance Submit Flow', () => {
+// Real-Postgres integration test. The default backend CI job points
+// DATABASE_URL at a nonexistent host, so this suite hangs forever waiting on
+// the connection. Opt in explicitly with INTEGRATION_TESTS=true (local dev or
+// a dedicated CI job that provisions Postgres + Redis).
+const describeIfDb = process.env.INTEGRATION_TESTS === 'true' ? describe : describe.skip;
+
+describeIfDb('Integration: Remittance Submit Flow', () => {
   let authToken: string;
   let remittanceId: string;
   const senderAddress = 'GBTEST123SENDER456STELLAR789ADDRESS000';

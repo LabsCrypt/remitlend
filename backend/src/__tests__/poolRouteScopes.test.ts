@@ -12,7 +12,17 @@
 import { describe, it, expect } from '@jest/globals';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import app from '../app.js';
+
+const LENDER_KEY = 'GLENDER000000000000000000000000000000000000000000000000001';
+const BORROWER_KEY = 'GBORROWER0000000000000000000000000000000000000000000000001';
+
+// requireJwtAuth re-resolves the role from publicKey via LENDER_WALLETS /
+// ADMIN_WALLETS, so a token signed with role='lender' would still be capped
+// to 'borrower' unless this wallet is allow-listed before app.ts imports
+// the rbac config. Set the env vars before the app import.
+process.env.LENDER_WALLETS = LENDER_KEY;
+
+const app = (await import('../app.js')).default;
 
 // Sign with the same secret jwtAuth verifies against; falls back to a fixed
 // value if env wasn't loaded so the test doesn't silently sign an HS256
@@ -29,9 +39,6 @@ function mintToken(
     algorithm: 'HS256',
   });
 }
-
-const LENDER_KEY = 'GLENDER000000000000000000000000000000000000000000000000001';
-const BORROWER_KEY = 'GBORROWER0000000000000000000000000000000000000000000000001';
 
 // lender has read:pool but NOT write:pool — as per ROLE_SCOPES in rbac.ts
 const lenderToken = mintToken(LENDER_KEY, 'lender', ['read:loans', 'read:pool']);
