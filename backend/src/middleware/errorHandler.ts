@@ -95,7 +95,7 @@ export const errorHandler = (
   }
 
   // ── Payload Too Large (body-parser) ────────────────────────
-  if ('type' in err && (err as any).type === 'entity.too.large') {
+  if ('type' in err && (err as { type?: string }).type === 'entity.too.large') {
     res.status(413).json({
       success: false,
       message: 'Request payload too large',

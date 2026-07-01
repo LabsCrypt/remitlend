@@ -75,16 +75,16 @@ describe('Centralized Error Handling', () => {
     });
   });
 
-  describe("Request Payload Size Limit", () => {
-    it("should return 413 when payload exceeds the configured limit", async () => {
+  describe('Request Payload Size Limit', () => {
+    it('should return 413 when payload exceeds the configured limit', async () => {
       // Create a payload larger than 100kb
       const largePayload = {
-        data: "x".repeat(1024 * 150) // 150kb string
+        data: 'x'.repeat(1024 * 150), // 150kb string
       };
 
       const response = await request(app)
-        .post("/api/simulate")
-        .set("Authorization", authHeader)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
         .send(largePayload);
 
       expect(response.status).toBe(413);
