@@ -989,6 +989,21 @@ impl LoanManager {
         Self::bump_instance_ttl(&env);
     }
 
+    /// Request a new loan for `borrower`.
+    ///
+    /// Requires `borrower` authorization and the loan manager, lending pool,
+    /// and NFT contract to be unpaused. The request starts in
+    /// [`LoanStatus::Pending`] and counts toward the borrower's active-loan cap.
+    /// Returns the new loan id.
+    ///
+    /// Returns [`LoanError::ContractPaused`], [`LoanError::PoolPaused`], or
+    /// [`LoanError::NftPaused`] when pause checks fail; [`LoanError::InvalidAmount`]
+    /// for non-positive amounts or amounts over the configured maximum;
+    /// [`LoanError::InvalidTerm`] for a zero term; [`LoanError::NotInitialized`]
+    /// when the NFT contract is missing; [`LoanError::InsufficientScore`] when
+    /// the borrower's NFT score is too low; [`LoanError::SeizedBorrower`] when
+    /// the borrower is flagged as seized; and [`LoanError::MaxLoansReached`]
+    /// when the borrower is already at the loan limit.
     pub fn request_loan(
         env: Env,
         borrower: Address,
@@ -1094,6 +1109,19 @@ impl LoanManager {
         Ok(loan_counter)
     }
 
+    /// Approve a pending loan and transfer principal to the borrower.
+    ///
+    /// Requires admin authorization and the loan manager, lending pool, and NFT
+    /// contract to be unpaused. The target loan must be [`LoanStatus::Pending`];
+    /// approval records the default term, due date, interest/late-fee ledgers,
+    /// and total outstanding balance before transferring funds from the lending
+    /// pool to the borrower.
+    ///
+    /// Returns [`LoanError::ContractPaused`], [`LoanError::PoolPaused`], or
+    /// [`LoanError::NftPaused`] when pause checks fail; [`LoanError::LoanNotFound`]
+    /// when `loan_id` is unknown; [`LoanError::LoanNotPending`] when the loan is
+    /// not pending; and [`LoanError::InsufficientPoolLiquidity`] when available
+    /// pool liquidity is below the loan amount.
     pub fn approve_loan(env: Env, loan_id: u32) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
@@ -1183,6 +1211,23 @@ impl LoanManager {
         Ok(loan)
     }
 
+    /// Repay part or all of an approved loan.
+    ///
+    /// Requires `borrower` authorization and the loan manager, lending pool,
+    /// and NFT contract to be unpaused. The loan must be [`LoanStatus::Approved`]
+    /// and owned by `borrower`. The repayment is split proportionally across
+    /// principal, accrued interest, and accrued late fees; if the remaining debt
+    /// is at or below the configured minimum repayment amount, the final payment
+    /// may forgive rounding dust and mark the loan [`LoanStatus::Repaid`].
+    ///
+    /// Returns [`LoanError::ContractPaused`], [`LoanError::PoolPaused`], or
+    /// [`LoanError::NftPaused`] when pause checks fail; [`LoanError::InvalidAmount`]
+    /// for non-positive amounts; [`LoanError::LoanNotFound`] when `loan_id` is
+    /// unknown; [`LoanError::BorrowerMismatch`] when `borrower` does not own the
+    /// loan; [`LoanError::LoanNotActive`] when the loan is not approved;
+    /// [`LoanError::LoanPastDue`] after the default window; [`LoanError::AmountTooLarge`]
+    /// if interest accrual overflows; and [`LoanError::RepaymentExceedsDebt`]
+    /// when `amount` exceeds current debt.
     pub fn repay(env: Env, borrower: Address, loan_id: u32, amount: i128) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
@@ -1368,6 +1413,20 @@ impl LoanManager {
         Ok(())
     }
 
+    /// Deposit collateral for an approved loan.
+    ///
+    /// Requires the borrower recorded on the loan to authorize, and requires the
+    /// loan manager, lending pool, and NFT contract to be unpaused. The target
+    /// loan must be [`LoanStatus::Approved`]. The collateral token transfer is
+    /// made from the borrower to this contract, then the loan's collateral
+    /// balance is increased.
+    ///
+    /// Returns [`LoanError::ContractPaused`], [`LoanError::PoolPaused`], or
+    /// [`LoanError::NftPaused`] when pause checks fail; [`LoanError::InvalidAmount`]
+    /// for non-positive amounts; [`LoanError::LoanNotFound`] when `loan_id` is
+    /// unknown; [`LoanError::LoanNotActive`] when the loan is not approved;
+    /// [`LoanError::NotInitialized`] when the NFT contract is missing; and
+    /// [`LoanError::SeizedBorrower`] when the borrower is flagged as seized.
     pub fn deposit_collateral(env: Env, loan_id: u32, amount: i128) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
@@ -1496,6 +1555,22 @@ impl LoanManager {
         Ok((loan.collateral_amount, total_debt, ratio_bps))
     }
 
+    /// Liquidate an under-collateralized approved loan.
+    ///
+    /// Requires `liquidator` authorization and the loan manager, lending pool,
+    /// and NFT contract to be unpaused. The target loan must be
+    /// [`LoanStatus::Approved`] and its collateral ratio must be below the
+    /// configured liquidation threshold. Collateral first repays debt to the
+    /// lending pool. When collateral exceeds debt, the liquidator receives the
+    /// configured bonus capped by the surplus, and any remaining surplus is
+    /// refunded to the borrower; otherwise all collateral goes to debt recovery.
+    ///
+    /// Returns [`LoanError::ContractPaused`], [`LoanError::PoolPaused`], or
+    /// [`LoanError::NftPaused`] when pause checks fail; [`LoanError::LoanNotFound`]
+    /// when `loan_id` is unknown; [`LoanError::LoanNotActive`] when the loan is
+    /// not approved; [`LoanError::AmountTooLarge`] if debt accrual overflows;
+    /// and [`LoanError::LoanNotLiquidatable`] when the collateral ratio is still
+    /// at or above the liquidation threshold.
     pub fn liquidate(env: Env, liquidator: Address, loan_id: u32) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
@@ -1609,6 +1684,16 @@ impl LoanManager {
         Ok(())
     }
 
+    /// Cancel a pending loan request.
+    ///
+    /// Requires `borrower` authorization. The loan must belong to `borrower` and
+    /// be [`LoanStatus::Pending`]. Cancellation marks the loan
+    /// [`LoanStatus::Cancelled`], clears recorded collateral, and returns any
+    /// collateral already held by the contract to the borrower.
+    ///
+    /// Returns [`LoanError::LoanNotFound`] when `loan_id` is unknown,
+    /// [`LoanError::BorrowerMismatch`] when `borrower` does not own the loan,
+    /// and [`LoanError::LoanNotPending`] when the loan is no longer pending.
     pub fn cancel_loan(env: Env, borrower: Address, loan_id: u32) -> Result<(), LoanError> {
         borrower.require_auth();
 
