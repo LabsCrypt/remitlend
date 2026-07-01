@@ -85,4 +85,67 @@ describe('DefaultChecker', () => {
       }),
     );
   });
+
+  it("skips a run when the default checker lock is already held", async () => {
+    const checker = new DefaultChecker();
+    const warnSpy = jest
+      .spyOn(logger, "warn")
+      .mockImplementation(() => logger as typeof logger);
+    const releaseLock = jest.fn();
+
+    (checker as unknown as Record<string, unknown>).acquireLock = async () =>
+      false;
+    (checker as unknown as Record<string, unknown>).releaseLock = releaseLock;
+
+    const result = await checker.checkOverdueLoans();
+
+    expect(result).toBeNull();
+    expect(releaseLock).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Default checker run skipped - another instance is already running",
+      {},
+    );
+  });
+
+  it("records a failed batch when default submission throws", async () => {
+    const checker = new DefaultChecker();
+    const releaseLock = jest.fn(async () => undefined);
+
+    (checker as unknown as Record<string, unknown>).acquireLock = async () =>
+      true;
+    (checker as unknown as Record<string, unknown>).releaseLock = releaseLock;
+    (checker as unknown as Record<string, unknown>).assertConfigured = () => ({
+      signer: {},
+      server: {
+        getLatestLedger: async () => ({ sequence: 4321 }),
+      },
+      passphrase: "test-passphrase",
+    });
+    (checker as unknown as Record<string, unknown>).fetchOverdueStats =
+      async () => ({
+        overdueCount: 2,
+        oldestDueLedger: 4200,
+        ledgersPastOldestDue: 121,
+      });
+    (checker as unknown as Record<string, unknown>).submitCheckDefaults =
+      async () => {
+        throw new Error("submission failed");
+      };
+
+    const result = await checker.checkOverdueLoans([201, 202]);
+
+    expect(result).toMatchObject({
+      currentLedger: 4321,
+      loansChecked: 2,
+      successfulSubmissions: 0,
+      failedSubmissions: 1,
+    });
+    expect(result!.batches).toEqual([
+      {
+        loanIds: [201, 202],
+        error: "default check batch failed: submission failed",
+      },
+    ]);
+    expect(releaseLock).toHaveBeenCalledTimes(1);
+  });
 });
