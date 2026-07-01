@@ -35,9 +35,14 @@ export const up = (pgm) => {
 };
 
 /**
- * Keep rollback non-destructive because several indexes above may already
- * exist from prior migrations with shared names.
- *
+ * @param pgm {import('node-pg-migrate').MigrationBuilder}
  * @returns {void}
  */
-export const down = () => {};
+export const down = (pgm) => {
+  pgm.sql(`DROP INDEX IF EXISTS idx_loan_events_created_at;`);
+  // Note: idx_loan_events_loan_id_event_type is also created by the earlier 1777 composite-indexes migration.
+  // A partial rollback of just 1788 would drop an index 1777 also owns, but IF EXISTS keeps it safe.
+  pgm.sql(`DROP INDEX IF EXISTS idx_loan_events_loan_id_event_type;`);
+  pgm.sql(`DROP INDEX IF EXISTS idx_loan_events_event_type;`);
+  pgm.sql(`DROP INDEX IF EXISTS idx_loan_events_borrower;`);
+};
