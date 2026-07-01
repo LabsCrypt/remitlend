@@ -515,7 +515,7 @@ export class EventIndexer {
               [
                 event.address ?? 'SYSTEM',
                 `ADMIN_CONFIG_${event.eventType}`,
-                null,
+                `contract:${event.contractId}`,
                 JSON.stringify({
                   eventId: event.eventId,
                   eventType: event.eventType,
