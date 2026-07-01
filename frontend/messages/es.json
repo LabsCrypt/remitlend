@@ -350,7 +350,7 @@
     "empty": "Aun no hay actividad reciente."
   },
   "Governance": {
-    "title": "Gobernanza",
+    "title": "Consola de gobernanza",
     "description": "Propuestas multisig pendientes y transiciones de administrador.",
     "forbidden": "No tienes acceso a esta seccion.",
     "loading": "Cargando propuestas...",

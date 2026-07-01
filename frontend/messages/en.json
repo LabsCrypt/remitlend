@@ -350,7 +350,7 @@
     "empty": "No recent activity yet."
   },
   "Governance": {
-    "title": "Governance",
+    "title": "Governance Console",
     "description": "Pending multisig proposals and admin transitions.",
     "forbidden": "You don't have access to this area.",
     "loading": "Loading proposals…",

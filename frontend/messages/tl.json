@@ -350,7 +350,7 @@
     "empty": "Wala pang kamakailang aktibidad."
   },
   "Governance": {
-    "title": "Pamamahala",
+    "title": "Governance Console",
     "description": "Mga nakabinbing multisig na panukala at paglilipat ng admin.",
     "forbidden": "Wala kang access sa bahaging ito.",
     "loading": "Naglo-load ng mga panukala...",
