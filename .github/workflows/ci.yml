@@ -203,7 +203,7 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: frontend
       - name: Run e2e tests
-        run: npm run test:e2e
+        run: npx playwright test --project=chromium
         working-directory: frontend
         env:
           NODE_ENV: test
