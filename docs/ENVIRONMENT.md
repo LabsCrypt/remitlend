@@ -74,18 +74,18 @@ This document lists every environment variable used by the RemitLend platform. E
 
 ## Frontend (`frontend/`)
 
-| Variable                           | Dev | Staging | Prod | Default                                   | Description                                            | Source                                      |
-| ---------------------------------- | --- | ------- | ---- | ----------------------------------------- | ------------------------------------------------------ | ------------------------------------------- |
-| `NEXT_PUBLIC_API_URL`              | ✓   | ✓       | ✓    | `http://localhost:3001`                   | Backend API base URL                                   | `frontend/src/app/hooks/useApi.ts`          |
-| `NEXT_PUBLIC_APP_URL`              | ✓   | ✓       | ✓    | `https://remitlend.com`                   | Public-facing app URL used for absolute links          | `frontend/src/lib/canonicalUrl.ts`          |
-| `NEXT_PUBLIC_SENTRY_DSN`           | —   | ✓       | ✓    | —                                         | Sentry DSN for frontend error tracking                 | `frontend/src/sentry.client.config.ts`      |
-| `SENTRY_DSN`                       | —   | ✓       | ✓    | —                                         | Sentry DSN server-side                                 | `frontend/src/sentry.server.config.ts`      |
-| `SENTRY_ORG`                       | —   | ✓       | ✓    | —                                         | Sentry organization slug                               | `frontend/sentry.client.config.ts`          |
-| `SENTRY_PROJECT`                   | —   | ✓       | ✓    | —                                         | Sentry project slug                                    | `frontend/sentry.client.config.ts`          |
-| `SENTRY_AUTH_TOKEN`                | —   | ✓       | ✓    | —                                         | Sentry auth token for source maps                      | `frontend/next.config.ts`                   |
-| `NODE_ENV`                         | ✓   | ✓       | ✓    | `development`                             | Node environment (`development`, `test`, `production`) | `next.config.ts`                            |
-| `NEXT_PUBLIC_STELLAR_EXPLORER_URL` | ✓   | ✓       | ✓    | `https://stellar.expert/explorer/testnet` | Stellar explorer base URL for transaction links        | `frontend/src/components/ui/TxHashLink.tsx` |
-
+| Variable | Dev | Staging | Prod | Default | Description | Source |
+|---|---|---|---|---|---|---|
+| `NEXT_PUBLIC_API_URL` | ✓ | ✓ | ✓ | `http://localhost:3001` | Backend API base URL | `frontend/src/app/hooks/useApi.ts` |
+| `NEXT_PUBLIC_APP_URL` | ✓ | ✓ | ✓ | `https://remitlend.com` | Public-facing app URL used for absolute links | `frontend/src/lib/canonicalUrl.ts` |
+| `NEXT_PUBLIC_SENTRY_DSN` | — | ✓ | ✓ | — | Sentry DSN for frontend error tracking | `frontend/src/sentry.client.config.ts` |
+| `SENTRY_DSN` | — | ✓ | ✓ | — | Sentry DSN server-side | `frontend/src/sentry.server.config.ts` |
+| `SENTRY_ORG` | — | ✓ | ✓ | — | Sentry organization slug | `frontend/sentry.client.config.ts` |
+| `SENTRY_PROJECT` | — | ✓ | ✓ | — | Sentry project slug | `frontend/sentry.client.config.ts` |
+| `SENTRY_AUTH_TOKEN` | — | ✓ | ✓ | — | Sentry auth token for source maps | `frontend/next.config.ts` |
+| `NODE_ENV` | ✓ | ✓ | ✓ | `development` | Node environment (`development`, `test`, `production`) | `next.config.ts` |
+| `NEXT_PUBLIC_STELLAR_EXPLORER_URL` | ✓ | ✓ | ✓ | `https://stellar.expert/explorer/testnet` | Stellar explorer base URL for transaction links | `frontend/src/components/ui/TxHashLink.tsx` |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | ✓ | ✓ | ✓ | `testnet` | Stellar network name shown in the build-info footer | `frontend/src/components/BuildInfoFooter.tsx` |
 ---
 
 ## Contracts / Scripts (`contracts/`, `scripts/`)
