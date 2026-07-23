@@ -63,7 +63,7 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
       });
     }
 
-    if (!['PENDING', 'DEFAULTED'].includes(loan.status as string)) {
+    if (!['PENDING', 'OPEN'].includes(loan.status as string)) {
       return res.status(400).json({
         message: 'Loan cannot be cancelled',
       });
