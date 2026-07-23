@@ -169,7 +169,7 @@ export class DefaultChecker {
       )
       SELECT loan_id
       FROM active
-      WHERE due_ledger <= $2
+      WHERE due_ledger < $2
       ORDER BY due_ledger ASC, loan_id ASC
       LIMIT $3
       `,
