@@ -620,7 +620,9 @@ impl LendingPool {
         shares: i128,
     ) -> Result<(), PoolError> {
         provider.require_auth();
-        Self::redeem_shares(&env, &provider, &token, shares)
+        Self::redeem_shares(&env, &provider, &token, shares)?;
+        events::emergency_withdraw(&env, provider, token, shares);
+        Ok(())
     }
 
     // ── Cooldown views ────────────────────────────────────────────────────
