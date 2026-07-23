@@ -153,6 +153,35 @@ fn test_withdraw_flow() {
 }
 
 #[test]
+fn test_withdraw_burns_redeemed_shares_and_allows_final_redeem() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &3000);
+    pool_client.deposit(&provider, &token_id, &3000);
+
+    pool_client.withdraw(&provider, &token_id, &1000);
+    assert_eq!(pool_client.get_shares(&provider, &token_id), 2000);
+    assert_eq!(pool_client.get_total_shares(&token_id), 2000);
+
+    pool_client.withdraw(&provider, &token_id, &2000);
+    assert_eq!(pool_client.get_shares(&provider, &token_id), 0);
+    assert_eq!(pool_client.get_total_shares(&token_id), 0);
+    assert_eq!(pool_client.get_depositor_count(&token_id), 0);
+    assert_eq!(token_client.balance(&provider), 3000);
+    assert_eq!(token_client.balance(&pool_id), 0);
+}
+
+#[test]
 #[should_panic]
 fn test_negative_withdraw_panic() {
     let env = Env::default();
