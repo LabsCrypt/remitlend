@@ -726,7 +726,7 @@ impl RemittanceNFT {
 
         let old_score = metadata.score;
         let decreased = old_score.saturating_sub(penalty_points);
-        let new_score = decreased.min(Self::MIN_CREDIT_SCORE);
+        let new_score = decreased.max(Self::MIN_CREDIT_SCORE);
         if new_score == old_score {
             return;
         }
