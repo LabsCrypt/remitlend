@@ -1909,8 +1909,8 @@ impl LoanManager {
         }
 
         // Validate collateral covers new amount (collateral must be >= loan amount)
-        if loan.collateral_amount > new_amount {
-            return Err(LoanError::InsufficientScore);
+        if loan.collateral_amount < new_amount {
+            return Err(LoanError::InsufficientCollateral);
         }
 
         // Settle all accrued interest and late fees up to now.
