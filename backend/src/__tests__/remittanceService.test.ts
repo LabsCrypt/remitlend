@@ -126,6 +126,26 @@ describe('remittanceService.createRemittance', () => {
     expect(payment.asset.getIssuer()).toBe(USDC_ISSUER);
   });
 
+  it('builds the payment XDR with the same amount stored in the remittance record', async () => {
+    const remittance = await remittanceService.createRemittance({
+      recipientAddress: RECIPIENT,
+      amount: 25,
+      fromCurrency: 'XLM',
+      toCurrency: 'XLM',
+      memo: 'test',
+      senderAddress: SENDER,
+    });
+
+    const tx = TransactionBuilder.fromXDR(
+      remittance.xdr!,
+      Networks.TESTNET,
+    ) as import('@stellar/stellar-sdk').Transaction;
+    const payment = tx.operations[0] as { amount: string };
+
+    expect(remittance.amount).toBe(25);
+    expect(payment.amount).toBe('25.0000000');
+  });
+
   it("builds the payment XDR from the sender's live Stellar sequence", async () => {
     const remittance = await remittanceService.createRemittance({
       recipientAddress: RECIPIENT,
