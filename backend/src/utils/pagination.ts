@@ -110,7 +110,7 @@ export function createPaginatedResponse<T>(
       offset,
       count: currentCount,
       has_previous: offset > 0,
-      has_next: offset + currentCount <= totalCount,
+      has_next: offset + currentCount < totalCount,
     },
   };
 }
