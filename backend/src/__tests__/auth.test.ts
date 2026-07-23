@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import app from '../app.js';
 import { Keypair } from '@stellar/stellar-sdk';
 
@@ -279,6 +280,42 @@ describe('authService unit tests', () => {
     });
   });
 
+  describe('verifyJwtToken', () => {
+    it('should return payload for a valid unexpired token', () => {
+      process.env.JWT_SECRET = 'test-secret-key-for-jest';
+      const token = jwt.sign(
+        {
+          publicKey: 'GVALID',
+          role: 'borrower',
+          scopes: ['read:loans'],
+          jti: 'valid-jti',
+        },
+        process.env.JWT_SECRET,
+        { algorithm: 'HS256', expiresIn: '1h' },
+      );
+
+      const result = authService.verifyJwtToken(token);
+
+      expect(result?.publicKey).toBe('GVALID');
+      expect(result?.jti).toBe('valid-jti');
+    });
+
+    it('should return null for an expired token', () => {
+      process.env.JWT_SECRET = 'test-secret-key-for-jest';
+      const token = jwt.sign(
+        {
+          publicKey: 'GEXPIRED',
+          role: 'borrower',
+          scopes: ['read:loans'],
+          jti: 'expired-jti',
+        },
+        process.env.JWT_SECRET,
+        { algorithm: 'HS256', expiresIn: -1 },
+      );
+
+      expect(authService.verifyJwtToken(token)).toBeNull();
+    });
+  });
   describe('verifyChallengeTimestamp', () => {
     it('should accept timestamp at the window edge', () => {
       const maxAge = 5 * 60 * 1000; // 5 minutes
