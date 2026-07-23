@@ -2606,8 +2606,8 @@ impl LoanManager {
         }
 
         // Check extension limit
-        if loan.extension_count > Self::MAX_EXTENSIONS {
-            return Err(LoanError::InvalidConfiguration);
+        if loan.extension_count >= Self::MAX_EXTENSIONS {
+            return Err(LoanError::MaxExtensionsReached);
         }
 
         // Calculate extension fee (1% of remaining principal)
