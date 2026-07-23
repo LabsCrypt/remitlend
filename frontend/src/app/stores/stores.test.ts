@@ -325,6 +325,23 @@ describe("useGamificationStore", () => {
       expect(state.pendingLevelUp).toBeNull();
     });
 
+    it("does not trigger level-up when recalculated level equals current level", () => {
+      useGamificationStore.setState({
+        xp: 100,
+        level: 2,
+        kingdomTitle: "Merchant",
+        showLevelUpModal: false,
+        pendingLevelUp: null,
+      });
+
+      useGamificationStore.getState().checkLevelUp();
+
+      const state = useGamificationStore.getState();
+      expect(state.level).toBe(2);
+      expect(state.kingdomTitle).toBe("Merchant");
+      expect(state.showLevelUpModal).toBe(false);
+      expect(state.pendingLevelUp).toBeNull();
+    });
     it("dismissLevelUp clears the modal and pending reward", () => {
       useGamificationStore.getState().addXP(100);
       useGamificationStore.getState().dismissLevelUp();

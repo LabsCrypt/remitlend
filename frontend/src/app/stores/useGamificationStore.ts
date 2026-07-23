@@ -236,7 +236,7 @@ export const useGamificationStore = create<GamificationStore>()(
           const { xp, level } = get();
           const newLevel = calculateLevel(xp);
 
-          if (newLevel >= level) {
+          if (newLevel > level) {
             const levelUpReward = LEVEL_THRESHOLDS.find((t) => t.level === newLevel);
             if (levelUpReward) {
               set(
