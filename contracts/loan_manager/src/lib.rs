@@ -1048,7 +1048,7 @@ impl LoanManager {
 
         let active_loan_count = Self::borrower_loan_count(&env, &borrower);
         let max_loans_per_borrower = Self::max_loans_per_borrower(&env);
-        if active_loan_count > max_loans_per_borrower {
+        if active_loan_count >= max_loans_per_borrower {
             return Err(LoanError::MaxLoansReached);
         }
 
