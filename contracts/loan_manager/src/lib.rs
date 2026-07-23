@@ -1666,7 +1666,7 @@ impl LoanManager {
         if borrower_refund > 0 {
             token_client.transfer(
                 &env.current_contract_address(),
-                &liquidator,
+                &loan.borrower,
                 &borrower_refund,
             );
         }
