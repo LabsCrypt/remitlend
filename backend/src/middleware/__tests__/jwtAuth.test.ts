@@ -24,7 +24,7 @@ jest.unstable_mockModule('../../errors/AppError.js', () => ({
   },
 }));
 
-const { requireJwtAuth, requireScopes, requireWalletParamMatchesJwt } =
+const { requireJwtAuth, requireBorrower, requireScopes, requireWalletParamMatchesJwt } =
   await import('../jwtAuth.js');
 const { verifyJwtToken, extractBearerToken, isTokenRevoked } =
   await import('../../services/authService.js');
@@ -236,6 +236,39 @@ describe('jwtAuth middleware', () => {
           statusCode: 401,
         }),
       );
+    });
+  });
+
+  describe('requireBorrower', () => {
+    it('should grant access to borrower users', () => {
+      mockRequest.user = {
+        publicKey: 'GBORROWER',
+        role: 'borrower',
+        scopes: [],
+        iat: 1000,
+        exp: 2000,
+      };
+
+      requireBorrower(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should reject lender users from borrower-only routes', () => {
+      mockRequest.user = {
+        publicKey: 'GLENDER',
+        role: 'lender',
+        scopes: [],
+        iat: 1000,
+        exp: 2000,
+      };
+
+      expect(() => requireBorrower(mockRequest as Request, mockResponse as Response, mockNext)).toThrow(
+        expect.objectContaining({
+          statusCode: 403,
+        }),
+      );
+      expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
