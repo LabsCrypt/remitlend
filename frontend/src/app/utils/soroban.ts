@@ -93,7 +93,7 @@ export async function buildUnsignedRepaymentXdr({
           new xdr.InvokeContractArgs({
             contractAddress: Address.fromString(contractId).toScAddress(),
             functionName: "repay",
-            args: [borrowerScVal, amountScVal, loanIdScVal],
+            args: [borrowerScVal, loanIdScVal, amountScVal],
           }),
         ),
         auth: [],
