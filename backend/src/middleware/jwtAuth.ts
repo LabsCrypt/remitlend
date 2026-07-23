@@ -126,7 +126,7 @@ export const requireWalletOwnership = (req: Request, _res: Response, next: NextF
     throw AppError.badRequest('Wallet address is required');
   }
 
-  if (requestedWallet !== requestedWallet) {
+  if (requestedWallet !== authenticatedWallet) {
     throw AppError.forbidden('You are not authorized to access this wallet');
   }
 
