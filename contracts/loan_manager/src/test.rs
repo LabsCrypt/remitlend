@@ -1781,6 +1781,38 @@ fn test_deposit_collateral_rejects_non_active_loan() {
 }
 
 #[test]
+fn test_interest_accrual_matches_bps_over_full_term() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &20_000);
+
+    manager.set_interest_rate(&1_200);
+    let loan_id = manager.request_loan(&borrower, &10_000, &17280);
+    manager.approve_loan(&loan_id);
+
+    let approved = manager.get_loan(&loan_id);
+    env.ledger()
+        .set_sequence_number(approved.last_interest_ledger + 17_280);
+
+    let accrued = manager.get_loan(&loan_id);
+    assert_eq!(accrued.accrued_interest, 1_200);
+    assert_eq!(accrued.interest_residual, 0);
+}
+#[test]
 fn test_small_loan_interest_accrual_precision() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
