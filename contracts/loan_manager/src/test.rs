@@ -2839,6 +2839,7 @@ fn test_refinance_loan_increases_principal_draws_from_pool() {
     // Approve a 1_000-unit loan, then set collateral high enough for refinance.
     let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
     manager.approve_loan(&loan_id);
+    assert_eq!(manager.get_total_outstanding(&token_id), 1_000);
 
     // Inject collateral directly so the contract accepts the larger amount.
     stellar_token.mint(&manager.address, &5_000);
@@ -2859,6 +2860,7 @@ fn test_refinance_loan_increases_principal_draws_from_pool() {
     assert_eq!(loan.amount, 2_000);
     assert_eq!(loan.principal_paid, 0); // reset on refinance
     assert_eq!(loan.status, LoanStatus::Approved);
+    assert_eq!(manager.get_total_outstanding(&token_id), 2_000);
     // Borrower received the additional 1_000 from the pool.
     assert_eq!(
         token_client.balance(&borrower),

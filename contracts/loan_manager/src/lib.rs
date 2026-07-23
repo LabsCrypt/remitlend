@@ -1993,9 +1993,8 @@ impl LoanManager {
             core::cmp::Ordering::Equal => {}
         }
 
-        let outstanding_delta = loan
-            .amount
-            .checked_sub(new_amount)
+        let outstanding_delta = new_amount
+            .checked_sub(loan.amount)
             .expect("outstanding delta overflow");
         Self::adjust_total_outstanding(&env, &token, outstanding_delta);
 
