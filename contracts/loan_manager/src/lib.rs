@@ -2529,7 +2529,7 @@ impl LoanManager {
             .due_date
             .checked_add(Self::default_window_ledgers(&env))
             .expect("default window overflow");
-        if current_ledger < default_eligible_after {
+        if current_ledger <= default_eligible_after {
             return Err(LoanError::LoanNotPastDue);
         }
 

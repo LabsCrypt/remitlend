@@ -1253,7 +1253,7 @@ fn test_check_default_respects_default_window() {
     manager.approve_loan(&loan_id);
 
     let due_date = manager.get_loan(&loan_id).due_date;
-    env.ledger().set_sequence_number(due_date + 9_999);
+    env.ledger().set_sequence_number(due_date + manager.get_default_window_ledgers());
 
     let result = manager.try_check_default(&loan_id);
     assert_eq!(result, Err(Ok(LoanError::LoanNotPastDue)));
