@@ -249,7 +249,7 @@ impl LendingPool {
         };
 
         let current_ledger = env.ledger().sequence();
-        if current_ledger > deposit_ledger.saturating_add(cooldown) {
+        if current_ledger < deposit_ledger.saturating_add(cooldown) {
             panic!("withdrawal_cooldown_active");
         }
     }
