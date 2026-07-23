@@ -55,7 +55,7 @@ export async function buildUnsignedLoanRequestXdr({
           new xdr.InvokeContractArgs({
             contractAddress: Address.fromString(contractId).toScAddress(),
             functionName: "request_loan",
-            args: [borrowerScVal, termScVal, amountScVal],
+            args: [borrowerScVal, amountScVal, termScVal],
           }),
         ),
         auth: [],
