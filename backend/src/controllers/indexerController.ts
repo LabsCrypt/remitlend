@@ -20,7 +20,7 @@ import logger from '../utils/logger.js';
  * Returns true if the hostname resolves to a private, loopback, or link-local
  * address that should never receive outbound webhook deliveries (SSRF guard).
  */
-function isPrivateHost(hostname: string): boolean {
+export function isPrivateHost(hostname: string): boolean {
   // Strip IPv6 brackets
   const host = hostname.replace(/^\[|\]$/g, '');
 
@@ -34,7 +34,7 @@ function isPrivateHost(hostname: string): boolean {
 
   // Private IPv4 ranges (RFC 1918)
   if (/^10\./.test(host)) return true;
-  if (/^172\.(1[7-9]|2\d|3[01])\./.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
   if (/^192\.168\./.test(host)) return true;
 
   // AWS / GCP metadata endpoints
