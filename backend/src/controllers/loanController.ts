@@ -747,7 +747,7 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Idempotency: return existing unsigned tx if recently built for this borrower/loan/amount
-  const cacheKey = `pending_repay_tx:${borrowerPublicKey}:${loanIdNum}:${loanIdNum}`;
+  const cacheKey = `pending_repay_tx:${borrowerPublicKey}:${loanIdNum}:${amount}`;
   const cachedTx = await cacheService.get<{
     unsignedTxXdr: string;
     networkPassphrase: string;
