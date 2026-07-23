@@ -150,6 +150,33 @@ describe('POST /api/score/update', () => {
     expect(response.body.newScore).toBe(515);
   });
 
+
+  it('should clamp updated scores at the documented maximum', async () => {
+    mockedQuery.mockResolvedValueOnce({
+      rows: [{ current_score: 845 }],
+      command: 'SELECT',
+      rowCount: 1,
+      oid: 0,
+      fields: [],
+    });
+    mockedQuery.mockResolvedValueOnce({
+      rows: [{ current_score: 850 }],
+      command: 'INSERT',
+      rowCount: 1,
+      oid: 0,
+      fields: [],
+    });
+
+    const response = await request(app)
+      .post('/api/score/update')
+      .set('x-api-key', 'test-internal-key')
+      .send({ userId: 'cap-user', repaymentAmount: 500, onTime: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body.newScore).toBe(850);
+    expect(mockedQuery.mock.calls[1][0]).toContain('LEAST(850, GREATEST(300');
+    expect(mockedQuery.mock.calls[1][0]).not.toContain('LEAST(8500');
+  });
   it('should reject negative repaymentAmount', async () => {
     const response = await request(app)
       .post('/api/score/update')
