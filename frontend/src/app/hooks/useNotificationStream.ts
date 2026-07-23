@@ -7,6 +7,16 @@ import { queryKeys, type AppNotification } from "./useApi";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+export function mergeInitNotifications(
+  existing: AppNotification[],
+  incoming: AppNotification[],
+): AppNotification[] {
+  const ids = new Set(existing.map((n) => n.id));
+  return [
+    ...incoming.filter((n) => !ids.has(n.id)),
+    ...existing,
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
 /**
  * Connects to the SSE /api/notifications/stream endpoint and pushes new
  * notifications into the TanStack Query cache so the UI updates immediately.
@@ -87,12 +97,9 @@ export function useNotificationStream() {
                     const existing = prev ?? { notifications: [], unreadCount: 0 };
 
                     if ("type" in payload && payload.type === "init") {
-                      const ids = new Set(existing.notifications.map((n) => n.id));
-                      const merged = [
-                        ...payload.notifications.filter((n) => ids.has(n.id)),
-                        ...existing.notifications,
-                      ].sort(
-                        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                      const merged = mergeInitNotifications(
+                        existing.notifications,
+                        payload.notifications,
                       );
                       const unreadCount = merged.filter((n) => !n.read).length;
                       return { notifications: merged, unreadCount };
