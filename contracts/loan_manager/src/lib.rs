@@ -1185,7 +1185,7 @@ impl LoanManager {
 
         // ── INTERACTIONS (external calls last) ──────────────────────────────
         let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&borrower, &lending_pool, &transfer_amount);
+        token_client.transfer(&lending_pool, &borrower, &transfer_amount);
 
         events::loan_approved(
             &env,
