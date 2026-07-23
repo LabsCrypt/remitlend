@@ -356,7 +356,7 @@ impl LoanManager {
             .and_then(|v| v.checked_mul(PRECISION))
             .ok_or(LoanError::AmountTooLarge)?;
 
-        let denominator = 100_000i128
+        let denominator = 10_000i128
             .checked_mul(Self::DEFAULT_TERM_LEDGERS as i128)
             .ok_or(LoanError::AmountTooLarge)?;
 
