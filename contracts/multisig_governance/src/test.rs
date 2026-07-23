@@ -87,7 +87,7 @@ fn finalize_succeeds_and_updates_local_and_remote_state() {
     client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
     client.approve_transfer(&s);
 
-    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS);
 
     // Call finalize
     client.finalize_admin_transfer(&admin);
@@ -290,7 +290,7 @@ fn finalize_without_enough_approvals_panics() {
         &MIN_TIMELOCK_SECONDS,
     );
     client.approve_transfer(&s1); // only 1 of 2
-    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS);
     let result = client.try_finalize_admin_transfer(&Address::generate(&env));
     assert_eq!(result, Err(Ok(GovernanceError::ThresholdNotMet)));
 }
@@ -318,7 +318,7 @@ fn timelock_remaining_counts_down() {
 //     let signers = Vec::from_slice(&env, &[s]);
 //     set_ts(&env, 1000);
 //     client.propose_admin_transfer(&Address::generate(&env), &signers, &1, &MIN_TIMELOCK_SECONDS);
-//     set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+//     set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS);
 //     assert_eq!(client.get_timelock_remaining(), 0);
 // }
 
@@ -496,7 +496,7 @@ fn finalize_works_within_ttl() {
     client.approve_transfer(&s);
 
     // Move past timelock but within TTL
-    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS);
 
     // Finalization should succeed
     client.finalize_admin_transfer(&admin);
@@ -550,7 +550,7 @@ fn emergency_cancel_works_and_prevents_finalization() {
     );
 
     // Finalization should panic
-    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS);
     // client.finalize_admin_transfer(&admin); // This would panic
 }
 
@@ -591,7 +591,7 @@ fn cannot_finalize_cancelled_proposal() {
 
     client.emergency_cancel_proposal(&proposal_id, &None);
 
-    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS);
     let result = client.try_finalize_admin_transfer(&admin);
     assert_eq!(result, Err(Ok(GovernanceError::ProposalNotActive)));
 }

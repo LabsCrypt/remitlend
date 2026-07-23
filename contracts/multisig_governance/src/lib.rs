@@ -397,7 +397,7 @@ impl GovernanceContract {
 
         // INV-2: threshold must be met
         let approval_count = pending.approvals.len();
-        if approval_count + 1 < pending.threshold {
+        if approval_count < pending.threshold {
             return Err(GovernanceError::ThresholdNotMet);
         }
 
