@@ -34,6 +34,7 @@ const { remittanceService } = await import('../services/remittanceService.js');
 const USDC_ISSUER = Keypair.random().publicKey();
 const SENDER = Keypair.random().publicKey();
 const RECIPIENT = Keypair.random().publicKey();
+let lastInsertParams: unknown[] = [];
 
 function mockRemittanceInsert() {
   mockWithTransaction.mockImplementation(async (...args: unknown[]) => {
@@ -44,6 +45,7 @@ function mockRemittanceInsert() {
     let xdrValue = '';
     const result = await callback({
       query: async (_sql: string, queryParams: unknown[]) => {
+        lastInsertParams = queryParams;
         xdrValue = queryParams[8] as string;
         return {
           rows: [
@@ -124,6 +126,20 @@ describe('remittanceService.createRemittance', () => {
 
     expect(payment.asset.getCode()).toBe('USDC');
     expect(payment.asset.getIssuer()).toBe(USDC_ISSUER);
+  });
+
+  it('stores sender and recipient in their matching remittance columns', async () => {
+    await remittanceService.createRemittance({
+      recipientAddress: RECIPIENT,
+      amount: 25,
+      fromCurrency: 'XLM',
+      toCurrency: 'XLM',
+      memo: 'test',
+      senderAddress: SENDER,
+    });
+
+    expect(lastInsertParams[1]).toBe(SENDER);
+    expect(lastInsertParams[2]).toBe(RECIPIENT);
   });
 
   it("builds the payment XDR from the sender's live Stellar sequence", async () => {
