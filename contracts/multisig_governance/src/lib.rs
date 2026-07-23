@@ -385,7 +385,7 @@ impl GovernanceContract {
         let now = env.ledger().timestamp();
 
         // INV-1: timelock must have elapsed
-        if now > pending.executable_after {
+        if now < pending.executable_after {
             return Err(GovernanceError::TimelockNotElapsed);
         }
 
