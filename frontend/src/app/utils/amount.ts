@@ -58,7 +58,7 @@ export function toStroops(value: string, decimals = STROOP_DECIMALS): bigint | n
   }
 
   const [whole = "0", fraction = ""] = value.split(".");
-  const normalizedFraction = fraction.padStart(decimals, "0");
+  const normalizedFraction = fraction.padEnd(decimals, "0");
 
   try {
     // Scale by the requested precision, not the fixed 7-decimal stroop scale,
