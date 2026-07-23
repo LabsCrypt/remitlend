@@ -237,6 +237,32 @@ describe("useWithdrawFromPool optimistic rollback", () => {
     });
   });
 
+
+  it("onMutate decreases totalDeposits and depositor depositAmount optimistically", async () => {
+    global.fetch = mockFetchSuccess({
+      unsignedTxXdr: "xdr",
+      networkPassphrase: "pass",
+    }) as unknown as typeof fetch;
+    const { queryClient, wrapper } = createTestHarness();
+    seedWithdrawCache(queryClient);
+
+    const { result } = renderHook(() => useWithdrawFromPool(), { wrapper });
+
+    result.current.mutate({
+      amount: 250,
+      depositorAddress: DEPOSITOR,
+      token: "USDC",
+    });
+
+    await waitFor(() => {
+      const cachedStats = queryClient.getQueryData<PoolStats>(queryKeys.pool.stats());
+      const cachedDepositor = queryClient.getQueryData<DepositorPortfolio>(
+        queryKeys.pool.depositor(DEPOSITOR),
+      );
+      expect(cachedStats?.totalDeposits).toBe(9750);
+      expect(cachedDepositor?.depositAmount).toBe(250);
+    });
+  });
   it("onError restores exact previous pool stats and depositor portfolio", async () => {
     global.fetch = mockFetchFailure() as unknown as typeof fetch;
     const { queryClient, wrapper } = createTestHarness();
@@ -319,6 +345,32 @@ describe("useDepositToPool optimistic rollback", () => {
     });
   });
 
+
+  it("onMutate decreases totalDeposits and depositor depositAmount optimistically", async () => {
+    global.fetch = mockFetchSuccess({
+      unsignedTxXdr: "xdr",
+      networkPassphrase: "pass",
+    }) as unknown as typeof fetch;
+    const { queryClient, wrapper } = createTestHarness();
+    seedWithdrawCache(queryClient);
+
+    const { result } = renderHook(() => useWithdrawFromPool(), { wrapper });
+
+    result.current.mutate({
+      amount: 250,
+      depositorAddress: DEPOSITOR,
+      token: "USDC",
+    });
+
+    await waitFor(() => {
+      const cachedStats = queryClient.getQueryData<PoolStats>(queryKeys.pool.stats());
+      const cachedDepositor = queryClient.getQueryData<DepositorPortfolio>(
+        queryKeys.pool.depositor(DEPOSITOR),
+      );
+      expect(cachedStats?.totalDeposits).toBe(9750);
+      expect(cachedDepositor?.depositAmount).toBe(250);
+    });
+  });
   it("onError restores exact previous pool stats and depositor portfolio", async () => {
     global.fetch = mockFetchFailure() as unknown as typeof fetch;
     const { queryClient, wrapper } = createTestHarness();
