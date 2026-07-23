@@ -82,7 +82,16 @@ describe('updateUserScoresBulk clamping', () => {
     const [sql] = mockQuery.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain('LEAST(850, GREATEST(300,');
   });
-});
+
+  it('applies positive deltas as score increases in bulk upserts', async () => {
+    await updateUserScoresBulk(new Map([['user_reward', 25]]));
+
+    const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+    expect(params).toEqual(['user_reward', 25]);
+    expect(sql).toContain('500 + $2');
+    expect(sql).toContain('scores.current_score + EXCLUDED.current_score - 500');
+    expect(sql).not.toContain('500 - $2');
+  });});
 
 describe('setAbsoluteUserScoresBulk', () => {
   it('is a noop for empty map', async () => {
