@@ -95,4 +95,21 @@ describe('Idempotency Middleware', () => {
     expect(next).toHaveBeenCalled();
     expect(res.on).toHaveBeenCalledWith('finish', expect.any(Function));
   });
+  it('does not cache 5xx responses on cache miss', async () => {
+    const key = 'server-error-key';
+    let finishHandler: (() => Promise<void>) | undefined;
+    asMock(req.header).mockReturnValue(key);
+    (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+    (res.on as jest.Mock).mockImplementation((event: string, handler: () => Promise<void>) => {
+      if (event === 'finish') finishHandler = handler;
+      return res as Response;
+    });
+
+    await idempotencyMiddleware(req as Request, res as Response, next);
+    (res as Response).statusCode = 503;
+    (res.json as Response['json'])({ success: false, message: 'temporary failure' });
+    await finishHandler?.();
+
+    expect(cacheService.set).not.toHaveBeenCalled();
+  });
 });
