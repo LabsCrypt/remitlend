@@ -61,7 +61,7 @@ function assetValueFromShares(shares: number, poolBalance: number, totalShares: 
   if (shares <= 0 || totalShares <= 0) {
     return 0;
   }
-  return (shares * totalShares) / poolBalance;
+  return (shares * poolBalance) / totalShares;
 }
 
 function applyPoolEvent(

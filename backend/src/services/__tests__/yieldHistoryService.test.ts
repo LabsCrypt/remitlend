@@ -76,6 +76,28 @@ describe('yieldHistoryService', () => {
     expect(latest.currentValue).toBeGreaterThanOrEqual(1000);
     expect(latest.netYield).toBeGreaterThanOrEqual(0);
   });
+  it('values shares as shares times pool balance divided by total shares', async () => {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        { event_type: 'Deposit', amount: '1000', ledger_closed_at: yesterday, value: null },
+        { event_type: 'YieldDistributed', amount: '500', ledger_closed_at: now, value: null },
+      ],
+    });
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ event_type: 'Deposit', amount: '100', ledger_closed_at: yesterday, value: null }],
+    });
+
+    const history = await buildDepositorYieldHistory('GDepositor', 'GToken', 7);
+    const latest = history[history.length - 1]!;
+
+    expect(latest.depositedValue).toBe(100);
+    expect(latest.currentValue).toBe(150);
+    expect(latest.netYield).toBe(50);
+  });
 
   // Issue #1171 — previously uncovered paths
 
