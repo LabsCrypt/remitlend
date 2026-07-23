@@ -773,7 +773,7 @@ impl LendingPool {
         let key = DataKey::TotalOutstanding(token.clone());
         let current = Self::read_total_outstanding(&env, &token);
         let updated = current
-            .checked_sub(delta)
+            .checked_add(delta)
             .expect("total outstanding overflow");
 
         if updated < 0 {

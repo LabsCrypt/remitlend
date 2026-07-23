@@ -443,6 +443,24 @@ fn test_deposit_withdraw_invariants() {
     }
 }
 
+#[test]
+fn test_adjust_outstanding_applies_delta_direction() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, _stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+
+    pool_client.adjust_outstanding(&token_id, &700);
+    assert_eq!(pool_client.get_total_outstanding(&token_id), 700);
+
+    pool_client.adjust_outstanding(&token_id, &-200);
+    assert_eq!(pool_client.get_total_outstanding(&token_id), 500);
+}
 // ── Yield distribution (share-based) ─────────────────────────────────────────
 
 #[test]
