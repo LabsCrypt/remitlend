@@ -1,7 +1,7 @@
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _, testutils::Events as _, testutils::Ledger as _, Address, BytesN, Env,
-    FromVal, String,
+    testutils::{Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke},
+    Address, BytesN, Env, FromVal, IntoVal, String,
 };
 
 fn create_test_hash(env: &Env, value: u8) -> BytesN<32> {
@@ -869,6 +869,55 @@ fn test_transfer_moves_identity_state_to_new_wallet() {
     assert_eq!(client.get_score_history(&new_wallet, &0, &10).len(), 1);
 }
 
+#[test]
+fn test_transfer_requires_current_owner_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let old_wallet = Address::generate(&env);
+    let new_wallet = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &old_wallet,
+        &500,
+        &create_test_hash(&env, 26),
+        &create_test_uri(&env),
+        &None,
+    );
+
+    let args = (old_wallet.clone(), new_wallet.clone(), Option::<Address>::None).into_val(&env);
+    let recipient_only = client.mock_auths(&[MockAuth {
+        address: &new_wallet,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "transfer",
+            args: args.clone(),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(recipient_only
+        .try_transfer(&old_wallet, &new_wallet, &None)
+        .is_err());
+
+    client.mock_auths(&[MockAuth {
+        address: &old_wallet,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "transfer",
+            args,
+            sub_invokes: &[],
+        },
+    }])
+    .transfer(&old_wallet, &new_wallet, &None);
+
+    assert!(client.get_metadata(&old_wallet).is_none());
+    assert_eq!(client.get_score(&new_wallet), 500);
+}
 #[test]
 #[should_panic]
 fn test_transfer_enforces_cooldown_before_retransfer() {

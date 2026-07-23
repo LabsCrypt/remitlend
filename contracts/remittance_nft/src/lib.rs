@@ -909,7 +909,7 @@ impl RemittanceNFT {
             return Err(NftError::SelfTransfer);
         }
 
-        to.require_auth();
+        from.require_auth();
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let transfer_cooldown_key = DataKey::TransferCooldown(from.clone());
