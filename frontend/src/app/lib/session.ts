@@ -34,7 +34,7 @@ export function isJwtExpired(token: string): boolean {
   const payload = decodeJwtPayload(token);
   const exp = payload?.exp;
 
-  return typeof exp === "number" && exp * 1000 >= Date.now();
+  return typeof exp === "number" && exp * 1000 <= Date.now();
 }
 
 export function clearSessionState() {
