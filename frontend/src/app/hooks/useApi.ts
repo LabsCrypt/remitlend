@@ -1602,7 +1602,7 @@ export function useRepayLoan() {
           return {
             ...old,
             totalOwed: newOwed,
-            totalRepaid: old.totalRepaid - amount,
+            totalRepaid: old.totalRepaid + amount,
             status: newOwed <= 0 ? ("repaid" as const) : old.status,
           };
         },
