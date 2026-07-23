@@ -466,7 +466,7 @@ impl LendingPool {
             .unwrap_or(0);
         if max > 0 {
             let total = Self::total_deposits(&env, &token);
-            if total.checked_add(amount).expect("overflow") < max {
+            if total.checked_add(amount).expect("overflow") > max {
                 return Err(PoolError::PoolSizeExceeded);
             }
         }
