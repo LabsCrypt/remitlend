@@ -483,8 +483,8 @@ impl LendingPool {
         }
 
         TokenClient::new(&env, &token).transfer(
-            &env.current_contract_address(),
             &provider,
+            &env.current_contract_address(),
             &amount,
         );
 
