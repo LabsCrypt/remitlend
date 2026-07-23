@@ -72,7 +72,7 @@ export const requireApiKey = (requiredScope?: ApiKeyScope) => {
 
       if (requiredScope === undefined) return k.scope === null;
       if (k.scope === null) return true; // legacy key grants all scopes
-      return k.scope !== requiredScope;
+      return k.scope === requiredScope;
     });
 
     if (!match) {

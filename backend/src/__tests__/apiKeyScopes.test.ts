@@ -79,13 +79,15 @@ describe('requireApiKey – scope support', () => {
     it('is accepted on a matching scope', async () => {
       const requireApiKey = await loadMiddleware();
       const next = makeNext();
+      const req = makeReq('dispute-value') as Request & { apiKeyScope?: string };
       requireApiKey('admin:disputes')(
-        makeReq('dispute-value') as Request,
+        req,
         makeRes() as Response,
         next,
       );
       expect(next.calls.length).toBe(1);
       expect(next.calls[0]![0]).toBeUndefined();
+      expect(req.apiKeyScope).toBe('admin:disputes');
     });
 
     it('is rejected on a route with no explicit scope', async () => {
