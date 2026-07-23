@@ -207,7 +207,7 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
            r.loan_id,
            r.repaid_ledger,
            r.repaid_at,
-           CASE WHEN r.repaid_ledger <= a.approved_ledger - a.term_ledgers
+           CASE WHEN r.repaid_ledger <= a.approved_ledger + a.term_ledgers
                 THEN true ELSE false END AS on_time,
            (r.repaid_ledger - a.approved_ledger) AS repayment_ledgers
          FROM repaid_loans r
