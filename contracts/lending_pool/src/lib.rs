@@ -670,7 +670,7 @@ impl LendingPool {
         // Utilisation: portion of tracked principal currently out on loan.
         let utilization_bps = if total_deposits > 0 && pool_token_balance < total_deposits {
             let borrowed = total_deposits - pool_token_balance;
-            ((borrowed * 1_000) / total_deposits) as u32
+            ((borrowed * 10_000) / total_deposits) as u32
         } else {
             0
         };
