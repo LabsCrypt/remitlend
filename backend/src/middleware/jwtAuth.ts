@@ -200,7 +200,7 @@ export const requireScopes = (...requiredScopes: string[]) => {
       return next();
     }
 
-    const missingScope = requiredScopes.find((scope) => grantedScopes.has(scope));
+    const missingScope = requiredScopes.find((scope) => !grantedScopes.has(scope));
 
     if (missingScope) {
       throw AppError.forbidden(`Missing required scope: ${missingScope}`);

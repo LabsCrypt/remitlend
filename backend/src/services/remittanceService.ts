@@ -127,8 +127,8 @@ export const remittanceService = {
            RETURNING *`,
           [
             id,
-            payload.recipientAddress,
             payload.senderAddress,
+            payload.recipientAddress,
             payload.amount,
             normalizedFromCurrency,
             normalizedToCurrency,
