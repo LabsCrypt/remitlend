@@ -770,10 +770,13 @@ impl LendingPool {
             return;
         }
 
+        // #1356: delta must be added, not subtracted — a positive delta means
+        // outstanding debt grew (e.g. a new disbursement), a negative delta
+        // means it shrank (e.g. a repayment). Subtracting inverted both cases.
         let key = DataKey::TotalOutstanding(token.clone());
         let current = Self::read_total_outstanding(&env, &token);
         let updated = current
-            .checked_sub(delta)
+            .checked_add(delta)
             .expect("total outstanding overflow");
 
         if updated < 0 {
