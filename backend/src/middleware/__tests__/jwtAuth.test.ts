@@ -273,6 +273,26 @@ describe('jwtAuth middleware', () => {
       );
     });
 
+    it('should reject access when any one of multiple required scopes is missing', () => {
+      mockRequest.user = {
+        publicKey: 'GBORROWER',
+        role: 'borrower',
+        scopes: ['read:loans'],
+        iat: 1000,
+        exp: 2000,
+      };
+
+      const middleware = requireScopes('read:loans', 'write:repayment');
+
+      expect(() => middleware(mockRequest as Request, mockResponse as Response, mockNext)).toThrow(
+        expect.objectContaining({
+          statusCode: 403,
+          message: 'Missing required scope: write:repayment',
+        }),
+      );
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
     it('should grant access when user has all required scopes', () => {
       mockRequest.user = {
         publicKey: 'GBORROWER',
