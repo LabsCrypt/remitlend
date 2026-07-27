@@ -1993,9 +1993,10 @@ impl LoanManager {
             core::cmp::Ordering::Equal => {}
         }
 
-        let outstanding_delta = loan
-            .amount
-            .checked_sub(new_amount)
+        // #1354: delta must be new minus prior, not prior minus new — adjust_total_outstanding
+        // adds the delta to the running total, so borrowing more must produce a positive delta.
+        let outstanding_delta = new_amount
+            .checked_sub(loan.amount)
             .expect("outstanding delta overflow");
         Self::adjust_total_outstanding(&env, &token, outstanding_delta);
 

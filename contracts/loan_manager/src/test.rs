@@ -2945,6 +2945,51 @@ fn test_refinance_loan_increases_principal_draws_from_pool() {
 }
 
 #[test]
+fn test_refinance_loan_increasing_amount_increases_total_outstanding() {
+    // Regression test for #1354: refinancing to a larger amount (borrowing
+    // more) must INCREASE total_outstanding by the borrowed delta, not
+    // decrease it — a flipped sign here would let a borrower's recorded debt
+    // shrink while the pool actually pays them more.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&manager.address, &5_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 5_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Refinance from 1_000 to 2_000 — total_outstanding must grow by 1_000.
+    manager.refinance_loan(&loan_id, &2_000, &17_280);
+
+    let total_outstanding_after = manager.get_total_outstanding(&token_id);
+    assert_eq!(total_outstanding_after, total_outstanding_before + 1_000);
+}
+
+#[test]
 fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -2994,6 +3039,50 @@ fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
         token_client.balance(&pool_client),
         pool_balance_before + 1_000
     );
+}
+
+#[test]
+fn test_refinance_loan_decreasing_amount_decreases_total_outstanding() {
+    // Regression test for #1354: refinancing to a smaller amount (paying
+    // down principal) must DECREASE total_outstanding by the returned delta.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &2_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&manager.address, &2_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 2_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Refinance down from 2_000 to 1_000 — total_outstanding must shrink by 1_000.
+    manager.refinance_loan(&loan_id, &1_000, &17_280);
+
+    let total_outstanding_after = manager.get_total_outstanding(&token_id);
+    assert_eq!(total_outstanding_after, total_outstanding_before - 1_000);
 }
 
 #[test]
