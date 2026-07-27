@@ -11,6 +11,41 @@ pub fn withdraw(env: &Env, provider: Address, token: Address, amount: i128, shar
     env.events().publish(topics, (amount, shares_burned));
 }
 
+pub fn debt_tokens_minted(
+    env: &Env,
+    owner: Address,
+    token: Address,
+    tranche: crate::Tranche,
+    shares: i128,
+) {
+    let topics = (Symbol::new(env, "DebtMint"), owner, token);
+    env.events().publish(topics, (tranche, shares));
+}
+
+pub fn debt_tokens_transferred(
+    env: &Env,
+    from: Address,
+    to: Address,
+    token: Address,
+    tranche: crate::Tranche,
+    shares: i128,
+) {
+    let topics = (Symbol::new(env, "DebtTransfer"), from, to);
+    env.events().publish(topics, (token, tranche, shares));
+}
+
+pub fn debt_tokens_redeemed(
+    env: &Env,
+    holder: Address,
+    token: Address,
+    tranche: crate::Tranche,
+    shares: i128,
+    amount: i128,
+) {
+    let topics = (Symbol::new(env, "DebtRedeem"), holder, token);
+    env.events().publish(topics, (tranche, shares, amount));
+}
+
 #[allow(dead_code)]
 pub fn yield_distributed(env: &Env, token: Address, amount: i128) {
     if amount > 0 {

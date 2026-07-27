@@ -1,4 +1,4 @@
-use crate::{events, LendingPool, LendingPoolClient};
+use crate::{events, LendingPool, LendingPoolClient, Tranche};
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
@@ -16,6 +16,61 @@ fn create_token_contract<'a>(
 
 fn create_upgrade_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[7u8; 32])
+}
+
+#[test]
+fn test_debt_tokens_transfer_principal_claim_and_payout_to_new_holder() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let lender = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    stellar_asset_client.mint(&lender, &5_000);
+
+    pool_client.deposit(&lender, &token_id, &2_000);
+    pool_client.mint_debt_tokens(&lender, &token_id, &Tranche::Senior, &1_200);
+    pool_client.mint_debt_tokens(&lender, &token_id, &Tranche::Junior, &300);
+
+    assert_eq!(
+        pool_client.get_debt_token_balance(&lender, &token_id, &Tranche::Senior),
+        1_200
+    );
+    assert_eq!(pool_client.get_shares(&lender, &token_id), 500);
+
+    pool_client.transfer_debt_tokens(&lender, &buyer, &token_id, &Tranche::Senior, &1_200);
+    assert_eq!(
+        pool_client.get_debt_token_balance(&lender, &token_id, &Tranche::Senior),
+        0
+    );
+    assert_eq!(
+        pool_client.get_debt_token_balance(&buyer, &token_id, &Tranche::Senior),
+        1_200
+    );
+
+    stellar_asset_client.mint(&pool_id, &1_000);
+    assert_eq!(
+        pool_client.get_debt_claim_value(&buyer, &token_id, &Tranche::Senior),
+        1_800
+    );
+    assert_eq!(
+        pool_client.get_debt_claim_value(&lender, &token_id, &Tranche::Senior),
+        0
+    );
+
+    pool_client.redeem_debt_tokens(&buyer, &token_id, &Tranche::Senior, &1_200);
+    assert_eq!(token_client.balance(&buyer), 1_800);
+    assert_eq!(
+        pool_client.get_debt_token_balance(&buyer, &token_id, &Tranche::Senior),
+        0
+    );
 }
 
 #[test]

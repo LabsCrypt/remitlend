@@ -18,6 +18,7 @@
     "migrate:create": "node-pg-migrate create",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
+    "stress:indexer-lag": "tsx src/scripts/stressIndexerLag.ts",
     "_migrations_note": "Single source of truth: backend/migrations/*.js (node-pg-migrate). Do NOT add .sql files to src/db/ — they are not executed by any script.",
     "seed": "npm run seed:dev",
     "seed:dev": "tsx src/seed/index.ts",

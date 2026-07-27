@@ -44,6 +44,10 @@ pub enum DataKey {
     TotalShares(Address),
     /// (provider, token) → LP shares held
     Shares(Address, Address),
+    /// (holder, token, tranche) → tokenized principal claim shares held
+    DebtShares(Address, Address, Tranche),
+    /// (token, tranche) → total tokenized principal claim shares outstanding
+    TotalDebtShares(Address, Tranche),
     /// (provider, token) → ledger sequence of the most recent deposit
     DepositTimestamp(Address, Address),
     /// token → total principal deposited (net of withdrawals); used for
@@ -57,6 +61,13 @@ pub enum DataKey {
     TotalYieldDistributed(Address),
     ProposedAdmin,
     Version,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Tranche {
+    Senior,
+    Junior,
 }
 
 #[contracttype]
@@ -156,6 +167,44 @@ impl LendingPool {
             Self::bump_persistent_ttl(env, &key);
         }
         shares
+    }
+
+    fn read_debt_shares(
+        env: &Env,
+        holder: &Address,
+        token: &Address,
+        tranche: Tranche,
+    ) -> i128 {
+        let key = DataKey::DebtShares(holder.clone(), token.clone(), tranche);
+        let shares: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        if shares > 0 {
+            Self::bump_persistent_ttl(env, &key);
+        }
+        shares
+    }
+
+    fn total_debt_shares(env: &Env, token: &Address, tranche: Tranche) -> i128 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalDebtShares(token.clone(), tranche))
+            .unwrap_or(0)
+    }
+
+    fn write_debt_shares(
+        env: &Env,
+        holder: &Address,
+        token: &Address,
+        tranche: Tranche,
+        shares: i128,
+    ) {
+        let key = DataKey::DebtShares(holder.clone(), token.clone(), tranche);
+        if shares == 0 {
+            env.storage().persistent().remove(&key);
+        } else {
+            env.storage().persistent().set(&key, &shares);
+            Self::bump_persistent_ttl(env, &key);
+        }
     }
 
     fn read_deposit_timestamp(env: &Env, provider: &Address, token: &Address) -> Option<u32> {
@@ -265,7 +314,7 @@ impl LendingPool {
         }
 
         let cur_shares = Self::read_shares(env, provider, token);
-        if cur_shares <= shares {
+        if cur_shares < shares {
             return Err(PoolError::InsufficientBalance);
         }
 
@@ -290,7 +339,7 @@ impl LendingPool {
 
         let share_key = DataKey::Shares(provider.clone(), token.clone());
         let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
-        let remaining = cur_shares.checked_add(shares).expect("share underflow");
+        let remaining = cur_shares.checked_sub(shares).expect("share underflow");
         if remaining == 0 {
             env.storage().persistent().remove(&share_key);
             env.storage().persistent().remove(&deposit_key);
@@ -466,7 +515,7 @@ impl LendingPool {
             .unwrap_or(0);
         if max > 0 {
             let total = Self::total_deposits(&env, &token);
-            if total.checked_add(amount).expect("overflow") < max {
+            if total.checked_add(amount).expect("overflow") > max {
                 return Err(PoolError::PoolSizeExceeded);
             }
         }
@@ -483,8 +532,8 @@ impl LendingPool {
         }
 
         TokenClient::new(&env, &token).transfer(
-            &env.current_contract_address(),
             &provider,
+            &env.current_contract_address(),
             &amount,
         );
 
@@ -579,6 +628,192 @@ impl LendingPool {
     /// Raw LP share balance for `provider` in the `token` pool.
     pub fn get_shares(env: Env, provider: Address, token: Address) -> i128 {
         Self::read_shares(&env, &provider, &token)
+    }
+
+    pub fn mint_debt_tokens(
+        env: Env,
+        owner: Address,
+        token: Address,
+        tranche: Tranche,
+        shares: i128,
+    ) -> Result<(), PoolError> {
+        owner.require_auth();
+        Self::assert_not_paused(&env)?;
+        if shares <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        let owned_pool_shares = Self::read_shares(&env, &owner, &token);
+        if owned_pool_shares < shares {
+            return Err(PoolError::InsufficientBalance);
+        }
+
+        let remaining_pool_shares = owned_pool_shares
+            .checked_sub(shares)
+            .expect("pool share underflow");
+        let pool_share_key = DataKey::Shares(owner.clone(), token.clone());
+        if remaining_pool_shares == 0 {
+            env.storage().persistent().remove(&pool_share_key);
+            env.storage()
+                .persistent()
+                .remove(&DataKey::DepositTimestamp(owner.clone(), token.clone()));
+        } else {
+            env.storage()
+                .persistent()
+                .set(&pool_share_key, &remaining_pool_shares);
+            Self::bump_persistent_ttl(&env, &pool_share_key);
+        }
+
+        let current_debt_shares = Self::read_debt_shares(&env, &owner, &token, tranche);
+        Self::write_debt_shares(
+            &env,
+            &owner,
+            &token,
+            tranche,
+            current_debt_shares
+                .checked_add(shares)
+                .expect("debt shares overflow"),
+        );
+
+        let total_key = DataKey::TotalDebtShares(token.clone(), tranche);
+        env.storage().instance().set(
+            &total_key,
+            &Self::total_debt_shares(&env, &token, tranche)
+                .checked_add(shares)
+                .expect("total debt shares overflow"),
+        );
+        Self::bump_instance_ttl(&env);
+        debt_tokens_minted(&env, owner, token, tranche, shares);
+        Ok(())
+    }
+
+    pub fn transfer_debt_tokens(
+        env: Env,
+        from: Address,
+        to: Address,
+        token: Address,
+        tranche: Tranche,
+        shares: i128,
+    ) -> Result<(), PoolError> {
+        from.require_auth();
+        Self::assert_not_paused(&env)?;
+        if shares <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        let from_shares = Self::read_debt_shares(&env, &from, &token, tranche);
+        if from_shares < shares {
+            return Err(PoolError::InsufficientBalance);
+        }
+
+        Self::write_debt_shares(
+            &env,
+            &from,
+            &token,
+            tranche,
+            from_shares.checked_sub(shares).expect("debt share underflow"),
+        );
+        let to_shares = Self::read_debt_shares(&env, &to, &token, tranche);
+        Self::write_debt_shares(
+            &env,
+            &to,
+            &token,
+            tranche,
+            to_shares.checked_add(shares).expect("debt share overflow"),
+        );
+
+        debt_tokens_transferred(&env, from, to, token, tranche, shares);
+        Ok(())
+    }
+
+    pub fn get_debt_token_balance(
+        env: Env,
+        holder: Address,
+        token: Address,
+        tranche: Tranche,
+    ) -> i128 {
+        Self::read_debt_shares(&env, &holder, &token, tranche)
+    }
+
+    pub fn get_total_debt_tokens(env: Env, token: Address, tranche: Tranche) -> i128 {
+        Self::total_debt_shares(&env, &token, tranche)
+    }
+
+    pub fn get_debt_claim_value(
+        env: Env,
+        holder: Address,
+        token: Address,
+        tranche: Tranche,
+    ) -> i128 {
+        let shares = Self::read_debt_shares(&env, &holder, &token, tranche);
+        if shares == 0 {
+            return 0;
+        }
+        Self::calc_assets_to_redeem(
+            shares,
+            Self::total_pool_assets(&env, &token),
+            Self::total_shares(&env, &token),
+        )
+    }
+
+    pub fn redeem_debt_tokens(
+        env: Env,
+        holder: Address,
+        token: Address,
+        tranche: Tranche,
+        shares: i128,
+    ) -> Result<(), PoolError> {
+        holder.require_auth();
+        Self::assert_not_paused(&env)?;
+        if shares <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        let current = Self::read_debt_shares(&env, &holder, &token, tranche);
+        if current < shares {
+            return Err(PoolError::InsufficientBalance);
+        }
+
+        let cur_total_shares = Self::total_shares(&env, &token);
+        let total_assets = Self::total_pool_assets(&env, &token);
+        let amount = Self::calc_assets_to_redeem(shares, total_assets, cur_total_shares);
+        if amount > Self::read_pool_balance(&env, &token) {
+            return Err(PoolError::InsufficientLiquidity);
+        }
+
+        Self::write_debt_shares(
+            &env,
+            &holder,
+            &token,
+            tranche,
+            current.checked_sub(shares).expect("debt share underflow"),
+        );
+        let total_key = DataKey::TotalDebtShares(token.clone(), tranche);
+        env.storage().instance().set(
+            &total_key,
+            &Self::total_debt_shares(&env, &token, tranche)
+                .checked_sub(shares)
+                .expect("total debt shares underflow"),
+        );
+
+        env.storage().instance().set(
+            &DataKey::TotalShares(token.clone()),
+            &cur_total_shares
+                .checked_sub(shares)
+                .expect("total pool shares underflow"),
+        );
+        env.storage().instance().set(
+            &DataKey::TotalDeposits(token.clone()),
+            &Self::total_deposits(&env, &token).saturating_sub(amount),
+        );
+
+        TokenClient::new(&env, &token).transfer(
+            &env.current_contract_address(),
+            &holder,
+            &amount,
+        );
+        debt_tokens_redeemed(&env, holder, token, tranche, shares, amount);
+        Ok(())
     }
 
     /// Current LP share price scaled by `SHARE_PRICE_SCALE`.

@@ -88,6 +88,8 @@ interface EventIndexerConfig {
   contractConfigs?: Array<{ contractId: string }>;
   pollIntervalMs?: number;
   batchSize?: number;
+  dbWriteConcurrency?: number;
+  dbWriteBatchSize?: number;
 }
 
 interface StoreEventsResult {
@@ -105,6 +107,8 @@ export class EventIndexer {
   private readonly contractIds: string[];
   private readonly pollIntervalMs: number;
   private readonly batchSize: number;
+  private readonly dbWriteConcurrency: number;
+  private readonly dbWriteBatchSize: number;
   private readonly quarantineAlertThreshold: number;
   private lastObservedQuarantineCount = 0;
   private running = false;
@@ -126,6 +130,8 @@ export class EventIndexer {
       this.contractIds = [contractId];
       this.pollIntervalMs = 30_000;
       this.batchSize = 100;
+      this.dbWriteConcurrency = this.parsePositiveInt(process.env.INDEXER_DB_WRITE_CONCURRENCY, 2);
+      this.dbWriteBatchSize = this.parsePositiveInt(process.env.INDEXER_DB_WRITE_BATCH_SIZE, 100);
       return;
     }
 
@@ -145,6 +151,17 @@ export class EventIndexer {
     this.contractIds = [...new Set(normalized)];
     this.pollIntervalMs = configOrRpcUrl.pollIntervalMs ?? 30_000;
     this.batchSize = configOrRpcUrl.batchSize ?? 100;
+    this.dbWriteConcurrency =
+      configOrRpcUrl.dbWriteConcurrency ??
+      this.parsePositiveInt(process.env.INDEXER_DB_WRITE_CONCURRENCY, 2);
+    this.dbWriteBatchSize =
+      configOrRpcUrl.dbWriteBatchSize ??
+      this.parsePositiveInt(process.env.INDEXER_DB_WRITE_BATCH_SIZE, 100);
+  }
+
+  private parsePositiveInt(value: string | undefined, fallback: number): number {
+    const parsed = Number.parseInt(value ?? '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
   async ingestRawEvents(events: SorobanRawEvent[]): Promise<StoreEventsResult> {
@@ -205,6 +222,50 @@ export class EventIndexer {
   async processEvents(startLedger: number, endLedger: number): Promise<number> {
     const chunkResult = await this.processChunk(startLedger, endLedger);
     return chunkResult.lastProcessedLedger;
+  }
+
+  detectSequenceGaps(events: Pick<SorobanRawEvent, 'ledger'>[]): Array<{
+    fromLedger: number;
+    toLedger: number;
+  }> {
+    const ledgers = [...new Set(events.map((event) => Number(event.ledger)).filter(Number.isFinite))]
+      .sort((a, b) => a - b);
+    const gaps: Array<{ fromLedger: number; toLedger: number }> = [];
+
+    for (let i = 1; i < ledgers.length; i += 1) {
+      const previous = ledgers[i - 1];
+      const current = ledgers[i];
+      if (current > previous + 1) {
+        gaps.push({ fromLedger: previous + 1, toLedger: current - 1 });
+      }
+    }
+
+    return gaps;
+  }
+
+  async repairSequenceGaps(
+    events: Pick<SorobanRawEvent, 'ledger'>[],
+  ): Promise<{ repairedRanges: number; insertedEvents: number }> {
+    const gaps = this.detectSequenceGaps(events);
+    let insertedEvents = 0;
+
+    for (const gap of gaps) {
+      const repairedEvents = await this.fetchEventsInRange(gap.fromLedger, gap.toLedger);
+      if (repairedEvents.length > 0) {
+        const result = await this.storeEvents(repairedEvents);
+        insertedEvents += result.insertedCount;
+      }
+    }
+
+    if (gaps.length > 0) {
+      logger.withContext().warn('Indexer repaired ledger sequence gaps', {
+        repairedRanges: gaps.length,
+        insertedEvents,
+        gaps,
+      });
+    }
+
+    return { repairedRanges: gaps.length, insertedEvents };
   }
 
   async reindexRange(
@@ -373,6 +434,7 @@ export class EventIndexer {
 
       try {
         const events = await this.fetchEventsInRange(startLedger, endLedger);
+        await this.repairSequenceGaps(events);
         if (events.length === 0) {
           return {
             lastProcessedLedger: endLedger,
@@ -483,11 +545,68 @@ export class EventIndexer {
       return { insertedCount: 0 };
     }
 
-    const insertedEvents: ContractEvent[] = [];
+    const insertedEvents = await this.storeParsedEventsBalanced(parsedEvents);
+    // withTransaction commits here; any error triggers automatic ROLLBACK
 
-    // Collect score deltas per user within the transaction so that the score
-    // upsert is atomic with the event inserts. A single bulk upsert at the
-    // end avoids N+1 queries and keeps scores within [300, 850].
+    for (const event of insertedEvents) {
+      webhookService.dispatch(event).catch((error) => {
+        logger.withContext().error('Webhook dispatch failed', {
+          eventId: event.eventId,
+          error,
+        });
+      });
+
+      eventStreamService.broadcast({
+        eventId: event.eventId,
+        eventType: event.eventType,
+        ...(event.loanId !== undefined ? { loanId: event.loanId } : {}),
+        address: event.address,
+        ...(event.amount !== undefined ? { amount: event.amount } : {}),
+        ledger: event.ledger,
+        ledgerClosedAt: event.ledgerClosedAt.toISOString(),
+        txHash: event.txHash,
+      });
+
+      this.triggerNotification(event).catch((error) => {
+        logger.withContext().error('Notification trigger failed', {
+          eventId: event.eventId,
+          error,
+        });
+      });
+    }
+
+    return {
+      insertedCount: insertedEvents.length,
+    };
+  }
+
+  private async storeParsedEventsBalanced(parsedEvents: ContractEvent[]): Promise<ContractEvent[]> {
+    const batches: ContractEvent[][] = [];
+    for (let i = 0; i < parsedEvents.length; i += this.dbWriteBatchSize) {
+      batches.push(parsedEvents.slice(i, i + this.dbWriteBatchSize));
+    }
+
+    const insertedEvents: ContractEvent[] = [];
+    for (let i = 0; i < batches.length; i += this.dbWriteConcurrency) {
+      const window = batches.slice(i, i + this.dbWriteConcurrency);
+      const results = await Promise.all(window.map((batch) => this.storeParsedEventBatch(batch)));
+      insertedEvents.push(...results.flat());
+    }
+
+    if (batches.length > 1) {
+      logger.withContext().info('Indexer balanced burst ingestion across database batches', {
+        batches: batches.length,
+        dbWriteConcurrency: this.dbWriteConcurrency,
+        dbWriteBatchSize: this.dbWriteBatchSize,
+        insertedEvents: insertedEvents.length,
+      });
+    }
+
+    return insertedEvents.sort((a, b) => a.ledger - b.ledger);
+  }
+
+  private async storeParsedEventBatch(parsedEvents: ContractEvent[]): Promise<ContractEvent[]> {
+    const insertedEvents: ContractEvent[] = [];
     const scoreUpdates: Map<string, number> = new Map();
 
     await withTransaction(async (client: PoolClient) => {
@@ -528,125 +647,82 @@ export class EventIndexer {
           ],
         );
 
-        if ((insertResult.rowCount ?? 0) > 0) {
-          insertedEvents.push(event);
-
-          if (this.isAdminConfigEventType(event.eventType)) {
-            await client.query(
-              `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6)`,
-              [
-                event.address ?? 'SYSTEM',
-                `ADMIN_CONFIG_${event.eventType}`,
-                `contract:${event.contractId}`,
-                JSON.stringify({
-                  eventId: event.eventId,
-                  eventType: event.eventType,
-                  loanId: event.loanId ?? null,
-                  amount: event.amount ?? null,
-                  ledger: event.ledger,
-                  txHash: event.txHash,
-                }),
-                'internal-indexer',
-                200,
-              ],
-            );
-          }
-
-          /**
-           * LoanApprv audit row — records which admin approved a loan.
-           *
-           * audit_logs shape:
-           *   actor     — admin Stellar address (topic[1] of the LoanApprv event)
-           *   action    — 'loan_approved'
-           *   target    — 'loan:<loanId>'
-           *   payload   — { eventId, loanId, borrower, txHash }
-           *   ip_address — null (on-chain action, no HTTP request IP)
-           */
-          if (event.eventType === 'LoanApprv') {
-            await client.query(
-              `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6)`,
-              [
-                event.adminAddress ?? 'SYSTEM',
-                'loan_approved',
-                `loan:${event.loanId ?? 'unknown'}`,
-                JSON.stringify({
-                  eventId: event.eventId,
-                  loanId: event.loanId ?? null,
-                  borrower: event.address ?? null,
-                  txHash: event.txHash,
-                }),
-                null,
-                200, // Loan approved on-chain
-              ],
-            );
-          }
-
-          // Aggregate score deltas per borrower; a single bulk upsert at
-          // the end of the transaction avoids N+1 score updates.
-          if (event.eventType === 'LoanRepaid') {
-            const { repaymentDelta } = sorobanService.getScoreConfig();
-            if (event.address) {
-              scoreUpdates.set(
-                event.address,
-                (scoreUpdates.get(event.address) ?? 0) + repaymentDelta,
-              );
-            }
-          } else if (
-            event.eventType === 'LoanDefaulted' ||
-            event.eventType === 'CollateralLiquidated'
-          ) {
-            const { defaultPenalty } = sorobanService.getScoreConfig();
-            if (event.address) {
-              scoreUpdates.set(
-                event.address,
-                (scoreUpdates.get(event.address) ?? 0) - defaultPenalty,
-              );
-            }
-          }
+        if ((insertResult.rowCount ?? 0) === 0) {
+          continue;
         }
+
+        insertedEvents.push(event);
+        await this.writeAuditRows(client, event);
+        this.collectScoreUpdate(scoreUpdates, event);
       }
 
-      // Apply batched score updates on the same pinned client so that both
-      // the event inserts and the score changes are committed or rolled back
-      // together — satisfying the atomicity requirement.
       if (scoreUpdates.size > 0) {
         await updateUserScoresBulk(scoreUpdates, client);
       }
     });
-    // withTransaction commits here; any error triggers automatic ROLLBACK
 
-    for (const event of insertedEvents) {
-      webhookService.dispatch(event).catch((error) => {
-        logger.withContext().error('Webhook dispatch failed', {
-          eventId: event.eventId,
-          error,
-        });
-      });
+    return insertedEvents;
+  }
 
-      eventStreamService.broadcast({
-        eventId: event.eventId,
-        eventType: event.eventType,
-        ...(event.loanId !== undefined ? { loanId: event.loanId } : {}),
-        address: event.address,
-        ...(event.amount !== undefined ? { amount: event.amount } : {}),
-        ledger: event.ledger,
-        ledgerClosedAt: event.ledgerClosedAt.toISOString(),
-        txHash: event.txHash,
-      });
-
-      this.triggerNotification(event).catch((error) => {
-        logger.withContext().error('Notification trigger failed', {
-          eventId: event.eventId,
-          error,
-        });
-      });
+  private async writeAuditRows(client: PoolClient, event: ContractEvent): Promise<void> {
+    if (this.isAdminConfigEventType(event.eventType)) {
+      await client.query(
+        `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6)`,
+        [
+          event.address ?? 'SYSTEM',
+          `ADMIN_CONFIG_${event.eventType}`,
+          `contract:${event.contractId}`,
+          JSON.stringify({
+            eventId: event.eventId,
+            eventType: event.eventType,
+            loanId: event.loanId ?? null,
+            amount: event.amount ?? null,
+            ledger: event.ledger,
+            txHash: event.txHash,
+          }),
+          'internal-indexer',
+          200,
+        ],
+      );
     }
 
-    return {
-      insertedCount: insertedEvents.length,
-    };
+    if (event.eventType === 'LoanApprv') {
+      await client.query(
+        `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6)`,
+        [
+          event.adminAddress ?? 'SYSTEM',
+          'loan_approved',
+          `loan:${event.loanId ?? 'unknown'}`,
+          JSON.stringify({
+            eventId: event.eventId,
+            loanId: event.loanId ?? null,
+            borrower: event.address ?? null,
+            txHash: event.txHash,
+          }),
+          null,
+          200,
+        ],
+      );
+    }
+  }
+
+  private collectScoreUpdate(scoreUpdates: Map<string, number>, event: ContractEvent): void {
+    if (event.eventType === 'LoanRepaid') {
+      const { repaymentDelta } = sorobanService.getScoreConfig();
+      if (event.address) {
+        scoreUpdates.set(event.address, (scoreUpdates.get(event.address) ?? 0) + repaymentDelta);
+      }
+    } else if (
+      event.eventType === 'LoanDefaulted' ||
+      event.eventType === 'CollateralLiquidated'
+    ) {
+      const { defaultPenalty } = sorobanService.getScoreConfig();
+      if (event.address) {
+        scoreUpdates.set(event.address, (scoreUpdates.get(event.address) ?? 0) - defaultPenalty);
+      }
+    }
   }
 
   private parseEvent(event: SorobanRawEvent): ContractEvent | null {
