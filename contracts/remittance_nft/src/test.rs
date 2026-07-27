@@ -993,6 +993,45 @@ fn test_transfer_moves_identity_state_to_new_wallet() {
 }
 
 #[test]
+fn test_transfer_requires_owner_auth_not_recipient() {
+    // Regression test for #1358: transfer required `to.require_auth()`
+    // instead of `from.require_auth()`, so an attacker could pull any
+    // victim's NFT to themselves by only authorizing as the recipient.
+    // Assert the contract actually required the *owner's* (from's)
+    // authorization for this call, not the recipient's.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &from,
+        &500,
+        &create_test_hash(&env, 99),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    client.transfer(&from, &to, &None);
+
+    assert!(
+        env.auths().iter().any(|(address, _)| address == &from),
+        "transfer must require the current owner's (from's) authorization"
+    );
+    assert!(
+        !env.auths().iter().any(|(address, _)| address == &to),
+        "transfer must not require the recipient's authorization"
+    );
+}
+
+#[test]
 #[should_panic]
 fn test_transfer_enforces_cooldown_before_retransfer() {
     let env = Env::default();

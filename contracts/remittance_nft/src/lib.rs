@@ -942,7 +942,10 @@ impl RemittanceNFT {
             return Err(NftError::SelfTransfer);
         }
 
-        to.require_auth();
+        // #1358: the current owner must consent to giving up their own asset —
+        // requiring the recipient's auth instead let anyone pull any victim's
+        // NFT (and its score) to themselves.
+        from.require_auth();
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let transfer_cooldown_key = DataKey::TransferCooldown(from.clone());
