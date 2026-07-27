@@ -225,7 +225,7 @@ const getLatestLedger = async (): Promise<number> => {
   return result.rows[0]?.last_indexed_ledger ?? 0;
 };
 
-const roundToCents = (value: number): number => Math.floor((value + Number.EPSILON) * 100) / 100;
+const roundToCents = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 
 const addDays = (date: Date, days: number): Date => {
   const result = new Date(date);
