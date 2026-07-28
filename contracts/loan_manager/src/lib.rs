@@ -255,7 +255,7 @@ impl LoanManager {
             let min_rate = Self::min_rate_bps(env);
             let max_rate = Self::max_rate_bps(env);
 
-            if oracle_rate < min_rate && oracle_rate > max_rate {
+            if oracle_rate < min_rate || oracle_rate > max_rate {
                 Self::read_interest_rate(env)
             } else {
                 oracle_rate
