@@ -8,6 +8,7 @@ import {
   type WebhookEventType,
   webhookService,
 } from './webhookService.js';
+import { enqueueEvent } from './webhookDispatcher.js';
 import { eventStreamService } from './eventStreamService.js';
 import { notificationService, type NotificationType } from './notificationService.js';
 import { sorobanService } from './sorobanService.js';
@@ -621,6 +622,32 @@ export class EventIndexer {
     for (const event of insertedEvents) {
       webhookService.dispatch(event).catch((error) => {
         logger.withContext().error('Webhook dispatch failed', {
+          eventId: event.eventId,
+          error,
+        });
+      });
+
+      // Enqueue into the signed, ordered, exactly-once delivery pipeline.
+      // event.eventId is `${ledgerSequence}:${txHash}:${eventIndex}` per the
+      // Soroban RPC format; we decompose it here to derive the canonical_event_id.
+      const [ledgerStr, txHash, eventIndexStr] = event.eventId.split(':');
+      enqueueEvent({
+        ledgerSequence: Number(ledgerStr),
+        txHash: txHash ?? event.txHash,
+        eventIndex: Number(eventIndexStr ?? 0),
+        eventType: event.eventType,
+        contractId: event.contractId,
+        payload: {
+          eventId: event.eventId,
+          eventType: event.eventType,
+          loanId: event.loanId,
+          address: event.address,
+          amount: event.amount,
+          ledger: event.ledger,
+          txHash: event.txHash,
+        },
+      }).catch((error) => {
+        logger.withContext().error('Signed-delivery enqueue failed', {
           eventId: event.eventId,
           error,
         });

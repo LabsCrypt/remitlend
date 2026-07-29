@@ -11,6 +11,9 @@ import {
   createWebhookSubscription,
   deleteWebhookSubscription,
   getWebhookDeliveries,
+  getWebhookDeliveryLedger,
+  rotateWebhookSigningKey,
+  streamWebhookDeliveries,
   listQuarantinedEvents,
   listWebhookSubscriptions,
   reprocessQuarantinedEvents,
@@ -379,6 +382,75 @@ router.delete(
  *               $ref: '#/components/schemas/WebhookDeliveriesResponse'
  */
 router.get('/webhooks/:id/deliveries', requireApiKey('admin:webhooks'), getWebhookDeliveries);
+
+/**
+ * @swagger
+ * /admin/webhooks/{id}/deliveries/ledger:
+ *   get:
+ *     summary: Ordered delivery ledger for a subscription
+ *     description: Returns all deliveries in monotonic subscription_sequence order.
+ *       Supports cursor-based pagination via the `cursor` query parameter.
+ *     tags: [Webhooks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: integer }
+ *         description: Return deliveries with subscription_sequence > cursor
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 100 }
+ *     responses:
+ *       200:
+ *         description: Delivery ledger page
+ */
+router.get('/webhooks/:id/deliveries/ledger', requireApiKey('admin:webhooks'), getWebhookDeliveryLedger);
+
+/**
+ * @swagger
+ * /admin/webhooks/{id}/deliveries/stream:
+ *   get:
+ *     summary: SSE stream of real-time delivery status updates
+ *     description: Server-Sent Events stream; polls every 5 s and pushes rows
+ *       whose updated_at has advanced.
+ *     tags: [Webhooks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: SSE stream
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               type: string
+ */
+router.get('/webhooks/:id/deliveries/stream', requireApiKey('admin:webhooks'), streamWebhookDeliveries);
+
+/**
+ * @swagger
+ * /admin/webhooks/{id}/keys/rotate:
+ *   post:
+ *     summary: Rotate the active HMAC signing key for a subscription
+ *     description: Transitions the current active key to 'retiring' (accepted for
+ *       24 h) and generates a fresh active key.  The raw secret is returned once
+ *       and must be stored securely by the caller.
+ *     tags: [Webhooks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: New key_id and rawSecret
+ */
+router.post('/webhooks/:id/keys/rotate', requireApiKey('admin:webhooks'), rotateWebhookSigningKey);
 
 /**
  * @swagger

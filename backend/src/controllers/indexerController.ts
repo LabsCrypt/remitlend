@@ -21,6 +21,7 @@ import {
 } from '../lib/pagination.js';
 import { parseCappedLimit } from '../utils/queryHelpers.js';
 import logger from '../utils/logger.js';
+import { rotateKey } from '../services/webhookSigner.js';
 
 /**
  * Returns true if the hostname resolves to a private, loopback, or link-local
@@ -953,4 +954,149 @@ export const reprocessQuarantinedEvents = async (req: Request, res: Response) =>
       message: 'Failed to reprocess quarantined events',
     });
   }
+};
+
+/**
+ * GET /admin/webhooks/:id/deliveries/ledger
+ *
+ * Returns the full ordered delivery ledger for a subscription, including
+ * canonical_event_id, subscription_sequence, status, and attempt metadata.
+ * Supports cursor pagination via `cursor` (sequence number) and `limit` query params.
+ */
+export const getWebhookDeliveryLedger = async (req: Request, res: Response) => {
+  try {
+    const subscriptionId = Number(req.params.id);
+    if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) {
+      return res.status(400).json({ success: false, message: 'subscription id must be a positive integer' });
+    }
+
+    const limit = parseCappedLimit(req, 100);
+    const cursor = req.query.cursor ? Number(req.query.cursor) : undefined;
+
+    const result = await query(
+      `SELECT
+         id, canonical_event_id, subscription_sequence,
+         status, attempt_count, last_status_code, last_error,
+         delivered_at, next_retry_at, created_at, updated_at, event_type
+       FROM webhook_deliveries
+       WHERE subscription_id = $1
+         ${cursor !== undefined ? 'AND subscription_sequence > $3' : ''}
+       ORDER BY subscription_sequence ASC
+       LIMIT $2`,
+      cursor !== undefined
+        ? [subscriptionId, limit, cursor]
+        : [subscriptionId, limit],
+    );
+
+    const rows = result.rows;
+    const nextCursor = rows.length === limit
+      ? rows.at(-1)?.subscription_sequence
+      : null;
+
+    return res.json({
+      success: true,
+      data: {
+        subscriptionId,
+        deliveries: rows,
+        nextCursor,
+      },
+    });
+  } catch (error) {
+    logger.withContext().error('Failed to fetch delivery ledger', { error });
+    return res.status(500).json({ success: false, message: 'Failed to fetch delivery ledger' });
+  }
+};
+
+/**
+ * POST /admin/webhooks/:id/keys/rotate
+ *
+ * Rotates the active signing key for a subscription.
+ * The old key enters 'retiring' state and is accepted for 24 hours to allow
+ * in-flight deliveries to drain.  Returns the new key_id and raw secret
+ * (shown once — the secret is hashed before storage).
+ */
+export const rotateWebhookSigningKey = async (req: Request, res: Response) => {
+  try {
+    const subscriptionId = Number(req.params.id);
+    if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) {
+      return res.status(400).json({ success: false, message: 'subscription id must be a positive integer' });
+    }
+
+    const sub = await query(
+      'SELECT id FROM webhook_subscriptions WHERE id = $1',
+      [subscriptionId],
+    );
+    if (!sub.rows.length) {
+      return res.status(404).json({ success: false, message: 'Webhook subscription not found' });
+    }
+
+    const { keyId, rawSecret } = await rotateKey(subscriptionId);
+
+    return res.json({
+      success: true,
+      data: {
+        keyId,
+        rawSecret,
+        message: 'Store this secret securely — it will not be shown again.',
+      },
+    });
+  } catch (error) {
+    logger.withContext().error('Failed to rotate webhook signing key', { error });
+    return res.status(500).json({ success: false, message: 'Failed to rotate signing key' });
+  }
+};
+
+/**
+ * GET /admin/webhooks/:id/deliveries/stream  (SSE)
+ *
+ * Server-Sent Events stream that pushes real-time delivery status updates
+ * for a subscription.  Polls the database every 5 seconds and emits any
+ * deliveries whose updated_at timestamp has advanced since the last emission.
+ */
+export const streamWebhookDeliveries = async (req: Request, res: Response) => {
+  const subscriptionId = Number(req.params.id);
+  if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) {
+    res.status(400).json({ success: false, message: 'subscription id must be a positive integer' });
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  let lastPollAt = new Date(0);
+
+  const poll = async () => {
+    const since = lastPollAt;
+    lastPollAt = new Date();
+    try {
+      const result = await query(
+        `SELECT id, canonical_event_id, subscription_sequence, status,
+                attempt_count, last_status_code, event_type, updated_at
+         FROM webhook_deliveries
+         WHERE subscription_id = $1 AND updated_at > $2
+         ORDER BY subscription_sequence ASC
+         LIMIT 50`,
+        [subscriptionId, since],
+      );
+      for (const row of result.rows) {
+        res.write(`data: ${JSON.stringify(row)}\n\n`);
+      }
+    } catch (err) {
+      res.write(`event: error\ndata: ${JSON.stringify({ message: 'poll error' })}\n\n`);
+    }
+  };
+
+  const interval = setInterval(() => { poll().catch(() => {}); }, 5000);
+
+  // Send a comment as keepalive every 30 s so proxies don't close the connection.
+  const keepalive = setInterval(() => res.write(': keepalive\n\n'), 30_000);
+
+  req.on('close', () => {
+    clearInterval(interval);
+    clearInterval(keepalive);
+  });
+
+  await poll();
 };
