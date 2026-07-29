@@ -1618,7 +1618,6 @@ fn test_adjust_outstanding_zero_delta_is_a_no_op() {
     assert_eq!(pool_client.get_total_outstanding(&token), 1_000);
 }
 
-
 // ── Oracle staleness gate (#1379, Phase 1) ──────────────────────────────────
 
 #[test]
