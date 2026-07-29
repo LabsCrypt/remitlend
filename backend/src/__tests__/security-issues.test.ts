@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from '@jest/globals';
+import { describe, it, expect, beforeAll } from '@jest/globals';
 import { Keypair } from '@stellar/stellar-sdk';
 import * as authService from '../services/authService.js';
 import { resolveRoleForWallet } from '../auth/rbac.js';
@@ -15,8 +15,6 @@ describe('Security Issues - Critical Fixes', () => {
   // ─────────────────────────────────────────────────────────────────────────
   describe('Issue #1359: JWT Expiration Validation', () => {
     it('should reject expired tokens', () => {
-      const keypair = Keypair.random();
-
       // Create a token that's already expired
       const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDAwMDAwMDB9.invalid';
 
@@ -40,7 +38,6 @@ describe('Security Issues - Critical Fixes', () => {
     it('should enforce expiration claim during verification', () => {
       // This test verifies that ignoreExpiration is NOT set to true
       // by checking that the JWT library enforces exp claim
-      const secret = process.env.JWT_SECRET!;
       const token = authService.generateJwtToken(Keypair.random().publicKey());
 
       // The verifyJwtToken should respect the exp claim

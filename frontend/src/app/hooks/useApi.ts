@@ -1599,9 +1599,11 @@ export function useRepayLoan() {
         (old: LoanDetails | undefined) => {
           if (!old) return old;
           const newOwed = Math.max(0, old.totalOwed - amount);
+          const newRepaid = old.totalRepaid + amount;
           return {
             ...old,
             totalOwed: newOwed,
+            totalRepaid: newRepaid,
             totalRepaid: old.totalRepaid + amount,
             status: newOwed <= 0 ? ("repaid" as const) : old.status,
           };

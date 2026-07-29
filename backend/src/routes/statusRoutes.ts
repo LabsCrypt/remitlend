@@ -1,4 +1,4 @@
-import type { Router, Request, Response, NextFunction } from 'express';
+import type { Router } from 'express';
 import { getPauseState } from '../middleware/pauseGuard.js';
 
 /**

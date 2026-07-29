@@ -209,19 +209,38 @@ export const useGamificationStore = create<GamificationStore>()(
 
         addXP: (amount, reason) => {
           const currentXP = get().xp;
+          const currentLevel = get().level;
           const newXP = currentXP + amount;
+          const newLevel = calculateLevel(newXP);
 
-          set(
-            {
-              xp: newXP,
-              recentXPGain: { amount, reason: reason || "", id: Date.now() },
-            },
-            false,
-            `gamification/addXP:${reason || "unknown"}`,
-          );
-
-          // Check for level up
-          get().checkLevelUp();
+          if (newLevel > currentLevel) {
+            const levelUpReward = LEVEL_THRESHOLDS.find((t) => t.level === newLevel);
+            set(
+              {
+                xp: newXP,
+                recentXPGain: { amount, reason: reason || "", id: Date.now() },
+                ...(levelUpReward
+                  ? {
+                      level: newLevel,
+                      kingdomTitle: levelUpReward.title,
+                      showLevelUpModal: true,
+                      pendingLevelUp: levelUpReward,
+                    }
+                  : {}),
+              },
+              false,
+              `gamification/addXP:${reason || "unknown"}`,
+            );
+          } else {
+            set(
+              {
+                xp: newXP,
+                recentXPGain: { amount, reason: reason || "", id: Date.now() },
+              },
+              false,
+              `gamification/addXP:${reason || "unknown"}`,
+            );
+          }
         },
 
         clearRecentXPGain: () =>

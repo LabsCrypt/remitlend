@@ -1912,6 +1912,7 @@ impl LoanManager {
 
         // Validate collateral covers new amount (collateral must be >= loan amount)
         if loan.collateral_amount < new_amount {
+            return Err(LoanError::InsufficientScore);
             return Err(LoanError::InsufficientCollateral);
         }
 

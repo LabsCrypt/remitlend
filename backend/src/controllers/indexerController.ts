@@ -2,14 +2,12 @@ import type { Request, Response } from 'express';
 import { xdr } from '@stellar/stellar-sdk';
 import { query } from '../db/connection.js';
 import { EventIndexer, type SorobanRawEvent } from '../services/eventIndexer.js';
-import { cacheService } from '../services/cacheService.js';
 import {
   SUPPORTED_WEBHOOK_EVENT_TYPES,
   webhookService,
   type WebhookEventType,
 } from '../services/webhookService.js';
 import {
-  buildKeysetClause,
   createCursorPaginatedResponse,
   decodeCursor,
   encodeCursor,
@@ -84,20 +82,6 @@ const buildEventFilters = (req: Request, baseParams: unknown[], initialWhereClau
 
   return { params, whereClause };
 };
-
-const buildEventsCacheKey = (scope: string, resourceId: string | number, req: Request) =>
-  [
-    'events',
-    scope,
-    String(resourceId),
-    `limit:${req.query.limit ?? 'default'}`,
-    `cursor:${req.query.cursor ?? 'default'}`,
-    `offset:${req.query.offset ?? 'default'}`,
-    `sort:${req.query.sort ?? 'default'}`,
-    `status:${req.query.status ?? req.query.eventType ?? 'all'}`,
-    `date:${req.query.date_range ?? 'all'}`,
-    `amount:${req.query.amount_range ?? 'all'}`,
-  ].join(':');
 
 type QuarantineEventRow = {
   id: number;
