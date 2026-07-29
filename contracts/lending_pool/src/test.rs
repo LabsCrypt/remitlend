@@ -396,6 +396,35 @@ fn test_emergency_withdraw_bypasses_pause_and_cooldown() {
     assert_eq!(token_client.balance(&pool_id), 0);
 }
 
+#[test]
+fn test_emergency_withdraw_emits_distinct_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&100);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &5_000);
+    pool_client.deposit(&provider, &token_id, &1_500);
+
+    pool_client.pause();
+    pool_client.emergency_withdraw(&provider, &token_id, &500);
+
+    let events = env.events().all();
+    let has_emergency_event = events.iter().any(|event| {
+        let first_topic = event.1.get(0).unwrap();
+        soroban_sdk::Symbol::from_val(&env, &first_topic)
+            == soroban_sdk::Symbol::new(&env, "EmergencyWithdraw")
+    });
+
+    assert!(has_emergency_event);
+}
 // ── Deposit / Withdraw invariants ─────────────────────────────────────────────
 
 #[test]

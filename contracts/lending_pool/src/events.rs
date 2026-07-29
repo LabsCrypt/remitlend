@@ -11,6 +11,11 @@ pub fn withdraw(env: &Env, provider: Address, token: Address, amount: i128, shar
     env.events().publish(topics, (amount, shares_burned));
 }
 
+pub fn emergency_withdraw(env: &Env, provider: Address, token: Address, shares_burned: i128) {
+    let topics = (Symbol::new(env, "EmergencyWithdraw"), provider, token);
+    env.events().publish(topics, shares_burned);
+}
+
 #[allow(dead_code)]
 pub fn yield_distributed(env: &Env, token: Address, amount: i128) {
     if amount > 0 {
