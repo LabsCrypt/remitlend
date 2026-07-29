@@ -1411,11 +1411,11 @@ fn test_overdue_repayment_charges_late_fee() {
     manager.repay(&borrower, &loan_id, &300);
 
     let loan = manager.get_loan(&loan_id);
-    assert_eq!(loan.interest_paid, 45);
-    assert_eq!(loan.late_fee_paid, 6);
-    assert_eq!(loan.principal_paid, 249);
-    assert_eq!(loan.accrued_interest, 135);
-    assert_eq!(loan.accrued_late_fee, 19);
+    assert_eq!(loan.interest_paid, 5);
+    assert_eq!(loan.late_fee_paid, 7);
+    assert_eq!(loan.principal_paid, 288);
+    assert_eq!(loan.accrued_interest, 13);
+    assert_eq!(loan.accrued_late_fee, 18);
     assert_eq!(loan.status, LoanStatus::Approved);
     assert_eq!(token_client.balance(&pool_client), 9_300);
 }

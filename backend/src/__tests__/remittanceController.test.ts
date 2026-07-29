@@ -25,10 +25,8 @@ jest.unstable_mockModule('../services/notificationService.js', () => ({
   },
 }));
 
-const { getRemittance, submitRemittanceTransaction } = await import(
-  '../controllers/remittanceController.js'
-);
-
+const { getRemittance, submitRemittanceTransaction } =
+  await import('../controllers/remittanceController.js');
 const flushAsync = async (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 const createMockResponse = (): Response => {

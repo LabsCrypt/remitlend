@@ -1599,10 +1599,11 @@ export function useRepayLoan() {
         (old: LoanDetails | undefined) => {
           if (!old) return old;
           const newOwed = Math.max(0, old.totalOwed - amount);
+          const newRepaid = old.totalRepaid + amount;
           return {
             ...old,
             totalOwed: newOwed,
-            totalRepaid: old.totalRepaid - amount,
+            totalRepaid: newRepaid,
             status: newOwed <= 0 ? ("repaid" as const) : old.status,
           };
         },
@@ -1757,7 +1758,7 @@ export function useWithdrawFromPool() {
       // Optimistically update pool stats
       queryClient.setQueryData(queryKeys.pool.stats(), (old: PoolStats | undefined) => {
         if (!old) return old;
-        return { ...old, totalDeposits: Math.max(0, old.totalDeposits + amount) };
+        return { ...old, totalDeposits: Math.max(0, old.totalDeposits - amount) };
       });
 
       // Optimistically update depositor portfolio

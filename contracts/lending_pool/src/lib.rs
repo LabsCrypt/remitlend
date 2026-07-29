@@ -249,7 +249,7 @@ impl LendingPool {
         };
 
         let current_ledger = env.ledger().sequence();
-        if current_ledger > deposit_ledger.saturating_add(cooldown) {
+        if current_ledger < deposit_ledger.saturating_add(cooldown) {
             panic!("withdrawal_cooldown_active");
         }
     }
@@ -265,7 +265,7 @@ impl LendingPool {
         }
 
         let cur_shares = Self::read_shares(env, provider, token);
-        if cur_shares <= shares {
+        if cur_shares < shares {
             return Err(PoolError::InsufficientBalance);
         }
 
@@ -290,7 +290,7 @@ impl LendingPool {
 
         let share_key = DataKey::Shares(provider.clone(), token.clone());
         let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
-        let remaining = cur_shares.checked_add(shares).expect("share underflow");
+        let remaining = cur_shares.checked_sub(shares).expect("share underflow");
         if remaining == 0 {
             env.storage().persistent().remove(&share_key);
             env.storage().persistent().remove(&deposit_key);
@@ -466,7 +466,7 @@ impl LendingPool {
             .unwrap_or(0);
         if max > 0 {
             let total = Self::total_deposits(&env, &token);
-            if total.checked_add(amount).expect("overflow") < max {
+            if total.checked_add(amount).expect("overflow") > max {
                 return Err(PoolError::PoolSizeExceeded);
             }
         }
@@ -483,8 +483,8 @@ impl LendingPool {
         }
 
         TokenClient::new(&env, &token).transfer(
-            &env.current_contract_address(),
             &provider,
+            &env.current_contract_address(),
             &amount,
         );
 
@@ -670,7 +670,7 @@ impl LendingPool {
         // Utilisation: portion of tracked principal currently out on loan.
         let utilization_bps = if total_deposits > 0 && pool_token_balance < total_deposits {
             let borrowed = total_deposits - pool_token_balance;
-            ((borrowed * 1_000) / total_deposits) as u32
+            ((borrowed * 10_000) / total_deposits) as u32
         } else {
             0
         };

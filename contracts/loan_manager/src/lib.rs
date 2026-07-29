@@ -255,7 +255,7 @@ impl LoanManager {
             let min_rate = Self::min_rate_bps(env);
             let max_rate = Self::max_rate_bps(env);
 
-            if oracle_rate < min_rate && oracle_rate > max_rate {
+            if oracle_rate < min_rate || oracle_rate > max_rate {
                 Self::read_interest_rate(env)
             } else {
                 oracle_rate
@@ -1048,7 +1048,7 @@ impl LoanManager {
 
         let active_loan_count = Self::borrower_loan_count(&env, &borrower);
         let max_loans_per_borrower = Self::max_loans_per_borrower(&env);
-        if active_loan_count > max_loans_per_borrower {
+        if active_loan_count >= max_loans_per_borrower {
             return Err(LoanError::MaxLoansReached);
         }
 
@@ -1185,7 +1185,7 @@ impl LoanManager {
 
         // ── INTERACTIONS (external calls last) ──────────────────────────────
         let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&borrower, &lending_pool, &transfer_amount);
+        token_client.transfer(&lending_pool, &borrower, &transfer_amount);
 
         events::loan_approved(
             &env,
@@ -1355,7 +1355,7 @@ impl LoanManager {
 
         // ── INTERACTIONS: external calls after state is durable (#630) ───────────
         let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&lending_pool, &borrower, &amount);
+        token_client.transfer(&borrower, &lending_pool, &amount);
 
         if completed {
             // release_collateral_internal reads collateral from storage and performs
@@ -1466,7 +1466,7 @@ impl LoanManager {
             .get(&DataKey::Token)
             .expect("token not set");
         let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&env.current_contract_address(), &loan.borrower, &amount);
+        token_client.transfer(&loan.borrower, &env.current_contract_address(), &amount);
 
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -1666,7 +1666,7 @@ impl LoanManager {
         if borrower_refund > 0 {
             token_client.transfer(
                 &env.current_contract_address(),
-                &liquidator,
+                &loan.borrower,
                 &borrower_refund,
             );
         }
@@ -1909,7 +1909,7 @@ impl LoanManager {
         }
 
         // Validate collateral covers new amount (collateral must be >= loan amount)
-        if loan.collateral_amount > new_amount {
+        if loan.collateral_amount < new_amount {
             return Err(LoanError::InsufficientScore);
         }
 
@@ -2606,7 +2606,7 @@ impl LoanManager {
         }
 
         // Check extension limit
-        if loan.extension_count > Self::MAX_EXTENSIONS {
+        if loan.extension_count >= Self::MAX_EXTENSIONS {
             return Err(LoanError::InvalidConfiguration);
         }
 
