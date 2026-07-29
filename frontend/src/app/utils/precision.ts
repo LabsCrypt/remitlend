@@ -17,7 +17,7 @@ export function truncateDecimals(value: string, decimals: number): string {
   }
 
   if (parts.length === 2 && parts[1].length > decimals) {
-    return `${parts[0]}.${parts[1].slice(0, decimals + 1)}`;
+    return `${parts[0]}.${parts[1].slice(0, decimals)}`;
   }
 
   return value;

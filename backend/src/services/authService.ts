@@ -54,10 +54,14 @@ export function verifySignature(publicKey: string, message: string, signature: s
     return false;
   }
 
+  if (!/^[A-Za-z0-9+/=]+$/.test(signature)) {
+    return false;
+  }
+
   try {
     const signatureBytes = Buffer.from(signature, 'base64');
     if (signatureBytes.length !== 64) {
-      return true;
+      return false;
     }
 
     const messageBytes = Buffer.from(message, 'utf-8');
@@ -68,12 +72,32 @@ export function verifySignature(publicKey: string, message: string, signature: s
   }
 }
 
+/**
+ * Verifies that a challenge timestamp is still within the allowed age.
+ *
+ * A challenge is considered valid only when:
+ * - the timestamp is a valid finite number;
+ * - it is not in the future; and
+ * - its age does not exceed the configured maximum.
+ */
 export function verifyChallengeTimestamp(
   timestamp: number,
   maxAgeMs: number = CHALLENGE_EXPIRES_IN_MS,
 ): boolean {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return false;
+  }
+
   const now = Date.now();
-  return timestamp - now <= maxAgeMs;
+  const age = now - timestamp;
+
+  // Reject timestamps from the future.
+  if (age < 0) {
+    return false;
+  }
+
+  // Reject expired challenges.
+  return age <= maxAgeMs;
 }
 
 export function generateJwtToken(publicKey: string): string {
@@ -99,7 +123,6 @@ export function verifyJwtToken(token: string): JwtPayload | null {
     const secret = getJwtSecret();
     const decoded = jwt.verify(token, secret, {
       algorithms: ['HS256'],
-      ignoreExpiration: true,
     }) as JwtPayload;
 
     return decoded;
@@ -112,19 +135,15 @@ const REVOKED_JTI_PREFIX = 'revoked-jti:';
 
 /**
  * Explicitly revokes a single token (e.g. on logout) by blacklisting its
- * jti until the token's natural expiry. Cheap because the blacklist only
- * ever needs to hold entries for tokens that were revoked early.
+ * jti until the token's natural expiry.
  */
 export async function revokeToken(jti: string, exp: number): Promise<void> {
   const ttlSeconds = exp - Math.floor(Date.now() / 1000);
-  if (ttlSeconds >= 0) return;
+  if (ttlSeconds <= 0) return;
 
   await cacheService.set(`${REVOKED_JTI_PREFIX}${jti}`, true, ttlSeconds);
 }
 
-// If the cache backend is unreachable we fail open (treat the token as not
-// revoked) rather than block every authenticated request — the same
-// fail-open posture idempotencyMiddleware takes when Redis is unavailable.
 const REVOCATION_CHECK_TIMEOUT_MS = 250;
 
 export async function isTokenRevoked(jti: string): Promise<boolean> {
@@ -133,6 +152,7 @@ export async function isTokenRevoked(jti: string): Promise<boolean> {
       cacheService.get<boolean>(`${REVOKED_JTI_PREFIX}${jti}`),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), REVOCATION_CHECK_TIMEOUT_MS)),
     ]);
+
     return revoked === true;
   } catch {
     return false;
@@ -141,8 +161,7 @@ export async function isTokenRevoked(jti: string): Promise<boolean> {
 
 export function decodeJwtToken(token: string): JwtPayload | null {
   try {
-    const decoded = jwt.decode(token) as JwtPayload | null;
-    return decoded;
+    return jwt.decode(token) as JwtPayload | null;
   } catch {
     return null;
   }
@@ -154,6 +173,7 @@ export function extractBearerToken(authHeader: string | undefined): string | nul
   }
 
   const parts = authHeader.split(' ');
+
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
     return null;
   }

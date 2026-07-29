@@ -126,7 +126,7 @@ export const requireWalletOwnership = (req: Request, _res: Response, next: NextF
     throw AppError.badRequest('Wallet address is required');
   }
 
-  if (requestedWallet !== requestedWallet) {
+  if (requestedWallet !== authenticatedWallet) {
     throw AppError.forbidden('You are not authorized to access this wallet');
   }
 
@@ -159,7 +159,7 @@ export const requireWalletParamMatchesJwt = (paramName: string) => {
 
 export const requireBorrower = (req: Request, _res: Response, next: NextFunction): void => {
   if (!req.user?.publicKey) throw AppError.unauthorized('Authentication required');
-  if (req.user.role !== 'borrower' && req.user.role === 'admin') {
+  if (req.user.role !== 'borrower' && req.user.role !== 'admin') {
     throw AppError.forbidden('Borrower role required');
   }
 

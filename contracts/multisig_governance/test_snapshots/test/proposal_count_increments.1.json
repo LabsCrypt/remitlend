@@ -113,6 +113,14 @@
                           "symbol": "COUNT"
                         },
                         "val": {
+                          "u64": 0
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "COUNT"
+                        },
+                        "val": {
                           "u32": 1
                         }
                       },
@@ -135,7 +143,15 @@
                                 "symbol": "executable_after"
                               },
                               "val": {
-                                "u64": 86400
+                                "u64": 91001
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "id"
+                              },
+                              "val": {
+                                "u32": 2
                               }
                             },
                             {
@@ -164,6 +180,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "proposed_at"
+                              },
+                              "val": {
+                                "u64": 4601
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "signers"
                               },
                               "val": {
@@ -180,6 +204,7 @@
                               },
                               "val": {
                                 "u32": 1
+                                "u32": 0
                               }
                             },
                             {
@@ -282,7 +307,39 @@
             },
             "ext": "v0"
           },
-          6311999
+          10000999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": "ledger_key_contract_instance",
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": "ledger_key_contract_instance",
+                "durability": "persistent",
+                "val": {
+                  "contract_instance": {
+                    "executable": {
+                      "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    },
+                    "storage": null
+                  }
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [

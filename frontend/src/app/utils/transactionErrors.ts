@@ -150,7 +150,7 @@ async function fetchTransactionStatus(
 ): Promise<"pending" | "success" | "failed"> {
   const response = await fetch(`${horizonUrl}/transactions/${txHash}`);
 
-  if (response.status === 400) {
+  if (response.status === 404) {
     return "pending";
   }
 

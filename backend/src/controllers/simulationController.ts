@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { query } from '../db/connection.js';
+import { sorobanService } from '../services/sorobanService.js';
 
 export const getRemittanceHistory = asyncHandler(async (req: Request, res: Response) => {
   const { userId } = req.params;
@@ -80,8 +81,8 @@ export const simulatePayment = asyncHandler(async (req: Request, res: Response) 
   const scoreResult = await query('SELECT current_score FROM scores WHERE user_id = $1', [userId]);
   const currentScore = scoreResult.rows[0]?.current_score ?? 500;
 
-  // Calculation matches eventIndexer.ts: +15 for each repayment
-  const newScore = Math.min(850, currentScore + 15);
+  const { repaymentDelta } = sorobanService.getScoreConfig();
+  const newScore = Math.min(850, currentScore + repaymentDelta);
 
   res.json({
     success: true,

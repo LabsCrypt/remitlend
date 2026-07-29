@@ -389,7 +389,7 @@ export const getPoolSharePrice = asyncHandler(async (req: Request, res: Response
   }
 
   const sharePrice = await sorobanService.getSharePrice(token);
-  const sharePriceRatio = sharePrice * SHARE_PRICE_SCALE;
+  const sharePriceRatio = sharePrice / SHARE_PRICE_SCALE;
 
   const data = { sharePrice, sharePriceRatio };
 

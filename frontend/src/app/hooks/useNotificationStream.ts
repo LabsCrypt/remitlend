@@ -89,7 +89,7 @@ export function useNotificationStream() {
                     if ("type" in payload && payload.type === "init") {
                       const ids = new Set(existing.notifications.map((n) => n.id));
                       const merged = [
-                        ...payload.notifications.filter((n) => ids.has(n.id)),
+                        ...payload.notifications.filter((n) => !ids.has(n.id)),
                         ...existing.notifications,
                       ].sort(
                         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),

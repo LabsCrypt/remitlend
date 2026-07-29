@@ -1,10 +1,11 @@
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { query } from '../db/connection.js';
 import { remittanceService } from '../services/remittanceService.js';
 import { sorobanService } from '../services/sorobanService.js';
 import { notificationService } from '../services/notificationService.js';
 import { AppError } from '../errors/AppError.js';
-import { parseCursorQueryParams } from '../utils/pagination.js';
+import { encodeCursor, decodeCursor, parseKeysetParams } from '../utils/pagination.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -59,30 +60,133 @@ export const getRemittances = asyncHandler(async (req: Request, res: Response) =
     throw AppError.unauthorized('Wallet address not found in request');
   }
 
-  const { limit, cursor } = parseCursorQueryParams(req);
+  // Parse keyset pagination params
+  const snapshotSeq = req.query.snapshot_seq;
+  const cursorStr = typeof req.query.cursor === 'string' ? req.query.cursor : null;
+  const limitParam = typeof req.query.limit === 'string' ? req.query.limit : null;
+
+  const {
+    snapshotSeq: parsedSnapshotSeq,
+    cursor: parsedCursor,
+    limit,
+  } = parseKeysetParams(snapshotSeq, cursorStr, limitParam);
+
+  // Decode cursor if provided
+  let decodedCursor = null;
+  if (parsedCursor) {
+    decodedCursor = decodeCursor(parsedCursor);
+  }
+
   const status = req.query.status as string | undefined;
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
   const q = req.query.q as string | undefined;
 
-  const result = await remittanceService.getRemittances(
-    senderAddress,
-    limit,
-    cursor,
-    status,
-    from,
-    to,
-    q,
+  // Build the query
+  let whereClause = 'sender_id = $1';
+  const params: (string | number | bigint)[] = [senderAddress];
+
+  // Apply filters
+  if (status) {
+    params.push(status);
+    whereClause += ` AND status = $${params.length}`;
+  }
+
+  if (from) {
+    const fromDate = new Date(from);
+    if (Number.isNaN(fromDate.getTime())) {
+      throw AppError.badRequest("Invalid 'from' date format");
+    }
+    params.push(fromDate.toISOString());
+    whereClause += ` AND created_at >= $${params.length}`;
+  }
+
+  if (to) {
+    const toDate = new Date(to);
+    if (Number.isNaN(toDate.getTime())) {
+      throw AppError.badRequest("Invalid 'to' date format");
+    }
+    params.push(toDate.toISOString());
+    whereClause += ` AND created_at <= $${params.length}`;
+  }
+
+  if (q) {
+    const searchTerm = `%${q}%`;
+    params.push(searchTerm, searchTerm);
+    whereClause += ` AND (recipient_address ILIKE $${params.length - 1} OR memo ILIKE $${params.length})`;
+  }
+
+  // Pin snapshot on first request or use provided one
+  let actualSnapshotSeq = parsedSnapshotSeq;
+  if (actualSnapshotSeq === BigInt(0)) {
+    // First page: pin the current max seq
+    const maxSeqResult = await query('SELECT MAX(seq) as max_seq FROM remittances', []);
+    actualSnapshotSeq = BigInt(maxSeqResult.rows[0]?.max_seq ?? 0);
+  }
+
+  // Add snapshot constraint
+  params.push(actualSnapshotSeq.toString());
+  whereClause += ` AND seq <= $${params.length}`;
+
+  // Add keyset constraint
+  if (decodedCursor) {
+    params.push(decodedCursor.createdAt.toISOString());
+    params.push(decodedCursor.createdAt.toISOString());
+    params.push(decodedCursor.seq.toString());
+    const keysetClause = `(created_at < $${params.length - 2} OR (created_at = $${params.length - 1} AND seq < $${params.length}))`;
+    whereClause += ` AND ${keysetClause}`;
+  }
+
+  params.push(limit + 1);
+
+  const queryText = `
+    SELECT * FROM remittances
+    WHERE ${whereClause}
+    ORDER BY created_at DESC, seq DESC
+    LIMIT $${params.length}
+  `;
+
+  logger.debug('getRemittances keyset query', {
+    queryText,
+    queryParams: params,
+  });
+
+  const [result, countResult] = await Promise.all([
+    query(queryText, params),
+    query(
+      `SELECT COUNT(*) as count FROM remittances WHERE ${whereClause.replace(` AND seq <= $${params.length - 1}`, '')}`,
+      params.slice(0, -2),
+    ),
+  ]);
+
+  const hasNext = result.rows.length > limit;
+  const remittances = hasNext ? result.rows.slice(0, limit) : result.rows;
+
+  let nextCursor: string | null = null;
+  if (hasNext && remittances.length > 0) {
+    const lastRemittance = remittances[remittances.length - 1];
+    nextCursor = encodeCursor(new Date(lastRemittance.created_at), BigInt(lastRemittance.seq));
+  }
+
+  // Count total at snapshot
+  const snapshotCountParams = params.slice(0, -2);
+  snapshotCountParams.pop(); // remove the seq constraint param
+  snapshotCountParams.push(actualSnapshotSeq.toString());
+
+  const totalResult = await query(
+    `SELECT COUNT(*) as count FROM remittances WHERE ${whereClause.replace(` AND seq <= $${params.length}`, '')} AND seq <= $${snapshotCountParams.length}`,
+    snapshotCountParams,
   );
+  const totalAtSnapshot = Number.parseInt(totalResult.rows[0].count, 10);
 
   res.json({
     success: true,
-    data: result.remittances,
-    page_info: {
+    data: remittances,
+    page: {
+      next_cursor: nextCursor,
+      snapshot_seq: actualSnapshotSeq.toString(),
+      total_at_snapshot: totalAtSnapshot,
       limit,
-      next_cursor: result.nextCursor,
-      has_next: result.nextCursor !== null,
-      total: result.total,
     },
   });
 });

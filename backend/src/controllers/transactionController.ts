@@ -72,3 +72,26 @@ export const listMyTransactions = asyncHandler(async (req: Request, res: Respons
     },
   });
 });
+
+// FIX: Lower MAX_LIMIT to intended cap (e.g., 100)
+export const MAX_LIMIT = 100;
+export const DEFAULT_LIMIT = 20;
+
+export async function getTransactions(req: Request, res: Response): Promise<void> {
+  const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+  const rawLimit = parseInt(req.query.limit as string, 10) || DEFAULT_LIMIT;
+
+  // Cap requested limit at MAX_LIMIT (100)
+  const limit = Math.min(Math.max(1, rawLimit), MAX_LIMIT);
+
+  const transactions = await getTransactionsService({ page, limit });
+  res.json({
+    data: transactions.items,
+    pagination: {
+      page,
+      limit,
+      total: transactions.total,
+      totalPages: Math.ceil(transactions.total / limit),
+    },
+  });
+}

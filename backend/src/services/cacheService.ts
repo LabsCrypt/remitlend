@@ -129,10 +129,26 @@ class CacheService {
     }
   }
 
+  private static readonly COMPARE_AND_DELETE_SCRIPT = `
+local stored = redis.call('GET', KEYS[1])
+if stored == false then
+  return 0
+end
+if stored == ARGV[1] then
+  redis.call('DEL', KEYS[1])
+  return 1
+end
+return 0
+`;
+
   /**
    * Delete a key only when its stored value matches `expectedValue` (fenced
    * compare-and-delete).  Used by distributed locks so a run that outlives the
    * TTL cannot delete a lock acquired by a different instance.
+   *
+   * The match-and-delete is performed atomically via a Lua script so that a
+   * stale lock cannot be deleted between the read and the delete by a
+   * different instance that re-acquired the lock in the window.
    *
    * @returns true if the key existed and the value matched (key deleted),
    *          false if the key was absent or the value did not match.
@@ -140,20 +156,11 @@ class CacheService {
   async deleteIfMatch(key: string, expectedValue: string): Promise<boolean> {
     try {
       await this.ensureConnected();
-      const stored = await this.client!.get(key);
-      if (stored === null) return false;
-
-      let storedValue: unknown;
-      try {
-        storedValue = JSON.parse(stored);
-      } catch {
-        storedValue = stored;
-      }
-
-      if (storedValue !== expectedValue) return false;
-
-      await this.client!.del(key);
-      return true;
+      const result = await this.client!.eval(CacheService.COMPARE_AND_DELETE_SCRIPT, {
+        keys: [key],
+        arguments: [JSON.stringify(expectedValue)],
+      });
+      return result === 1;
     } catch (error) {
       if (process.env.NODE_ENV !== 'test') {
         logger.withContext().error(`Error in deleteIfMatch for key ${key}`, { error });

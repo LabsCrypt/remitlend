@@ -14,6 +14,7 @@ import { sorobanService } from './sorobanService.js';
 import { updateUserScoresBulk } from './scoresService.js';
 import { AppError } from '../errors/AppError.js';
 import { recordIndexerLedgers } from '../middleware/metrics.js';
+import { setPauseState } from '../middleware/pauseGuard.js';
 
 const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
   Mint: 'NFTMinted',
@@ -642,6 +643,13 @@ export class EventIndexer {
           error,
         });
       });
+
+      // Handle pause/unpause events to update global pause state
+      if (event.eventType === 'PoolPaused') {
+        await setPauseState(true, [event.contractId], 'Emergency pause triggered by contract');
+      } else if (event.eventType === 'PoolUnpaused') {
+        await setPauseState(false, [], 'Contract pause lifted');
+      }
     }
 
     return {

@@ -1556,3 +1556,91 @@ fn test_multiple_depositors_share_yield_proportionally_and_total_shares_track_co
     assert_eq!(token_client.balance(&pool_id), 0);
     assert_eq!(pool_client.get_total_shares(&token_id), 0);
 }
+
+// ── adjust_outstanding tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_adjust_outstanding_positive_delta_increases_total() {
+    // Regression test for #1356: adjust_outstanding subtracted delta instead
+    // of adding it, so a positive delta (e.g. a new disbursement growing the
+    // pool's recorded debt) shrank total_outstanding instead of growing it.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    assert_eq!(pool_client.get_total_outstanding(&token), 0);
+
+    pool_client.adjust_outstanding(&token, &1_500);
+
+    assert_eq!(pool_client.get_total_outstanding(&token), 1_500);
+}
+
+#[test]
+fn test_adjust_outstanding_negative_delta_decreases_total() {
+    // Regression test for #1356: a negative delta (e.g. a repayment shrinking
+    // recorded debt) must decrease total_outstanding.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    pool_client.adjust_outstanding(&token, &2_000);
+    assert_eq!(pool_client.get_total_outstanding(&token), 2_000);
+
+    pool_client.adjust_outstanding(&token, &-800);
+
+    assert_eq!(pool_client.get_total_outstanding(&token), 1_200);
+}
+
+#[test]
+fn test_adjust_outstanding_zero_delta_is_a_no_op() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    pool_client.adjust_outstanding(&token, &1_000);
+    pool_client.adjust_outstanding(&token, &0);
+
+    assert_eq!(pool_client.get_total_outstanding(&token), 1_000);
+}
+
+#[test]
+fn test_deposit_transfers_from_depositor_to_pool() {
+    let env = Env::default();
+    let client = LendingPoolClient::new(&env, &env.register_contract(None, LendingPool));
+
+    let depositor = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token_contract(&env, &token_admin);
+
+    setup_lending_pool(&env, &client, &token.address);
+    mint_tokens(&env, &token, &depositor, 1_000);
+
+    // Execute deposit of 500 tokens
+    let deposit_amount = 500;
+    let shares = client.deposit(&depositor, &deposit_amount);
+
+    // Assert depositor balance decreased by 500
+    assert_eq!(token.balance(&depositor), 500);
+
+    // Assert pool balance increased by 500
+    assert_eq!(token.balance(&env.current_contract_address()), 500);
+
+    // Assert shares were minted to depositor
+    assert!(shares > 0);
+    assert_eq!(client.share_balance_of(&depositor), shares);
+}

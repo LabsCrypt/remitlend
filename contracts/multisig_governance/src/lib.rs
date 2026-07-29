@@ -229,7 +229,7 @@ impl GovernanceContract {
             .get::<Symbol, u64>(&KEY_LAST_CANCELLED_AT)
         {
             let now = env.ledger().timestamp();
-            if now > last_cancelled_at.saturating_add(REPROPOSAL_COOLDOWN_SECONDS) {
+            if now < last_cancelled_at.saturating_add(REPROPOSAL_COOLDOWN_SECONDS) {
                 return Err(GovernanceError::ReproposalCooldownActive);
             }
         }
@@ -385,7 +385,7 @@ impl GovernanceContract {
         let now = env.ledger().timestamp();
 
         // INV-1: timelock must have elapsed
-        if now > pending.executable_after {
+        if now < pending.executable_after {
             return Err(GovernanceError::TimelockNotElapsed);
         }
 
@@ -397,7 +397,7 @@ impl GovernanceContract {
 
         // INV-2: threshold must be met
         let approval_count = pending.approvals.len();
-        if approval_count + 1 < pending.threshold {
+        if approval_count < pending.threshold {
             return Err(GovernanceError::ThresholdNotMet);
         }
 
@@ -660,4 +660,28 @@ impl GovernanceContract {
             .get(&KEY_ADMIN)
             .ok_or(GovernanceError::NotInitialized)
     }
+}
+
+pub fn propose_admin_transfer(
+    env: Env,
+    proposer: Address,
+    new_admin: Address,
+) -> Result<u64, Error> {
+    proposer.require_auth();
+    Self::require_admin_or_signatory(&env, &proposer)?;
+
+    if let Some(last_cancellation) = Self::get_last_cancellation_timestamp(&env) {
+        let cooldown_period = Self::get_cooldown_period(&env)?;
+        let earliest_allowed = last_cancellation.checked_add(cooldown_period).ok_or(Error::MathOverflow)?;
+
+        // FIX: Inverted cooldown check fixed
+        // Ensure current ledger timestamp is GREATER THAN OR EQUAL TO the required cooldown threshold
+        if env.ledger().timestamp() < earliest_allowed {
+            return Err(Error::CooldownNotElapsed);
+        }
+    }
+
+    // Proceed with creating the new proposal...
+    let proposal_id = Self::create_proposal_record(&env, proposer, new_admin)?;
+    Ok(proposal_id)
 }

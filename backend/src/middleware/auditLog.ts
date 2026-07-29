@@ -22,6 +22,7 @@ function sanitizePayload(body: unknown): unknown {
     'signedTxXdr',
     'x-api-key',
   ];
+
   for (const key of Object.keys(sanitized)) {
     if (sensitiveFields.includes(key)) {
       sanitized[key] = '[REDACTED]';

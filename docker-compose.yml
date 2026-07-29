@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.9-alpine
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -17,7 +17,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:alpine
+    image: redis:7.4-alpine
     restart: always
     ports:
       - "6380:6379"
@@ -35,6 +35,11 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/remitlend
       - REDIS_URL=redis://redis:6379
+      - PII_KEK_ID=${PII_KEK_ID:-default-kek}
+      - PII_KMS_ENDPOINT=${PII_KMS_ENDPOINT:-}
+      - PII_KEK_REGION=${PII_KEK_REGION:-}
+      - PII_KEK_KEY=${PII_KEK_KEY:-}
+      - LOG_REDACTION=${LOG_REDACTION:-strict}
     volumes:
       - ./backend/src:/app/src
     depends_on:

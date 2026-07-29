@@ -34,6 +34,7 @@ import { validateLoanConfig } from './config/loanConfig.js';
 import { startLoanDueCheckCron, stopLoanDueCheckCron } from './cron/loanCheckCron.js';
 // Imported the score decay scheduler initialization wrapper
 import { startScoreDecayScheduler } from './cron/scoreDecayJob.js';
+import { initializePauseState } from './middleware/pauseGuard.js';
 
 const port = process.env.PORT || 3001;
 
@@ -54,6 +55,14 @@ try {
   await sorobanService.validateConfig();
 } catch (err) {
   logger.error('Soroban configuration is invalid, aborting startup.', { err });
+  process.exit(1);
+}
+
+// Initialize pause state table and load initial state
+try {
+  await initializePauseState();
+} catch (err) {
+  logger.error('Failed to initialize pause state', { err });
   process.exit(1);
 }
 

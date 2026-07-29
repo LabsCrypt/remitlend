@@ -276,7 +276,7 @@ const RETRY_DELAYS_MS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000] as const
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 export const getRetryDelayMs = (attemptNumber: number): number => {
-  const delayIndex = Math.max(attemptNumber - 1, RETRY_DELAYS_MS.length - 1);
+  const delayIndex = Math.max(0, Math.min(attemptNumber - 1, RETRY_DELAYS_MS.length - 1));
   return RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
 };
 

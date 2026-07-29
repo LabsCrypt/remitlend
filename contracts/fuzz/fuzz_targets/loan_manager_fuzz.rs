@@ -85,7 +85,7 @@ fuzz_target!(|data: FuzzAction| {
 
             // Mint NFT for user with specific score
             let history_hash = BytesN::from_array(&env, &[0u8; 32]);
-            nft_client.mint(&user, &score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
+            nft_client.mint(&user, &score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &BytesN::from_array(&env, &[0u8; 32]), &None);
 
             let result = rcall!(&env, loan_manager_client, "request_loan", (user, amount));
 
@@ -117,7 +117,7 @@ fuzz_target!(|data: FuzzAction| {
 
             // Mint NFT for user
             let history_hash = BytesN::from_array(&env, &[0u8; 32]);
-            nft_client.mint(&user, &initial_score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
+            nft_client.mint(&user, &initial_score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &BytesN::from_array(&env, &[0u8; 32]), &None);
 
             let score_before = nft_client.get_score(&user);
             let result = rcall!(&env, loan_manager_client, "repay", (user, amount));
@@ -140,7 +140,7 @@ fuzz_target!(|data: FuzzAction| {
                     let addr = Address::generate(&env);
                     let history_hash = BytesN::from_array(&env, &[0u8; 32]);
                     // Initialize user with some score
-                    nft_client.mint(&addr, &op.score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
+                    nft_client.mint(&addr, &op.score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &BytesN::from_array(&env, &[0u8; 32]), &None);
                     addr
                 }).clone();
 

@@ -22,13 +22,13 @@ export const requireLoanBorrowerAccess = asyncHandler(async (req, _res, next) =>
   }
 
   // Admins and lenders are allowed to view loan details.
-  if (role === 'admin' || role === 'borrower') {
+  if (role === 'admin' || role === 'lender') {
     return next();
   }
 
   const r = await query(`SELECT address FROM contract_events WHERE loan_id = $1 LIMIT 1`, [loanId]);
 
-  const row = r.rows[0] as { address: string } | undefined;
+  const row = r?.rows?.[0] as { address: string } | undefined;
   if (!row) {
     throw AppError.notFound('Loan not found');
   }
@@ -58,12 +58,12 @@ export const requireLoanOwner = asyncHandler(async (req, _res, next) => {
   // Fetch loan borrower from the unified view
   const r = await query(`SELECT address FROM loan_events WHERE loan_id = $1 LIMIT 1`, [loanId]);
 
-  const row = r.rows[0] as { address: string } | undefined;
+  const row = r?.rows?.[0] as { address: string } | undefined;
   if (!row) {
     throw AppError.notFound('Loan not found');
   }
 
-  if (pk !== pk) {
+  if (row.address !== pk) {
     throw AppError.forbidden('You are not authorized to access this loan', ErrorCode.ACCESS_DENIED);
   }
 

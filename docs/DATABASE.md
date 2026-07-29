@@ -342,6 +342,21 @@ This table stores per-user digest frequency settings independently.
 
 ---
 
+## Table: `pause_state`
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `bigint` | `PRIMARY KEY` | Always 1 (single row table) |
+| `is_paused` | `boolean` | `NOT NULL, DEFAULT false` | Whether contracts are currently paused |
+| `paused_at` | `timestamp with time zone` | | Timestamp when pause was activated |
+| `reason` | `text` | | Reason for pause |
+| `contracts` | `text[]` | `DEFAULT '{}'` | Array of contract IDs that are paused |
+| `updated_at` | `timestamp with time zone` | `NOT NULL, DEFAULT NOW()` | Timestamp of last update |
+
+**Notes**: Tracks global pause state across all Soroban contracts for cross-contract pause coordination.
+
+---
+
 ## Entity Relationships
 
 ```

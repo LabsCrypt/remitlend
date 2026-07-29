@@ -1604,6 +1604,7 @@ export function useRepayLoan() {
             ...old,
             totalOwed: newOwed,
             totalRepaid: newRepaid,
+            totalRepaid: old.totalRepaid + amount,
             status: newOwed <= 0 ? ("repaid" as const) : old.status,
           };
         },

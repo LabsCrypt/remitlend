@@ -68,6 +68,27 @@ jobs:
           LOAN_MANAGER_ADMIN_SECRET: test_admin_secret
           INTERNAL_API_KEY: test_internal_api_key
           FRONTEND_URL: https://frontend.example.com
+      - name: Scan for plaintext PII in logs
+        run: |
+          echo "Scanning for plaintext PII in logger output patterns..."
+          PII_PATTERNS=(
+            'logger.*\.info.*recipient_email'
+            'logger.*\.info.*recipient_phone'
+            'logger.*\.info.*recipient_name'
+            'console\.log.*email.*@.*\.com'
+            'console\.log.*phone.*\+[0-9]'
+          )
+          FOUND=0
+          for pattern in "${PII_PATTERNS[@]}"; do
+            if grep -rn "$pattern" src/ --include="*.ts" 2>/dev/null; then
+              echo "::error::PII leak detected in logger output: $pattern"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            exit 1
+          fi
+          echo "No plaintext PII found in logger output."
 
   migration-paths:
     runs-on: ubuntu-latest
@@ -132,6 +153,33 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgres://pguser:pgpass@localhost:5432/remitlend_test
+      - name: Verify no plaintext PII columns exist
+        run: |
+          echo "Checking for plaintext PII columns..."
+          PII_COLUMNS=(
+            'recipient_email'
+            'recipient_phone'
+            'recipient_name'
+            'plaintext_email'
+            'plaintext_phone'
+            'plaintext_name'
+          )
+          FOUND=0
+          for col in "${PII_COLUMNS[@]}"; do
+            RESULT=$(psql postgres://pguser:pgpass@localhost:5432/remitlend_test -tAc \
+              "SELECT column_name FROM information_schema.columns WHERE column_name = '$col';" 2>/dev/null)
+            if [ -n "$RESULT" ]; then
+              echo "::error::Plaintext PII column found: $col"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            echo "Plaintext PII columns detected - migration check failed"
+            exit 1
+          fi
+          echo "No plaintext PII columns found."
+        env:
+          PGPASSWORD: pgpass
 
   frontend:
     needs: supply-chain-audit

@@ -58,6 +58,18 @@ Services read configuration from `.env`. Key variables:
 
 Refer to `backend/.env.example` for the full list.
 
+### jobMetricsService
+
+Tracks per-background-job health: `lastRunAt`, `lastSuccessAt`, `lastError`, `runsTotal`, `failuresTotal`, and `durationMs`, keyed by job name. Jobs call `recordSuccess()`/`recordFailure()` after each run; metrics are read back via `getJobMetrics()`/`getAllMetrics()` for status endpoints and dashboards.
+
+**Consumers**: `defaultChecker.ts`, `scoreReconciliationService.ts`, `webhookRetryProcessor.ts`, `cron/scoreDecayJob.ts`, `cron/loanCheckCron.ts`.
+
+### rateLimitService
+
+Redis-backed fixed-window rate limiter using atomic `INCR`+`EXPIRE` via a Lua script, keyed by an arbitrary identifier (user ID, IP, etc.). `checkRateLimit()` increments and evaluates the window; `getRateLimitStatus()` reads without incrementing; `resetRateLimit()` clears a key. Fails open (allows the request) if Redis is unreachable, so an outage never blocks traffic outright.
+
+**Consumers**: `middleware/rateLimitMiddleware.ts` (per-route rate limiting), score update endpoints via the exported `SCORE_UPDATE_RATE_LIMIT` config.
+
 ### Testing
 
 Most services have corresponding test files in `services/__tests__/`. Tests use Jest and mock external dependencies (database, Redis, Stellar RPC). Run:

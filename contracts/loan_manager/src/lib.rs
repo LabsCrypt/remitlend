@@ -356,7 +356,7 @@ impl LoanManager {
             .and_then(|v| v.checked_mul(PRECISION))
             .ok_or(LoanError::AmountTooLarge)?;
 
-        let denominator = 100_000i128
+        let denominator = 10_000i128
             .checked_mul(Self::DEFAULT_TERM_LEDGERS as i128)
             .ok_or(LoanError::AmountTooLarge)?;
 
@@ -1637,15 +1637,17 @@ impl LoanManager {
         Self::apply_debt_recovery(&mut loan, debt_repaid);
         loan.status = LoanStatus::Liquidated;
         loan.collateral_amount = 0;
-        env.storage().persistent().set(&loan_key, &loan);
-        Self::bump_persistent_ttl(&env, &loan_key);
-        Self::decrement_borrower_loan_count(&env, &loan.borrower);
 
         let token: Address = env
             .storage()
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
+        Self::adjust_total_outstanding(&env, &token, -loan.amount);
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+        Self::decrement_borrower_loan_count(&env, &loan.borrower);
         let lending_pool: Address = env
             .storage()
             .instance()
@@ -1911,6 +1913,7 @@ impl LoanManager {
         // Validate collateral covers new amount (collateral must be >= loan amount)
         if loan.collateral_amount < new_amount {
             return Err(LoanError::InsufficientScore);
+            return Err(LoanError::InsufficientCollateral);
         }
 
         // Settle all accrued interest and late fees up to now.
@@ -1993,9 +1996,10 @@ impl LoanManager {
             core::cmp::Ordering::Equal => {}
         }
 
-        let outstanding_delta = loan
-            .amount
-            .checked_sub(new_amount)
+        // #1354: delta must be new minus prior, not prior minus new — adjust_total_outstanding
+        // adds the delta to the running total, so borrowing more must produce a positive delta.
+        let outstanding_delta = new_amount
+            .checked_sub(loan.amount)
             .expect("outstanding delta overflow");
         Self::adjust_total_outstanding(&env, &token, outstanding_delta);
 
@@ -2529,7 +2533,7 @@ impl LoanManager {
             .due_date
             .checked_add(Self::default_window_ledgers(&env))
             .expect("default window overflow");
-        if current_ledger < default_eligible_after {
+        if current_ledger <= default_eligible_after {
             return Err(LoanError::LoanNotPastDue);
         }
 
@@ -2722,3 +2726,37 @@ impl LoanManager {
 
 #[cfg(test)]
 mod test;
+
+
+pub fn refinance_loan(
+    env: Env,
+    borrower: Address,
+    loan_id: u64,
+    new_principal_amount: i128,
+) -> Result<(), Error> {
+    borrower.require_auth();
+
+    let mut loan = Self::get_loan(&env, loan_id)?;
+    if loan.borrower != borrower {
+        return Err(Error::Unauthorized);
+    }
+
+    // Calculate required collateral value for the new principal amount
+    let collateral_ratio = Self::get_collateral_ratio(&env)?;
+    let required_collateral = new_principal_amount
+        .checked_mul(collateral_ratio as i128)
+        .ok_or(Error::MathOverflow)? / 100;
+
+    let current_collateral_value = Self::get_collateral_value(&env, &loan.collateral_asset, loan.collateral_amount)?;
+
+    // FIX: Correct inverted comparison check
+    // Ensure current collateral is GREATER THAN OR EQUAL TO required collateral
+    if current_collateral_value < required_collateral {
+        return Err(Error::InsufficientCollateral);
+    }
+
+    loan.principal_amount = new_principal_amount;
+    Self::save_loan(&env, loan_id, &loan);
+
+    Ok(())
+}
