@@ -23,6 +23,7 @@
 import type { Request } from 'express';
 
 import { AppError } from '../errors/AppError.js';
+import { ErrorCode } from '../errors/errorCodes.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -223,6 +224,23 @@ function parseAmountRange(value: unknown): { min: number; max: number } | null {
 // ── 2. Keyset (cursor) pagination ───────────────────────────────────────────
 
 /**
+ * Decoded cursor representing a row's position in the keyset.
+ */
+export interface DecodedCursor {
+  createdAt: Date;
+  seq: bigint;
+}
+
+/**
+ * Parameters for a keyset pagination query.
+ */
+export interface KeysetPaginationParams {
+  snapshotSeq: bigint;
+  cursor: string | null;
+  limit: number;
+}
+
+/**
  * Encodes a cursor as a base64url string.
  * The cursor format is: base64url(JSON.stringify({ createdAt: ISO8601, seq: string }))
  *
@@ -270,9 +288,7 @@ export function decodeCursor(cursor: string): DecodedCursor {
   } catch (error) {
     throw AppError.badRequest(
       `Invalid cursor: ${error instanceof Error ? error.message : 'unknown error'}`,
-      {
-        code: 'INVALID_CURSOR',
-      },
+      ErrorCode.VALIDATION_ERROR,
     );
   }
 }
@@ -350,7 +366,7 @@ export function parseKeysetParams(
     try {
       parsedSnapshotSeq = BigInt(snapshotSeq);
     } catch {
-      throw AppError.badRequest('Invalid snapshot_seq', { code: 'INVALID_SNAPSHOT_SEQ' });
+      throw AppError.badRequest('Invalid snapshot_seq', ErrorCode.VALIDATION_ERROR);
     }
   }
 

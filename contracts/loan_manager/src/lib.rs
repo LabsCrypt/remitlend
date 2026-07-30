@@ -2725,37 +2725,3 @@ impl LoanManager {
 
 #[cfg(test)]
 mod test;
-
-
-pub fn refinance_loan(
-    env: Env,
-    borrower: Address,
-    loan_id: u64,
-    new_principal_amount: i128,
-) -> Result<(), Error> {
-    borrower.require_auth();
-
-    let mut loan = Self::get_loan(&env, loan_id)?;
-    if loan.borrower != borrower {
-        return Err(Error::Unauthorized);
-    }
-
-    // Calculate required collateral value for the new principal amount
-    let collateral_ratio = Self::get_collateral_ratio(&env)?;
-    let required_collateral = new_principal_amount
-        .checked_mul(collateral_ratio as i128)
-        .ok_or(Error::MathOverflow)? / 100;
-
-    let current_collateral_value = Self::get_collateral_value(&env, &loan.collateral_asset, loan.collateral_amount)?;
-
-    // FIX: Correct inverted comparison check
-    // Ensure current collateral is GREATER THAN OR EQUAL TO required collateral
-    if current_collateral_value < required_collateral {
-        return Err(Error::InsufficientCollateral);
-    }
-
-    loan.principal_amount = new_principal_amount;
-    Self::save_loan(&env, loan_id, &loan);
-
-    Ok(())
-}

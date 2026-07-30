@@ -3907,34 +3907,3 @@ fn test_set_rate_oracle_emits_rate_oracle_updated_event() {
         "RateOracleUpdated event should be emitted"
     );
 }
-
-
-#[test]
-fn test_refinance_insufficient_collateral_rejected() {
-    let env = Env::default();
-    let client = LoanManagerClient::new(&env, &env.register_contract(None, LoanManager));
-
-    let borrower = Address::generate(&env);
-    let loan_id = setup_test_loan(&env, &client, &borrower, 1_000, 1_500); // 1000 principal, 1500 collateral
-
-    // Attempting to refinance to a larger amount (3,000) with insufficient collateral (1,500)
-    let new_amount = 3_000; 
-    let res = client.try_refinance_loan(&borrower, &loan_id, &new_amount);
-
-    assert_eq!(res, Err(Ok(Error::InsufficientCollateral)));
-}
-
-#[test]
-fn test_refinance_sufficient_collateral_accepted() {
-    let env = Env::default();
-    let client = LoanManagerClient::new(&env, &env.register_contract(None, LoanManager));
-
-    let borrower = Address::generate(&env);
-    let loan_id = setup_test_loan(&env, &client, &borrower, 1_000, 2_000); // 1000 principal, 2000 collateral
-
-    // Refinance to 1,200 with 2,000 collateral (sufficient at 150% ratio)
-    let new_amount = 1_200;
-    let res = client.try_refinance_loan(&borrower, &loan_id, &new_amount);
-
-    assert!(res.is_ok());
-}

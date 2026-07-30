@@ -9,9 +9,17 @@
  * Related to Issue #1381: Cross-Layer Emergency Pause Propagation
  */
 
-exports.up = async (db) => {
-  await db.none(
-    `
+/**
+ * @type {import('node-pg-migrate').ColumnDefinitions | undefined}
+ */
+export const shorthands = undefined;
+
+/**
+ * @param pgm {import('node-pg-migrate').MigrationBuilder}
+ * @returns {void}
+ */
+export const up = (pgm) => {
+  pgm.sql(`
     CREATE TABLE IF NOT EXISTS pause_state (
       -- Single row table, ID is always 1
       id BIGINT PRIMARY KEY,
@@ -31,19 +39,20 @@ exports.up = async (db) => {
       -- Timestamp of last update
       updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
     )
-    `,
-  );
+  `);
 
   // Ensure exactly one row exists
-  await db.none(
-    `
+  pgm.sql(`
     INSERT INTO pause_state (id, is_paused, paused_at, reason, contracts, updated_at)
     VALUES (1, false, NULL, NULL, '{}', NOW())
     ON CONFLICT (id) DO NOTHING
-    `,
-  );
+  `);
 };
 
-exports.down = async (db) => {
-  await db.none('DROP TABLE IF EXISTS pause_state');
+/**
+ * @param pgm {import('node-pg-migrate').MigrationBuilder}
+ * @returns {void}
+ */
+export const down = (pgm) => {
+  pgm.sql('DROP TABLE IF EXISTS pause_state');
 };

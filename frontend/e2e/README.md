@@ -6,18 +6,18 @@ easy to spot.
 
 ## Spec Responsibilities
 
-| Spec file                      | Unique responsibility                                                    |
-| ------------------------------ | ------------------------------------------------------------------------ |
-| `admin-governance.spec.ts`     | Admin views and votes on governance proposals                            |
-| `borrower-loan-flow.spec.ts`   | Full borrower loan-request lifecycle (wallet, score, apply, approve)     |
-| `borrower-repay-flow.spec.ts`  | Borrower repays an active loan and confirms balance update               |
-| `criticalFlows.spec.ts`        | Lending-pool deposit, remittance history, and settings/logout flows      |
-| `landing-page.spec.ts`         | Landing page load, wallet prompt, and basic navigation                   |
-| `lender-withdraw-flow.spec.ts` | Lender withdraws deposited liquidity from the pool                       |
-| `notifications-inbox.spec.ts`  | Notification badge, inbox drawer, and mark-as-read                       |
-| `recent-transactions.spec.ts`  | Recent transactions drawer with copied hashes                            |
-| `remittance-nft-viewer.spec.ts`| Viewing and inspecting minted remittance NFTs                            |
-| `send-remittance.spec.ts`      | Sending a remittance to a recipient address                              |
+| Spec file                       | Unique responsibility                                                |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `admin-governance.spec.ts`      | Admin views and votes on governance proposals                        |
+| `borrower-loan-flow.spec.ts`    | Full borrower loan-request lifecycle (wallet, score, apply, approve) |
+| `borrower-repay-flow.spec.ts`   | Borrower repays an active loan and confirms balance update           |
+| `criticalFlows.spec.ts`         | Lending-pool deposit, remittance history, and settings/logout flows  |
+| `landing-page.spec.ts`          | Landing page load, wallet prompt, and basic navigation               |
+| `lender-withdraw-flow.spec.ts`  | Lender withdraws deposited liquidity from the pool                   |
+| `notifications-inbox.spec.ts`   | Notification badge, inbox drawer, and mark-as-read                   |
+| `recent-transactions.spec.ts`   | Recent transactions drawer with copied hashes                        |
+| `remittance-nft-viewer.spec.ts` | Viewing and inspecting minted remittance NFTs                        |
+| `send-remittance.spec.ts`       | Sending a remittance to a recipient address                          |
 
 ## Adding a New Spec
 

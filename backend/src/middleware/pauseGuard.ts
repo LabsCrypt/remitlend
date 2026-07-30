@@ -27,15 +27,17 @@ let globalPauseState: PauseState = {
  */
 export async function updatePauseStateFromDatabase(): Promise<void> {
   try {
-    const result = await query<{
-      is_paused: boolean;
-      paused_at: Date | null;
-      reason: string | null;
-      contracts: string[];
-    }>('SELECT is_paused, paused_at, reason, contracts FROM pause_state LIMIT 1');
+    const result = await query(
+      'SELECT is_paused, paused_at, reason, contracts FROM pause_state LIMIT 1',
+    );
 
     if (result.rows.length > 0) {
-      const row = result.rows[0];
+      const row = result.rows[0] as {
+        is_paused: boolean;
+        paused_at: Date | null;
+        reason: string | null;
+        contracts: string[];
+      };
       globalPauseState = {
         isPaused: row.is_paused,
         pausedAt: row.paused_at,
@@ -58,7 +60,7 @@ export async function updatePauseStateFromDatabase(): Promise<void> {
  * - 200 with pause state info on OPTIONS requests (allowed)
  * - 503 Service Unavailable if mutating request during pause
  */
-export function pauseGuard(req: Request, res: Response, next: NextFunction): void {
+export function pauseGuard(req: Request, _res: Response, next: NextFunction): void {
   // Allow read-only operations
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     return next();
@@ -88,7 +90,7 @@ export function pauseGuard(req: Request, res: Response, next: NextFunction): voi
  * Available to all clients without authentication.
  */
 export async function getPauseState(
-  req: Request,
+  _req: Request,
   res: Response,
   next: NextFunction,
 ): Promise<void> {

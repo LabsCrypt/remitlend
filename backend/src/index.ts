@@ -29,6 +29,10 @@ import {
   startScoreReconciliationScheduler,
   stopScoreReconciliationScheduler,
 } from './services/scoreReconciliationService.js';
+import {
+  startCrossContractReconciler,
+  stopCrossContractReconciler,
+} from './services/crossContractReconciler.js';
 import { sorobanService } from './services/sorobanService.js';
 import { validateLoanConfig } from './config/loanConfig.js';
 import { startLoanDueCheckCron, stopLoanDueCheckCron } from './cron/loanCheckCron.js';
@@ -81,6 +85,9 @@ const server = app.listen(port, () => {
   // Start scheduled score reconciliation against on-chain state
   startScoreReconciliationScheduler();
 
+  // Start cross-contract (disbursement <-> score) reconciliation ledger sweep
+  startCrossContractReconciler();
+
   // Start periodic notification cleanup
   startNotificationCleanupScheduler();
 
@@ -112,6 +119,7 @@ const shutdown = async (signal: 'SIGTERM' | 'SIGINT') => {
     stopDefaultCheckerScheduler();
     stopWebhookRetryProcessor();
     stopScoreReconciliationScheduler();
+    stopCrossContractReconciler();
     stopNotificationCleanupScheduler();
 
     if (

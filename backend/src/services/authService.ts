@@ -22,6 +22,9 @@ export interface ChallengeMessage {
 
 const JWT_EXPIRES_IN = '24h';
 const CHALLENGE_EXPIRES_IN_MS = 5 * 60 * 1000;
+// Small allowance for client/server clock drift when a challenge timestamp
+// is slightly in the future.
+const CLOCK_SKEW_TOLERANCE_MS = 5 * 1000;
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -77,7 +80,7 @@ export function verifySignature(publicKey: string, message: string, signature: s
  *
  * A challenge is considered valid only when:
  * - the timestamp is a valid finite number;
- * - it is not in the future; and
+ * - it is not in the future beyond the allowed clock-skew tolerance; and
  * - its age does not exceed the configured maximum.
  */
 export function verifyChallengeTimestamp(
@@ -91,8 +94,8 @@ export function verifyChallengeTimestamp(
   const now = Date.now();
   const age = now - timestamp;
 
-  // Reject timestamps from the future.
-  if (age < 0) {
+  // Reject timestamps from the future, allowing a small clock-skew tolerance.
+  if (age < -CLOCK_SKEW_TOLERANCE_MS) {
     return false;
   }
 

@@ -106,126 +106,146 @@ describe('pagination and filtering', () => {
     expect(response.body.data.loans[0].principal).toBe(250);
   });
 
-  it('applies event filters and returns page_info for borrower transaction history', async () => {
-    mockQuery
-      .mockResolvedValueOnce({
+  it('applies event filters and returns page info for borrower transaction history', async () => {
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('MAX(seq)')) {
+        return { rows: [{ max_seq: 500 }] };
+      }
+      if (sql.includes('COUNT(*)')) {
+        return { rows: [{ count: '3' }] };
+      }
+      return {
         rows: [
           {
             id: 2,
             event_id: 'evt_2',
             event_type: 'LoanRepaid',
             loan_id: 42,
-            borrower,
+            address: borrower,
             amount: '250',
             ledger: 200,
             ledger_closed_at: '2024-02-15T12:00:00.000Z',
             tx_hash: 'tx_2',
             created_at: '2024-02-15T12:00:00.000Z',
+            seq: 2,
           },
           {
             id: 3,
             event_id: 'evt_3',
             event_type: 'LoanRepaid',
             loan_id: 42,
-            borrower,
+            address: borrower,
             amount: '300',
             ledger: 201,
             ledger_closed_at: '2024-02-15T12:01:00.000Z',
             tx_hash: 'tx_3',
             created_at: '2024-02-15T12:01:00.000Z',
+            seq: 3,
           },
         ],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ count: '3' }],
-      });
+      };
+    });
 
     const response = await request(app)
       .get(
-        `/api/indexer/events/borrower/${borrower}?status=LoanRepaid&amount_range=100,500&date_range=2024-02-01,2024-03-01&sort=amount&limit=1&cursor=1`,
+        `/api/indexer/events/borrower/${borrower}?status=LoanRepaid&amount_range=100,500&date_range=2024-02-01,2024-03-01`,
       )
       .set(authHeaders());
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.total_count).toBe(3);
-    expect(response.body.page_info).toEqual({
-      limit: 1,
-      count: 1,
-      next_cursor: '2',
-      has_previous: true,
-      has_next: true,
-    });
     expect(response.body.data.address).toBe(borrower);
-    expect(response.body.data.events[0].event_type).toBe('LoanRepaid');
+    expect(response.body.data.items).toHaveLength(2);
+    expect(response.body.data.items[0].event_type).toBe('LoanRepaid');
+    expect(response.body.page).toEqual({
+      next_cursor: null,
+      snapshot_seq: '500',
+      total_at_snapshot: 3,
+      limit: 50,
+    });
 
-    expect(mockQuery).toHaveBeenCalledTimes(2);
-    expect(mockQuery.mock.calls[0]?.[0]).toContain('event_type = $2');
-    expect(mockQuery.mock.calls[0]?.[0]).toContain('CAST(amount AS NUMERIC) BETWEEN $3 AND $4');
-    expect(mockQuery.mock.calls[0]?.[0]).toContain('ledger_closed_at BETWEEN $5 AND $6');
-    expect(mockQuery.mock.calls[0]?.[0]).toContain('ORDER BY id ASC');
+    const dataCall = mockQuery.mock.calls.find(
+      (call) =>
+        call[0].includes('FROM contract_events') &&
+        !call[0].includes('COUNT') &&
+        !call[0].includes('MAX(seq)'),
+    );
+    expect(dataCall?.[0]).toContain('event_type = $2');
+    expect(dataCall?.[0]).toContain('CAST(amount AS NUMERIC) BETWEEN $3 AND $4');
+    expect(dataCall?.[0]).toContain('ledger_closed_at BETWEEN $5 AND $6');
+    expect(dataCall?.[0]).toContain('ORDER BY created_at DESC, seq DESC');
   });
 
   it('supports paginated recent events for admin dashboards', async () => {
-    mockQuery
-      .mockResolvedValueOnce({
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('MAX(seq)')) {
+        return { rows: [{ max_seq: 400 }] };
+      }
+      if (sql.includes('COUNT(*)')) {
+        return { rows: [{ count: '5' }] };
+      }
+      return {
         rows: [
           {
             id: 2,
             event_id: 'evt_9',
             event_type: 'LoanDefaulted',
             loan_id: 77,
-            borrower,
+            address: borrower,
             amount: '900',
             ledger: 400,
             ledger_closed_at: '2024-03-02T09:00:00.000Z',
             tx_hash: 'tx_9',
             created_at: '2024-03-02T09:00:00.000Z',
+            seq: 400,
           },
           {
             id: 3,
             event_id: 'evt_8',
             event_type: 'LoanDefaulted',
             loan_id: 76,
-            borrower,
+            address: borrower,
             amount: '850',
             ledger: 399,
             ledger_closed_at: '2024-03-01T09:00:00.000Z',
             tx_hash: 'tx_8',
             created_at: '2024-03-01T09:00:00.000Z',
+            seq: 399,
           },
           {
             id: 4,
             event_id: 'evt_7',
             event_type: 'LoanDefaulted',
             loan_id: 75,
-            borrower,
+            address: borrower,
             amount: '800',
             ledger: 398,
             ledger_closed_at: '2024-03-01T08:00:00.000Z',
             tx_hash: 'tx_7',
             created_at: '2024-03-01T08:00:00.000Z',
+            seq: 398,
           },
         ],
-      })
-      .mockResolvedValueOnce({
-        rows: [{ count: '5' }],
-      });
+      };
+    });
 
     const response = await request(app)
-      .get('/api/indexer/events/recent?status=LoanDefaulted&limit=2&cursor=100&sort=-amount')
+      .get('/api/indexer/events/recent?status=LoanDefaulted&limit=2')
       .set('x-api-key', process.env.INTERNAL_API_KEY as string);
 
     expect(response.status).toBe(200);
-    expect(response.body.total_count).toBe(5);
-    expect(response.body.page_info).toEqual({
-      limit: 2,
-      count: 2,
-      next_cursor: '3',
-      has_previous: true,
-      has_next: true,
-    });
-    expect(response.body.data.events).toHaveLength(2);
-    expect(mockQuery.mock.calls[0]?.[0]).toContain('ORDER BY id ASC');
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.items).toHaveLength(2);
+    expect(response.body.page.limit).toBe(2);
+    expect(response.body.page.total_at_snapshot).toBe(5);
+    expect(typeof response.body.page.next_cursor).toBe('string');
+
+    const dataCall = mockQuery.mock.calls.find(
+      (call) =>
+        call[0].includes('FROM contract_events') &&
+        !call[0].includes('COUNT') &&
+        !call[0].includes('MAX(seq)'),
+    );
+    expect(dataCall?.[0]).toContain('ORDER BY created_at DESC, seq DESC');
   });
 });

@@ -2,7 +2,9 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 function normalizeError(err: unknown): Error {
   if (err instanceof Error) return err;
-  return new Error(`Non-Error rejection: ${String(err)}`, { cause: err });
+  const error = new Error(`Non-Error rejection: ${String(err)}`);
+  (error as Error & { cause?: unknown }).cause = err;
+  return error;
 }
 
 export const asyncHandler = (

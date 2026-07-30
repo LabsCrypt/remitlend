@@ -29,7 +29,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { metricsHandler, metricsMiddleware } from './middleware/metrics.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
-import { pauseGuard, initializePauseState } from './middleware/pauseGuard.js';
+import { pauseGuard } from './middleware/pauseGuard.js';
 import { asyncHandler } from './utils/asyncHandler.js';
 import { AppError } from './errors/AppError.js';
 const app = express();

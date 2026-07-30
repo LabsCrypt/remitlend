@@ -661,27 +661,3 @@ impl GovernanceContract {
             .ok_or(GovernanceError::NotInitialized)
     }
 }
-
-pub fn propose_admin_transfer(
-    env: Env,
-    proposer: Address,
-    new_admin: Address,
-) -> Result<u64, Error> {
-    proposer.require_auth();
-    Self::require_admin_or_signatory(&env, &proposer)?;
-
-    if let Some(last_cancellation) = Self::get_last_cancellation_timestamp(&env) {
-        let cooldown_period = Self::get_cooldown_period(&env)?;
-        let earliest_allowed = last_cancellation.checked_add(cooldown_period).ok_or(Error::MathOverflow)?;
-
-        // FIX: Inverted cooldown check fixed
-        // Ensure current ledger timestamp is GREATER THAN OR EQUAL TO the required cooldown threshold
-        if env.ledger().timestamp() < earliest_allowed {
-            return Err(Error::CooldownNotElapsed);
-        }
-    }
-
-    // Proceed with creating the new proposal...
-    let proposal_id = Self::create_proposal_record(&env, proposer, new_admin)?;
-    Ok(proposal_id)
-}

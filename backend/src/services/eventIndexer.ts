@@ -285,8 +285,83 @@ export class EventIndexer {
     const toLedger = Math.min(fromLedger + this.batchSize - 1, latestLedger);
 
     const result = await this.processChunk(fromLedger, toLedger);
+    await this.recordCheckpoint(fromLedger, result.lastProcessedLedger);
     await this.updateLastIndexedLedger(result.lastProcessedLedger);
     recordIndexerLedgers(result.lastProcessedLedger, latestLedger);
+  }
+
+  /**
+   * Contiguous-cursor invariant (issue #1376): records the ledger range this
+   * poll iteration just requested, and flags a gap when it doesn't
+   * immediately follow the previously-recorded range for this contract.
+   *
+   * This does NOT prove every ledger in `rangeStart..rangeEnd` was scanned —
+   * only that `processChunk` was invoked for that exact range and returned
+   * without error. What it catches is the specific failure mode in the
+   * issue: `fromLedger` being derived from a value that skips ahead of what
+   * was actually verified (a stale/clamped starting point), which the old
+   * code had no way to detect since it only ever looked at the *current*
+   * chunk, never compared it against the *previous* one.
+   *
+   * Reorg detection (re-reading a suspect/verified range and comparing a
+   * content digest) is intentionally out of scope here — see this change's
+   * PR description.
+   */
+  private async recordCheckpoint(rangeStart: number, rangeEnd: number): Promise<void> {
+    const contract = this.getContractId();
+
+    const previous = await query(
+      `SELECT range_end
+       FROM ledger_checkpoints
+       WHERE contract = $1
+       ORDER BY range_end DESC
+       LIMIT 1`,
+      [contract],
+    );
+
+    const previousRangeEnd = previous.rows.length ? Number(previous.rows[0]?.range_end ?? 0) : null;
+
+    if (previousRangeEnd !== null && rangeStart > previousRangeEnd + 1) {
+      const gapStart = previousRangeEnd + 1;
+      const gapEnd = rangeStart - 1;
+      logger.withContext().warn('Indexer gap detected: ledger range was never scanned', {
+        contract,
+        gapStart,
+        gapEnd,
+      });
+      await query(
+        `INSERT INTO ledger_checkpoints (contract, range_start, range_end, status)
+         VALUES ($1, $2, $3, 'suspect')`,
+        [contract, gapStart, gapEnd],
+      );
+    }
+
+    await query(
+      `INSERT INTO ledger_checkpoints (contract, range_start, range_end, status)
+       VALUES ($1, $2, $3, 'verified')`,
+      [contract, rangeStart, rangeEnd],
+    );
+  }
+
+  /**
+   * Suspect (potentially-skipped) ledger ranges recorded for this contract,
+   * oldest first. Exposed so a consumer (an ops endpoint, or eventually
+   * defaultChecker.ts) can refuse to trust conclusions drawn from events in
+   * these ranges until they're backfilled and reconciled.
+   */
+  async getSuspectRanges(): Promise<Array<{ rangeStart: number; rangeEnd: number }>> {
+    const contract = this.getContractId();
+    const result = await query(
+      `SELECT range_start, range_end
+       FROM ledger_checkpoints
+       WHERE contract = $1 AND status = 'suspect'
+       ORDER BY range_start ASC`,
+      [contract],
+    );
+    return result.rows.map((row) => ({
+      rangeStart: Number(row.range_start),
+      rangeEnd: Number(row.range_end),
+    }));
   }
 
   private async getLatestLedgerSequence(): Promise<number> {
@@ -1186,3 +1261,11 @@ export class EventIndexer {
     }
   }
 }
+
+// Re-exported for discoverability alongside `recordCheckpoint` /
+// `getSuspectRanges` above; the implementation lives in
+// ledgerCheckpoints.ts so consumers that only need the gate check (e.g.
+// defaultChecker.ts) don't pull in this module's heavier dependency graph
+// (Soroban RPC client, webhook/notification/event-stream services) — see
+// that file's doc comment.
+export { hasUnresolvedLedgerGaps } from './ledgerCheckpoints.js';

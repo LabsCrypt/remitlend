@@ -59,3 +59,19 @@ pub fn admin_transferred(env: &Env, previous_admin: Address, new_admin: Address,
     let topics = (Symbol::new(env, "AdminTransferred"), via);
     env.events().publish(topics, (previous_admin, new_admin));
 }
+
+/// Emitted on every mutation of a token pool's share-pricing state
+/// (`deposit`, `withdraw`/`emergency_withdraw`, `distribute_yield`) so that
+/// off-chain indexers can reconcile quoted prices against the last settled
+/// on-chain price and detect ledger skew (#1380).
+pub fn price_updated(
+    env: &Env,
+    token: Address,
+    ledger_seq: u32,
+    total_managed_assets: i128,
+    total_shares: i128,
+) {
+    let topics = (Symbol::new(env, "PriceUpdated"), token);
+    env.events()
+        .publish(topics, (ledger_seq, total_managed_assets, total_shares));
+}

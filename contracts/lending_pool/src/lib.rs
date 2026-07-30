@@ -24,8 +24,16 @@ pub enum PoolError {
     InvalidMaxPoolSize = 9,
     NoProposedAdmin = 10,
     CooldownTooLong = 11,
+    /// `deposit` would mint fewer shares than the caller's `min_shares_out`.
+    MinSharesNotMet = 12,
+    /// `redeem`/`withdraw` would return fewer assets than the caller's
+    /// `min_assets_out`.
+    MinAssetsNotMet = 13,
+    /// The computed share/asset amount for an operation rounded down to
+    /// zero, so no value would actually move.
+    ZeroShares = 14,
     /// #1379 — cached oracle price is older than the configured max age.
-    OracleStale = 12,
+    OracleStale = 15,
 }
 
 /// Storage keys.
@@ -56,6 +64,14 @@ pub enum DataKey {
     TotalDeposits(Address),
     /// token → total principal currently deployed in approved loans
     TotalOutstanding(Address),
+    /// token → internally tracked total assets (idle + outstanding) backing
+    /// outstanding shares. This is the sole input to share pricing
+    /// (`calc_shares_to_mint` / `calc_assets_to_redeem`) and is mutated only
+    /// by `deposit`, `redeem`/`withdraw`, and `distribute_yield`. It is
+    /// never derived from `token::Client::balance`, so an unsolicited
+    /// direct transfer to the pool's address ("donation") cannot move the
+    /// share price.
+    TotalManagedAssets(Address),
     /// token → number of active depositors
     DepositorCount(Address),
     /// token → cumulative yield explicitly distributed to the pool
@@ -81,6 +97,9 @@ pub struct PoolStats {
     /// Only positive when active loans have reduced pool_balance below
     /// total_deposits.
     pub utilization_bps: u32,
+    /// Internally tracked total assets used for share pricing. See
+    /// `DataKey::TotalManagedAssets`.
+    pub total_managed_assets: i128,
 }
 
 #[contract]
@@ -96,6 +115,15 @@ impl LendingPool {
     const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
     const SHARE_PRICE_SCALE: i128 = 1_000_000;
     const MAX_WITHDRAWAL_COOLDOWN_LEDGERS: u32 = 17_280 * 30;
+    /// Decimals offset applied to both shares and assets before computing
+    /// exchange rates: `10^3`. This is the standard ERC4626-style "virtual
+    /// shares/assets" mitigation for the classic first-depositor inflation
+    /// attack: it makes the share price prohibitively expensive to
+    /// manipulate via a donation, because the attacker's donated assets are
+    /// diluted by the offset instead of being able to round a victim's
+    /// minted shares down to zero.
+    const VIRTUAL_SHARES: i128 = 1_000; // 10^3
+    const VIRTUAL_ASSETS: i128 = 1_000; // 10^3
 
     // ── TTL helpers ───────────────────────────────────────────────────────
 
@@ -135,12 +163,29 @@ impl LendingPool {
             .unwrap_or(0)
     }
 
-    fn total_pool_assets(env: &Env, token: &Address) -> i128 {
-        let idle_balance = Self::read_pool_balance(env, token);
-        let outstanding = Self::read_total_outstanding(env, token);
-        idle_balance
-            .checked_add(outstanding)
-            .expect("total assets overflow")
+    /// Internally tracked total assets (idle + outstanding) backing
+    /// outstanding shares. This is the *only* input to share pricing.
+    ///
+    /// Deliberately never derived from `token::Client::balance`: reading the
+    /// live balance would let anyone move the share price within a single
+    /// ledger by transferring tokens directly to the pool's address,
+    /// without going through `deposit`/`redeem` (see #1380). It is mutated
+    /// only by `deposit` (+amount), `redeem`/`withdraw` (-assets_to_return),
+    /// and `distribute_yield` (+amount) — never by `adjust_outstanding`,
+    /// since moving principal between "idle" and "outstanding" does not
+    /// change the total value under management.
+    fn total_managed_assets(env: &Env, token: &Address) -> i128 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalManagedAssets(token.clone()))
+            .unwrap_or(0)
+    }
+
+    fn set_total_managed_assets(env: &Env, token: &Address, value: i128) {
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalManagedAssets(token.clone()), &value);
     }
 
     fn total_deposits(env: &Env, token: &Address) -> i128 {
@@ -217,34 +262,50 @@ impl LendingPool {
 
     /// LP shares to mint for `amount` of deposited assets.
     ///
-    /// The first depositor always receives a 1-for-1 allocation.  Subsequent
-    /// depositors receive `amount * total_shares / total_assets_before` so
-    /// that the exchange rate is preserved and existing holders are not
-    /// diluted.  Total assets includes both idle balance and outstanding loans.
+    /// Uses the virtual shares/assets offset (`VIRTUAL_SHARES`,
+    /// `VIRTUAL_ASSETS`) so that the formula is well-defined (and correctly
+    /// gives a 1-for-1 allocation) even when the pool is empty, without a
+    /// special-cased first-depositor branch. The offset also means a
+    /// donation-inflated `total_managed_assets_before` can no longer round a
+    /// victim's minted shares down to zero — see #1380. Rounds down, in the
+    /// pool's favor.
     fn calc_shares_to_mint(
         amount: i128,
-        total_assets_before: i128,
+        total_managed_assets_before: i128,
         cur_total_shares: i128,
     ) -> i128 {
-        if cur_total_shares == 0 || total_assets_before == 0 {
-            amount
-        } else {
-            amount
-                .checked_mul(cur_total_shares)
-                .and_then(|v| v.checked_div(total_assets_before))
-                .expect("share mint overflow")
-        }
+        let shares_num = cur_total_shares
+            .checked_add(Self::VIRTUAL_SHARES)
+            .expect("virtual shares overflow");
+        let assets_den = total_managed_assets_before
+            .checked_add(Self::VIRTUAL_ASSETS)
+            .expect("virtual assets overflow");
+        amount
+            .checked_mul(shares_num)
+            .and_then(|v| v.checked_div(assets_den))
+            .expect("share mint overflow")
     }
 
     /// Underlying assets redeemable for `shares` given current pool state.
     ///
-    /// Returns `shares * total_assets / total_shares`, which automatically
-    /// includes any yield that has accumulated since the shares were minted.
-    /// Total assets includes both idle balance and outstanding loans.
-    fn calc_assets_to_redeem(shares: i128, total_assets: i128, cur_total_shares: i128) -> i128 {
+    /// Returns `shares * (total_managed_assets + VIRTUAL_ASSETS) /
+    /// (total_shares + VIRTUAL_SHARES)`, rounded down, in the pool's favor.
+    /// `total_managed_assets` automatically includes any yield realized via
+    /// `distribute_yield` since the shares were minted.
+    fn calc_assets_to_redeem(
+        shares: i128,
+        total_managed_assets: i128,
+        cur_total_shares: i128,
+    ) -> i128 {
+        let assets_num = total_managed_assets
+            .checked_add(Self::VIRTUAL_ASSETS)
+            .expect("virtual assets overflow");
+        let shares_den = cur_total_shares
+            .checked_add(Self::VIRTUAL_SHARES)
+            .expect("virtual shares overflow");
         shares
-            .checked_mul(total_assets)
-            .and_then(|v| v.checked_div(cur_total_shares))
+            .checked_mul(assets_num)
+            .and_then(|v| v.checked_div(shares_den))
             .expect("share redeem overflow")
     }
 
@@ -269,8 +330,12 @@ impl LendingPool {
         provider: &Address,
         token: &Address,
         shares: i128,
+        min_assets_out: i128,
     ) -> Result<(), PoolError> {
         if shares <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+        if min_assets_out < 0 {
             return Err(PoolError::InvalidAmount);
         }
 
@@ -280,13 +345,23 @@ impl LendingPool {
         }
 
         let cur_total_shares = Self::total_shares(env, token);
-        let total_assets = Self::total_pool_assets(env, token);
-        let assets_to_return = Self::calc_assets_to_redeem(shares, total_assets, cur_total_shares);
+        // Pricing is derived from internally tracked accounting, never from
+        // the live token balance — see `total_managed_assets`.
+        let total_managed_before = Self::total_managed_assets(env, token);
+        let assets_to_return =
+            Self::calc_assets_to_redeem(shares, total_managed_before, cur_total_shares);
 
         if assets_to_return <= 0 {
-            return Err(PoolError::InvalidAmount);
+            return Err(PoolError::ZeroShares);
+        }
+        if assets_to_return < min_assets_out {
+            return Err(PoolError::MinAssetsNotMet);
         }
 
+        // Liquidity is still checked against the *live* balance: this is a
+        // safety upper-bound on how much the pool can actually pay out right
+        // now, not a pricing input, so an inflated live balance can only
+        // ever relax this check, never tighten it or move the price.
         let idle_balance = Self::read_pool_balance(env, token);
         if assets_to_return > idle_balance {
             return Err(PoolError::InsufficientLiquidity);
@@ -327,7 +402,21 @@ impl LendingPool {
             .instance()
             .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
 
+        let new_total_managed = total_managed_before
+            .checked_sub(assets_to_return)
+            .expect("total managed assets underflow");
+        Self::set_total_managed_assets(env, token, new_total_managed);
+
         Self::bump_instance_ttl(env);
+        // Emitted before the Withdraw event so existing event-order
+        // assumptions (Withdraw/Deposit as the last emitted event) hold.
+        price_updated(
+            env,
+            token.clone(),
+            env.ledger().sequence(),
+            new_total_managed,
+            new_total_shares,
+        );
         withdraw(
             env,
             provider.clone(),
@@ -455,16 +544,25 @@ impl LendingPool {
     /// existing depositors are not diluted.  Any yield already present in the
     /// pool is captured in the share price at the point of deposit, not
     /// credited to the new depositor.
+    ///
+    /// `min_shares_out` is the caller's slippage bound: if the computed
+    /// `shares_to_mint` would be less than `min_shares_out`, the call
+    /// reverts with `PoolError::MinSharesNotMet` instead of settling at a
+    /// worse price than the caller expected (#1380).
     pub fn deposit(
         env: Env,
         provider: Address,
         token: Address,
         amount: i128,
+        min_shares_out: i128,
     ) -> Result<(), PoolError> {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
 
         if amount <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+        if min_shares_out < 0 {
             return Err(PoolError::InvalidAmount);
         }
 
@@ -482,14 +580,18 @@ impl LendingPool {
         }
 
         // Snapshot pool state *before* the transfer so the share price
-        // reflects the pre-deposit pool composition.
-        let total_assets_before = Self::total_pool_assets(&env, &token);
+        // reflects internally tracked accounting, never the live token
+        // balance — see `total_managed_assets`.
+        let total_managed_before = Self::total_managed_assets(&env, &token);
         let cur_total_shares = Self::total_shares(&env, &token);
 
         let shares_to_mint =
-            Self::calc_shares_to_mint(amount, total_assets_before, cur_total_shares);
+            Self::calc_shares_to_mint(amount, total_managed_before, cur_total_shares);
         if shares_to_mint <= 0 {
-            return Err(PoolError::InvalidAmount);
+            return Err(PoolError::ZeroShares);
+        }
+        if shares_to_mint < min_shares_out {
+            return Err(PoolError::MinSharesNotMet);
         }
 
         TokenClient::new(&env, &token).transfer(
@@ -534,13 +636,96 @@ impl LendingPool {
             .instance()
             .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
 
+        let new_total_managed = total_managed_before
+            .checked_add(amount)
+            .expect("total managed assets overflow");
+        Self::set_total_managed_assets(&env, &token, new_total_managed);
+
         Self::bump_instance_ttl(&env);
+        // Emitted before the Deposit event so existing event-order
+        // assumptions (Deposit as the last emitted event) hold.
+        price_updated(
+            &env,
+            token.clone(),
+            env.ledger().sequence(),
+            new_total_managed,
+            new_total_shares,
+        );
         deposit(
             &env,
             provider.clone(),
             token.clone(),
             amount,
             shares_to_mint,
+        );
+        Ok(())
+    }
+
+    /// Read-only preview of the shares `deposit` would mint for `amount`,
+    /// given the pool's current state. Performs no state change and no
+    /// authentication. Callers (e.g. `backend/poolQuoter`) use this to
+    /// derive `min_shares_out` off-chain before submitting a bounded
+    /// `deposit`.
+    pub fn preview_deposit(env: Env, token: Address, amount: i128) -> i128 {
+        if amount <= 0 {
+            return 0;
+        }
+        let total_managed = Self::total_managed_assets(&env, &token);
+        let cur_total_shares = Self::total_shares(&env, &token);
+        Self::calc_shares_to_mint(amount, total_managed, cur_total_shares)
+    }
+
+    /// Read-only preview of the assets `redeem`/`withdraw` would return for
+    /// `shares`, given the pool's current state. Performs no state change
+    /// and no authentication.
+    pub fn preview_redeem(env: Env, token: Address, shares: i128) -> i128 {
+        if shares <= 0 {
+            return 0;
+        }
+        let cur_total_shares = Self::total_shares(&env, &token);
+        if cur_total_shares == 0 {
+            return 0;
+        }
+        let total_managed = Self::total_managed_assets(&env, &token);
+        Self::calc_assets_to_redeem(shares, total_managed, cur_total_shares)
+    }
+
+    /// Recognize `amount` of `token` already transferred by `from` into the
+    /// pool as realized yield: the sole "accrual path" that legitimately
+    /// grows `total_managed_assets` (and therefore the share price) without
+    /// minting shares. Unlike a bare token transfer to the pool's address,
+    /// which is deliberately ignored for pricing, this performs the real
+    /// transfer itself and requires `from`'s authorization, so it cannot be
+    /// used to move the price at someone else's expense (#1380).
+    pub fn distribute_yield(
+        env: Env,
+        from: Address,
+        token: Address,
+        amount: i128,
+    ) -> Result<(), PoolError> {
+        from.require_auth();
+        Self::assert_not_paused(&env)?;
+
+        if amount <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        TokenClient::new(&env, &token).transfer(&from, &env.current_contract_address(), &amount);
+
+        let total_managed = Self::total_managed_assets(&env, &token);
+        let updated = total_managed
+            .checked_add(amount)
+            .expect("total managed assets overflow");
+        Self::set_total_managed_assets(&env, &token, updated);
+        Self::bump_instance_ttl(&env);
+
+        yield_distributed(&env, token.clone(), amount);
+        price_updated(
+            &env,
+            token.clone(),
+            env.ledger().sequence(),
+            updated,
+            Self::total_shares(&env, &token),
         );
         Ok(())
     }
@@ -562,7 +747,7 @@ impl LendingPool {
         }
         let asset_value = Self::calc_assets_to_redeem(
             shares,
-            Self::total_pool_assets(&env, &token),
+            Self::total_managed_assets(&env, &token),
             cur_total_shares,
         );
         (shares, asset_value)
@@ -581,7 +766,7 @@ impl LendingPool {
         }
         Self::calc_assets_to_redeem(
             shares,
-            Self::total_pool_assets(&env, &token),
+            Self::total_managed_assets(&env, &token),
             cur_total_shares,
         )
     }
@@ -593,44 +778,62 @@ impl LendingPool {
 
     /// Current LP share price scaled by `SHARE_PRICE_SCALE`.
     /// `1_000_000` means 1.0 underlying asset per share.
-    /// Price includes proportional value of outstanding loans.
+    /// Price includes proportional value of outstanding loans and applies
+    /// the same virtual shares/assets offset as `deposit`/`redeem`, so this
+    /// view is always consistent with actual settlement.
     pub fn get_share_price(env: Env, token: Address) -> i128 {
         let total_shares = Self::total_shares(&env, &token);
         if total_shares <= 0 {
             return Self::SHARE_PRICE_SCALE;
         }
 
-        Self::total_pool_assets(&env, &token)
+        let assets_num = Self::total_managed_assets(&env, &token)
+            .checked_add(Self::VIRTUAL_ASSETS)
+            .expect("virtual assets overflow");
+        let shares_den = total_shares
+            .checked_add(Self::VIRTUAL_SHARES)
+            .expect("virtual shares overflow");
+        assets_num
             .checked_mul(Self::SHARE_PRICE_SCALE)
-            .and_then(|v| v.checked_div(total_shares))
+            .and_then(|v| v.checked_div(shares_den))
             .expect("share price overflow")
     }
 
     /// Burn `shares` LP tokens and receive the proportional underlying assets.
     ///
-    /// The redemption value is `shares * pool_balance / total_shares`, which
-    /// automatically includes any interest that has been repaid to the pool
-    /// since the shares were minted — no separate claim step is required.
+    /// The redemption value is derived from internally tracked accounting
+    /// (`total_managed_assets`), which automatically includes any yield
+    /// realized via `distribute_yield` since the shares were minted — no
+    /// separate claim step is required.
+    ///
+    /// `min_assets_out` is the caller's slippage bound: if the computed
+    /// `assets_to_return` would be less than `min_assets_out`, the call
+    /// reverts with `PoolError::MinAssetsNotMet` instead of settling at a
+    /// worse price than the caller expected (#1380).
     pub fn withdraw(
         env: Env,
         provider: Address,
         token: Address,
         shares: i128,
+        min_assets_out: i128,
     ) -> Result<(), PoolError> {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
         Self::assert_withdrawal_cooldown_elapsed(&env, &provider, &token);
-        Self::redeem_shares(&env, &provider, &token, shares)
+        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)
     }
 
+    /// Same as `withdraw` but bypasses the pause flag and cooldown. Still
+    /// enforces `min_assets_out`.
     pub fn emergency_withdraw(
         env: Env,
         provider: Address,
         token: Address,
         shares: i128,
+        min_assets_out: i128,
     ) -> Result<(), PoolError> {
         provider.require_auth();
-        Self::redeem_shares(&env, &provider, &token, shares)
+        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)
     }
 
     // ── Cooldown views ────────────────────────────────────────────────────
@@ -692,6 +895,7 @@ impl LendingPool {
             depositor_count: Self::read_depositor_count(&env, &token),
             total_yield_distributed: Self::total_yield_distributed(&env, &token),
             utilization_bps,
+            total_managed_assets: Self::total_managed_assets(&env, &token),
         }
     }
 
@@ -839,31 +1043,3 @@ impl LendingPool {
 
 #[cfg(test)]
 mod test;
-
-pub fn deposit(
-    env: Env,
-    depositor: Address,
-    amount: i128,
-) -> Result<i128, Error> {
-    depositor.require_auth();
-
-    if amount <= 0 {
-        return Err(Error::InvalidAmount);
-    }
-
-    let token_client = token::Client::new(&env, &Self::get_token_address(&env)?);
-    let pool_address = env.current_contract_address();
-
-    // FIX: Correct inverted transfer direction
-    // Move tokens FROM depositor TO the pool contract
-    token_client.transfer(&depositor, &pool_address, &amount);
-
-    // Calculate shares to mint based on current pool liquidity and total share supply
-    let shares_to_mint = Self::calculate_shares_for_deposit(&env, amount)?;
-    
-    // Mint pool shares to the depositor
-    Self::mint_shares(&env, &depositor, shares_to_mint)?;
-
-    Ok(shares_to_mint)
-}
-
