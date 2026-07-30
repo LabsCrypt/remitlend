@@ -222,6 +222,17 @@ function parseAmountRange(value: unknown): { min: number; max: number } | null {
 
 // ── 2. Keyset (cursor) pagination ───────────────────────────────────────────
 
+export interface DecodedCursor {
+  createdAt: Date;
+  seq: bigint;
+}
+
+export interface KeysetPaginationParams {
+  snapshotSeq: bigint;
+  cursor: string | null;
+  limit: number;
+}
+
 /**
  * Encodes a cursor as a base64url string.
  * The cursor format is: base64url(JSON.stringify({ createdAt: ISO8601, seq: string }))
@@ -270,9 +281,6 @@ export function decodeCursor(cursor: string): DecodedCursor {
   } catch (error) {
     throw AppError.badRequest(
       `Invalid cursor: ${error instanceof Error ? error.message : 'unknown error'}`,
-      {
-        code: 'INVALID_CURSOR',
-      },
     );
   }
 }
@@ -337,20 +345,22 @@ export function buildKeysetClause(
  * @returns Validated KeysetPaginationParams
  */
 export function parseKeysetParams(
-  snapshotSeq: string | number | null | undefined,
+  snapshotSeq: string | number | readonly (string | number)[] | null | undefined,
   cursor: string | null | undefined,
   limit: string | number | null | undefined,
 ): KeysetPaginationParams {
+  // Normalise snapshot_seq — take first element if array
+  const rawSeq = Array.isArray(snapshotSeq) ? snapshotSeq[0] : snapshotSeq;
   // Parse snapshot_seq
   let parsedSnapshotSeq: bigint;
-  if (snapshotSeq === null || snapshotSeq === undefined || snapshotSeq === '') {
+  if (rawSeq === null || rawSeq === undefined || rawSeq === '') {
     // First request; will be pinned by the handler
     parsedSnapshotSeq = BigInt(0);
   } else {
     try {
-      parsedSnapshotSeq = BigInt(snapshotSeq);
+      parsedSnapshotSeq = BigInt(rawSeq);
     } catch {
-      throw AppError.badRequest('Invalid snapshot_seq', { code: 'INVALID_SNAPSHOT_SEQ' });
+      throw AppError.badRequest('Invalid snapshot_seq');
     }
   }
 

@@ -9,7 +9,7 @@ export const shorthands = undefined;
  */
 export const up = async (pgm) => {
   // ─── Add seq identity columns for keyset pagination ───────────────────
-  
+
   // 1. contract_events (formerly loan_events)
   pgm.addColumn('contract_events', {
     seq: {
@@ -78,29 +78,41 @@ export const up = async (pgm) => {
   // ─── Create composite seek indexes ────────────────────────────────────
 
   // contract_events: (created_at DESC, seq DESC) for keyset pagination
-  pgm.createIndex('contract_events', [
-    { name: 'created_at', direction: 'DESC' },
-    { name: 'seq', direction: 'DESC' },
-  ], {
-    name: 'idx_contract_events_seek',
-  });
+  pgm.createIndex(
+    'contract_events',
+    [
+      { name: 'created_at', direction: 'DESC' },
+      { name: 'seq', direction: 'DESC' },
+    ],
+    {
+      name: 'idx_contract_events_seek',
+    },
+  );
 
   // remittances: (created_at DESC, seq DESC) for keyset pagination
-  pgm.createIndex('remittances', [
-    { name: 'created_at', direction: 'DESC' },
-    { name: 'seq', direction: 'DESC' },
-  ], {
-    name: 'idx_remittances_seek',
-  });
+  pgm.createIndex(
+    'remittances',
+    [
+      { name: 'created_at', direction: 'DESC' },
+      { name: 'seq', direction: 'DESC' },
+    ],
+    {
+      name: 'idx_remittances_seek',
+    },
+  );
 
   // loan_disputes: (created_at DESC, seq DESC) for keyset pagination (if exists)
   if (disputesTableExists.rows[0].exists) {
-    pgm.createIndex('loan_disputes', [
-      { name: 'created_at', direction: 'DESC' },
-      { name: 'seq', direction: 'DESC' },
-    ], {
-      name: 'idx_loan_disputes_seek',
-    });
+    pgm.createIndex(
+      'loan_disputes',
+      [
+        { name: 'created_at', direction: 'DESC' },
+        { name: 'seq', direction: 'DESC' },
+      ],
+      {
+        name: 'idx_loan_disputes_seek',
+      },
+    );
   }
 };
 

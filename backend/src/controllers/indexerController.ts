@@ -327,7 +327,7 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
     );
     const totalAtSnapshot = Number.parseInt(totalResult.rows[0].count, 10);
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         address: borrower,
@@ -450,7 +450,7 @@ export const getLoanEvents = async (req: Request, res: Response) => {
     );
     const totalAtSnapshot = Number.parseInt(totalResult.rows[0].count, 10);
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         loanId: Number.parseInt(loanId, 10),

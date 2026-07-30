@@ -3,8 +3,8 @@ import { query } from '../db/connection.js';
 import { AppError } from '../errors/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 500;
+export const DEFAULT_LIMIT = 20;
+export const MAX_LIMIT = 100;
 
 function parseLimit(value: unknown): number {
   if (typeof value !== 'string') return DEFAULT_LIMIT;
@@ -73,25 +73,32 @@ export const listMyTransactions = asyncHandler(async (req: Request, res: Respons
   });
 });
 
-// FIX: Lower MAX_LIMIT to intended cap (e.g., 100)
-export const MAX_LIMIT = 100;
-export const DEFAULT_LIMIT = 20;
-
 export async function getTransactions(req: Request, res: Response): Promise<void> {
   const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
   const rawLimit = parseInt(req.query.limit as string, 10) || DEFAULT_LIMIT;
-
-  // Cap requested limit at MAX_LIMIT (100)
   const limit = Math.min(Math.max(1, rawLimit), MAX_LIMIT);
+  const offset = (page - 1) * limit;
 
-  const transactions = await getTransactionsService({ page, limit });
+  const [rowsResult, countResult] = await Promise.all([
+    query(
+      `SELECT id, tx_hash, status, submitted_at, submitted_by, transaction_type, result_xdr
+       FROM transaction_submissions
+       ORDER BY id DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset],
+    ),
+    query('SELECT COUNT(*) as count FROM transaction_submissions', []),
+  ]);
+
+  const total = Number.parseInt(countResult.rows[0].count, 10);
+
   res.json({
-    data: transactions.items,
+    data: rowsResult.rows,
     pagination: {
       page,
       limit,
-      total: transactions.total,
-      totalPages: Math.ceil(transactions.total / limit),
+      total,
+      totalPages: Math.ceil(total / limit),
     },
   });
 }

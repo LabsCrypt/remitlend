@@ -8,6 +8,7 @@ import {
   StrKey,
   Keypair,
 } from '@stellar/stellar-sdk';
+import { query } from '../db/connection.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../errors/AppError.js';
 import {
@@ -1288,9 +1289,7 @@ class SorobanService {
 
   async updateUserScoresBulk(userIds: string[], delta: number) {
     for (const id of userIds) {
-      await this.userRepository.update(id, {
-        score: () => `score + ${delta}`,
-      });
+      await query('UPDATE users SET score = score + $1 WHERE public_key = $2', [delta, id]);
     }
   }
 }
