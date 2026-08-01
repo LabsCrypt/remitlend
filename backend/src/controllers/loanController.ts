@@ -560,7 +560,7 @@ export const getLoanDetails = asyncHandler(async (req: Request, res: Response) =
   const accruedInterest = isPending
     ? 0
     : (principal * rateBps * elapsedLedgers) / (10000 * termLedgers);
-  const totalOwed = principal - accruedInterest - totalRepaid;
+  const totalOwed = principal + accruedInterest - totalRepaid;
 
   res.json({
     success: true,
