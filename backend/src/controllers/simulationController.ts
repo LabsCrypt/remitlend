@@ -1,6 +1,26 @@
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { query } from '../db/connection.js';
+import { sorobanService } from '../services/sorobanService.js';
+import { fromStroops, MoneyError } from '../money/decimal.js';
+
+/**
+ * `contract_events.amount` is a Postgres `NUMERIC` column holding an integer
+ * stroop count as a string (eventIndexer.ts writes `bigint.toString()`; see
+ * `decodeAmount` in `services/eventIndexer.ts`). `NUMERIC` does not itself
+ * forbid a fractional value, so parse defensively: accept an optional
+ * all-zero fractional part (e.g. Postgres formatting `150.0`) but reject any
+ * genuinely fractional stroop amount rather than silently truncating it.
+ */
+function parseEventAmountStroops(raw: string | null | undefined): bigint {
+  if (!raw) return 0n;
+  const [wholeRaw, fraction = ''] = raw.split('.');
+  const whole = wholeRaw && wholeRaw.length > 0 ? wholeRaw : '0';
+  if (fraction.length > 0 && /[1-9]/.test(fraction)) {
+    throw new MoneyError(`contract_events.amount must be an integer stroop count, got "${raw}"`);
+  }
+  return BigInt(whole);
+}
 
 export const getRemittanceHistory = asyncHandler(async (req: Request, res: Response) => {
   const { userId } = req.params;
@@ -11,8 +31,8 @@ export const getRemittanceHistory = asyncHandler(async (req: Request, res: Respo
 
   // 2. Fetch all repayment and default events for history calculation
   const eventsResult = await query(
-    `SELECT event_type, amount, ledger_closed_at 
-       FROM contract_events 
+    `SELECT event_type, amount, ledger_closed_at
+       FROM contract_events
        WHERE address = $1 AND event_type IN ('LoanRepaid', 'LoanDefaulted')
        ORDER BY ledger_closed_at ASC`,
     [userId],
@@ -20,8 +40,16 @@ export const getRemittanceHistory = asyncHandler(async (req: Request, res: Respo
 
   const events = eventsResult.rows;
 
-  // 3. Group by month for display
-  const historyMap = new Map<string, { month: string; amount: number; status: string }>();
+  // 3. Group by month for display. Accrue in stroops (bigint) so repeated
+  // `+=` across many repayments never accumulates float drift — previously
+  // this summed `parseFloat(amount) / 10000000` per event, which both loses
+  // sub-stroop precision per event and compounds float rounding error across
+  // the reduce. The exact stroop total is only converted to a display string
+  // once, at the end, via the shared money policy (backend/src/money/decimal.ts).
+  const historyStroops = new Map<
+    string,
+    { month: string; amountStroops: bigint; status: string }
+  >();
 
   for (const e of events) {
     const date = new Date(e.ledger_closed_at);
@@ -31,14 +59,15 @@ export const getRemittanceHistory = asyncHandler(async (req: Request, res: Respo
     });
     const month = date.toLocaleString('en-US', { month: 'long' });
 
-    const existing = historyMap.get(monthYear);
+    const existing = historyStroops.get(monthYear);
     if (e.event_type === 'LoanRepaid') {
+      const eventStroops = parseEventAmountStroops(e.amount);
       if (existing) {
-        existing.amount += parseFloat(e.amount || '0') / 10000000; // Assuming 7 decimals
+        existing.amountStroops += eventStroops;
       } else {
-        historyMap.set(monthYear, {
+        historyStroops.set(monthYear, {
           month,
-          amount: parseFloat(e.amount || '0') / 10000000,
+          amountStroops: eventStroops,
           status: 'Completed',
         });
       }
@@ -46,10 +75,17 @@ export const getRemittanceHistory = asyncHandler(async (req: Request, res: Respo
       if (existing) {
         existing.status = 'Defaulted';
       } else {
-        historyMap.set(monthYear, { month, amount: 0, status: 'Defaulted' });
+        historyStroops.set(monthYear, { month, amountStroops: 0n, status: 'Defaulted' });
       }
     }
   }
+
+  const historyMap = new Map(
+    Array.from(historyStroops.entries()).map(([key, { month, amountStroops, status }]) => [
+      key,
+      { month, amount: Number(fromStroops(amountStroops)), status },
+    ]),
+  );
 
   const history = Array.from(historyMap.values()).slice(-6);
 
@@ -80,8 +116,8 @@ export const simulatePayment = asyncHandler(async (req: Request, res: Response) 
   const scoreResult = await query('SELECT current_score FROM scores WHERE user_id = $1', [userId]);
   const currentScore = scoreResult.rows[0]?.current_score ?? 500;
 
-  // Calculation matches eventIndexer.ts: +15 for each repayment
-  const newScore = Math.min(850, currentScore + 15);
+  const { repaymentDelta } = sorobanService.getScoreConfig();
+  const newScore = Math.min(850, currentScore + repaymentDelta);
 
   res.json({
     success: true,

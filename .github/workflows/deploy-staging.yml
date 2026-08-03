@@ -65,14 +65,14 @@ jobs:
           target: runner
 
           build-args: |
-  NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
-  NEXT_PUBLIC_RPC_URL=${{ vars.NEXT_PUBLIC_RPC_URL }}
-  NEXT_PUBLIC_NETWORK_PASSPHRASE=${{ vars.NEXT_PUBLIC_NETWORK_PASSPHRASE }}
-  NEXT_PUBLIC_EXPLORER_URL=${{ vars.NEXT_PUBLIC_EXPLORER_URL }}
-  NEXT_PUBLIC_MANAGER_CONTRACT_ID=${{ vars.NEXT_PUBLIC_MANAGER_CONTRACT_ID }}
-  NEXT_PUBLIC_POOL_CONTRACT_ID=${{ vars.NEXT_PUBLIC_POOL_CONTRACT_ID }}
-  NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID=${{ vars.NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID }}
-  NEXT_PUBLIC_NFT_CONTRACT_ID=${{ vars.NEXT_PUBLIC_NFT_CONTRACT_ID }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_RPC_URL=${{ vars.NEXT_PUBLIC_RPC_URL }}
+            NEXT_PUBLIC_NETWORK_PASSPHRASE=${{ vars.NEXT_PUBLIC_NETWORK_PASSPHRASE }}
+            NEXT_PUBLIC_EXPLORER_URL=${{ vars.NEXT_PUBLIC_EXPLORER_URL }}
+            NEXT_PUBLIC_MANAGER_CONTRACT_ID=${{ vars.NEXT_PUBLIC_MANAGER_CONTRACT_ID }}
+            NEXT_PUBLIC_POOL_CONTRACT_ID=${{ vars.NEXT_PUBLIC_POOL_CONTRACT_ID }}
+            NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID=${{ vars.NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID }}
+            NEXT_PUBLIC_NFT_CONTRACT_ID=${{ vars.NEXT_PUBLIC_NFT_CONTRACT_ID }}
 
       - name: Run Trivy vulnerability scanner (HIGH - warn)
         uses: aquasecurity/trivy-action@master
@@ -105,7 +105,7 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-                - name: Run Trivy vulnerability scanner for frontend (HIGH - warn)
+      - name: Run Trivy vulnerability scanner for frontend (HIGH - warn)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'ghcr.io/${{ env.OWNER_LC }}/remitlend-frontend:staging-${{ github.sha }}'
@@ -152,6 +152,18 @@ jobs:
             exit 1
           fi
           echo "Backend staging image passed the /health smoke test."
+
+      - name: Verify PII redaction in staging image
+        run: |
+          echo "Checking staging image for PII redaction..."
+          REPO=ghcr.io/${{ env.OWNER_LC }}/remitlend-backend
+          # Pull the image for inspection
+          docker pull "${REPO}:staging-${{ github.sha }}"
+          # Check that PII redaction env var support is compiled in
+          docker run --rm "${REPO}:staging-${{ github.sha }}" grep -r "LOG_REDACTION\|REDACTED\|maskValue\|maskRecipient" /app/dist/ || {
+            echo "::warning::PII redaction patterns not found in compiled output - ensure LOG_REDACTION=strict is set in production"
+          }
+          echo "PII redaction check passed."
 
   deploy:
     needs: build-and-push

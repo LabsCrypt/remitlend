@@ -25,6 +25,17 @@ class RateLimitService {
     windowSeconds: 86400, // 24 hours
   };
 
+  private static readonly INCR_AND_EXPIRE_SCRIPT = `
+local key = KEYS[1]
+local windowSeconds = tonumber(ARGV[1])
+local currentCount = redis.call('INCR', key)
+if currentCount == 1 then
+  redis.call('EXPIRE', key, windowSeconds)
+end
+local ttl = redis.call('TTL', key)
+return {currentCount, ttl}
+`;
+
   private client: RedisClientType;
   private isConnected = false;
 
@@ -44,7 +55,6 @@ class RateLimitService {
   private async ensureConnected(): Promise<void> {
     if (!this.isConnected) {
       await this.client.connect();
-      this.isConnected = true;
     }
   }
 
@@ -64,14 +74,14 @@ class RateLimitService {
     try {
       await this.ensureConnected();
 
-      // Redis INCR is atomic, so concurrent requests cannot all read the same
-      // counter value and pass the boundary together.
-      const currentCount = await this.client.incr(key);
-      if (currentCount === 1) {
-        await this.client.expire(key, config.windowSeconds);
-      }
+      const [currentCount, ttlSeconds] = (await this.client.eval(
+        RateLimitService.INCR_AND_EXPIRE_SCRIPT,
+        {
+          keys: [key],
+          arguments: [String(config.windowSeconds)],
+        },
+      )) as [number, number];
 
-      const ttlSeconds = await this.client.ttl(key);
       const resetTime = new Date(
         Date.now() + (ttlSeconds > 0 ? ttlSeconds : config.windowSeconds) * 1000,
       );

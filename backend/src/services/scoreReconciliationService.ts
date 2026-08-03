@@ -162,7 +162,7 @@ class ScoreReconciliationService {
           checkedBorrowerCount += 1;
           const { dbScore, contractScore } = result.value;
           const absoluteDifference = dbScore === null ? null : Math.abs(contractScore - dbScore);
-          const isDivergent = dbScore === null || dbScore === contractScore;
+          const isDivergent = dbScore === null || dbScore !== contractScore;
 
           if (!isDivergent) {
             return;

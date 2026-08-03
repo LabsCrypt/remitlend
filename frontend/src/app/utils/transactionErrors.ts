@@ -28,6 +28,42 @@ export interface PollTransactionResult {
   message: string;
 }
 
+/**
+ * Frontend message mapping for backend ErrorCodes.
+ * Ensured in sync with backend/src/errors/errorCodes.ts via CI check script.
+ */
+export const ERROR_CODE_MESSAGES: Record<string, string> = {
+  INVALID_AMOUNT: "Amount must be a positive number",
+  INVALID_PUBLIC_KEY: "Invalid Stellar public key",
+  INVALID_SIGNATURE: "Invalid cryptographic signature",
+  INVALID_CHALLENGE: "Invalid challenge format",
+  MISSING_FIELD: "Required field is missing",
+  VALIDATION_ERROR: "Validation failed",
+  UNAUTHORIZED: "Unauthorized access",
+  TOKEN_EXPIRED: "Session token has expired",
+  TOKEN_INVALID: "Invalid session token",
+  CHALLENGE_EXPIRED: "Authentication challenge has expired",
+  FORBIDDEN: "Forbidden access",
+  ACCESS_DENIED: "Access to resource denied",
+  NOT_FOUND: "Resource not found",
+  LOAN_NOT_FOUND: "Loan not found",
+  USER_NOT_FOUND: "User account not found",
+  POOL_NOT_FOUND: "Lending pool not found",
+  CONFLICT: "Resource conflict occurred",
+  DUPLICATE_REQUEST: "Duplicate request ignored",
+  RATE_LIMIT_EXCEEDED: "Rate limit exceeded. Please wait",
+  INTERNAL_ERROR: "Internal server error occurred",
+  DATABASE_ERROR: "Database error occurred",
+  EXTERNAL_SERVICE_ERROR: "External service error occurred",
+  BLOCKCHAIN_ERROR: "Blockchain operation failed",
+  BORROWER_MISMATCH: "Borrower wallet mismatch",
+  INSUFFICIENT_BALANCE: "Insufficient account balance",
+  LOAN_ALREADY_REPAID: "Loan has already been repaid",
+  LOAN_NOT_ACTIVE: "Loan is not active",
+  INVALID_LOAN_ID: "Invalid loan ID provided",
+  INVALID_TX_XDR: "Invalid transaction XDR format",
+};
+
 const DEFAULT_HORIZON_URL = "https://horizon-testnet.stellar.org";
 
 function toErrorMessage(error: unknown): string {
@@ -150,7 +186,7 @@ async function fetchTransactionStatus(
 ): Promise<"pending" | "success" | "failed"> {
   const response = await fetch(`${horizonUrl}/transactions/${txHash}`);
 
-  if (response.status === 400) {
+  if (response.status === 404) {
     return "pending";
   }
 

@@ -24,7 +24,7 @@ jest.unstable_mockModule('../../errors/AppError.js', () => ({
   },
 }));
 
-const { requireJwtAuth, requireScopes, requireWalletParamMatchesJwt } =
+const { requireJwtAuth, requireScopes, requireWalletParamMatchesJwt, requireWalletOwnership } =
   await import('../jwtAuth.js');
 const { verifyJwtToken, extractBearerToken, isTokenRevoked } =
   await import('../../services/authService.js');
@@ -363,6 +363,107 @@ describe('jwtAuth middleware', () => {
       const middleware = requireWalletParamMatchesJwt('walletId');
 
       expect(() => middleware(mockRequest as Request, mockResponse as Response, mockNext)).toThrow(
+        expect.objectContaining({
+          statusCode: 400,
+        }),
+      );
+    });
+  });
+
+  describe('requireWalletOwnership', () => {
+    it('should pass when params.borrower matches authenticated wallet', () => {
+      mockRequest.user = {
+        publicKey: 'GMATCH',
+        role: 'borrower',
+        scopes: [],
+        iat: 1000,
+        exp: 2000,
+      };
+      mockRequest.params = { borrower: 'GMATCH' };
+
+      requireWalletOwnership(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should pass when params.wallet matches authenticated wallet', () => {
+      mockRequest.user = {
+        publicKey: 'GMATCH',
+        role: 'borrower',
+        scopes: [],
+        iat: 1000,
+        exp: 2000,
+      };
+      mockRequest.params = { wallet: 'GMATCH' };
+
+      requireWalletOwnership(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should pass when body.wallet matches authenticated wallet', () => {
+      mockRequest.user = {
+        publicKey: 'GMATCH',
+        role: 'borrower',
+        scopes: [],
+        iat: 1000,
+        exp: 2000,
+      };
+      mockRequest.params = {};
+      mockRequest.body = { wallet: 'GMATCH' };
+
+      requireWalletOwnership(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should throw 403 when requested wallet does not match authenticated wallet', () => {
+      mockRequest.user = {
+        publicKey: 'GREAL_USER',
+        role: 'borrower',
+        scopes: [],
+        iat: 1000,
+        exp: 2000,
+      };
+      mockRequest.params = { borrower: 'GOTHER_USER' };
+
+      expect(() =>
+        requireWalletOwnership(mockRequest as Request, mockResponse as Response, mockNext),
+      ).toThrow(
+        expect.objectContaining({
+          statusCode: 403,
+        }),
+      );
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('should throw 401 when user is not authenticated', () => {
+      mockRequest.user = undefined;
+      mockRequest.params = { borrower: 'GSOME_USER' };
+
+      expect(() =>
+        requireWalletOwnership(mockRequest as Request, mockResponse as Response, mockNext),
+      ).toThrow(
+        expect.objectContaining({
+          statusCode: 401,
+        }),
+      );
+    });
+
+    it('should throw 400 when no wallet can be resolved from params or body', () => {
+      mockRequest.user = {
+        publicKey: 'GMATCH',
+        role: 'borrower',
+        scopes: [],
+        iat: 1000,
+        exp: 2000,
+      };
+      mockRequest.params = {};
+      mockRequest.body = {};
+
+      expect(() =>
+        requireWalletOwnership(mockRequest as Request, mockResponse as Response, mockNext),
+      ).toThrow(
         expect.objectContaining({
           statusCode: 400,
         }),

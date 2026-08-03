@@ -87,7 +87,7 @@ export function formatLoanRepayment(params: LoanRepaymentParams): TransactionPre
     {
       token: "USDC",
       change: `-${params.amount}`,
-      isPositive: true,
+      isPositive: false,
     },
   ];
 

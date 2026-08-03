@@ -21,8 +21,14 @@ const POOL_SIZE: usize = 8;
 
 #[derive(Arbitrary, Debug)]
 enum FuzzAction {
-    Propose { num_signers: u8, threshold: u8, delay: u32 },
-    Approve { signer_idx: u8 },
+    Propose {
+        num_signers: u8,
+        threshold: u8,
+        delay: u32,
+    },
+    Approve {
+        signer_idx: u8,
+    },
     Expire,
     Cancel,
 }
@@ -39,18 +45,22 @@ fuzz_target!(|actions: std::vec::Vec<FuzzAction>| {
     client.initialize(&admin, &target);
 
     // A stable pool of candidate signers so indices are meaningful across actions.
-    let pool: std::vec::Vec<Address> =
-        (0..POOL_SIZE).map(|_| Address::generate(&env)).collect();
+    let pool: std::vec::Vec<Address> = (0..POOL_SIZE).map(|_| Address::generate(&env)).collect();
 
     for action in actions {
         match action {
-            FuzzAction::Propose { num_signers, threshold, delay } => {
+            FuzzAction::Propose {
+                num_signers,
+                threshold,
+                delay,
+            } => {
                 let n = (num_signers as usize % POOL_SIZE) + 1; // 1..=POOL_SIZE
                 let mut signers = Vec::new(&env);
                 for s in pool.iter().take(n) {
                     signers.push_back(s.clone());
                 }
                 let thr = (threshold as u32 % n as u32) + 1; // 1..=n
+
                 // try_* so contract panics (cooldown, already-pending, …) don't abort the fuzzer.
                 let _ = client.try_propose_admin_transfer(
                     &Address::generate(&env),

@@ -2,14 +2,24 @@ import { query } from '../db/connection.js';
 import { AppError } from '../errors/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { notificationService, type NotificationType } from '../services/notificationService.js';
-import { parseCursorQueryParams, createCursorPaginatedResponse } from '../utils/pagination.js';
+import { encodeCursor, decodeCursor, parseKeysetParams } from '../utils/pagination.js';
 
 /**
  * List all loan disputes for admin review with cursor-based pagination.
  * Defaults to "open" status, orders newest-first by created_at.
  */
 export const listLoanDisputes = asyncHandler(async (req, res) => {
-  const { limit, cursor, status } = parseCursorQueryParams(req);
+  const snapshotSeq = typeof req.query.snapshot_seq === 'string' ? req.query.snapshot_seq : null;
+  const cursorStr = typeof req.query.cursor === 'string' ? req.query.cursor : null;
+  const limitParam = typeof req.query.limit === 'string' ? req.query.limit : null;
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+
+  const {
+    snapshotSeq: parsedSnapshotSeq,
+    cursor: parsedCursor,
+    limit,
+  } = parseKeysetParams(snapshotSeq, cursorStr, limitParam);
+
   const statusFilter = status ?? 'open';
 
   if (
@@ -21,47 +31,95 @@ export const listLoanDisputes = asyncHandler(async (req, res) => {
     throw AppError.badRequest('Invalid status filter');
   }
 
-  const values: unknown[] = [];
+  // Decode cursor if provided
+  let decodedCursor = null;
+  if (parsedCursor) {
+    decodedCursor = decodeCursor(parsedCursor);
+  }
+
+  // Pin snapshot on first request or use provided one
+  let actualSnapshotSeq = parsedSnapshotSeq;
+  if (actualSnapshotSeq === BigInt(0)) {
+    // First page: pin the current max seq
+    const maxSeqResult = await query('SELECT MAX(seq) as max_seq FROM loan_disputes', []);
+    actualSnapshotSeq = BigInt(maxSeqResult.rows[0]?.max_seq ?? 0);
+  }
+
+  const params: unknown[] = [];
   let whereClause = '';
 
+  // Status filter
   if (statusFilter !== 'all') {
-    values.push(statusFilter);
-    whereClause = `WHERE status = $${values.length}`;
+    params.push(statusFilter);
+    whereClause = `WHERE status = $${params.length}`;
   }
 
-  if (cursor) {
-    values.push(cursor);
-    whereClause += whereClause
-      ? ` AND created_at < $${values.length}`
-      : `WHERE created_at < $${values.length}`;
+  // Snapshot constraint
+  params.push(actualSnapshotSeq.toString());
+  const snapshotClause = `seq <= $${params.length}`;
+  whereClause += whereClause.includes('WHERE')
+    ? ` AND ${snapshotClause}`
+    : ` WHERE ${snapshotClause}`;
+
+  // Keyset constraint
+  if (decodedCursor) {
+    params.push(decodedCursor.createdAt.toISOString());
+    params.push(decodedCursor.createdAt.toISOString());
+    params.push(decodedCursor.seq.toString());
+    const keysetClause = `(created_at < $${params.length - 2} OR (created_at = $${params.length - 1} AND seq < $${params.length}))`;
+    whereClause += ` AND ${keysetClause}`;
   }
 
-  const queryLimit = limit + 1;
-  values.push(queryLimit);
+  params.push(limit + 1);
 
   const result = await query(
-    `SELECT * FROM loan_disputes${whereClause} ORDER BY created_at DESC LIMIT $${values.length}`,
-    values,
+    `SELECT * FROM loan_disputes${whereClause} ORDER BY created_at DESC, seq DESC LIMIT $${params.length}`,
+    params,
   );
 
   const rows = result.rows;
-  const hasMore = rows.length > limit;
-  const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const nextCursor =
-    hasMore && pageRows.length > 0
-      ? new Date(pageRows[pageRows.length - 1]!.created_at).toISOString()
-      : null;
+  const hasNext = rows.length > limit;
+  const disputes = hasNext ? rows.slice(0, limit) : rows;
 
-  res.json(
-    createCursorPaginatedResponse(
-      pageRows,
-      null,
-      limit,
-      pageRows.length,
-      nextCursor,
-      cursor !== null,
-    ),
+  let nextCursor: string | null = null;
+  if (hasNext && disputes.length > 0) {
+    const lastDispute = disputes[disputes.length - 1];
+    nextCursor = encodeCursor(new Date(lastDispute.created_at), BigInt(lastDispute.seq));
+  }
+
+  // Count total at snapshot
+  const countParams: unknown[] = [];
+  let countWhereClause = '';
+
+  if (statusFilter !== 'all') {
+    countParams.push(statusFilter);
+    countWhereClause = `WHERE status = $${countParams.length}`;
+  }
+
+  countParams.push(actualSnapshotSeq.toString());
+  const countSnapshotClause = `seq <= $${countParams.length}`;
+  countWhereClause += countWhereClause.includes('WHERE')
+    ? ` AND ${countSnapshotClause}`
+    : ` WHERE ${countSnapshotClause}`;
+
+  const totalResult = await query(
+    `SELECT COUNT(*) as count FROM loan_disputes ${countWhereClause}`,
+    countParams,
   );
+  const totalAtSnapshot = Number.parseInt(totalResult.rows[0].count, 10);
+
+  res.json({
+    success: true,
+    data: {
+      items: disputes,
+    },
+    page: {
+      next_cursor: nextCursor,
+      snapshot_seq: actualSnapshotSeq.toString(),
+      total_at_snapshot: totalAtSnapshot,
+      limit,
+    },
+  });
 });
 
 /**

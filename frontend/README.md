@@ -115,6 +115,7 @@ frontend/
 │       │   ├── useToastStore.ts
 │       │   └── useGamificationStore.ts
 │       ├── hooks/              # Custom React hooks
+│       │   └── README_TOAST_SYSTEM.md  # Toast notification system architecture & usage
 │       ├── lib/                # API clients and utilities
 │       └── utils/              # Pure helpers (cn, stellar, amount, csv …)
 ├── i18n.config.ts
@@ -292,6 +293,10 @@ directly for on-chain calls.
 
 **Backend base URL:** `NEXT_PUBLIC_API_URL` (default: `http://localhost:3001`)
 
+## Architecture & System Documentation
+
+- [Toast & Notification System Guide](src/app/hooks/README_TOAST_SYSTEM.md) — Detailed architecture and usage for `useContractToast`, `useContractMutation`, and Sonner transaction feedback.
+
 ## Deployment
 
 ### Vercel (recommended)
@@ -331,6 +336,7 @@ rm -rf node_modules package-lock.json && npm install
 
 ## Resources
 
+- [Toast System Documentation](src/app/hooks/README_TOAST_SYSTEM.md)
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Tailwind CSS v4 Documentation](https://tailwindcss.com/docs)
 - [Zustand Documentation](https://zustand.docs.pmnd.rs)

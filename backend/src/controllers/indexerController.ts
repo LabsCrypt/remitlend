@@ -2,7 +2,6 @@ import type { Request, Response } from 'express';
 import { xdr } from '@stellar/stellar-sdk';
 import { query } from '../db/connection.js';
 import { EventIndexer, type SorobanRawEvent } from '../services/eventIndexer.js';
-import { cacheService } from '../services/cacheService.js';
 import {
   SUPPORTED_WEBHOOK_EVENT_TYPES,
   webhookService,
@@ -10,7 +9,10 @@ import {
 } from '../services/webhookService.js';
 import {
   createCursorPaginatedResponse,
+  decodeCursor,
+  encodeCursor,
   parseCursorQueryParams,
+  parseKeysetParams,
   parseQueryParams,
 } from '../utils/pagination.js';
 import { parseCappedLimit } from '../utils/queryHelpers.js';
@@ -34,7 +36,7 @@ function isPrivateHost(hostname: string): boolean {
 
   // Private IPv4 ranges (RFC 1918)
   if (/^10\./.test(host)) return true;
-  if (/^172\.(1[7-9]|2\d|3[01])\./.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
   if (/^192\.168\./.test(host)) return true;
 
   // AWS / GCP metadata endpoints
@@ -80,20 +82,6 @@ const buildEventFilters = (req: Request, baseParams: unknown[], initialWhereClau
 
   return { params, whereClause };
 };
-
-const buildEventsCacheKey = (scope: string, resourceId: string | number, req: Request) =>
-  [
-    'events',
-    scope,
-    String(resourceId),
-    `limit:${req.query.limit ?? 'default'}`,
-    `cursor:${req.query.cursor ?? 'default'}`,
-    `offset:${req.query.offset ?? 'default'}`,
-    `sort:${req.query.sort ?? 'default'}`,
-    `status:${req.query.status ?? req.query.eventType ?? 'all'}`,
-    `date:${req.query.date_range ?? 'all'}`,
-    `amount:${req.query.amount_range ?? 'all'}`,
-  ].join(':');
 
 type QuarantineEventRow = {
   id: number;
@@ -246,61 +234,112 @@ export const getBorrowerEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const { limit, cursor } = parseCursorQueryParams(req);
-    const cacheKey = buildEventsCacheKey('borrower', borrower, req);
-    const cachedData = await cacheService.get(cacheKey);
+    // Parse keyset pagination params
+    const snapshotSeq = typeof req.query.snapshot_seq === 'string' ? req.query.snapshot_seq : null;
+    const cursorStr = typeof req.query.cursor === 'string' ? req.query.cursor : null;
+    const limitParam = typeof req.query.limit === 'string' ? req.query.limit : null;
 
-    if (cachedData) {
-      res.json(cachedData);
-      return;
+    const {
+      snapshotSeq: parsedSnapshotSeq,
+      cursor: parsedCursor,
+      limit,
+    } = parseKeysetParams(snapshotSeq, cursorStr, limitParam);
+
+    // Decode cursor if provided
+    let decodedCursor = null;
+    if (parsedCursor) {
+      decodedCursor = decodeCursor(parsedCursor);
     }
 
-    const { params, whereClause } = buildEventFilters(req, [borrower], 'WHERE address = $1');
-    logger.debug('getBorrowerEvents after filters', {
-      params,
-      whereClause,
-    });
-    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
-    const cursorClause = `${whereClause.trim().length ? 'AND' : 'WHERE'} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
-    const queryText = `
-      SELECT event_id, event_type, loan_id, address, amount,
-             ledger, ledger_closed_at, tx_hash, created_at, id
-      FROM contract_events
-      ${whereClause}
-      ${cursorClause}
-      ORDER BY id ASC
-      LIMIT $${params.length + 2}
-    `;
-    logger.debug('getBorrowerEvents query', {
-      queryText,
-      queryParams: [...params, cursorValue, limit + 1],
-    });
-
-    const [result, totalCount] = await Promise.all([
-      query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
-    ]);
-
-    logger.debug('getBorrowerEvents after query', { result, totalCount });
-    const hasNext = result.rows.length > limit;
-    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
-    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
-    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
-
-    const response = createCursorPaginatedResponse(
-      {
-        address: borrower,
-        events,
-      },
-      Number.parseInt(totalCount.rows[0].count, 10),
-      limit,
-      events.length,
-      nextCursor,
-      Boolean(cursor),
+    // Apply additional filters
+    const { params: filterParams, whereClause: filterClause } = buildEventFilters(
+      req,
+      [borrower],
+      'WHERE address = $1',
     );
 
-    await cacheService.set(cacheKey, response, 300);
-    return res.json(response);
+    // Build keyset clause for pagination
+    const params = [...filterParams];
+    let whereClause = filterClause;
+
+    // Pin snapshot on first request or use provided one
+    let actualSnapshotSeq = parsedSnapshotSeq;
+    if (actualSnapshotSeq === BigInt(0)) {
+      // First page: pin the current max seq
+      const maxSeqResult = await query('SELECT MAX(seq) as max_seq FROM contract_events', []);
+      actualSnapshotSeq = BigInt(maxSeqResult.rows[0]?.max_seq ?? 0);
+    }
+
+    // Add snapshot constraint
+    params.push(actualSnapshotSeq.toString());
+    const snapshotClause = `seq <= $${params.length}`;
+    whereClause += whereClause.includes('WHERE')
+      ? ` AND ${snapshotClause}`
+      : ` WHERE ${snapshotClause}`;
+
+    // Add keyset constraint
+    if (decodedCursor) {
+      params.push(decodedCursor.createdAt.toISOString());
+      params.push(decodedCursor.createdAt.toISOString());
+      params.push(decodedCursor.seq.toString());
+      const keysetClause = `(created_at < $${params.length - 2} OR (created_at = $${params.length - 1} AND seq < $${params.length}))`;
+      whereClause += ` AND ${keysetClause}`;
+    }
+
+    params.push(limit + 1);
+
+    const queryText = `
+      SELECT event_id, event_type, loan_id, address, amount,
+             ledger, ledger_closed_at, tx_hash, created_at, id, seq
+      FROM contract_events
+      ${whereClause}
+      ORDER BY created_at DESC, seq DESC
+      LIMIT $${params.length}
+    `;
+
+    logger.debug('getBorrowerEvents keyset query', {
+      queryText,
+      queryParams: params,
+    });
+
+    const result = await query(queryText, params);
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+
+    let nextCursor: string | null = null;
+    if (hasNext && events.length > 0) {
+      const lastEvent = events[events.length - 1];
+      nextCursor = encodeCursor(new Date(lastEvent.created_at), BigInt(lastEvent.seq));
+    }
+
+    // Count total at snapshot for stable pagination
+    const countParams = [...filterParams];
+    countParams.push(actualSnapshotSeq.toString());
+    const countWhereClause =
+      filterClause +
+      (filterClause.includes('WHERE')
+        ? ` AND seq <= $${countParams.length}`
+        : ` WHERE seq <= $${countParams.length}`);
+
+    const totalResult = await query(
+      `SELECT COUNT(*) as count FROM contract_events ${countWhereClause}`,
+      countParams,
+    );
+    const totalAtSnapshot = Number.parseInt(totalResult.rows[0].count, 10);
+
+    return res.json({
+      success: true,
+      data: {
+        address: borrower,
+        items: events,
+      },
+      page: {
+        next_cursor: nextCursor,
+        snapshot_seq: actualSnapshotSeq.toString(),
+        total_at_snapshot: totalAtSnapshot,
+        limit,
+      },
+    });
   } catch (error) {
     logger.withContext().error('Failed to get borrower events', { error });
     return res.status(500).json({
@@ -317,7 +356,9 @@ export const getLoanEvents = async (req: Request, res: Response) => {
   try {
     const loanIdParam = req.params.loanId;
     const loanId = Array.isArray(loanIdParam) ? loanIdParam[0] : loanIdParam;
-    const { limit, cursor } = parseCursorQueryParams(req);
+    const snapshotSeq = typeof req.query.snapshot_seq === 'string' ? req.query.snapshot_seq : null;
+    const cursorStr = typeof req.query.cursor === 'string' ? req.query.cursor : null;
+    const limitParam = typeof req.query.limit === 'string' ? req.query.limit : null;
 
     if (!loanId) {
       return res.status(400).json({
@@ -326,51 +367,102 @@ export const getLoanEvents = async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = buildEventsCacheKey('loan', loanId as string, req);
-    const cachedData = await cacheService.get(cacheKey);
+    const {
+      snapshotSeq: parsedSnapshotSeq,
+      cursor: parsedCursor,
+      limit,
+    } = parseKeysetParams(snapshotSeq, cursorStr, limitParam);
 
-    if (cachedData) {
-      res.json(cachedData);
-      return;
+    // Decode cursor if provided
+    let decodedCursor = null;
+    if (parsedCursor) {
+      decodedCursor = decodeCursor(parsedCursor);
     }
 
-    const { params, whereClause } = buildEventFilters(req, [loanId], 'WHERE loan_id = $1');
-    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
-    const cursorClause = `${whereClause.trim().length ? 'AND' : 'WHERE'} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
-    const queryText = `
-      SELECT event_id, event_type, loan_id, address, amount,
-             ledger, ledger_closed_at, tx_hash, created_at, id
-      FROM contract_events
-      ${whereClause}
-      ${cursorClause}
-      ORDER BY id ASC
-      LIMIT $${params.length + 2}
-    `;
-
-    const [result, totalCount] = await Promise.all([
-      query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
-    ]);
-
-    const hasNext = result.rows.length > limit;
-    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
-    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
-    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
-
-    const response = createCursorPaginatedResponse(
-      {
-        loanId: Number.parseInt(loanId, 10),
-        events,
-      },
-      Number.parseInt(totalCount.rows[0].count, 10),
-      limit,
-      events.length,
-      nextCursor,
-      Boolean(cursor),
+    // Apply additional filters
+    const { params: filterParams, whereClause: filterClause } = buildEventFilters(
+      req,
+      [loanId],
+      'WHERE loan_id = $1',
     );
 
-    await cacheService.set(cacheKey, response, 300);
-    return res.json(response);
+    // Build keyset clause for pagination
+    const params = [...filterParams];
+    let whereClause = filterClause;
+
+    // Pin snapshot on first request or use provided one
+    let actualSnapshotSeq = parsedSnapshotSeq;
+    if (actualSnapshotSeq === BigInt(0)) {
+      // First page: pin the current max seq
+      const maxSeqResult = await query('SELECT MAX(seq) as max_seq FROM contract_events', []);
+      actualSnapshotSeq = BigInt(maxSeqResult.rows[0]?.max_seq ?? 0);
+    }
+
+    // Add snapshot constraint
+    params.push(actualSnapshotSeq.toString());
+    const snapshotClause = `seq <= $${params.length}`;
+    whereClause += whereClause.includes('WHERE')
+      ? ` AND ${snapshotClause}`
+      : ` WHERE ${snapshotClause}`;
+
+    // Add keyset constraint
+    if (decodedCursor) {
+      params.push(decodedCursor.createdAt.toISOString());
+      params.push(decodedCursor.createdAt.toISOString());
+      params.push(decodedCursor.seq.toString());
+      const keysetClause = `(created_at < $${params.length - 2} OR (created_at = $${params.length - 1} AND seq < $${params.length}))`;
+      whereClause += ` AND ${keysetClause}`;
+    }
+
+    params.push(limit + 1);
+
+    const queryText = `
+      SELECT event_id, event_type, loan_id, address, amount,
+             ledger, ledger_closed_at, tx_hash, created_at, id, seq
+      FROM contract_events
+      ${whereClause}
+      ORDER BY created_at DESC, seq DESC
+      LIMIT $${params.length}
+    `;
+
+    const result = await query(queryText, params);
+    const hasNext = result.rows.length > limit;
+    const events = hasNext ? result.rows.slice(0, limit) : result.rows;
+
+    let nextCursor: string | null = null;
+    if (hasNext && events.length > 0) {
+      const lastEvent = events[events.length - 1];
+      nextCursor = encodeCursor(new Date(lastEvent.created_at), BigInt(lastEvent.seq));
+    }
+
+    // Count total at snapshot for stable pagination
+    const countParams = [...filterParams];
+    countParams.push(actualSnapshotSeq.toString());
+    const countWhereClause =
+      filterClause +
+      (filterClause.includes('WHERE')
+        ? ` AND seq <= $${countParams.length}`
+        : ` WHERE seq <= $${countParams.length}`);
+
+    const totalResult = await query(
+      `SELECT COUNT(*) as count FROM contract_events ${countWhereClause}`,
+      countParams,
+    );
+    const totalAtSnapshot = Number.parseInt(totalResult.rows[0].count, 10);
+
+    return res.json({
+      success: true,
+      data: {
+        loanId: Number.parseInt(loanId, 10),
+        items: events,
+      },
+      page: {
+        next_cursor: nextCursor,
+        snapshot_seq: actualSnapshotSeq.toString(),
+        total_at_snapshot: totalAtSnapshot,
+        limit,
+      },
+    });
   } catch (error) {
     logger.withContext().error('Failed to get loan events', { error });
     return res.status(500).json({
@@ -385,55 +477,101 @@ export const getLoanEvents = async (req: Request, res: Response) => {
  */
 export const getRecentEvents = async (req: Request, res: Response) => {
   try {
-    const { limit, cursor } = parseCursorQueryParams(req);
-    const cacheKey = buildEventsCacheKey('recent', 'all', req);
-    const cachedData = await cacheService.get(cacheKey);
+    const snapshotSeq = typeof req.query.snapshot_seq === 'string' ? req.query.snapshot_seq : null;
+    const cursorStr = typeof req.query.cursor === 'string' ? req.query.cursor : null;
+    const limitParam = typeof req.query.limit === 'string' ? req.query.limit : null;
 
-    if (cachedData) {
-      res.json(cachedData);
-      return;
+    const {
+      snapshotSeq: parsedSnapshotSeq,
+      cursor: parsedCursor,
+      limit,
+    } = parseKeysetParams(snapshotSeq, cursorStr, limitParam);
+
+    // Decode cursor if provided
+    let decodedCursor = null;
+    if (parsedCursor) {
+      decodedCursor = decodeCursor(parsedCursor);
     }
 
-    const { params, whereClause } = buildEventFilters(req, [], '');
-    const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
-    const cursorClause = `${whereClause.trim().length ? 'AND' : 'WHERE'} ($${params.length + 1}::int IS NULL OR id > $${params.length + 1})`;
+    // Apply additional filters
+    const { params: filterParams, whereClause: filterClause } = buildEventFilters(req, [], '');
+
+    // Build keyset clause for pagination
+    const params = [...filterParams];
+    let whereClause = filterClause;
+
+    // Pin snapshot on first request or use provided one
+    let actualSnapshotSeq = parsedSnapshotSeq;
+    if (actualSnapshotSeq === BigInt(0)) {
+      // First page: pin the current max seq
+      const maxSeqResult = await query('SELECT MAX(seq) as max_seq FROM contract_events', []);
+      actualSnapshotSeq = BigInt(maxSeqResult.rows[0]?.max_seq ?? 0);
+    }
+
+    // Add snapshot constraint
+    params.push(actualSnapshotSeq.toString());
+    const snapshotClause = `seq <= $${params.length}`;
+    whereClause += whereClause.includes('WHERE')
+      ? ` AND ${snapshotClause}`
+      : ` WHERE ${snapshotClause}`;
+
+    // Add keyset constraint
+    if (decodedCursor) {
+      params.push(decodedCursor.createdAt.toISOString());
+      params.push(decodedCursor.createdAt.toISOString());
+      params.push(decodedCursor.seq.toString());
+      const keysetClause = `(created_at < $${params.length - 2} OR (created_at = $${params.length - 1} AND seq < $${params.length}))`;
+      whereClause += ` AND ${keysetClause}`;
+    }
+
+    params.push(limit + 1);
+
     const queryText = `
       SELECT event_id, event_type, loan_id, address, amount,
-             ledger, ledger_closed_at, tx_hash, created_at, id
+             ledger, ledger_closed_at, tx_hash, created_at, id, seq
       FROM contract_events
       ${whereClause}
-      ${cursorClause}
-      ORDER BY id ASC
-      LIMIT $${params.length + 2}
+      ORDER BY created_at DESC, seq DESC
+      LIMIT $${params.length}
     `;
 
-    const [result, totalCount] = await Promise.all([
-      query(queryText, [...params, cursorValue, limit + 1]),
-      query(`SELECT COUNT(*) as count FROM contract_events ${whereClause}`, params),
-    ]);
-
-    logger.debug('getRecentEvents', {
-      queryResult: result.rows,
-      countResult: totalCount.rows,
-    });
+    const result = await query(queryText, params);
     const hasNext = result.rows.length > limit;
     const events = hasNext ? result.rows.slice(0, limit) : result.rows;
-    const lastEvent = events.length > 0 ? events[events.length - 1] : undefined;
-    const nextCursor = hasNext && lastEvent ? String(lastEvent.id) : null;
 
-    const response = createCursorPaginatedResponse(
-      {
-        events,
-      },
-      Number.parseInt(totalCount.rows[0].count, 10),
-      limit,
-      events.length,
-      nextCursor,
-      Boolean(cursor),
+    let nextCursor: string | null = null;
+    if (hasNext && events.length > 0) {
+      const lastEvent = events[events.length - 1];
+      nextCursor = encodeCursor(new Date(lastEvent.created_at), BigInt(lastEvent.seq));
+    }
+
+    // Count total at snapshot for stable pagination
+    const countParams = [...filterParams];
+    countParams.push(actualSnapshotSeq.toString());
+    const countWhereClause =
+      filterClause +
+      (filterClause.includes('WHERE')
+        ? ` AND seq <= $${countParams.length}`
+        : ` WHERE seq <= $${countParams.length}`);
+
+    const totalResult = await query(
+      `SELECT COUNT(*) as count FROM contract_events ${countWhereClause}`,
+      countParams,
     );
+    const totalAtSnapshot = Number.parseInt(totalResult.rows[0].count, 10);
 
-    await cacheService.set(cacheKey, response, 120);
-    res.json(response);
+    res.json({
+      success: true,
+      data: {
+        items: events,
+      },
+      page: {
+        next_cursor: nextCursor,
+        snapshot_seq: actualSnapshotSeq.toString(),
+        total_at_snapshot: totalAtSnapshot,
+        limit,
+      },
+    });
   } catch (error) {
     logger.withContext().error('Failed to get recent events', { error });
     res.status(500).json({

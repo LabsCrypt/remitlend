@@ -25,10 +25,10 @@ jobs:
       actions: read
     strategy:
       fail-fast: false
-     matrix:
-  language:
-    - javascript-typescript
-    - rust
+      matrix:
+        language:
+          - javascript-typescript
+          - rust
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,19 +41,19 @@ jobs:
 
       # JS/TS needs no compilation; autobuild is a no-op safeguard.
       - name: Autobuild JS/TS
-  if: matrix.language == 'javascript-typescript'
-  uses: github/codeql-action/autobuild@v3
+        if: matrix.language == 'javascript-typescript'
+        uses: github/codeql-action/autobuild@v3
 
-- name: Install Rust toolchain
-  if: matrix.language == 'rust'
-  uses: dtolnay/rust-toolchain@stable
-  with:
-    targets: wasm32-unknown-unknown
+      - name: Install Rust toolchain
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
-- name: Build Soroban contracts workspace
-  if: matrix.language == 'rust'
-  working-directory: contracts
-  run: cargo build --workspace --target wasm32-unknown-unknown
+      - name: Build Soroban contracts workspace
+        if: matrix.language == 'rust'
+        working-directory: contracts
+        run: cargo build --workspace --target wasm32-unknown-unknown
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

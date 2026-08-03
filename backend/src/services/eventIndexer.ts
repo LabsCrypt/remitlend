@@ -14,6 +14,8 @@ import { sorobanService } from './sorobanService.js';
 import { updateUserScoresBulk } from './scoresService.js';
 import { AppError } from '../errors/AppError.js';
 import { recordIndexerLedgers } from '../middleware/metrics.js';
+import { setPauseState } from '../middleware/pauseGuard.js';
+import { fromStroops } from '../money/decimal.js';
 
 const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
   Mint: 'NFTMinted',
@@ -284,8 +286,83 @@ export class EventIndexer {
     const toLedger = Math.min(fromLedger + this.batchSize - 1, latestLedger);
 
     const result = await this.processChunk(fromLedger, toLedger);
+    await this.recordCheckpoint(fromLedger, result.lastProcessedLedger);
     await this.updateLastIndexedLedger(result.lastProcessedLedger);
     recordIndexerLedgers(result.lastProcessedLedger, latestLedger);
+  }
+
+  /**
+   * Contiguous-cursor invariant (issue #1376): records the ledger range this
+   * poll iteration just requested, and flags a gap when it doesn't
+   * immediately follow the previously-recorded range for this contract.
+   *
+   * This does NOT prove every ledger in `rangeStart..rangeEnd` was scanned —
+   * only that `processChunk` was invoked for that exact range and returned
+   * without error. What it catches is the specific failure mode in the
+   * issue: `fromLedger` being derived from a value that skips ahead of what
+   * was actually verified (a stale/clamped starting point), which the old
+   * code had no way to detect since it only ever looked at the *current*
+   * chunk, never compared it against the *previous* one.
+   *
+   * Reorg detection (re-reading a suspect/verified range and comparing a
+   * content digest) is intentionally out of scope here — see this change's
+   * PR description.
+   */
+  private async recordCheckpoint(rangeStart: number, rangeEnd: number): Promise<void> {
+    const contract = this.getContractId();
+
+    const previous = await query(
+      `SELECT range_end
+       FROM ledger_checkpoints
+       WHERE contract = $1
+       ORDER BY range_end DESC
+       LIMIT 1`,
+      [contract],
+    );
+
+    const previousRangeEnd = previous.rows.length ? Number(previous.rows[0]?.range_end ?? 0) : null;
+
+    if (previousRangeEnd !== null && rangeStart > previousRangeEnd + 1) {
+      const gapStart = previousRangeEnd + 1;
+      const gapEnd = rangeStart - 1;
+      logger.withContext().warn('Indexer gap detected: ledger range was never scanned', {
+        contract,
+        gapStart,
+        gapEnd,
+      });
+      await query(
+        `INSERT INTO ledger_checkpoints (contract, range_start, range_end, status)
+         VALUES ($1, $2, $3, 'suspect')`,
+        [contract, gapStart, gapEnd],
+      );
+    }
+
+    await query(
+      `INSERT INTO ledger_checkpoints (contract, range_start, range_end, status)
+       VALUES ($1, $2, $3, 'verified')`,
+      [contract, rangeStart, rangeEnd],
+    );
+  }
+
+  /**
+   * Suspect (potentially-skipped) ledger ranges recorded for this contract,
+   * oldest first. Exposed so a consumer (an ops endpoint, or eventually
+   * defaultChecker.ts) can refuse to trust conclusions drawn from events in
+   * these ranges until they're backfilled and reconciled.
+   */
+  async getSuspectRanges(): Promise<Array<{ rangeStart: number; rangeEnd: number }>> {
+    const contract = this.getContractId();
+    const result = await query(
+      `SELECT range_start, range_end
+       FROM ledger_checkpoints
+       WHERE contract = $1 AND status = 'suspect'
+       ORDER BY range_start ASC`,
+      [contract],
+    );
+    return result.rows.map((row) => ({
+      rangeStart: Number(row.range_start),
+      rangeEnd: Number(row.range_end),
+    }));
   }
 
   private async getLatestLedgerSequence(): Promise<number> {
@@ -630,7 +707,14 @@ export class EventIndexer {
         eventType: event.eventType,
         ...(event.loanId !== undefined ? { loanId: event.loanId } : {}),
         address: event.address,
-        ...(event.amount !== undefined ? { amount: event.amount } : {}),
+        // Carry both the raw stroop string (exact, for settlement/tx logic)
+        // and a display string derived from the same money policy used
+        // everywhere else, so SSE consumers never have to re-derive a
+        // display amount themselves (which is how the frontend previously
+        // ended up doing `Number(stroops) / 1e7` with its own rounding).
+        ...(event.amount !== undefined
+          ? { amount: event.amount, amountDisplay: fromStroops(BigInt(event.amount)) }
+          : {}),
         ledger: event.ledger,
         ledgerClosedAt: event.ledgerClosedAt.toISOString(),
         txHash: event.txHash,
@@ -642,6 +726,13 @@ export class EventIndexer {
           error,
         });
       });
+
+      // Handle pause/unpause events to update global pause state
+      if (event.eventType === 'PoolPaused') {
+        await setPauseState(true, [event.contractId], 'Emergency pause triggered by contract');
+      } else if (event.eventType === 'PoolUnpaused') {
+        await setPauseState(false, [], 'Contract pause lifted');
+      }
     }
 
     return {
@@ -1011,12 +1102,25 @@ export class EventIndexer {
     return native;
   }
 
+  /**
+   * Decode a stroop-denominated `i128` event field to its exact integer
+   * string representation.
+   *
+   * This is the money-policy boundary between the chain and the rest of the
+   * backend (see `backend/src/money/decimal.ts`): the value is converted to
+   * `bigint` and back to a string without ever passing through `Number`, so
+   * amounts beyond `Number.MAX_SAFE_INTEGER` (any XLM balance above ~90M
+   * stroops, i.e. ~9 XLM) cannot silently lose precision here.
+   */
   private decodeAmount(value: xdr.ScVal): string {
     const native = scValToNative(value);
-    if (typeof native !== 'bigint' && typeof native !== 'number') {
-      throw new Error(`Expected numeric amount, got ${typeof native}: ${String(native)}`);
+    if (typeof native === 'bigint') {
+      return native.toString();
     }
-    return native.toString();
+    if (typeof native === 'number' && Number.isInteger(native)) {
+      return BigInt(native).toString();
+    }
+    throw new Error(`Expected integer stroop amount, got ${typeof native}: ${String(native)}`);
   }
 
   private decodeLoanId(value: xdr.ScVal): number | undefined {
@@ -1178,3 +1282,11 @@ export class EventIndexer {
     }
   }
 }
+
+// Re-exported for discoverability alongside `recordCheckpoint` /
+// `getSuspectRanges` above; the implementation lives in
+// ledgerCheckpoints.ts so consumers that only need the gate check (e.g.
+// defaultChecker.ts) don't pull in this module's heavier dependency graph
+// (Soroban RPC client, webhook/notification/event-stream services) — see
+// that file's doc comment.
+export { hasUnresolvedLedgerGaps } from './ledgerCheckpoints.js';

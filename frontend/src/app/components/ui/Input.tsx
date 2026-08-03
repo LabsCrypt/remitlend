@@ -1,9 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
 import { cn } from "@/app/utils/cn";
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {

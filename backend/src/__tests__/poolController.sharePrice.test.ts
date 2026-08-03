@@ -104,4 +104,27 @@ describe('getPoolSharePrice', () => {
     const jsonCall = (res.json as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
     expect((jsonCall.data as Record<string, unknown>).sharePriceRatio).toBe(2.0);
   });
+
+  it('de-scales a fresh pool price to one without changing the raw value', async () => {
+    mockCacheGet.mockResolvedValue(null);
+    mockGetSharePrice.mockResolvedValue(1_000_000);
+
+    const req = {
+      params: { token: 'GFRESHPOOL' },
+    } as unknown as Request;
+    const res = createMockResponse();
+    const next = jest.fn<(err?: unknown) => void>();
+
+    getPoolSharePrice(req, res, next as unknown as NextFunction);
+    await flushAsync();
+
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: {
+        sharePrice: 1_000_000,
+        sharePriceRatio: 1,
+      },
+      cached: false,
+    });
+  });
 });

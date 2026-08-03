@@ -29,11 +29,16 @@ import {
   startScoreReconciliationScheduler,
   stopScoreReconciliationScheduler,
 } from './services/scoreReconciliationService.js';
+import {
+  startCrossContractReconciler,
+  stopCrossContractReconciler,
+} from './services/crossContractReconciler.js';
 import { sorobanService } from './services/sorobanService.js';
 import { validateLoanConfig } from './config/loanConfig.js';
 import { startLoanDueCheckCron, stopLoanDueCheckCron } from './cron/loanCheckCron.js';
 // Imported the score decay scheduler initialization wrapper
 import { startScoreDecayScheduler } from './cron/scoreDecayJob.js';
+import { initializePauseState } from './middleware/pauseGuard.js';
 
 const port = process.env.PORT || 3001;
 
@@ -57,6 +62,14 @@ try {
   process.exit(1);
 }
 
+// Initialize pause state table and load initial state
+try {
+  await initializePauseState();
+} catch (err) {
+  logger.error('Failed to initialize pause state', { err });
+  process.exit(1);
+}
+
 const server = app.listen(port, () => {
   logger.info(`Server is running on port ${port}`);
 
@@ -71,6 +84,9 @@ const server = app.listen(port, () => {
 
   // Start scheduled score reconciliation against on-chain state
   startScoreReconciliationScheduler();
+
+  // Start cross-contract (disbursement <-> score) reconciliation ledger sweep
+  startCrossContractReconciler();
 
   // Start periodic notification cleanup
   startNotificationCleanupScheduler();
@@ -103,6 +119,7 @@ const shutdown = async (signal: 'SIGTERM' | 'SIGINT') => {
     stopDefaultCheckerScheduler();
     stopWebhookRetryProcessor();
     stopScoreReconciliationScheduler();
+    stopCrossContractReconciler();
     stopNotificationCleanupScheduler();
 
     if (

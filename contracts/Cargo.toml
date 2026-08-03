@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "money",
   "remittance_nft",
   "loan_manager",
   "lending_pool",
@@ -11,7 +12,15 @@ exclude = [
 ]
 
 [workspace.dependencies]
+# Keep in sync with contracts/README.md Prerequisites section
 soroban-sdk = "22.0.0"
+money = { path = "money" }
+
+[profile.dev]
+overflow-checks = true
+
+[profile.test]
+overflow-checks = true
 
 [profile.release]
 opt-level = "z"

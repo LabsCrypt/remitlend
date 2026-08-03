@@ -27,8 +27,33 @@ jobs:
           fi
           echo "No known malicious packages found."
 
-  backend:
+  # Issue #1378: single source of truth for stroop scale, rounding mode,
+  # display precision and pro-rata allocation strategy. `scripts/gen-money.ts`
+  # derives `contracts/money/src/policy.rs`,
+  # `backend/src/money/policy.generated.ts` and
+  # `frontend/lib/money/policy.generated.ts` from `money-policy.json`; this
+  # job fails the build the moment any of those three generated files would
+  # differ from what's committed, so the layers can never drift back apart.
+  money-policy:
     needs: supply-chain-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: scripts/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: scripts
+      - name: Check generated money-policy artifacts are up to date
+        run: npx ts-node gen-money.ts --check
+        working-directory: scripts
+
+  backend:
+    needs: [supply-chain-audit, money-policy]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +93,27 @@ jobs:
           LOAN_MANAGER_ADMIN_SECRET: test_admin_secret
           INTERNAL_API_KEY: test_internal_api_key
           FRONTEND_URL: https://frontend.example.com
+      - name: Scan for plaintext PII in logs
+        run: |
+          echo "Scanning for plaintext PII in logger output patterns..."
+          PII_PATTERNS=(
+            'logger.*\.info.*recipient_email'
+            'logger.*\.info.*recipient_phone'
+            'logger.*\.info.*recipient_name'
+            'console\.log.*email.*@.*\.com'
+            'console\.log.*phone.*\+[0-9]'
+          )
+          FOUND=0
+          for pattern in "${PII_PATTERNS[@]}"; do
+            if grep -rn "$pattern" src/ --include="*.ts" 2>/dev/null; then
+              echo "::error::PII leak detected in logger output: $pattern"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            exit 1
+          fi
+          echo "No plaintext PII found in logger output."
 
   migration-paths:
     runs-on: ubuntu-latest
@@ -132,9 +178,36 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgres://pguser:pgpass@localhost:5432/remitlend_test
+      - name: Verify no plaintext PII columns exist
+        run: |
+          echo "Checking for plaintext PII columns..."
+          PII_COLUMNS=(
+            'recipient_email'
+            'recipient_phone'
+            'recipient_name'
+            'plaintext_email'
+            'plaintext_phone'
+            'plaintext_name'
+          )
+          FOUND=0
+          for col in "${PII_COLUMNS[@]}"; do
+            RESULT=$(psql postgres://pguser:pgpass@localhost:5432/remitlend_test -tAc \
+              "SELECT column_name FROM information_schema.columns WHERE column_name = '$col';" 2>/dev/null)
+            if [ -n "$RESULT" ]; then
+              echo "::error::Plaintext PII column found: $col"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            echo "Plaintext PII columns detected - migration check failed"
+            exit 1
+          fi
+          echo "No plaintext PII columns found."
+        env:
+          PGPASSWORD: pgpass
 
   frontend:
-    needs: supply-chain-audit
+    needs: [supply-chain-audit, money-policy]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -227,11 +300,23 @@ jobs:
       - name: Check env docs are in sync
         run: node scripts/check-env-docs.mjs
 
-  contracts:
+  error-code-mapping-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-     
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check every backend ErrorCode has a frontend message mapping
+        run: node scripts/check-error-code-mappings.mjs
+
+  contracts:
+    needs: money-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache dependencies

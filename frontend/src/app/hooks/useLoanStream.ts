@@ -60,7 +60,7 @@ export function useLoanStream(loanId: string | undefined): RealtimeStatus {
     onMessage: (payload) => {
       if (payload.type === "init") return;
       if (!payload.eventType || !LOAN_REFRESH_EVENTS.has(payload.eventType)) return;
-      if (String(payload.loanId ?? "") === loanId) return;
+      if (String(payload.loanId ?? "") !== loanId) return;
       invalidateLoanQueries();
     },
     onFallbackPoll: invalidateLoanQueries,

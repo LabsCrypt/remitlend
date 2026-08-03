@@ -123,6 +123,11 @@ cargo clippy
 cargo test
 ```
 
+### Smart Contracts Fuzzing (Soroban)
+For consensus-critical changes to smart contracts, fuzz testing is an expected part of the workflow.
+
+Refer to [`contracts/FUZZING_README.md`](contracts/FUZZING_README.md) for full setup instructions, invariant definitions, and running fuzz campaign scripts (`./fuzz_campaign.sh`).
+
 ## Style Guides
 
 - **TypeScript**: Use functional components and hooks. Prefer `interface` over `type`. Ensure strict typing.
