@@ -121,6 +121,27 @@ Defined in `ROLE_SCOPES` in `backend/src/auth/rbac.ts`:
 
 ---
 
+## PII field inventory
+
+The following personally identifiable information (PII) fields are handled
+across two layers. Fields marked **masked** are obfuscated for display on the
+frontend (`frontend/src/app/utils/piiMask.ts`). Fields marked **encrypted** are
+encrypted at rest on the backend (`backend/src/services/piiCrypto.ts`).
+
+| Field | Frontend mask (`piiMask.ts`) | Backend encrypt (`piiCrypto.ts`) |
+|-------|------------------------------|----------------------------------|
+| Email | Yes — `maskRecipient(v, "email")` | Yes — `encryptField()` / `maskValue(v, "email")` |
+| Phone | Yes — `maskRecipient(v, "phone")` | Yes — `encryptField()` / `maskValue(v, "phone")` |
+| Name  | Yes — `maskRecipient(v, "name")`  | Yes — `encryptField()` / `maskValue(v, "name")` |
+| Stellar address | Yes — `maskAddress(v)` | No (public by nature) |
+
+Both `piiMask.ts` and `piiCrypto.ts` export a `maskValue` / `maskRecipient` for
+email, phone, and name. The frontend uses `maskRecipient` from `piiMask.ts`;
+the backend uses `maskValue` from `piiCrypto.ts`. The masking logic is
+equivalent but maintained separately for each layer.
+
+---
+
 ## Auth middleware stack
 
 ```

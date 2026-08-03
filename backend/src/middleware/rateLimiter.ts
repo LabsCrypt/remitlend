@@ -30,7 +30,7 @@ export const challengeRateLimiter = rateLimit({
 });
 
 export const loginRateLimiter = rateLimit({
-  windowMs: 6 * 1000, // 1 minute
+  windowMs: 60 * 1000, // 1 minute
   max: 5,
   keyGenerator: (req) =>
     `${ipKeyGenerator(req.ip ?? 'unknown')}:${req.body?.publicKey ?? 'unknown'}`,

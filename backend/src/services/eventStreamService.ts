@@ -8,7 +8,15 @@ export interface LoanEventPayload {
   eventType: string;
   loanId?: number | undefined;
   address?: string | undefined;
+  /** Exact stroop amount, as decoded from the chain — never a float. */
   amount?: string | undefined;
+  /**
+   * Display-precision string derived from `amount` via the shared money
+   * policy (`backend/src/money/decimal.ts`'s `fromStroops`). Consumers
+   * should render this for display and never re-derive one themselves from
+   * `amount` with ad-hoc float math.
+   */
+  amountDisplay?: string | undefined;
   ledger: number;
   ledgerClosedAt: string;
   txHash: string;
@@ -108,10 +116,29 @@ class EventStreamService {
   }
 
   sendEvent(res: SseClient, event: LoanEventPayload): void {
+    const masked = this.maskEventPayload(event);
     const payload =
-      `id: ${event.eventId}\n` + `event: loan-event\n` + `data: ${JSON.stringify(event)}\n\n`;
+      `id: ${event.eventId}\n` + `event: loan-event\n` + `data: ${JSON.stringify(masked)}\n\n`;
 
     res.write(payload);
+  }
+
+  private maskEventPayload(event: LoanEventPayload): Record<string, unknown> {
+    const masked: Record<string, unknown> = { ...event };
+    const piiFields = [
+      'recipient_email',
+      'recipient_phone',
+      'recipient_name',
+      'email',
+      'phone',
+      'legalName',
+    ];
+    for (const field of piiFields) {
+      if (field in masked) {
+        (masked as Record<string, unknown>)[field] = '[REDACTED]';
+      }
+    }
+    return masked;
   }
 
   private registerUserClient(userKey: string, res: SseClient): void {

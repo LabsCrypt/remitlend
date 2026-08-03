@@ -150,7 +150,7 @@ export function useSSE<T = unknown>({
           return;
         }
 
-        reconnectAttempts.current -= 1;
+        reconnectAttempts.current += 1;
         onErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
 
         if (reconnectAttempts.current >= maxReconnectAttempts) {

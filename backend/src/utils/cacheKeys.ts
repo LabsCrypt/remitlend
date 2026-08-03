@@ -4,6 +4,13 @@ import { cacheService } from '../services/cacheService.js';
  * Canonical cache key generators.
  * Each read key that populates a cache entry is paired here with the
  * write operations that must bust it so the mapping is testable in isolation.
+ *
+ * IMPORTANT: The exact string format returned by each function is part of the
+ * runtime contract between this module and the data in Redis.  If a format
+ * is changed, existing cached entries under the old format become orphaned
+ * and will never be evicted unless a deployment runbook step explicitly
+ * flushes the affected keys.  Always add a cache flush step to the deploy
+ * runbook when modifying a key format.
  */
 export const CacheKeys = {
   // Pool stats aggregate (getPoolStats)

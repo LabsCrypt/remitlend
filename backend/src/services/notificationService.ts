@@ -111,9 +111,10 @@ function buildEmailTemplate(
 
 async function sendEmail(email: string, message: string, type?: NotificationType): Promise<void> {
   const fromEmail = process.env.FROM_EMAIL;
+  const maskedEmail = email.replace(/(.{2}).*(@.*)/, '$1***$2');
 
   if (!fromEmail) {
-    logger.withContext().info('[Email] FROM_EMAIL not set', { email, message });
+    logger.withContext().info('[Email] FROM_EMAIL not set', { email: maskedEmail, message });
     return;
   }
 
@@ -122,7 +123,7 @@ async function sendEmail(email: string, message: string, type?: NotificationType
   if (!process.env.SENDGRID_API_KEY) {
     logger
       .withContext()
-      .info(`[Email] SendGrid not configured. Would send to ${email}: ${message}`);
+      .info(`[Email] SendGrid not configured. Would send to ${maskedEmail}: ${message}`);
     return;
   }
 
@@ -138,9 +139,9 @@ async function sendEmail(email: string, message: string, type?: NotificationType
       subject: template.subject,
       html: template.html,
     });
-    logger.withContext().info(`[Email] Sent to ${email}`, { subject: template.subject });
+    logger.withContext().info(`[Email] Sent to ${maskedEmail}`, { subject: template.subject });
   } catch (error) {
-    logger.withContext().error(`[Email] SendGrid failed for ${email}`, {
+    logger.withContext().error(`[Email] SendGrid failed for ${maskedEmail}`, {
       error: error instanceof Error ? error.message : String(error),
     });
     // Swallow error — email failure must not break the main flow
@@ -148,9 +149,12 @@ async function sendEmail(email: string, message: string, type?: NotificationType
 }
 
 async function sendSMS(phone: string, message: string) {
+  const maskedPhone = phone.length > 4 ? '+xx...****' + phone.slice(-2) : '****';
   const twilioClient = await getTwilioClient();
   if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
-    logger.withContext().warn(`[SMS] Twilio not configured. Would send to ${phone}: ${message}`);
+    logger
+      .withContext()
+      .warn(`[SMS] Twilio not configured. Would send to ${maskedPhone}`, { message });
     return;
   }
 
@@ -160,11 +164,10 @@ async function sendSMS(phone: string, message: string) {
       from: process.env.TWILIO_PHONE_NUMBER,
       to: phone,
     });
-    logger.withContext().info(`[SMS] Sent to ${phone}: ${message}`, { sid: result.sid });
+    logger.withContext().info(`[SMS] Sent to ${maskedPhone}`, { sid: result.sid });
   } catch (error) {
-    logger.withContext().error(`[SMS] Failed to send to ${phone}`, {
+    logger.withContext().error(`[SMS] Failed to send to ${maskedPhone}`, {
       error: error instanceof Error ? error.message : String(error),
-      phone,
     });
     // Swallow error - don't fail the notification creation
   }

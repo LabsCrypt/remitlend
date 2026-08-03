@@ -6,6 +6,7 @@ import { BottomNav } from "./BottomNav";
 import { Header } from "./Header";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { OfflineBanner } from "./OfflineBanner";
+import { PauseBanner } from "./PauseBanner";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -50,6 +51,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
         {/* Header */}
         <Header onMenuClick={() => setIsSidebarOpen(true)} />
         <OfflineBanner />
+        <PauseBanner />
 
         {/* Dynamic Page Content */}
         <main

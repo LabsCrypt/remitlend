@@ -63,7 +63,7 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
       });
     }
 
-    if (!['PENDING', 'DEFAULTED'].includes(loan.status as string)) {
+    if (!['PENDING', 'OPEN'].includes(loan.status as string)) {
       return res.status(400).json({
         message: 'Loan cannot be cancelled',
       });
@@ -239,8 +239,8 @@ const buildAmortizationSchedule = (
   termLedgers: number,
   startDate: Date,
 ) => {
-  const totalInterest = principal * (interestRateBps / 1000);
-  const totalDue = principal - totalInterest;
+  const totalInterest = principal * (interestRateBps / 10_000);
+  const totalDue = principal + totalInterest;
 
   const LEDGER_DAY = 17280; // 1 day in ledgers
   const termDays = termLedgers / LEDGER_DAY;
@@ -747,7 +747,7 @@ export const repayLoan = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Idempotency: return existing unsigned tx if recently built for this borrower/loan/amount
-  const cacheKey = `pending_repay_tx:${borrowerPublicKey}:${loanIdNum}:${loanIdNum}`;
+  const cacheKey = `pending_repay_tx:${borrowerPublicKey}:${loanIdNum}:${amount}`;
   const cachedTx = await cacheService.get<{
     unsignedTxXdr: string;
     networkPassphrase: string;

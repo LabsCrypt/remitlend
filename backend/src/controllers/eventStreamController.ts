@@ -52,7 +52,7 @@ export const streamEvents = asyncHandler(async (req: Request, res: Response) => 
 
   const isAdmin = role === 'admin';
 
-  if (isAdmin && requestedBorrower && requestedBorrower !== userKey) {
+  if (!isAdmin && requestedBorrower && requestedBorrower !== userKey) {
     throw AppError.forbidden('Borrowers can only subscribe to their own events');
   }
 

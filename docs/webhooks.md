@@ -33,7 +33,7 @@ Authorization: Bearer <your-jwt-token>
 ```json
 {
   "url": "https://your-service.com/webhooks/remitlend",
-  "events": ["loan_approved", "repayment_confirmed", "loan_defaulted"],
+  "events": ["LoanApproved", "LoanRepaid", "LoanDefaulted"],
   "description": "My loan tracking service (optional)"
 }
 ```
@@ -52,7 +52,7 @@ Authorization: Bearer <your-jwt-token>
   "data": {
     "id": "sub_abc123",
     "url": "https://your-service.com/webhooks/remitlend",
-    "events": ["loan_approved", "repayment_confirmed", "loan_defaulted"],
+    "events": ["LoanApproved", "LoanRepaid", "LoanDefaulted"],
     "active": true,
     "createdAt": "2026-05-28T12:00:00.000Z"
   }
@@ -75,14 +75,90 @@ is required.
 
 ## Supported Event Types
 
-| Event                  | Description                                   |
-|------------------------|-----------------------------------------------|
-| `loan_approved`        | A borrower's loan has been approved           |
-| `repayment_due`        | A repayment is coming due soon                |
-| `repayment_confirmed`  | A repayment was received and confirmed        |
-| `loan_defaulted`       | A loan has been marked as defaulted           |
-| `loan_liquidated`      | Collateral has been liquidated after default  |
-| `score_changed`        | A borrower's credit score changed             |
+The events below are what the webhook *subscription* system
+(`backend/src/services/webhookService.ts`) can actually dispatch — its
+`SUPPORTED_WEBHOOK_EVENT_TYPES` list is the source of truth. These are raw
+Soroban contract event names, distinct from the friendly, snake_case
+notification types (`loan_approved`, `repayment_due`, etc.) used by the
+in-app `/api/notifications` REST API — the two are separate systems.
+
+| Event                     | Description                                              |
+|----------------------------|-----------------------------------------------------------|
+| `LoanRequested`            | A borrower requested a new loan                           |
+| `LoanApproved`             | A borrower's loan has been approved                       |
+| `LoanRepaid`               | A repayment was received and confirmed                    |
+| `LoanDefaulted`            | A loan has been marked as defaulted                        |
+| `CollateralLiquidated`     | Collateral has been liquidated after default               |
+| `CollateralReturned`       | Collateral was returned to the borrower                    |
+| `CollateralDeposited`      | Collateral was deposited against a loan                     |
+| `CollateralReleased`       | Collateral was released back to the borrower                |
+| `LateFeeCharged`           | A late fee was charged on an overdue loan                   |
+| `LoanExtended`             | A loan's term was extended                                  |
+| `LoanCancelled`            | A loan request was cancelled                                |
+| `LoanRejected`             | A loan request was rejected                                 |
+| `LoanRefinanced`           | A loan was refinanced                                       |
+| `InterestRateUpdated`      | The interest rate configuration changed                      |
+| `DefaultTermUpdated`       | The default-term configuration changed                        |
+| `TermLimitsUpdated`        | Loan term limits configuration changed                        |
+| `LateFeeRateUpdated`       | The late-fee rate configuration changed                        |
+| `GracePeriodUpdated`       | The grace-period configuration changed                        |
+| `DefaultWindowUpdated`     | The default-window configuration changed                       |
+| `MaxLoanAmountUpdated`     | The maximum loan amount configuration changed                   |
+| `MinRepaymentUpdated`      | The minimum repayment configuration changed                      |
+| `MaxLoansPerBorrower`      | The max-loans-per-borrower configuration changed                  |
+| `MinRateBpsUpdated`        | The minimum interest rate (bps) configuration changed              |
+| `MaxRateBpsUpdated`        | The maximum interest rate (bps) configuration changed               |
+| `RateOracleUpdated`        | The rate oracle configuration changed                                |
+| `MinScoreUpdated`          | The minimum credit score configuration changed                        |
+| `Deposit`                  | A pool deposit occurred                                                |
+| `Withdraw`                 | A pool withdrawal occurred                                              |
+| `YieldDistributed`         | Yield was distributed to pool depositors                                  |
+| `EmergencyWithdraw`        | An emergency withdrawal occurred                                            |
+| `DepositCapUpdated`        | The pool deposit cap configuration changed                                    |
+| `WithdrawalCooldownUpdated`| The withdrawal cooldown configuration changed                                   |
+| `NFTMinted`                | A borrower/score NFT was minted                                                  |
+| `ScoreUpdated`             | A borrower's credit score changed                                                  |
+| `NFTSeized`                | A borrower/score NFT was seized                                                     |
+| `NFTBurned`                | A borrower/score NFT was burned                                                       |
+| `ProposalCreated`          | A governance proposal was created                                                       |
+| `ProposalApproved`         | A governance proposal was approved                                                        |
+| `ProposalFinalized`        | A governance proposal was finalized                                                          |
+| `ProposalCancelled`        | A governance proposal was cancelled                                                             |
+| `ColDep`                   | Collateral was deposited against a loan (short form of `CollateralDeposited`)                     |
+| `ColRel`                   | Collateral was released back to the borrower (short form of `CollateralReleased`)                   |
+| `LoanApprv`                | A borrower's loan has been approved (short contract event name)                                      |
+| `LoanLiquidated`           | Collateral has been liquidated after default (alternate name for `CollateralLiquidated`)                |
+
+### Legacy Aliases
+
+Kept for backward compatibility with existing subscribers. These are
+resolved to one of the current event names above by
+`EVENT_TYPE_ALIASES` in `backend/src/services/eventIndexer.ts` before
+dispatch, except where noted below. New integrations should prefer the
+current event names listed above where an equivalent exists.
+
+| Event             | Description                                                          |
+|-------------------|------------------------------------------------------------------------|
+| `Mint`            | Legacy alias — resolves to `NFTMinted`                                  |
+| `AdmRemint`       | Legacy alias — resolves to `NFTMinted`                                    |
+| `ScoreUpd`        | Legacy alias — resolves to `ScoreUpdated`                                   |
+| `Seized`          | Legacy alias — resolves to `NFTSeized`                                        |
+| `NftBurned`       | Legacy alias — resolves to `NFTBurned`                                          |
+| `GovProp`         | Legacy alias — resolves to `ProposalCreated`                                      |
+| `GovAppr`         | Legacy alias — resolves to `ProposalApproved`                                       |
+| `GovFin`          | Legacy alias — resolves to `ProposalFinalized`                                        |
+| `GovCncl`         | Legacy alias — resolves to `ProposalCancelled`                                          |
+| `GovEmerg`        | Legacy alias — resolves to `ProposalCancelled`                                             |
+| `GovExp`          | Legacy alias — resolves to `ProposalCancelled`                                               |
+| `ScoreDecr`       | Legacy event type for a score decrease — not currently aliased to another event type            |
+| `HashUpd`         | Legacy event type for a content-hash update — not currently aliased to another event type          |
+| `Transfer`        | Legacy event type for an NFT/asset transfer — not currently aliased to another event type            |
+| `MntAuth`         | Legacy event type for a minting-authority change — not currently aliased to another event type         |
+| `MntRev`          | Legacy event type for a minting-authority revocation — not currently aliased to another event type       |
+| `Paused`          | Legacy event type for a contract pause — not currently aliased to another event type                       |
+| `Unpaused`        | Legacy event type for a contract unpause — not currently aliased to another event type                       |
+| `PoolPaused`      | Legacy event type for a pool pause — not currently aliased to another event type                                |
+| `PoolUnpaused`    | Legacy event type for a pool unpause — not currently aliased to another event type                                |
 
 ---
 
@@ -99,11 +175,11 @@ Every delivery is a JSON POST with the following envelope:
 }
 ```
 
-### `loan_approved`
+### `LoanApproved`
 
 ```json
 {
-  "event": "loan_approved",
+  "event": "LoanApproved",
   "id": "evt_loan_42",
   "timestamp": "2026-05-28T12:00:00.000Z",
   "data": {
@@ -115,11 +191,11 @@ Every delivery is a JSON POST with the following envelope:
 }
 ```
 
-### `repayment_confirmed`
+### `LoanRepaid`
 
 ```json
 {
-  "event": "repayment_confirmed",
+  "event": "LoanRepaid",
   "id": "evt_repay_99",
   "timestamp": "2026-05-28T12:05:00.000Z",
   "data": {
@@ -131,11 +207,11 @@ Every delivery is a JSON POST with the following envelope:
 }
 ```
 
-### `loan_defaulted`
+### `LoanDefaulted`
 
 ```json
 {
-  "event": "loan_defaulted",
+  "event": "LoanDefaulted",
   "id": "evt_default_7",
   "timestamp": "2026-05-28T12:10:00.000Z",
   "data": {
@@ -146,11 +222,11 @@ Every delivery is a JSON POST with the following envelope:
 }
 ```
 
-### `loan_liquidated`
+### `CollateralLiquidated`
 
 ```json
 {
-  "event": "loan_liquidated",
+  "event": "CollateralLiquidated",
   "id": "evt_liq_3",
   "timestamp": "2026-05-28T12:15:00.000Z",
   "data": {
@@ -162,11 +238,11 @@ Every delivery is a JSON POST with the following envelope:
 }
 ```
 
-### `repayment_due`
+### `LateFeeCharged`
 
 ```json
 {
-  "event": "repayment_due",
+  "event": "LateFeeCharged",
   "id": "evt_due_21",
   "timestamp": "2026-05-28T12:00:00.000Z",
   "data": {
@@ -178,11 +254,11 @@ Every delivery is a JSON POST with the following envelope:
 }
 ```
 
-### `score_changed`
+### `ScoreUpdated`
 
 ```json
 {
-  "event": "score_changed",
+  "event": "ScoreUpdated",
   "id": "evt_score_15",
   "timestamp": "2026-05-28T12:00:00.000Z",
   "data": {

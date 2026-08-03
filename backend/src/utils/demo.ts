@@ -1,6 +1,17 @@
 import { parseCappedLimit } from './queryHelpers.js';
 import type { Request } from 'express';
 
+/**
+ * Demo / sandbox mode demonstration script.
+ *
+ * This file is NOT middleware; it is a standalone script that illustrates
+ * how query parameter limit capping works.  It exists alongside the
+ * sandbox mode tooling documented in docs/ENVIRONMENT.md.
+ *
+ * To enable demo mode for API routes, set DEMO_MODE=true in the backend
+ * environment.  See docs/ENVIRONMENT.md for details.
+ */
+
 // Demo script to show how the limit capping prevents database performance issues
 function demonstrateLimitCapping() {
   console.log('=== API Security: Limit Query Parameter Capping ===\n');

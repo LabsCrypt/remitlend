@@ -2,7 +2,18 @@
  * utils/soundManager.ts
  *
  * Sound effect manager for gamification features.
- * Handles loading, playing, and managing audio files.
+ *
+ * The actual SoundManager class lives in soundManagerCore.ts, loaded via a
+ * dynamic import() the first time useSoundEffect()'s returned play/setVolume/
+ * setEnabled/preload is actually called (#1523). Consumers previously
+ * imported useSoundEffect statically at module scope (GamificationSettings,
+ * LevelUpModal, and GlobalXPGain — the last mounted globally in
+ * app/layout.tsx), which pulled soundManagerCore's ~8 placeholder audio
+ * clips and Audio-element setup into every page load regardless of whether
+ * sound is enabled or the user ever triggers a sound effect. This file's
+ * public API (useSoundEffect, getSoundManager, SoundEffect) is unchanged so
+ * no call site needs to change — only the module actually doing the work is
+ * now deferred.
  */
 
 export type SoundEffect =
@@ -15,133 +26,61 @@ export type SoundEffect =
   | "click"
   | "error";
 
-class SoundManager {
-  private sounds: Map<SoundEffect, HTMLAudioElement> = new Map();
-  private enabled: boolean = true;
-  private volume: number = 0.5;
+type SoundManagerInstance = import("./soundManagerCore").SoundManager;
 
-  constructor() {
-    if (typeof window !== "undefined") {
-      this.initializeSounds();
-    }
+let corePromise: Promise<typeof import("./soundManagerCore")> | null = null;
+let managerInstance: SoundManagerInstance | null = null;
+
+// Calls made before the core module finishes loading are queued and
+// replayed in order once the real manager is ready, so callers never need
+// to await anything themselves.
+let pendingCalls: Array<(manager: SoundManagerInstance) => void> = [];
+
+function loadCore(): Promise<typeof import("./soundManagerCore")> {
+  if (typeof window === "undefined") {
+    // SSR: never actually resolves usefully, but nothing calls play() on
+    // the server (see the SSR guard in useSoundEffect below), so this path
+    // only exists to keep the types simple.
+    return new Promise(() => {});
   }
 
-  private initializeSounds() {
-    // Placeholder silent sound effects.
-    // Replace with real audio assets or generated tones in production.
+  corePromise ??= import("./soundManagerCore").then((mod) => {
+    managerInstance = new mod.SoundManager();
+    for (const call of pendingCalls) call(managerInstance);
+    pendingCalls = [];
+    return mod;
+  });
 
-    const soundEffects: Record<SoundEffect, string> = {
-      // Level up - triumphant sound
-      levelUp: this.generateTone([523.25, 659.25, 783.99], 0.3),
-
-      // Achievement unlocked - success chime
-      achievement: this.generateTone([659.25, 783.99, 987.77], 0.2),
-
-      // Success - positive feedback
-      success: this.generateTone([523.25, 659.25], 0.15),
-
-      // Signature - confirmation sound
-      signature: this.generateTone([440, 554.37], 0.1),
-
-      // Loan approved - celebration
-      loanApproved: this.generateTone([523.25, 659.25, 783.99, 1046.5], 0.25),
-
-      // XP gain - quick positive feedback
-      xpGain: this.generateTone([659.25, 783.99], 0.08),
-
-      // Click - subtle interaction
-      click: this.generateTone([440], 0.05),
-
-      // Error - negative feedback
-      error: this.generateTone([329.63, 293.66], 0.15),
-    };
-
-    // Create audio elements
-    Object.entries(soundEffects).forEach(([key, dataUri]) => {
-      const audio = new Audio(dataUri);
-      audio.volume = this.volume;
-      this.sounds.set(key as SoundEffect, audio);
-    });
-  }
-
-  /**
-   * Placeholder sound generator.
-   *
-   * Gamification sound effects are currently disabled and all generated
-   * clips are intentionally silent placeholders until real audio assets
-   * or Web Audio API tone generation is implemented.
-   *
-   * The frequency and duration parameters are currently unused.
-   */
-  private generateTone(_frequencies: number[], _duration: number): string {
-    return "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
-  }
-
-  /**
-   * Play a sound effect
-   */
-  play(effect: SoundEffect): void {
-    if (!this.enabled) return;
-
-    const sound = this.sounds.get(effect);
-    if (sound) {
-      // Clone the audio to allow overlapping sounds
-      const clone = sound.cloneNode() as HTMLAudioElement;
-      clone.volume = this.volume;
-      clone.play().catch((error) => {
-        // Silently fail if audio playback is blocked
-        console.debug("Audio playback failed:", error);
-      });
-    }
-  }
-
-  /**
-   * Set volume for all sounds (0-1)
-   */
-  setVolume(volume: number): void {
-    this.volume = Math.max(0, Math.min(1, volume));
-    this.sounds.forEach((sound) => {
-      sound.volume = this.volume;
-    });
-  }
-
-  /**
-   * Enable or disable all sounds
-   */
-  setEnabled(enabled: boolean): void {
-    this.enabled = enabled;
-  }
-
-  /**
-   * Preload a specific sound
-   */
-  preload(effect: SoundEffect): void {
-    const sound = this.sounds.get(effect);
-    if (sound) {
-      sound.load();
-    }
-  }
-
-  /**
-   * Preload all sounds
-   */
-  preloadAll(): void {
-    this.sounds.forEach((sound) => sound.load());
-  }
+  return corePromise;
 }
 
-// Singleton instance
-let soundManagerInstance: SoundManager | null = null;
-
-export function getSoundManager(): SoundManager {
-  if (!soundManagerInstance && typeof window !== "undefined") {
-    soundManagerInstance = new SoundManager();
+function withManager(fn: (manager: SoundManagerInstance) => void): void {
+  if (managerInstance) {
+    fn(managerInstance);
+    return;
   }
-  return soundManagerInstance!;
+  pendingCalls.push(fn);
+  void loadCore();
 }
 
 /**
- * Hook to use sound manager with gamification store integration
+ * Returns the lazily-loaded singleton SoundManager once it has finished
+ * loading, or null if the dynamic import hasn't resolved yet. Prefer
+ * useSoundEffect() for normal call sites — this is only exposed for cases
+ * that need synchronous access after confirming the manager is ready.
+ */
+export function getSoundManager(): SoundManagerInstance | null {
+  void loadCore();
+  return managerInstance;
+}
+
+/**
+ * Hook to use sound manager with gamification store integration.
+ *
+ * The underlying SoundManager module is only fetched (via dynamic import)
+ * the first time one of the returned methods is actually called — merely
+ * calling useSoundEffect() (e.g. to read `sound` into a variable, as every
+ * current consumer does) has no loading cost.
  */
 export function useSoundEffect() {
   if (typeof window === "undefined") {
@@ -149,16 +88,16 @@ export function useSoundEffect() {
       play: () => {},
       setVolume: () => {},
       setEnabled: () => {},
+      preload: () => {},
+      preloadAll: () => {},
     };
   }
 
-  const manager = getSoundManager();
-
   return {
-    play: (effect: SoundEffect) => manager.play(effect),
-    setVolume: (volume: number) => manager.setVolume(volume),
-    setEnabled: (enabled: boolean) => manager.setEnabled(enabled),
-    preload: (effect: SoundEffect) => manager.preload(effect),
-    preloadAll: () => manager.preloadAll(),
+    play: (effect: SoundEffect) => withManager((manager) => manager.play(effect)),
+    setVolume: (volume: number) => withManager((manager) => manager.setVolume(volume)),
+    setEnabled: (enabled: boolean) => withManager((manager) => manager.setEnabled(enabled)),
+    preload: (effect: SoundEffect) => withManager((manager) => manager.preload(effect)),
+    preloadAll: () => withManager((manager) => manager.preloadAll()),
   };
 }

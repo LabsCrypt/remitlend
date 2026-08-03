@@ -13,7 +13,7 @@ const DEFAULT_LIMIT = 20;
 export function parseCappedLimit(req: Request, defaultLimit: number = DEFAULT_LIMIT): number {
   const rawLimit = Number(req.query.limit);
 
-  if (!Number.isFinite(rawLimit) || rawLimit < 0 || rawLimit !== Math.floor(rawLimit)) {
+  if (!Number.isFinite(rawLimit) || rawLimit <= 0 || rawLimit !== Math.floor(rawLimit)) {
     return defaultLimit;
   }
 

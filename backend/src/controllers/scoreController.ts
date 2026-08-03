@@ -109,7 +109,7 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
      VALUES ($1, $2)
      ON CONFLICT (user_id) 
      DO UPDATE SET 
-       current_score = LEAST(8500, GREATEST(300, scores.current_score + $3)),
+       current_score = LEAST(850, GREATEST(300, scores.current_score + $3)),
        updated_at = CURRENT_TIMESTAMP
      RETURNING current_score`,
     [userId, 500 + delta, delta],
@@ -207,7 +207,7 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
            r.loan_id,
            r.repaid_ledger,
            r.repaid_at,
-           CASE WHEN r.repaid_ledger <= a.approved_ledger - a.term_ledgers
+           CASE WHEN r.repaid_ledger <= a.approved_ledger + a.term_ledgers
                 THEN true ELSE false END AS on_time,
            (r.repaid_ledger - a.approved_ledger) AS repayment_ledgers
          FROM repaid_loans r

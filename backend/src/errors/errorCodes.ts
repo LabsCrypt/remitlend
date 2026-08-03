@@ -47,6 +47,9 @@ export enum ErrorCode {
   EXTERNAL_SERVICE_ERROR = 'EXTERNAL_SERVICE_ERROR',
   BLOCKCHAIN_ERROR = 'BLOCKCHAIN_ERROR',
 
+  // Service Unavailable (503)
+  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+
   // Specific Business Logic Errors
   BORROWER_MISMATCH = 'BORROWER_MISMATCH',
   INSUFFICIENT_BALANCE = 'INSUFFICIENT_BALANCE',
@@ -252,6 +255,13 @@ export const ERROR_CODE_REGISTRY: Record<ErrorCode, ErrorCodeMetadata> = {
     description: 'A blockchain operation failed',
     suggestedAction: 'Please try again later or contact support',
   },
+  [ErrorCode.SERVICE_UNAVAILABLE]: {
+    code: ErrorCode.SERVICE_UNAVAILABLE,
+    message: 'Service unavailable',
+    httpStatus: 503,
+    description: 'The service is temporarily unavailable',
+    suggestedAction: 'Please try again later',
+  },
 
   // Business Logic Errors
   [ErrorCode.INSUFFICIENT_BALANCE]: {
@@ -315,6 +325,8 @@ export function getDefaultErrorCodeForStatus(status: number): ErrorCode {
       return ErrorCode.CONFLICT;
     case 429:
       return ErrorCode.RATE_LIMIT_EXCEEDED;
+    case 503:
+      return ErrorCode.SERVICE_UNAVAILABLE;
     case 500:
     default:
       return ErrorCode.INTERNAL_ERROR;

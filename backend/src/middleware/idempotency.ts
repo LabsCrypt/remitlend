@@ -82,7 +82,7 @@ export const idempotencyMiddleware = async (
     res.on('finish', async () => {
       // Only cache 2xx and 4xx status codes.
       // 5xx errors should usually be retried without returning a cached failure.
-      if (res.statusCode >= 200 && res.statusCode < 600 && responseBody) {
+      if (res.statusCode >= 200 && res.statusCode < 500 && responseBody) {
         try {
           await cacheService.set(
             cacheKey,

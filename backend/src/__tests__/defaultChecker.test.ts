@@ -31,6 +31,9 @@ describe('DefaultChecker', () => {
 
     (checker as unknown as Record<string, unknown>).acquireLock = async () => true;
     (checker as unknown as Record<string, unknown>).releaseLock = async () => undefined;
+    // Stubbed so this test doesn't hit the real (unmocked) db/connection.js —
+    // see hasSuspectLedgerRanges in defaultChecker.ts, added for issue #1376.
+    (checker as unknown as Record<string, unknown>).hasSuspectLedgerRanges = async () => false;
     (checker as unknown as Record<string, unknown>).assertConfigured = () => ({
       signer: {},
       server: {

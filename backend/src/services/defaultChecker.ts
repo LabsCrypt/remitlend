@@ -13,6 +13,68 @@ import { createSorobanRpcServer, getStellarNetworkPassphrase } from '../config/s
 
 import { cacheService } from './cacheService.js';
 import { jobMetricsService } from './jobMetricsService.js';
+import { fromStroops } from '../money/decimal.js';
+import { hasUnresolvedLedgerGaps } from './ledgerCheckpoints.js';
+
+/**
+ * Owed-vs-paid reconciliation for a single loan, computed entirely in
+ * `bigint` stroops (see `backend/src/money/decimal.ts`). `owedStroops` is
+ * the originally approved principal; `paidStroops` is every `LoanRepaid`
+ * amount summed to date. `driftStroops` is `owedStroops - paidStroops`
+ * clamped at zero once the loan is fully repaid — a nonzero value here
+ * after a `LoanRepaid`/`LoanDefaulted` terminal event indicates the kind of
+ * cross-layer rounding drift issue #1378 closes.
+ */
+export interface LoanReconciliation {
+  loanId: number;
+  owedStroops: bigint;
+  paidStroops: bigint;
+  driftStroops: bigint;
+  owedDisplay: string;
+  paidDisplay: string;
+}
+
+/**
+ * Sums the `LoanApproved` principal and every `LoanRepaid` amount recorded
+ * for `loanId` in `contract_events`, in exact integer stroops. Every
+ * comparison here is `bigint` arithmetic — never `Number` — so the result
+ * agrees with the on-chain pool balance to the stroop, regardless of how
+ * large the amount is.
+ */
+export async function reconcileLoanStroops(loanId: number): Promise<LoanReconciliation> {
+  const result = await query(
+    `
+    SELECT event_type, amount
+    FROM contract_events
+    WHERE loan_id = $1
+      AND event_type IN ('LoanApproved', 'LoanRepaid')
+      AND amount IS NOT NULL
+    `,
+    [loanId],
+  );
+
+  let owedStroops = 0n;
+  let paidStroops = 0n;
+  for (const row of result.rows as Array<{ event_type: string; amount: string }>) {
+    const amount = BigInt(row.amount);
+    if (row.event_type === 'LoanApproved') {
+      owedStroops += amount;
+    } else {
+      paidStroops += amount;
+    }
+  }
+
+  const driftStroops = owedStroops > paidStroops ? owedStroops - paidStroops : 0n;
+
+  return {
+    loanId,
+    owedStroops,
+    paidStroops,
+    driftStroops,
+    owedDisplay: fromStroops(owedStroops),
+    paidDisplay: fromStroops(paidStroops),
+  };
+}
 
 /**
  * Mirrors `LoanManager::DEFAULT_TERM_LEDGERS` in `contracts/loan_manager/src/lib.rs`.
@@ -42,6 +104,15 @@ export interface DefaultCheckRunResult {
   oldestDueLedger?: number;
   ledgersPastOldestDue?: number;
   batches: DefaultCheckBatchResult[];
+  /**
+   * True when this run was deliberately skipped instead of evaluating loans
+   * — currently only set when the indexer has an unresolved ('suspect')
+   * ledger gap for the loan manager contract (issue #1376). Conclusions
+   * drawn from `contract_events` are unreliable until the gap is
+   * reconciled, so no defaults are submitted for this run.
+   */
+  skipped?: boolean;
+  skippedReason?: string;
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -141,6 +212,20 @@ export class DefaultChecker {
   }
 
   /**
+   * Whether the indexer has an unresolved ('suspect') ledger gap for the
+   * loan manager contract. `fetchOverdueLoanIds`/`fetchOverdueStats` derive
+   * loan state entirely from indexed `contract_events`, so a gap means a
+   * `LoanApproved`, `LoanRepaid`, or `LoanDefaulted` event could be missing
+   * — submitting `check_defaults` against that view risks a false default
+   * (issue #1376). Extracted as its own method so tests can stub it out
+   * without needing a live database.
+   */
+  private async hasSuspectLedgerRanges(): Promise<boolean> {
+    if (!this.contractId) return false;
+    return hasUnresolvedLedgerGaps(this.contractId);
+  }
+
+  /**
    * Fetches IDs of loans that are overdue based on the current ledger sequence.
    * Queries the local database for active loans exceeding the term limit.
    */
@@ -169,7 +254,7 @@ export class DefaultChecker {
       )
       SELECT loan_id
       FROM active
-      WHERE due_ledger <= $2
+      WHERE due_ledger < $2
       ORDER BY due_ledger ASC, loan_id ASC
       LIMIT $3
       `,
@@ -443,6 +528,29 @@ export class DefaultChecker {
     try {
       const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const { signer, server, passphrase } = this.assertConfigured();
+
+      if (await this.hasSuspectLedgerRanges()) {
+        logger.withContext().warn('default_check.run.skipped_suspect_ledger_range', {
+          runId,
+          contractId: this.contractId,
+        });
+
+        const durationMs = Date.now() - startTime;
+        jobMetricsService.recordSuccess(jobName, durationMs);
+
+        return {
+          runId,
+          currentLedger: 0,
+          termLedgers: this.termLedgers,
+          overdueCount: 0,
+          loansChecked: 0,
+          successfulSubmissions: 0,
+          failedSubmissions: 0,
+          batches: [],
+          skipped: true,
+          skippedReason: 'unresolved_ledger_gap',
+        };
+      }
 
       const latest = await server.getLatestLedger();
       const currentLedger = latest.sequence;

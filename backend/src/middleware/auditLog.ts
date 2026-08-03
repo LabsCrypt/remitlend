@@ -13,7 +13,15 @@ function sanitizePayload(body: unknown): unknown {
   }
 
   const sanitized = { ...body } as Record<string, unknown>;
-  const sensitiveFields = ['secret', 'apiKey', 'password', 'token', 'signedTx', 'signedTxXdr', 'x-api-key'];
+  const sensitiveFields = [
+    'secret',
+    'apiKey',
+    'password',
+    'token',
+    'signedTx',
+    'signedTxXdr',
+    'x-api-key',
+  ];
 
   for (const key of Object.keys(sanitized)) {
     if (sensitiveFields.includes(key)) {

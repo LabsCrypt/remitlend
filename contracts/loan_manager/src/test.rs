@@ -7,6 +7,12 @@ use soroban_sdk::{
     contract, contractimpl, testutils::Address as _, Address, BytesN, Env, FromVal, String,
 };
 
+fn create_test_commitment(env: &Env, value: u8) -> BytesN<32> {
+    let mut commitment_bytes = [0u8; 32];
+    commitment_bytes[0] = value;
+    BytesN::from_array(env, &commitment_bytes)
+}
+
 // Mock RateOracle contract for testing the oracle interest-rate code path.
 #[contract]
 pub struct MockRateOracle;
@@ -194,6 +200,7 @@ fn test_migration_guard_prevents_double_execution() {
         &600,
         &history_hash,
         &soroban_sdk::String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -241,6 +248,7 @@ fn test_loan_request_success() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -273,6 +281,7 @@ fn test_loan_request_failure_low_score() {
         &400,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -295,6 +304,7 @@ fn test_approve_loan_flow() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -336,6 +346,7 @@ fn test_approve_loan_fails_when_pool_has_insufficient_liquidity() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -362,6 +373,7 @@ fn test_approve_loan_accounts_for_outstanding_approved_loans() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -369,6 +381,7 @@ fn test_approve_loan_accounts_for_outstanding_approved_loans() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -400,6 +413,7 @@ fn test_cancel_pending_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -424,6 +438,7 @@ fn test_reject_pending_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -448,6 +463,7 @@ fn test_paused_blocks_new_loans_and_repayments_but_allows_collateral_release() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -542,6 +558,7 @@ fn test_cancel_pending_loan_returns_collateral() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -581,6 +598,7 @@ fn test_reject_pending_loan_returns_collateral() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -654,6 +672,7 @@ fn test_configurable_interest_rate_and_default_term() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -707,6 +726,7 @@ fn test_legacy_zero_interest_config_falls_back_to_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -733,6 +753,7 @@ fn test_repayment_flow() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -782,6 +803,7 @@ fn test_partial_repayment_tracks_split_balances() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -819,6 +841,7 @@ fn test_minimum_repayment_amount_enforced() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -849,6 +872,7 @@ fn test_full_repayment_ignores_minimum_amount() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -882,6 +906,7 @@ fn test_request_loan_above_max_amount_fails() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     manager.set_max_loan_amount(&500);
@@ -904,6 +929,7 @@ fn test_small_repayment_does_not_change_score() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -935,6 +961,7 @@ fn test_late_full_repayment_applies_score_penalty() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -998,6 +1025,7 @@ fn test_approve_already_approved_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1026,6 +1054,7 @@ fn test_approve_loan_insufficient_pool_liquidity() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1052,6 +1081,7 @@ fn test_borrower_max_active_loans_enforced_and_released_on_repay() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1090,6 +1120,7 @@ fn test_borrower_max_active_loans_blocks_new_requests() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1122,6 +1153,7 @@ fn test_request_loan_negative_amount() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1142,6 +1174,7 @@ fn test_check_default_success() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1183,6 +1216,7 @@ fn test_check_default_not_past_due() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1210,6 +1244,7 @@ fn test_check_default_already_repaid() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1242,6 +1277,7 @@ fn test_check_default_respects_default_window() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1275,6 +1311,7 @@ fn test_check_defaults_batch() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -1282,6 +1319,7 @@ fn test_check_defaults_batch() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -1289,6 +1327,7 @@ fn test_check_defaults_batch() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1353,6 +1392,7 @@ fn test_check_defaults_all_ineligible_returns_zero() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1391,6 +1431,7 @@ fn test_overdue_repayment_charges_late_fee() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1434,6 +1475,7 @@ fn test_overdue_partial_repayment_still_reduces_principal() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1473,6 +1515,58 @@ fn test_set_late_fee_rate_rejects_above_cap() {
 }
 
 #[test]
+fn test_deposit_collateral_moves_funds_from_borrower_to_contract() {
+    // Regression test for #1353: deposit_collateral's token transfer was
+    // reported as paying the borrower instead of taking collateral from
+    // them. That direction is already correct on main (verified via git
+    // blame: fixed in a prior, unrelated commit — see PR description) — this
+    // test pins the exact expected balance movement on both sides so any
+    // future regression here is caught immediately: the borrower's balance
+    // must decrease by the deposited amount and the contract's must
+    // increase by the same amount, not the reverse.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    manager.approve_loan(&loan_id);
+
+    let borrower_balance_before = token_client.balance(&borrower);
+    let contract_balance_before = token_client.balance(&manager.address);
+
+    manager.deposit_collateral(&loan_id, &500);
+
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before - 500,
+        "borrower must pay collateral into the contract, not receive funds"
+    );
+    assert_eq!(
+        token_client.balance(&manager.address),
+        contract_balance_before + 500,
+        "the contract must hold the deposited collateral in escrow"
+    );
+    assert_eq!(manager.get_collateral(&loan_id), 500);
+}
+
+#[test]
 fn test_deposit_collateral_and_auto_release_on_full_repayment() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -1486,6 +1580,7 @@ fn test_deposit_collateral_and_auto_release_on_full_repayment() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1531,6 +1626,7 @@ fn test_collateral_is_seized_on_default() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1579,6 +1675,7 @@ fn test_collateral_is_seized_on_batch_default() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -1586,6 +1683,7 @@ fn test_collateral_is_seized_on_batch_default() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1635,6 +1733,7 @@ fn test_liquidate_under_threshold_transfers_bonus_and_refund() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1689,6 +1788,7 @@ fn test_liquidate_rejects_healthy_collateral_ratio() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1721,6 +1821,7 @@ fn test_liquidation_bonus_cap_enforced() {
         &650,
         &history_hash,
         &soroban_sdk::String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1773,6 +1874,7 @@ fn test_deposit_collateral_rejects_non_active_loan() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1794,6 +1896,7 @@ fn test_small_loan_interest_accrual_precision() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1840,6 +1943,7 @@ fn test_query_functions() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1868,6 +1972,7 @@ fn test_get_borrower_loans() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1929,6 +2034,7 @@ fn test_pending_loans_count_against_cap() {
         &600,
         &BytesN::from_array(&env, &[1u8; 32]),
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1966,6 +2072,7 @@ fn test_extend_loan_happy_path() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2009,6 +2116,7 @@ fn test_extend_loan_wrong_borrower() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2038,6 +2146,7 @@ fn test_extend_loan_rejected_for_pending_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2064,6 +2173,7 @@ fn test_extend_loan_rejected_for_repaid_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2095,6 +2205,7 @@ fn test_extend_loan_rejected_for_defaulted_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2141,6 +2252,7 @@ fn test_extend_loan_rejected_for_zero_ledgers() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2170,6 +2282,7 @@ fn test_extend_loan_max_extensions_limit() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2209,6 +2322,7 @@ fn test_extend_loan_charges_fee() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2248,6 +2362,7 @@ fn test_extend_loan_multiple_extensions() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2303,6 +2418,7 @@ fn test_oracle_rate_within_bounds_accepted() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2476,6 +2592,7 @@ fn test_oracle_rate_below_min_falls_back_to_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2512,6 +2629,7 @@ fn test_oracle_rate_above_max_falls_back_to_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2548,6 +2666,7 @@ fn test_rate_bounds_persist_across_operations() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2586,6 +2705,7 @@ fn test_interest_calculation_overflow_safety() {
         &800,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2634,6 +2754,7 @@ fn test_liquidate_with_collateral_shortfall_has_no_refund() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmShortfall"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2682,6 +2803,7 @@ fn test_liquidate_rejects_repaid_loan() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmRepaid"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2717,6 +2839,7 @@ fn test_liquidate_emits_loan_liquidated_event_with_expected_amounts() {
         &640,
         &history_hash,
         &String::from_str(&env, "ipfs://QmLiquidationEvent"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2755,6 +2878,7 @@ fn test_late_fee_cap_at_total_debt_limit() {
         &600,
         &soroban_sdk::BytesN::from_array(&env, &[0u8; 32]),
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2791,6 +2915,7 @@ fn test_late_fees_stop_accruing_when_principal_paid() {
         &600,
         &soroban_sdk::BytesN::from_array(&env, &[0u8; 32]),
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2829,6 +2954,7 @@ fn test_refinance_loan_increases_principal_draws_from_pool() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2871,6 +2997,51 @@ fn test_refinance_loan_increases_principal_draws_from_pool() {
 }
 
 #[test]
+fn test_refinance_loan_increasing_amount_increases_total_outstanding() {
+    // Regression test for #1354: refinancing to a larger amount (borrowing
+    // more) must INCREASE total_outstanding by the borrowed delta, not
+    // decrease it — a flipped sign here would let a borrower's recorded debt
+    // shrink while the pool actually pays them more.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&manager.address, &5_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 5_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Refinance from 1_000 to 2_000 — total_outstanding must grow by 1_000.
+    manager.refinance_loan(&loan_id, &2_000, &17_280);
+
+    let total_outstanding_after = manager.get_total_outstanding(&token_id);
+    assert_eq!(total_outstanding_after, total_outstanding_before + 1_000);
+}
+
+#[test]
 fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -2884,6 +3055,7 @@ fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2922,6 +3094,50 @@ fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
 }
 
 #[test]
+fn test_refinance_loan_decreasing_amount_decreases_total_outstanding() {
+    // Regression test for #1354: refinancing to a smaller amount (paying
+    // down principal) must DECREASE total_outstanding by the returned delta.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &2_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&manager.address, &2_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 2_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Refinance down from 2_000 to 1_000 — total_outstanding must shrink by 1_000.
+    manager.refinance_loan(&loan_id, &1_000, &17_280);
+
+    let total_outstanding_after = manager.get_total_outstanding(&token_id);
+    assert_eq!(total_outstanding_after, total_outstanding_before - 1_000);
+}
+
+#[test]
 fn test_refinance_loan_fails_when_score_drops_below_minimum() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -2935,6 +3151,7 @@ fn test_refinance_loan_fails_when_score_drops_below_minimum() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2976,6 +3193,7 @@ fn test_pause_blocks_request_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3002,6 +3220,7 @@ fn test_pause_blocks_approve_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3034,6 +3253,7 @@ fn test_pause_blocks_repay() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3068,6 +3288,7 @@ fn test_unpause_restores_request_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3130,6 +3351,7 @@ fn test_collateral_release_works_while_paused() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3178,6 +3400,7 @@ fn test_purge_repaid_loan_removes_storage() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3213,6 +3436,7 @@ fn test_purge_cancelled_loan_removes_storage() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3242,6 +3466,7 @@ fn test_purge_rejected_loan_removes_storage() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3271,6 +3496,7 @@ fn test_purge_pending_loan_rejected() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3294,6 +3520,7 @@ fn test_purge_approved_loan_rejected() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3332,6 +3559,7 @@ fn test_purge_emits_loan_purged_event() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3365,6 +3593,7 @@ fn test_purge_cancelled_loan_decrements_borrower_loan_count() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3394,6 +3623,7 @@ fn test_get_total_outstanding_tracks_approve_and_repay() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3431,6 +3661,7 @@ fn test_get_total_outstanding_decreases_on_check_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3464,6 +3695,7 @@ fn test_is_liquidatable_healthy_loan() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3492,6 +3724,7 @@ fn test_is_liquidatable_under_threshold() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3522,6 +3755,7 @@ fn test_is_liquidatable_exactly_at_threshold() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3551,6 +3785,7 @@ fn test_is_liquidatable_zero_collateral() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3577,6 +3812,7 @@ fn test_is_liquidatable_non_active_loan() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3598,6 +3834,7 @@ fn test_get_loan_health_matches_liquidation_state() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 

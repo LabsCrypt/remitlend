@@ -34,7 +34,7 @@ export const resolveRoleForWallet = (publicKey: string): UserRole => {
 
   const lenderWallets = parseWalletSet(process.env.LENDER_WALLETS);
   if (lenderWallets.has(publicKey)) {
-    return 'admin';
+    return 'lender';
   }
 
   return 'borrower';

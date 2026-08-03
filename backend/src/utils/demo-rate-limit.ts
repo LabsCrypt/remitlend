@@ -1,6 +1,17 @@
 import { rateLimitService, SCORE_UPDATE_RATE_LIMIT } from '../services/rateLimitService.js';
 
 /**
+ * Demo / sandbox mode rate-limit demonstration script.
+ *
+ * This file is NOT middleware; it is a standalone script that illustrates
+ * how rate limiting guards score-update endpoints.  It exists alongside
+ * the sandbox mode tooling documented in docs/ENVIRONMENT.md.
+ *
+ * To enable demo mode for API routes, set DEMO_MODE=true in the backend
+ * environment.  See docs/ENVIRONMENT.md for details.
+ */
+
+/**
  * Demo script to show rate limiting functionality for score updates
  */
 async function demonstrateRateLimiting() {

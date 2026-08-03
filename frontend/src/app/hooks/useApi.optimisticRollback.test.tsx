@@ -207,6 +207,32 @@ describe("useWithdrawFromPool optimistic rollback", () => {
     return { poolStats, depositor };
   }
 
+  it("onMutate subtracts a normal withdrawal from pool and depositor totals", async () => {
+    global.fetch = mockFetchSuccess({
+      unsignedTxXdr: "xdr",
+      networkPassphrase: "pass",
+    }) as unknown as typeof fetch;
+    const { queryClient, wrapper } = createTestHarness();
+    seedWithdrawCache(queryClient);
+
+    const { result } = renderHook(() => useWithdrawFromPool(), { wrapper });
+
+    result.current.mutate({
+      amount: 50,
+      depositorAddress: DEPOSITOR,
+      token: "USDC",
+    });
+
+    await waitFor(() => {
+      const cachedStats = queryClient.getQueryData<PoolStats>(queryKeys.pool.stats());
+      const cachedDepositor = queryClient.getQueryData<DepositorPortfolio>(
+        queryKeys.pool.depositor(DEPOSITOR),
+      );
+      expect(cachedStats?.totalDeposits).toBe(9950);
+      expect(cachedDepositor?.depositAmount).toBe(450);
+    });
+  });
+
   it("onMutate clamps depositAmount and totalDeposits at 0 when withdrawal exceeds balance", async () => {
     global.fetch = mockFetchSuccess({
       unsignedTxXdr: "xdr",

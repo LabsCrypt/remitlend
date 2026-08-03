@@ -13,7 +13,6 @@ const validLevels = Object.keys(levels);
 
 const defaultLevelForEnv = () => {
   const env = process.env.NODE_ENV || 'development';
-  // Changed from "info" to "http" so priority 3 (http) logs pass in staging/production
   return env === 'development' ? 'debug' : 'http';
 };
 
@@ -35,6 +34,36 @@ const colors = {
 
 winston.addColors(colors);
 
+const REDACTED_FIELDS = [
+  'recipient_email',
+  'recipient_phone',
+  'recipient_name',
+  'authorization',
+  'Authorization',
+  'email',
+  'phone',
+  'legalName',
+  'pii',
+];
+
+const redactPiiFormat = winston.format((info) => {
+  if (process.env.LOG_REDACTION !== 'strict') return info;
+  for (const field of REDACTED_FIELDS) {
+    if (field in info) {
+      (info as Record<string, unknown>)[field] = '[REDACTED]';
+    }
+  }
+  if (info.meta && typeof info.meta === 'object') {
+    const meta = info.meta as Record<string, unknown>;
+    for (const field of REDACTED_FIELDS) {
+      if (field in meta) {
+        meta[field] = '[REDACTED]';
+      }
+    }
+  }
+  return info;
+});
+
 /** Dev: human-readable with colors and optional metadata */
 const devFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -51,6 +80,7 @@ const devFormat = winston.format.combine(
 const productionFormat = winston.format.combine(
   winston.format.timestamp({ format: 'iso' }),
   winston.format.errors({ stack: true }),
+  redactPiiFormat(),
   winston.format.json(),
 );
 

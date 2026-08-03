@@ -82,6 +82,44 @@ describe('DefaultChecker', () => {
     );
   });
 
+  describe('suspect ledger range gate (#1376)', () => {
+    it('skips the run without submitting when the indexer has an unresolved ledger gap', async () => {
+      mockSetNotExists.mockResolvedValue(true);
+      mockQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('has_suspect')) {
+          return { rows: [{ has_suspect: true }], rowCount: 1 };
+        }
+        return overdueStatsRow();
+      });
+
+      const checker = new DefaultChecker();
+      const result = await checker.checkOverdueLoans([1, 2]);
+
+      expect(result).not.toBeNull();
+      expect(result!.skipped).toBe(true);
+      expect(result!.skippedReason).toBe('unresolved_ledger_gap');
+      expect(result!.loansChecked).toBe(0);
+      expect(fakeServer.getLatestLedger).not.toHaveBeenCalled();
+      expect(fakeServer.prepareTransaction).not.toHaveBeenCalled();
+      expect(mockDelete).toHaveBeenCalledTimes(1);
+      expect(mockRecordSuccess).toHaveBeenCalledWith('defaultChecker', expect.any(Number));
+    });
+
+    it('proceeds normally when there is no unresolved ledger gap', async () => {
+      mockSetNotExists.mockResolvedValue(true);
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => tx);
+      fakeServer.sendTransaction.mockResolvedValue({ hash: 'abc', status: 'PENDING' });
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'SUCCESS' });
+      // mockQuery already resolves has_suspect-less overdueStatsRow() by default.
+
+      const checker = new DefaultChecker();
+      const result = await checker.checkOverdueLoans([1, 2]);
+
+      expect(result!.skipped).toBeUndefined();
+      expect(fakeServer.getLatestLedger).toHaveBeenCalled();
+    });
+  });
+
   describe('acquireLock', () => {
     it('returns null without submitting when the lock is not acquired', async () => {
       mockSetNotExists.mockResolvedValue(false);
