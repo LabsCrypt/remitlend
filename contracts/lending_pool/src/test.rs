@@ -1,4 +1,4 @@
-use crate::{events, LendingPool, LendingPoolClient};
+use crate::{events, LendingPool, LendingPoolClient, PoolError};
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
@@ -1666,6 +1666,101 @@ fn test_adjust_outstanding_zero_delta_is_a_no_op() {
     pool_client.adjust_outstanding(&token, &0);
 
     assert_eq!(pool_client.get_total_outstanding(&token), 1_000);
+}
+
+// ── Oracle staleness gate (#1379, Phase 1) ──────────────────────────────────
+
+#[test]
+fn test_fresh_oracle_price_passes_staleness_check() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let asset = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    pool_client.set_oracle_price(&asset, &1_500);
+
+    let price = pool_client.require_fresh_price(&asset);
+    assert_eq!(price.rate, 1_500);
+    assert_eq!(price.updated_ledger, env.ledger().sequence());
+}
+
+#[test]
+fn test_stale_oracle_price_reverts_with_oracle_stale() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let asset = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    pool_client.set_oracle_max_age(&5);
+    pool_client.set_oracle_price(&asset, &1_500);
+
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 6;
+    });
+
+    let result = pool_client.try_require_fresh_price(&asset);
+    assert_eq!(result, Err(Ok(PoolError::OracleStale)));
+}
+
+#[test]
+fn test_oracle_price_within_max_age_boundary_passes() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let asset = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    pool_client.set_oracle_max_age(&5);
+    pool_client.set_oracle_price(&asset, &1_500);
+
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 5;
+    });
+
+    let price = pool_client.require_fresh_price(&asset);
+    assert_eq!(price.rate, 1_500);
+}
+
+#[test]
+fn test_set_oracle_price_requires_admin_auth() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let asset = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+
+    env.mock_all_auths();
+    pool_client.initialize(&admin);
+
+    env.mock_auths(&[]);
+    let result = pool_client.try_set_oracle_price(&asset, &1_500);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_require_fresh_price_with_no_recorded_price_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let asset = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    let result = pool_client.try_require_fresh_price(&asset);
+    assert_eq!(result, Err(Ok(PoolError::NotInitialized)));
 }
 
 // ── #1380: slippage bounds & virtual-share/asset offset ───────────────────────

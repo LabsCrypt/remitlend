@@ -8,6 +8,9 @@ use soroban_sdk::{
 mod events;
 use events::*;
 
+mod oracle;
+pub use oracle::PriceData;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PoolError {
@@ -29,6 +32,8 @@ pub enum PoolError {
     /// The computed share/asset amount for an operation rounded down to
     /// zero, so no value would actually move.
     ZeroShares = 14,
+    /// #1379 — cached oracle price is older than the configured max age.
+    OracleStale = 15,
 }
 
 /// Storage keys.
@@ -73,6 +78,11 @@ pub enum DataKey {
     TotalYieldDistributed(Address),
     ProposedAdmin,
     Version,
+    /// #1379 — asset → last cached oracle price + the ledger it was recorded at.
+    OraclePrice(Address),
+    /// #1379 — max age (in ledgers) a cached oracle price may have before
+    /// `require_fresh_price` rejects it as stale.
+    OracleMaxAge,
 }
 
 #[contracttype]
@@ -1005,6 +1015,41 @@ impl LendingPool {
 
     pub fn pool_balance(env: Env, token: Address) -> i128 {
         Self::read_pool_balance(&env, &token)
+    }
+
+    // ── Oracle staleness gate (#1379, Phase 1) ──────────────────────────────
+    //
+    // `lending_pool` has no live oracle integration today, so these entry
+    // points expose an admin-pushed price cache guarded by a freshness
+    // check. This is a foundational safety primitive, not the full
+    // circuit-breaker described in #1379 — see PR description for scope.
+
+    /// Admin-only: record a new price for `asset`, stamped with the current
+    /// ledger. Stands in for a live oracle feed until one is wired up.
+    pub fn set_oracle_price(env: Env, asset: Address, rate: i128) {
+        let admin = Self::admin(&env);
+        oracle::set_oracle_price(&env, &admin, &asset, rate);
+        Self::bump_instance_ttl(&env);
+    }
+
+    /// Admin-only: configure how many ledgers a cached oracle price may age
+    /// before it is treated as stale.
+    pub fn set_oracle_max_age(env: Env, max_age: u32) {
+        let admin = Self::admin(&env);
+        oracle::set_oracle_max_age(&env, &admin, max_age);
+        Self::bump_instance_ttl(&env);
+    }
+
+    pub fn get_oracle_max_age(env: Env) -> u32 {
+        oracle::oracle_max_age(&env)
+    }
+
+    /// Read the cached price for `asset`, reverting with
+    /// `PoolError::OracleStale` if it is older than the configured max age.
+    /// Rate-sensitive callers (e.g. a future `accrue_interest`/`borrow`
+    /// entrypoint) should call this before using the returned rate.
+    pub fn require_fresh_price(env: Env, asset: Address) -> Result<PriceData, PoolError> {
+        oracle::require_fresh_price(&env, &asset)
     }
 }
 
