@@ -83,6 +83,7 @@ export function verifySignature(publicKey: string, message: string, signature: s
 export function verifyChallengeTimestamp(
   timestamp: number,
   maxAgeMs: number = CHALLENGE_EXPIRES_IN_MS,
+  clockSkewToleranceMs: number = 5000,
 ): boolean {
   if (!Number.isFinite(timestamp) || timestamp <= 0) {
     return false;
@@ -91,8 +92,8 @@ export function verifyChallengeTimestamp(
   const now = Date.now();
   const age = now - timestamp;
 
-  // Reject timestamps from the future.
-  if (age < 0) {
+  // Reject timestamps too far in the future (allowing small clock skew tolerance).
+  if (age < -clockSkewToleranceMs) {
     return false;
   }
 

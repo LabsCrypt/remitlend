@@ -345,9 +345,9 @@ export function buildKeysetClause(
  * @returns Validated KeysetPaginationParams
  */
 export function parseKeysetParams(
-  snapshotSeq: string | number | readonly (string | number)[] | null | undefined,
-  cursor: string | null | undefined,
-  limit: string | number | null | undefined,
+  snapshotSeq: unknown,
+  cursor: unknown,
+  limit: unknown,
 ): KeysetPaginationParams {
   // Normalise snapshot_seq — take first element if array
   const rawSeq = Array.isArray(snapshotSeq) ? snapshotSeq[0] : snapshotSeq;
@@ -358,7 +358,7 @@ export function parseKeysetParams(
     parsedSnapshotSeq = BigInt(0);
   } else {
     try {
-      parsedSnapshotSeq = BigInt(rawSeq);
+      parsedSnapshotSeq = BigInt(String(rawSeq));
     } catch {
       throw AppError.badRequest('Invalid snapshot_seq');
     }
