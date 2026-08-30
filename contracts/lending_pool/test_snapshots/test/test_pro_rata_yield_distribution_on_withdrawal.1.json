@@ -670,26 +670,8 @@
                         },
                         "val": {
                           "i128": {
-                            "hi": -1,
-                            "lo": 18446744073709551566
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "TotalManagedAssets"
-                            },
-                            {
-                              "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i128": {
                             "hi": 0,
-                            "lo": 50
+                            "lo": 0
                           }
                         }
                       },

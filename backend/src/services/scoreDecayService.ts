@@ -15,10 +15,10 @@ export interface InactiveBorrower {
 // Get borrowers who have not repaid in the last month
 export async function getInactiveBorrowers(): Promise<InactiveBorrower[]> {
   const result = await query(`
-    SELECT s.borrower, s.score, MAX(e.ledger_closed_at) AS last_repayment
+    SELECT s.user_id AS borrower, s.current_score AS score, MAX(e.ledger_closed_at) AS last_repayment
     FROM scores s
-    LEFT JOIN contract_events e ON s.borrower = e.address AND e.event_type = 'LoanRepaid'
-    GROUP BY s.borrower, s.score
+    LEFT JOIN contract_events e ON s.user_id = e.address AND e.event_type = 'LoanRepaid'
+    GROUP BY s.user_id, s.current_score
     HAVING MAX(e.ledger_closed_at) IS NULL OR MAX(e.ledger_closed_at) < NOW() - INTERVAL '1 month'
   `);
   return result.rows as InactiveBorrower[];
@@ -38,9 +38,9 @@ export async function applyScoreDecay(borrower: InactiveBorrower) {
   }
   const decay = monthsInactive * DECAY_PER_MONTH;
   const newScore = Math.max(MIN_SCORE, borrower.score - decay);
-  await query(`UPDATE scores SET score = $1, updated_at = CURRENT_TIMESTAMP WHERE borrower = $2`, [
-    newScore,
-    borrower.borrower,
-  ]);
+  await query(
+    `UPDATE scores SET current_score = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`,
+    [newScore, borrower.borrower],
+  );
   return newScore;
 }

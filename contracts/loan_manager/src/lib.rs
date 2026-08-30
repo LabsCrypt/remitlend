@@ -356,8 +356,11 @@ impl LoanManager {
             .and_then(|v| v.checked_mul(PRECISION))
             .ok_or(LoanError::AmountTooLarge)?;
 
+        if loan.term_ledgers == 0 {
+            return Err(LoanError::InvalidTerm);
+        }
         let denominator = 10_000i128
-            .checked_mul(Self::DEFAULT_TERM_LEDGERS as i128)
+            .checked_mul(loan.term_ledgers as i128)
             .ok_or(LoanError::AmountTooLarge)?;
 
         // All stroop-quantity division routes through the shared `money`
@@ -628,12 +631,18 @@ impl LoanManager {
         }
 
         let overdue_ledgers = current_ledger - late_fee_start;
-        // Late fee is calculated on original principal amount only, not remaining debt.
-        // This ensures the 25% late fee cap is meaningful regardless of payment state.
-        let late_fee_numerator = loan
-            .amount
+        // Late fee is calculated on remaining principal and uses the loan's actual
+        // term length, so custom-term loans and partially repaid loans are billed correctly.
+        let term_ledgers = if loan.term_ledgers == 0 {
+            Self::DEFAULT_TERM_LEDGERS as i128
+        } else {
+            loan.term_ledgers as i128
+        };
+        let incremental_fee = remaining_principal
             .checked_mul(Self::late_fee_rate_bps(env) as i128)
             .and_then(|value| value.checked_mul(overdue_ledgers as i128))
+            .and_then(|value| value.checked_div(10_000))
+            .and_then(|value| value.checked_div(term_ledgers))
             .expect("late fee overflow");
         let late_fee_denominator = 10_000i128
             .checked_mul(Self::DEFAULT_TERM_LEDGERS as i128)
@@ -1972,6 +1981,27 @@ impl LoanManager {
         Self::accrue_interest(&env, &mut loan)?;
         let _ = Self::accrue_late_fee(&env, &mut loan);
 
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+        let token_client = TokenClient::new(&env, &token);
+
+        // Transfer accrued interest + late fees from borrower to lending pool before resetting.
+        let accrued_settlement = loan
+            .accrued_interest
+            .checked_add(loan.accrued_late_fee)
+            .expect("overflow");
+        if accrued_settlement > 0 {
+            token_client.transfer(&loan.borrower, &lending_pool, &accrued_settlement);
+        }
+
         loan.interest_paid = loan
             .interest_paid
             .checked_add(loan.accrued_interest)
@@ -1987,18 +2017,6 @@ impl LoanManager {
         // Adjust principal to new_amount.
         let remaining_principal = Self::remaining_principal(&loan);
 
-        let token: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .expect("token not set");
-        let lending_pool: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::LendingPool)
-            .expect("lending pool not set");
-        let token_client = TokenClient::new(&env, &token);
-
         match new_amount.cmp(&remaining_principal) {
             core::cmp::Ordering::Greater => {
                 // Pool disburses the additional amount to the borrower.
@@ -2007,7 +2025,7 @@ impl LoanManager {
                     .expect("underflow");
                 let pool_balance = token_client.balance(&lending_pool);
                 let outstanding_after_excluding_current = Self::total_outstanding(&env, &token)
-                    .checked_sub(loan.amount)
+                    .checked_sub(remaining_principal)
                     .expect("total outstanding underflow");
                 let available_liquidity = pool_balance
                     .checked_sub(outstanding_after_excluding_current)
@@ -2050,10 +2068,8 @@ impl LoanManager {
             core::cmp::Ordering::Equal => {}
         }
 
-        // #1354: delta must be new minus prior, not prior minus new — adjust_total_outstanding
-        // adds the delta to the running total, so borrowing more must produce a positive delta.
         let outstanding_delta = new_amount
-            .checked_sub(loan.amount)
+            .checked_sub(remaining_principal)
             .expect("outstanding delta overflow");
         Self::adjust_total_outstanding(&env, &token, outstanding_delta);
 

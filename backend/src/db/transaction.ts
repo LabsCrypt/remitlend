@@ -72,28 +72,35 @@ export async function withStellarAndDbTransaction<T>(
   stellarOperation: () => Promise<unknown>,
   dbOperations: (stellarResult: unknown, client: import('pg').PoolClient) => Promise<T>,
 ): Promise<{ stellarResult: unknown; dbResult: T }> {
-  return withTransaction(async (client) => {
-    try {
-      // Execute Stellar operation first
-      const stellarResult = await stellarOperation();
+  // Execute Stellar operation outside the DB transaction to avoid holding
+  // a pooled connection during network I/O (Stellar RPC can take 30+ seconds).
+  let stellarResult: unknown;
+  try {
+    stellarResult = await stellarOperation();
+  } catch (error) {
+    logger.error('Stellar operation failed before DB transaction:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
 
-      // Then execute database operations with the Stellar result
-      const dbResult = await dbOperations(stellarResult, client);
+  try {
+    const dbResult = await withTransaction(async (client) => {
+      return await dbOperations(stellarResult, client);
+    });
+    return { stellarResult, dbResult };
+  } catch (error) {
+    logger.error('Operation failed in Stellar+DB transaction:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      // Don't log sensitive Stellar data
+    });
 
-      return { stellarResult, dbResult };
-    } catch (error) {
-      logger.error('Operation failed in Stellar+DB transaction:', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        // Don't log sensitive Stellar data
-      });
+    // Log for reconciliation since Stellar transaction might have succeeded
+    // but DB write failed
+    logger.warn('Stellar transaction might need manual reconciliation', {
+      timestamp: new Date().toISOString(),
+    });
 
-      // Log for reconciliation since Stellar transaction might have succeeded
-      // but DB write failed
-      logger.warn('Stellar transaction might need manual reconciliation', {
-        timestamp: new Date().toISOString(),
-      });
-
-      throw error;
-    }
-  });
+    throw error;
+  }
 }

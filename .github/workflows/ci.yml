@@ -299,6 +299,8 @@ jobs:
           node-version: 20
       - name: Check env docs are in sync
         run: node scripts/check-env-docs.mjs
+      - name: Run env docs check unit tests
+        run: node scripts/check-env-docs.test.mjs
 
   error-code-mapping-check:
     runs-on: ubuntu-latest

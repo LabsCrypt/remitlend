@@ -27,7 +27,8 @@ describe('scoreDecayService', () => {
       expect(borrowers).toEqual([{ borrower: 'user1', score: 700, last_repayment: null }]);
       const sql = mockQuery.mock.calls[0]![0];
       expect(sql).toContain('FROM scores s');
-      expect(sql).toContain('s.borrower');
+      expect(sql).toContain('s.user_id');
+      expect(sql).toContain('s.current_score');
       expect(sql).not.toContain('FROM borrowers');
     });
   });
@@ -40,7 +41,7 @@ describe('scoreDecayService', () => {
       // No last_repayment => monthsInactive = 1 => decay = 1 * 5 = 5
       expect(newScore).toBe(695);
       expect(mockQuery).toHaveBeenCalledWith(
-        'UPDATE scores SET score = $1, updated_at = CURRENT_TIMESTAMP WHERE borrower = $2',
+        'UPDATE scores SET current_score = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
         [695, 'user1'],
       );
     });

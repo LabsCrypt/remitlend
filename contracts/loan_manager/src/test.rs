@@ -1544,6 +1544,56 @@ fn test_overdue_partial_repayment_still_reduces_principal() {
 }
 
 #[test]
+fn test_interest_accrual_uses_loan_term_not_default_term() {
+    // Regression test: accrue_interest must use the loan's own term_ledgers as
+    // the amortization denominator. A loan with a custom (longer) term accrues
+    // interest at a lower per-ledger rate than the DEFAULT_TERM_LEDGERS rate,
+    // inversely proportional to its term. Before the fix, both loans below
+    // accrued at the DEFAULT_TERM_LEDGERS (1-day) rate regardless of term.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &100_000);
+
+    env.ledger().set_sequence_number(1);
+
+    // Same principal and interest rate; different amortization terms.
+    const DEFAULT_TERM: u32 = 17_280; // 1 day in ledgers
+    const DOUBLE_TERM: u32 = 34_560; // 2 days in ledgers
+
+    let loan_default = manager.request_loan(&borrower, &1_000, &DEFAULT_TERM);
+    manager.approve_loan(&loan_default);
+
+    let loan_double = manager.request_loan(&borrower, &1_000, &DOUBLE_TERM);
+    manager.approve_loan(&loan_double);
+
+    // Advance one full 1-day (17,280 ledger) window, then query both loans.
+    // get_loan() triggers interest accrual up to the current ledger.
+    env.ledger().set_sequence_number(1 + DEFAULT_TERM);
+
+    let default_loan = manager.get_loan(&loan_default);
+    let double_loan = manager.get_loan(&loan_double);
+
+    assert_eq!(default_loan.accrued_interest, 120);
+    // Double the term => half the per-ledger interest over the same window.
+    assert_eq!(double_loan.accrued_interest, 60);
+}
+
+#[test]
 fn test_set_late_fee_rate_rejects_above_cap() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();

@@ -394,7 +394,19 @@ impl LendingPool {
             .instance()
             .set(&DataKey::TotalShares(token.clone()), &new_total_shares);
 
-        let new_total_deposits = Self::total_deposits(env, token).saturating_sub(assets_to_return);
+        // Deduct only the proportional deposited principal, not the gross payout (which includes yield).
+        // assets_to_return = shares * total_assets / cur_total_shares includes yield; total_deposits
+        // tracks only principal, so we must scale by deposits, not assets.
+        let total_deposits = Self::total_deposits(env, token);
+        let principal_to_deduct = if cur_total_shares == 0 {
+            0
+        } else {
+            shares
+                .checked_mul(total_deposits)
+                .and_then(|v| v.checked_div(cur_total_shares))
+                .expect("principal deduction overflow")
+        };
+        let new_total_deposits = total_deposits.saturating_sub(principal_to_deduct);
         env.storage()
             .instance()
             .set(&DataKey::TotalDeposits(token.clone()), &new_total_deposits);
@@ -893,9 +905,7 @@ impl LendingPool {
             && total_outstanding == 0
         {
             let borrowed = total_deposits - pool_token_balance;
-            let numerator = borrowed.checked_mul(10_000).expect("utilisation overflow");
-            money::round_div(numerator, total_deposits, money::RoundingMode::Floor)
-                .expect("utilisation overflow") as u32
+            ((borrowed * 10_000) / total_deposits) as u32
         } else {
             0
         };
