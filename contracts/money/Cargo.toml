@@ -11,4 +11,4 @@ soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-rand = "0.8"
+rand = "0.10"
