@@ -56,7 +56,17 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
 
     const borrower = (req as any).user?.publicKey as string;
 
-    const result = await query('SELECT * FROM loans WHERE id = $1', [loanId]);
+    const result = await query(
+      `SELECT loan_id,
+              CASE
+                WHEN BOOL_OR(event_type = 'LoanApproved') THEN 'OPEN'
+                WHEN BOOL_OR(event_type = 'LoanRequested') THEN 'PENDING'
+              END AS status
+       FROM contract_events
+       WHERE loan_id = $1
+       GROUP BY loan_id`,
+      [loanId],
+    );
     const loan = result.rows[0] as Record<string, unknown> | undefined;
 
     if (!loan) {
@@ -89,7 +99,17 @@ export const buildRejectLoanTx = async (req: Request, res: Response, next: NextF
 
     const { reason } = rejectLoanSchema.parse(req.body);
 
-    const result = await query('SELECT * FROM loans WHERE id = $1', [loanId]);
+    const result = await query(
+      `SELECT loan_id,
+              CASE
+                WHEN BOOL_OR(event_type = 'LoanApproved') THEN 'OPEN'
+                WHEN BOOL_OR(event_type = 'LoanRequested') THEN 'PENDING'
+              END AS status
+       FROM contract_events
+       WHERE loan_id = $1
+       GROUP BY loan_id`,
+      [loanId],
+    );
     const loan = result.rows[0] as Record<string, unknown> | undefined;
 
     if (!loan) {

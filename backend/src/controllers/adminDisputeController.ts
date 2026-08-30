@@ -128,7 +128,30 @@ export const listLoanDisputes = asyncHandler(async (req, res) => {
 export const getLoanDispute = asyncHandler(async (req, res) => {
   const { disputeId } = req.params;
   const disputeResult = await query(
-    `SELECT d.*, l.* AS loan FROM loan_disputes d JOIN loans l ON l.id = d.loan_id WHERE d.id = $1`,
+    `SELECT d.*,
+            (
+              SELECT row_to_json(loan_summary)
+              FROM (
+                SELECT
+                  d.loan_id AS "loanId",
+                  MAX(ce.amount) FILTER (WHERE ce.event_type = 'LoanRequested')::numeric AS principal,
+                  COALESCE(SUM(ce.amount::numeric) FILTER (WHERE ce.event_type = 'LoanRepaid'), 0) AS "totalRepaid",
+                  CASE
+                    WHEN MAX(ce.ledger) FILTER (WHERE ce.event_type = 'LoanApproved') IS NULL THEN 'pending'
+                    WHEN MAX(ce.event_type) FILTER (WHERE ce.event_type = 'LoanDefaulted') IS NOT NULL THEN 'defaulted'
+                    WHEN MAX(ce.event_type) FILTER (WHERE ce.event_type = 'LoanRepaid') IS NOT NULL
+                      AND COALESCE(SUM(ce.amount::numeric) FILTER (WHERE ce.event_type = 'LoanRepaid'), 0)
+                        >= COALESCE(MAX(ce.amount::numeric) FILTER (WHERE ce.event_type = 'LoanRequested'), 0)
+                      THEN 'repaid'
+                    ELSE 'active'
+                  END AS status,
+                  MAX(ce.ledger_closed_at) FILTER (WHERE ce.event_type = 'LoanApproved') AS "approvedAt"
+                FROM contract_events ce
+                WHERE ce.loan_id = d.loan_id
+              ) AS loan_summary
+            ) AS loan
+     FROM loan_disputes d
+     WHERE d.id = $1`,
     [disputeId],
   );
 
