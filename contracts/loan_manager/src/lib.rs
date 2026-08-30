@@ -644,15 +644,6 @@ impl LoanManager {
             .and_then(|value| value.checked_div(10_000))
             .and_then(|value| value.checked_div(term_ledgers))
             .expect("late fee overflow");
-        let late_fee_denominator = 10_000i128
-            .checked_mul(Self::DEFAULT_TERM_LEDGERS as i128)
-            .expect("late fee overflow");
-        let incremental_fee = money::round_div(
-            late_fee_numerator,
-            late_fee_denominator,
-            money::RoundingMode::Floor,
-        )
-        .expect("late fee overflow");
 
         // Global debt cap: Total outstanding (principal + interest + late fees)
         // cannot exceed original_principal * MAX_PENALTY_MULTIPLIER.
