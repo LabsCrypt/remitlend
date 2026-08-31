@@ -86,7 +86,7 @@ impl RemittanceNFT {
     pub const MAX_AUTHORIZED_MINTERS: u32 = 32;
     const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 0;
     /// Stroop scale (10^7) — token amounts are denominated in stroops.
-    const STROOP_SCALE: i128 = 10_000_000;
+    pub const STROOP_SCALE: i128 = 10_000_000;
     /// Points denominator: 1 point per 100 tokens (100 * STROOP_SCALE stroops).
     const POINTS_DENOMINATOR: i128 = 100 * Self::STROOP_SCALE; // 1_000_000_000 stroops = $100
     /// Minimum repayment amount accepted by update_score() (1 point worth in stroops).
@@ -969,6 +969,16 @@ impl RemittanceNFT {
         }
 
         let metadata = Self::get_or_migrate_metadata(&env, &from).ok_or(NftError::NftNotFound)?;
+
+        // A previously burned destination must go through the same
+        // remint-approval gate mint()/admin_remint() enforce. Without this,
+        // a defaulted account can regain a clean credit identity simply by
+        // receiving a transfer, since burn_internal() clears every field
+        // has_any_remittance_state() checks except the Burned flag itself
+        // (see #1059).
+        if env.storage().persistent().has(&DataKey::Burned(to.clone())) {
+            return Err(NftError::BurnedRequiresApproval);
+        }
 
         if Self::has_any_remittance_state(&env, &to) {
             return Err(NftError::DestinationOccupied);

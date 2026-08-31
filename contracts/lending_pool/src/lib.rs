@@ -1,4 +1,43 @@
 #![no_std]
+//! # Lending Pool: Share-Based Liquidity Management
+//!
+//! ## Overview
+//! The lending pool is a liquidity contract that allows depositors to earn yield by providing tokens
+//! to borrowers. It uses an LP-token (shares) model where yield is implicit in the exchange rate
+//! between shares and underlying assets, eliminating the need for explicit claim or distribution steps.
+//!
+//! ## Share-Based Accounting
+//! Depositors receive LP shares proportional to the deposited amount and the current share price.
+//! The share price is `total_managed_assets / total_shares`, both inflated by virtual offsets
+//! (`VIRTUAL_ASSETS` and `VIRTUAL_SHARES`) to prevent rounding attacks. When withdrawing, depositors
+//! burn shares to receive the proportional underlying assets at the current exchange rate.
+//!
+//! ## Implicit Yield
+//! Yield enters the pool in two ways:
+//! - **Via LoanManager**: When borrowers repay loans with interest, the LoanManager contract
+//!   transfers tokens to the pool (interest component). This increases `total_managed_assets`,
+//!   raising the share price without minting new shares or requiring an explicit distribute call.
+//! - **Via distribute_yield**: Authorized callers can explicitly transfer yield via `distribute_yield`,
+//!   which also increases `total_managed_assets` and the share price.
+//!
+//! Since the share price automatically incorporates yield, a depositor's asset value grows
+//! over time simply by holding shares—no separate yield claim mechanism is needed.
+//!
+//! ## Loan/Utilization Relationship
+//! `total_managed_assets` (share price input) tracks the total value the pool has under management:
+//! idle balance plus outstanding loans. `total_outstanding` tracks how much principal is deployed
+//! in active loans. Utilization is the fraction of `total_managed_assets` currently out on loan.
+//!
+//! When borrowers repay with interest, `total_managed_assets` grows (yield captured) while
+//! `total_outstanding` shrinks (principal returned), raising the share price and lowering utilization.
+//! If a borrower defaults, `total_outstanding` may drop below actual pool balance, leaving
+//! the difference as a shortfall absorbed by remaining depositors.
+//!
+//! ## Multi-Token Keying
+//! A single contract instance serves multiple token pools. Storage keys (`DataKey`) include
+//! the token address, allowing independent accounting per token. For example, one instance
+//! can manage USDC, USDT, and BRL pools simultaneously with separate share prices and balances.
+
 // Lending pool contract for RemitLend.
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::{
@@ -11,23 +50,31 @@ use events::*;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PoolError {
+    /// The contract has already been initialized with an admin.
     AlreadyInitialized = 1,
+    /// The contract has not been initialized yet.
     NotInitialized = 2,
+    /// The pool is paused; deposits, withdrawals, and yield distribution are blocked.
     ContractPaused = 3,
+    /// The amount provided is invalid (zero or negative).
     InvalidAmount = 4,
+    /// Depositing the requested amount would exceed the max pool size cap for this token.
     PoolSizeExceeded = 5,
+    /// The provider does not have enough shares to burn for a withdrawal.
     InsufficientBalance = 6,
+    /// The pool does not have enough idle balance to satisfy the withdrawal.
     InsufficientLiquidity = 7,
+    /// The max pool size value is invalid (negative). Discriminant 8 is intentionally skipped for historical compatibility.
     InvalidMaxPoolSize = 9,
+    /// No admin has been proposed, so `accept_admin` cannot proceed.
     NoProposedAdmin = 10,
+    /// The requested withdrawal cooldown exceeds the maximum allowed duration.
     CooldownTooLong = 11,
-    /// `deposit` would mint fewer shares than the caller's `min_shares_out`.
+    /// `deposit` would mint fewer shares than the caller's `min_shares_out` (slippage protection).
     MinSharesNotMet = 12,
-    /// `redeem`/`withdraw` would return fewer assets than the caller's
-    /// `min_assets_out`.
+    /// `redeem`/`withdraw` would return fewer assets than the caller's `min_assets_out` (slippage protection).
     MinAssetsNotMet = 13,
-    /// The computed share/asset amount for an operation rounded down to
-    /// zero, so no value would actually move.
+    /// The computed share/asset amount for an operation rounded down to zero, so no value would actually move.
     ZeroShares = 14,
 }
 

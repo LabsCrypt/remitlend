@@ -5,6 +5,7 @@ import { remittanceService } from '../services/remittanceService.js';
 import { sorobanService } from '../services/sorobanService.js';
 import { notificationService } from '../services/notificationService.js';
 import { AppError } from '../errors/AppError.js';
+import { parseAndValidateSignedEnvelope } from '../utils/stellarEnvelope.js';
 import { encodeCursor, decodeCursor, parseKeysetParams } from '../utils/pagination.js';
 import logger from '../utils/logger.js';
 
@@ -250,11 +251,30 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
       throw AppError.badRequest('Remittance has already been submitted');
     }
 
+    // Parse and validate the signed envelope before touching the record. An
+    // invalid or unsigned envelope is a client error (400): the record must not
+    // be flipped to `processing` or `failed` — the sender can re-sign and retry.
+    parseAndValidateSignedEnvelope(signedXdr);
+
     // Update status to processing before submission
     await remittanceService.updateRemittanceStatus(id, 'processing');
 
     // Submit signed XDR to Stellar and poll for confirmation
     const stellarResult = await sorobanService.submitSignedTx(signedXdr);
+
+    // Only a confirmed (SUCCESS) submission may transition to `completed`.
+    // A rejected / try-again-later result must surface an error and leave the
+    // record marked failed — never completed.
+    if (stellarResult.status !== 'SUCCESS') {
+      const failureMessage = `Transaction was not confirmed by the Stellar network (status: ${stellarResult.status})`;
+      logger.withContext().warn('Remittance transaction not confirmed', {
+        remittanceId: id,
+        txHash: stellarResult.txHash,
+        status: stellarResult.status,
+      });
+      await remittanceService.updateRemittanceStatus(id, 'failed', undefined, failureMessage);
+      throw AppError.internal(failureMessage);
+    }
 
     // Persist completed status with transaction hash
     const completed = await remittanceService.updateRemittanceStatus(
@@ -290,7 +310,13 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
   } catch (error) {
     logger.withContext().error('Error submitting remittance transaction:', error);
 
-    if (id) {
+    // Client-side failures (invalid XDR, not found, not authorized) must not
+    // destroy the remittance record — leave it `pending` so the sender can
+    // resubmit. Only genuine submission failures mark the record `failed`.
+    const isClientError =
+      error instanceof AppError && error.statusCode >= 400 && error.statusCode < 500;
+
+    if (id && !isClientError) {
       await remittanceService.updateRemittanceStatus(
         id,
         'failed',

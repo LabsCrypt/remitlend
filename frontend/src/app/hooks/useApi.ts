@@ -1549,96 +1549,38 @@ export function useResolveAdminDispute() {
 // ─── Optimistic mutations ─────────────────────────────────────────────────────
 
 /**
- * Submits a loan repayment directly to the server and updates the cache
- * with optimistic rollback on failure.
- *
- * This hook calls `/loans/{loanId}/repay` (a full server-side build+sign+submit
- * flow). It is NOT a build-only hook — the mutation succeeds only when the
- * server has submitted the transaction on-chain and returned a `txHash`.
- * The optimistic loan-status update is rolled back automatically on error.
+ * Builds an unsigned loan repayment transaction. The caller must sign the
+ * returned XDR and submit it with `submitLoanTransaction` before treating the
+ * repayment as successful.
  */
 export function useRepayLoan() {
-  const queryClient = useQueryClient();
-
-  type RepayContext = {
-    previousLoanDetail: unknown;
-    previousBorrowerLoans: unknown;
-    previousPoolStats: unknown;
-  };
-
   return useMutation<
-    { txHash: string },
+    { unsignedTxXdr: string; networkPassphrase: string },
     Error,
-    { loanId: number; amount: number; borrowerAddress: string },
-    RepayContext
+    { loanId: number; amount: number; borrowerAddress: string }
   >({
-    mutationFn: ({ loanId, amount }) =>
-      apiFetch<{ txHash: string }>(`/loans/${loanId}/repay`, {
-        method: "POST",
-        body: JSON.stringify({ amount }),
-      }),
-
-    onMutate: async ({ loanId, amount, borrowerAddress }) => {
-      await queryClient.cancelQueries({
-        queryKey: queryKeys.loans.detail(String(loanId)),
-      });
-      await queryClient.cancelQueries({
-        queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress),
-      });
-      await queryClient.cancelQueries({ queryKey: queryKeys.pool.stats() });
-
-      const previousLoanDetail = queryClient.getQueryData(queryKeys.loans.detail(String(loanId)));
-      const previousBorrowerLoans = queryClient.getQueryData(
-        queryKeys.borrowerLoans.byAddress(borrowerAddress),
-      );
-      const previousPoolStats = queryClient.getQueryData(queryKeys.pool.stats());
-
-      // Optimistically update the loan detail
-      queryClient.setQueryData(
-        queryKeys.loans.detail(String(loanId)),
-        (old: LoanDetails | undefined) => {
-          if (!old) return old;
-          const newOwed = Math.max(0, old.totalOwed - amount);
-          return {
-            ...old,
-            totalOwed: newOwed,
-            totalRepaid: old.totalRepaid + amount,
-            status: newOwed <= 0 ? ("repaid" as const) : old.status,
-          };
+    mutationFn: async ({ loanId, amount, borrowerAddress }) => {
+      const result = await apiFetch<{ unsignedTxXdr?: unknown; networkPassphrase?: unknown }>(
+        `/loans/${loanId}/repay`,
+        {
+          method: "POST",
+          body: JSON.stringify({ amount, borrowerPublicKey: borrowerAddress }),
         },
       );
 
-      return { previousLoanDetail, previousBorrowerLoans, previousPoolStats };
-    },
+      if (
+        typeof result.unsignedTxXdr !== "string" ||
+        result.unsignedTxXdr.length === 0 ||
+        typeof result.networkPassphrase !== "string" ||
+        result.networkPassphrase.length === 0
+      ) {
+        throw new Error("Repayment transaction build returned invalid transaction data.");
+      }
 
-    onError: (_error, { loanId, borrowerAddress }, context) => {
-      if (context?.previousLoanDetail !== undefined) {
-        queryClient.setQueryData(
-          queryKeys.loans.detail(String(loanId)),
-          context.previousLoanDetail,
-        );
-      }
-      if (context?.previousBorrowerLoans !== undefined) {
-        queryClient.setQueryData(
-          queryKeys.borrowerLoans.byAddress(borrowerAddress),
-          context.previousBorrowerLoans,
-        );
-      }
-      if (context?.previousPoolStats !== undefined) {
-        queryClient.setQueryData(queryKeys.pool.stats(), context.previousPoolStats);
-      }
-    },
-
-    onSettled: (_data, _error, { loanId, borrowerAddress }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(String(loanId)) });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress),
-      });
-      // Also invalidate paginated borrower loans (borrowerPage) so both namespaces stay in sync (#1219)
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.loans.borrowerPagePrefix(borrowerAddress),
-      });
-      queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() });
+      return {
+        unsignedTxXdr: result.unsignedTxXdr,
+        networkPassphrase: result.networkPassphrase,
+      };
     },
   });
 }

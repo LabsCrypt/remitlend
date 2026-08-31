@@ -25,7 +25,10 @@ interface WalletProviderContextValue {
   disconnectWallet: () => void;
   refreshWallet: () => Promise<void>;
   isFreighterAvailable: boolean;
-  signTransaction: (unsignedTxXdr: string) => Promise<string>;
+  signTransaction: (
+    unsignedTxXdr: string,
+    options?: { networkPassphrase?: string },
+  ) => Promise<string>;
 }
 
 interface WalletProviderProps {
@@ -242,10 +245,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
     STANDALONE: "Standalone Network ; Separate from SDF",
   };
 
-  async function signTransaction(unsignedTxXdr: string): Promise<string> {
+  async function signTransaction(
+    unsignedTxXdr: string,
+    options?: { networkPassphrase?: string },
+  ): Promise<string> {
     const api = (await loadFreighterApi()) as unknown as ExtendedFreighterApi;
     const networkName = useWalletStore.getState().network?.name ?? "TESTNET";
-    const networkPassphrase = NETWORK_PASSPHRASES[networkName] ?? NETWORK_PASSPHRASES.TESTNET;
+    const networkPassphrase =
+      options?.networkPassphrase ??
+      NETWORK_PASSPHRASES[networkName] ??
+      NETWORK_PASSPHRASES.TESTNET;
 
     const result = await api.signTransaction(unsignedTxXdr, {
       networkPassphrase,

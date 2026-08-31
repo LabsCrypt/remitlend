@@ -15,6 +15,11 @@ on:
     # Weekly, Monday 06:00 UTC — catches newly-published query updates.
     - cron: "0 6 * * 1"
 
+# Cancel superseded CodeQL runs on the same PR to save runner minutes.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

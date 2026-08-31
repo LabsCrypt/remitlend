@@ -456,11 +456,11 @@ const seedScores = async () => {
 
   for (const user of devUsers) {
     await query(
-      `INSERT INTO scores (user_id, current_score, created_at)
+      `INSERT INTO scores (borrower, score, created_at)
        VALUES ($1, $2, $3)
-       ON CONFLICT (user_id)
+       ON CONFLICT (borrower)
        DO UPDATE SET
-         current_score = EXCLUDED.current_score,
+         score = EXCLUDED.score,
          updated_at = CURRENT_TIMESTAMP`,
       [user.userId, user.score, NOW],
     );

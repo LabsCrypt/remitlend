@@ -266,7 +266,6 @@ export class EventIndexer {
   private async pollOnce(): Promise<void> {
     if (!this.running) return;
 
-    const lastIndexedLedger = await this.getLastIndexedLedger();
     const latestLedger = await this.getLatestLedgerSequence();
 
     // latestLedger === 0 means getLatestLedgerSequence failed (RPC error or
@@ -277,18 +276,22 @@ export class EventIndexer {
       return;
     }
 
-    if (latestLedger <= lastIndexedLedger) {
-      recordIndexerLedgers(lastIndexedLedger, latestLedger);
-      return;
+    for (const contractId of this.contractIds) {
+      const lastIndexedLedger = await this.getLastIndexedLedger(contractId);
+
+      if (latestLedger <= lastIndexedLedger) {
+        recordIndexerLedgers(lastIndexedLedger, latestLedger);
+        continue;
+      }
+
+      const fromLedger = lastIndexedLedger + 1;
+      const toLedger = Math.min(fromLedger + this.batchSize - 1, latestLedger);
+
+      const result = await this.processChunk(fromLedger, toLedger, contractId);
+      await this.recordCheckpoint(contractId, fromLedger, result.lastProcessedLedger);
+      await this.updateLastIndexedLedger(contractId, result.lastProcessedLedger);
+      recordIndexerLedgers(result.lastProcessedLedger, latestLedger);
     }
-
-    const fromLedger = lastIndexedLedger + 1;
-    const toLedger = Math.min(fromLedger + this.batchSize - 1, latestLedger);
-
-    const result = await this.processChunk(fromLedger, toLedger);
-    await this.recordCheckpoint(fromLedger, result.lastProcessedLedger);
-    await this.updateLastIndexedLedger(result.lastProcessedLedger);
-    recordIndexerLedgers(result.lastProcessedLedger, latestLedger);
   }
 
   /**
@@ -308,9 +311,11 @@ export class EventIndexer {
    * content digest) is intentionally out of scope here — see this change's
    * PR description.
    */
-  private async recordCheckpoint(rangeStart: number, rangeEnd: number): Promise<void> {
-    const contract = this.getContractId();
-
+  private async recordCheckpoint(
+    contract: string,
+    rangeStart: number,
+    rangeEnd: number,
+  ): Promise<void> {
     const previous = await query(
       `SELECT range_end
        FROM ledger_checkpoints
@@ -350,8 +355,9 @@ export class EventIndexer {
    * defaultChecker.ts) can refuse to trust conclusions drawn from events in
    * these ranges until they're backfilled and reconciled.
    */
-  async getSuspectRanges(): Promise<Array<{ rangeStart: number; rangeEnd: number }>> {
-    const contract = this.getContractId();
+  async getSuspectRanges(
+    contract: string = this.getContractId(),
+  ): Promise<Array<{ rangeStart: number; rangeEnd: number }>> {
     const result = await query(
       `SELECT range_start, range_end
        FROM ledger_checkpoints
@@ -387,8 +393,7 @@ export class EventIndexer {
     return this.contractIds[0] ?? 'default';
   }
 
-  private async getLastIndexedLedger(): Promise<number> {
-    const contract = this.getContractId();
+  private async getLastIndexedLedger(contract: string = this.getContractId()): Promise<number> {
     const result = await query(
       `SELECT last_ledger
        FROM indexer_state
@@ -410,8 +415,10 @@ export class EventIndexer {
     return Number(result.rows[0]?.last_ledger ?? 0);
   }
 
-  private async updateLastIndexedLedger(ledger: number): Promise<void> {
-    const contract = this.getContractId();
+  private async updateLastIndexedLedger(
+    contract: string = this.getContractId(),
+    ledger: number,
+  ): Promise<void> {
     const updateResult = await query(
       `UPDATE indexer_state
        SET last_ledger = GREATEST(last_ledger, $1),
@@ -429,7 +436,11 @@ export class EventIndexer {
     }
   }
 
-  private async processChunk(startLedger: number, endLedger: number): Promise<ProcessChunkResult> {
+  private async processChunk(
+    startLedger: number,
+    endLedger: number,
+    contractId: string = this.getContractId(),
+  ): Promise<ProcessChunkResult> {
     const correlationId = `indexer-${createRequestId()}`;
 
     return runWithRequestContext(correlationId, async () => {
@@ -449,7 +460,7 @@ export class EventIndexer {
       }
 
       try {
-        const events = await this.fetchEventsInRange(startLedger, endLedger);
+        const events = await this.fetchEventsInRange(startLedger, endLedger, contractId);
         if (events.length === 0) {
           return {
             lastProcessedLedger: endLedger,
@@ -490,6 +501,7 @@ export class EventIndexer {
   private async fetchEventsInRange(
     startLedger: number,
     endLedger: number,
+    contractId: string,
   ): Promise<SorobanRawEvent[]> {
     const result: SorobanRawEvent[] = [];
     let cursor: string | undefined;
@@ -504,7 +516,7 @@ export class EventIndexer {
         filters: [
           {
             type: 'contract',
-            contractIds: this.contractIds,
+            contractIds: [contractId],
           },
         ],
       } as never)) as unknown as {
@@ -1016,11 +1028,11 @@ export class EventIndexer {
     if (!userId) return;
     try {
       await query(
-        `INSERT INTO scores (user_id, current_score)
+        `INSERT INTO scores (borrower, score)
          VALUES ($1, $2)
-         ON CONFLICT (user_id)
+         ON CONFLICT (borrower)
          DO UPDATE SET
-           current_score = LEAST(850, GREATEST(300, scores.current_score + $3)),
+           score = LEAST(850, GREATEST(300, scores.score + $3)),
            updated_at = CURRENT_TIMESTAMP`,
         [userId, 500 + delta, delta],
       );

@@ -52,11 +52,6 @@ RemitLend supports real-time event notifications via webhooks. See the
 event payloads, retry semantics, circuit-breaker behavior, and HMAC signature
 verification.
 
-- **Swagger UI**: [http://localhost:3001/docs](http://localhost:3001/docs)
-- **OpenAPI JSON**: [http://localhost:3001/docs.json](http://localhost:3001/docs.json)
-
-Both endpoints are gated to non-production environments (`NODE_ENV !== "production"`).
-
 ## 🛠 Tech Stack
 
 - **Blockchain**: [Stellar](https://stellar.org) (Soroban Smart Contracts)
@@ -68,7 +63,7 @@ Both endpoints are gated to non-production environments (`NODE_ENV !== "producti
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18 or higher)
+- [Node.js](https://nodejs.org/) (v22 or higher)
 - [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
 - [Docker & Docker Compose](https://www.docker.com/) (Recommended for easy setup)
 - [Rust & Cargo](https://rustup.rs/) (Required for contract development)

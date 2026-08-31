@@ -1,8 +1,8 @@
 /**
  * hooks/useRepaymentOperation.ts
  *
- * Complete repayment operation management with optimistic updates,
- * progress tracking, and automatic state rollback on failure.
+ * Complete repayment operation management with build, wallet-signing,
+ * network submission, and progress tracking.
  *
  * Usage Example:
  * ```tsx
@@ -11,7 +11,7 @@
  * const handleRepay = async () => {
  *   repayment.start("Repaying loan...);
  *   try {
- *     const result = await repayLoan({ loanId: 123, amount: 500 });
+ *     const result = await repayment.executeRepayment({ loanId: 123, amount: 500 });
  *     repayment.success(result.txHash);
  *   } catch (error) {
  *     repayment.error(error.message);
@@ -20,7 +20,7 @@
  * ```
  */
 
-import { useCallback, useId, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTransaction } from "./useOptimisticUI";
 import { useWallet } from "../components/providers/WalletProvider";
@@ -29,6 +29,7 @@ import {
   usePoolStats,
   useRepayLoan,
   useWithdrawFromPool,
+  submitLoanTransaction,
   submitPoolTransaction,
   queryKeys,
 } from "./useApi";
@@ -53,6 +54,8 @@ export function useRepaymentOperation(options?: {
   const transaction = useTransaction(transactionId);
   const [error, setError] = useState<string | null>(null);
   const repayLoan = useRepayLoan();
+  const { signTransaction } = useWallet();
+  const isExecuting = useRef(false);
 
   const executeRepayment = useCallback(
     async ({
@@ -60,19 +63,41 @@ export function useRepaymentOperation(options?: {
       amount,
       borrowerAddress,
     }: RepaymentOperationOptions): Promise<RepaymentOperationResult> => {
+      if (isExecuting.current) {
+        throw new Error("A repayment is already being processed.");
+      }
+
+      isExecuting.current = true;
       transaction.start("Processing repayment...");
       setError(null);
 
       try {
-        transaction.updateProgress(20, "Submitting repayment...");
+        transaction.updateProgress(20, "Building repayment transaction...");
+        const buildResult = await repayLoan.mutateAsync({ loanId, amount, borrowerAddress });
 
-        // useRepayLoan handles the full submit flow with optimistic cache updates
-        const response = await repayLoan.mutateAsync({ loanId, amount, borrowerAddress });
-        const txHash = response.txHash ?? String(loanId);
+        transaction.sign("Waiting for wallet signature...");
+        const signedTxXdr = await signTransaction(buildResult.unsignedTxXdr, {
+          networkPassphrase: buildResult.networkPassphrase,
+        });
+
+        transaction.updateProgress(70, "Submitting repayment to Stellar...");
+        const submitResult = await submitLoanTransaction(signedTxXdr);
+        if (submitResult.status !== "SUCCESS" || !submitResult.txHash) {
+          throw new Error("Stellar did not confirm the repayment transaction.");
+        }
+
+        const txHash = submitResult.txHash;
 
         transaction.submit(txHash, "Transaction submitted, waiting for confirmation...");
         transaction.confirm("Confirming transaction...");
-        transaction.complete(txHash);
+        transaction.complete(txHash, "Repayment successful!");
+
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(String(loanId)) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.borrowerLoans.byAddress(borrowerAddress) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.loans.borrowerPagePrefix(borrowerAddress) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.pool.stats() }),
+        ]);
 
         const result = { txHash, status: "success" as const };
         options?.onSuccess?.(result);
@@ -83,9 +108,11 @@ export function useRepaymentOperation(options?: {
         setError(errorMessage);
         options?.onError?.(err instanceof Error ? err : new Error(errorMessage));
         throw err;
+      } finally {
+        isExecuting.current = false;
       }
     },
-    [transaction, repayLoan, options],
+    [transaction, repayLoan, signTransaction, queryClient, options],
   );
 
   return {

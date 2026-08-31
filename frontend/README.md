@@ -62,7 +62,7 @@ npm run typecheck    # TypeScript type check (tsc --noEmit)
 npm test             # Jest unit tests
 npm run test:watch   # Jest in watch mode
 npm run test:e2e     # Playwright end-to-end tests
-npm run audit:a11y   # Build then run axe-playwright accessibility audit
+npm run audit:a11y   # Run axe-playwright accessibility audit on key pages
 ```
 
 > **Note:** `npm run lint` runs `prettier --check` — it checks formatting, not ESLint rules.
@@ -283,7 +283,7 @@ Specs live in `e2e/` and cover critical user flows:
 ### Accessibility audit
 
 ```bash
-npm run audit:a11y   # builds then runs axe-playwright
+npm run audit:a11y   # runs axe-playwright accessibility checks via Playwright
 ```
 
 ## API Integration

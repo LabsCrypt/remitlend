@@ -39,7 +39,7 @@ describe('simulatePayment', () => {
 
   it('uses the configured repayment delta instead of a hardcoded value', async () => {
     mockGetScoreConfig.mockReturnValue({ repaymentDelta: 25, defaultPenalty: 50, latePenalty: 5 });
-    mockQuery.mockResolvedValue({ rows: [{ current_score: 500 }] });
+    mockQuery.mockResolvedValue({ rows: [{ score: 500 }] });
 
     const { req, res, json } = mockReqRes();
     await simulatePayment(req, res);
@@ -48,7 +48,7 @@ describe('simulatePayment', () => {
   });
 
   it('returns 500 + 15 = 515 with the default delta', async () => {
-    mockQuery.mockResolvedValue({ rows: [{ current_score: 500 }] });
+    mockQuery.mockResolvedValue({ rows: [{ score: 500 }] });
 
     const { req, res, json } = mockReqRes();
     await simulatePayment(req, res);
@@ -57,7 +57,7 @@ describe('simulatePayment', () => {
   });
 
   it('clamps the new score at 850', async () => {
-    mockQuery.mockResolvedValue({ rows: [{ current_score: 840 }] });
+    mockQuery.mockResolvedValue({ rows: [{ score: 840 }] });
 
     const { req, res, json } = mockReqRes();
     await simulatePayment(req, res);
@@ -103,7 +103,7 @@ describe('getRemittanceHistory', () => {
     // implementation) compounds float rounding error across the reduce;
     // summing bigint stroops and formatting once at the end does not.
     const closedAt = '2024-03-15T00:00:00.000Z';
-    mockQuery.mockResolvedValueOnce({ rows: [{ current_score: 500 }] }).mockResolvedValueOnce({
+    mockQuery.mockResolvedValueOnce({ rows: [{ score: 500 }] }).mockResolvedValueOnce({
       rows: [
         { event_type: 'LoanRepaid', amount: '33333333', ledger_closed_at: closedAt },
         { event_type: 'LoanRepaid', amount: '33333333', ledger_closed_at: closedAt },
@@ -128,7 +128,7 @@ describe('getRemittanceHistory', () => {
   });
 
   it('marks a month Defaulted and does not count it toward the streak', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ current_score: 500 }] }).mockResolvedValueOnce({
+    mockQuery.mockResolvedValueOnce({ rows: [{ score: 500 }] }).mockResolvedValueOnce({
       rows: [
         {
           event_type: 'LoanDefaulted',
@@ -152,7 +152,7 @@ describe('getRemittanceHistory', () => {
   });
 
   it('rejects a stroop amount with a genuine fractional part instead of truncating it', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ current_score: 500 }] }).mockResolvedValueOnce({
+    mockQuery.mockResolvedValueOnce({ rows: [{ score: 500 }] }).mockResolvedValueOnce({
       rows: [
         {
           event_type: 'LoanRepaid',
