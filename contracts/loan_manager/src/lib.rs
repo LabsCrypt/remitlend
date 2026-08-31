@@ -524,6 +524,23 @@ impl LoanManager {
             .unwrap_or(Self::DEFAULT_DEFAULT_WINDOW_LEDGERS)
     }
 
+    /// Configured ceiling on a loan term, in ledgers.
+    ///
+    /// Falls back to `DEFAULT_TERM_LEDGERS` rather than `u32::MAX` when unset,
+    /// so the ceiling is meaningful on a deployment whose admin has not set
+    /// term limits — a `u32::MAX` fallback would leave the bound inert on
+    /// exactly the deployments least likely to be watching for abuse.
+    ///
+    /// This is the same value `get_max_term_ledgers` reports, so the limit an
+    /// admin reads back is the limit actually enforced.
+    fn max_term_ledgers(env: &Env) -> u32 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::MaxTermLedgers)
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS)
+    }
+
     fn max_loan_amount(env: &Env) -> i128 {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -2536,11 +2553,9 @@ impl LoanManager {
     }
 
     pub fn get_max_term_ledgers(env: Env) -> u32 {
-        Self::bump_instance_ttl(&env);
-        env.storage()
-            .instance()
-            .get(&DataKey::MaxTermLedgers)
-            .unwrap_or(Self::DEFAULT_TERM_LEDGERS)
+        // Delegates so the value read back here and the ceiling enforced by
+        // extend_loan are the same expression, not two copies that can drift.
+        Self::max_term_ledgers(&env)
     }
 
     pub fn propose_admin(env: Env, new_admin: Address) {
@@ -2684,6 +2699,20 @@ impl LoanManager {
             return Err(LoanError::InvalidTerm);
         }
 
+        // A single extension may not exceed the configured term ceiling.
+        //
+        // MAX_EXTENSIONS caps how *many* times a loan can be extended but said
+        // nothing about how *far*, so one call with a huge `extra_ledgers`
+        // could push `due_date` past any realistic horizon and defer default
+        // indefinitely — for a flat 1% fee charged once on remaining
+        // principal. Bounding each extension by the same ceiling that governs
+        // an original term means total extendable time is now bounded by
+        // MAX_EXTENSIONS * max_term rather than being unbounded.
+        let max_term = Self::max_term_ledgers(&env);
+        if extra_ledgers > max_term {
+            return Err(LoanError::InvalidExtension);
+        }
+
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
             .storage()
@@ -2741,11 +2770,16 @@ impl LoanManager {
             token_client.transfer(&borrower, &lending_pool, &extension_fee);
         }
 
-        // Extend the due date
+        // Extend the due date.
+        //
+        // Returns a typed error rather than panicking: a panic here would trap
+        // the borrower's already-transferred extension fee in a reverted
+        // transaction with no diagnosable cause. The bound above makes
+        // overflow unreachable in practice, but the arithmetic stays checked.
         let new_due_date = loan
             .due_date
             .checked_add(extra_ledgers)
-            .expect("due date overflow");
+            .ok_or(LoanError::InvalidExtension)?;
         loan.due_date = new_due_date;
 
         // Increment extension count
