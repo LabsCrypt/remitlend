@@ -4440,3 +4440,161 @@ fn test_liquidate_decreases_score_and_records_default() {
     assert_eq!(nft_client.get_default_count(&borrower), 1);
     assert!(nft_client.is_seized(&borrower));
 }
+
+// ── extend_loan term-ceiling tests ─────────────────────────────────────────
+//
+// MAX_EXTENSIONS caps how *many* extensions a loan gets; these cover the
+// missing half — how *far* a single extension may push the due date.
+
+/// Sets up an approved loan and returns its id, so the ceiling tests below
+/// state only what they are actually asserting.
+fn setup_extendable_loan(env: &Env) -> (LoanManagerClient<'static>, Address, u32) {
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(env);
+    let borrower = Address::generate(env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(env, "ipfs://QmTest"),
+        &create_test_commitment(env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    manager.approve_loan(&loan_id);
+
+    (manager, borrower, loan_id)
+}
+
+#[test]
+fn test_extend_loan_rejects_extension_longer_than_max_term() {
+    let env = Env::default();
+    let (manager, borrower, loan_id) = setup_extendable_loan(&env);
+
+    let max_term = manager.get_max_term_ledgers();
+    let loan_before = manager.get_loan(&loan_id);
+
+    // One ledger past the ceiling is the whole exploit in miniature: without
+    // the bound this would be accepted for the same flat fee as any other
+    // extension.
+    let result = manager.try_extend_loan(&borrower, &loan_id, &(max_term + 1));
+    assert_eq!(result, Err(Ok(LoanError::InvalidExtension)));
+
+    // Rejected before any state change — due date and count are untouched.
+    let loan_after = manager.get_loan(&loan_id);
+    assert_eq!(loan_after.due_date, loan_before.due_date);
+    assert_eq!(loan_after.extension_count, 0);
+}
+
+#[test]
+fn test_extend_loan_accepts_extension_exactly_at_max_term() {
+    let env = Env::default();
+    let (manager, borrower, loan_id) = setup_extendable_loan(&env);
+
+    let max_term = manager.get_max_term_ledgers();
+    let original_due_date = manager.get_loan(&loan_id).due_date;
+
+    // The bound is inclusive: exactly max_term is a legitimate extension.
+    manager.extend_loan(&borrower, &loan_id, &max_term);
+
+    let loan_after = manager.get_loan(&loan_id);
+    assert_eq!(loan_after.due_date, original_due_date + max_term);
+    assert_eq!(loan_after.extension_count, 1);
+}
+
+#[test]
+fn test_extend_loan_rejects_far_future_extension() {
+    let env = Env::default();
+    let (manager, borrower, loan_id) = setup_extendable_loan(&env);
+
+    // The reported attack: push the due date so far out that the default
+    // window can never be reached, for one 1% fee.
+    let result = manager.try_extend_loan(&borrower, &loan_id, &u32::MAX);
+    assert_eq!(result, Err(Ok(LoanError::InvalidExtension)));
+
+    // And the near-overflow case, which previously reached the checked_add
+    // and panicked rather than returning an error.
+    let result = manager.try_extend_loan(&borrower, &loan_id, &(u32::MAX - 1));
+    assert_eq!(result, Err(Ok(LoanError::InvalidExtension)));
+
+    assert_eq!(manager.get_loan(&loan_id).extension_count, 0);
+}
+
+#[test]
+fn test_extend_loan_ceiling_follows_configured_max_term() {
+    let env = Env::default();
+    let (manager, borrower, loan_id) = setup_extendable_loan(&env);
+
+    // The bound is derived from configuration, not a constant: lowering the
+    // admin's ceiling immediately narrows what an extension may request.
+    manager.set_max_term_ledgers(&5_000);
+    assert_eq!(manager.get_max_term_ledgers(), 5_000);
+
+    let result = manager.try_extend_loan(&borrower, &loan_id, &5_001);
+    assert_eq!(result, Err(Ok(LoanError::InvalidExtension)));
+
+    manager.extend_loan(&borrower, &loan_id, &5_000);
+    assert_eq!(manager.get_loan(&loan_id).extension_count, 1);
+}
+
+#[test]
+fn test_extend_loan_raising_max_term_widens_the_ceiling() {
+    let env = Env::default();
+    let (manager, borrower, loan_id) = setup_extendable_loan(&env);
+
+    let default_ceiling = manager.get_max_term_ledgers();
+    let beyond = default_ceiling + 1_000;
+
+    // Rejected at the default ceiling...
+    let result = manager.try_extend_loan(&borrower, &loan_id, &beyond);
+    assert_eq!(result, Err(Ok(LoanError::InvalidExtension)));
+
+    // ...and accepted once an admin raises it, so the check tracks policy
+    // rather than hard-coding a horizon.
+    manager.set_max_term_ledgers(&beyond);
+    manager.extend_loan(&borrower, &loan_id, &beyond);
+
+    assert_eq!(manager.get_loan(&loan_id).extension_count, 1);
+}
+
+#[test]
+fn test_extend_loan_total_extension_is_bounded_by_count_and_ceiling() {
+    let env = Env::default();
+    let (manager, borrower, loan_id) = setup_extendable_loan(&env);
+
+    let max_term = manager.get_max_term_ledgers();
+    let original_due_date = manager.get_loan(&loan_id).due_date;
+
+    // Three maximal extensions — the most the contract now permits.
+    manager.extend_loan(&borrower, &loan_id, &max_term);
+    manager.extend_loan(&borrower, &loan_id, &max_term);
+    manager.extend_loan(&borrower, &loan_id, &max_term);
+
+    // A fourth is refused by the count cap, which this change leaves intact.
+    let result = manager.try_extend_loan(&borrower, &loan_id, &1_000);
+    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+
+    // Total deferral is now bounded by MAX_EXTENSIONS * max_term, where it
+    // used to be unbounded.
+    let loan_after = manager.get_loan(&loan_id);
+    assert_eq!(loan_after.extension_count, 3);
+    assert_eq!(loan_after.due_date, original_due_date + max_term * 3);
+}
+
+#[test]
+fn test_extend_loan_still_rejects_zero_after_ceiling_added() {
+    let env = Env::default();
+    let (manager, borrower, loan_id) = setup_extendable_loan(&env);
+
+    // The pre-existing non-zero check keeps its own error code — the new
+    // ceiling did not absorb it.
+    let result = manager.try_extend_loan(&borrower, &loan_id, &0);
+    assert_eq!(result, Err(Ok(LoanError::InvalidTerm)));
+}
