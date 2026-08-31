@@ -11,13 +11,25 @@ on:
 jobs:
   k6-load-test:
     runs-on: ubuntu-latest
+    env:
+      TARGET_URL: ${{ github.event.inputs.target_url }}
+      # Supply a valid JWT for a lender/admin wallet that can access the protected endpoints.
+      # This token must match the public key provided in WALLET_PUBLIC_KEY.
+      JWT_TOKEN: ${{ secrets.LOADTEST_JWT_TOKEN }}
+      WALLET_PUBLIC_KEY: ${{ vars.LOADTEST_WALLET_PUBLIC_KEY }}
+      # Optional: include a valid scoped or legacy INTERNAL_API_KEY when the target route requires it.
+      INTERNAL_API_KEY: ${{ secrets.LOADTEST_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Confirm load test auth inputs
+        run: |
+          echo "This authenticated baseline run requires a valid JWT_TOKEN and matching WALLET_PUBLIC_KEY."
+          echo "Set LOADTEST_JWT_TOKEN as a GitHub Actions secret and LOADTEST_WALLET_PUBLIC_KEY as a repo/environment variable before running this workflow."
+          echo "If a route requires an API key, also set LOADTEST_API_KEY as a secret."
 
       - name: Run k6 baseline load test
         uses: grafana/k6-action@v0.3.0
         with:
           filename: scripts/loadtest/baseline.js
-        env:
-          TARGET_URL: ${{ github.event.inputs.target_url }}
