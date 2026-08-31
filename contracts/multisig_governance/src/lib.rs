@@ -30,6 +30,11 @@ const KEY_PROPOSAL_COUNT: Symbol = symbol_short!("COUNT");
 const REPROPOSAL_COOLDOWN_SECONDS: u64 = 3600; // 1 hour
 const CURRENT_VERSION: u32 = 1;
 
+/// Minimum ledger TTL before the instance is bumped (≈24 h at 5 s/ledger).
+const INSTANCE_TTL_THRESHOLD: u32 = 17_280;
+/// Ledger TTL bump amount (≈30 days at 5 s/ledger).
+const INSTANCE_TTL_BUMP: u32 = 518_400;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 #[contracterror]
@@ -153,6 +158,14 @@ pub struct GovernanceContract;
 
 #[contractimpl]
 impl GovernanceContract {
+    // ── TTL helpers ───────────────────────────────────────────────────────────
+
+    fn bump_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+    }
+
     // ── Initialization ────────────────────────────────────────────────────────
 
     /// Initialize the governance contract.
@@ -164,6 +177,7 @@ impl GovernanceContract {
         admin: Address,
         target_contract: Address,
     ) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         if env.storage().instance().has(&KEY_ADMIN) {
             return Err(GovernanceError::AlreadyInitialized);
         }
@@ -175,12 +189,14 @@ impl GovernanceContract {
     }
 
     pub fn version(env: Env) -> u32 {
+        Self::bump_instance_ttl(&env);
         env.storage().instance().get(&KEY_VERSION).unwrap_or(0)
     }
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), GovernanceError> {
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let old_version = Self::version(env.clone());
         let new_version = old_version.saturating_add(1);
@@ -212,6 +228,7 @@ impl GovernanceContract {
     ) -> Result<(), GovernanceError> {
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         if let Some(pending) = env
             .storage()
@@ -312,6 +329,7 @@ impl GovernanceContract {
     /// Soroban's require_auth guarantees the caller genuinely controls `signer`.
     pub fn approve_transfer(env: Env, signer: Address) -> Result<(), GovernanceError> {
         signer.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let mut pending: PendingTransfer = env
             .storage()
@@ -364,6 +382,7 @@ impl GovernanceContract {
     /// and must verify the caller is this governance contract address.
     pub fn finalize_admin_transfer(env: Env, caller: Address) -> Result<(), GovernanceError> {
         caller.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let pending: PendingTransfer = env
             .storage()
@@ -438,6 +457,7 @@ impl GovernanceContract {
     pub fn cancel_admin_transfer(env: Env) -> Result<(), GovernanceError> {
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let mut pending: PendingTransfer = env
             .storage()
@@ -475,6 +495,7 @@ impl GovernanceContract {
     ) -> Result<(), GovernanceError> {
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let mut pending: PendingTransfer = env
             .storage()
@@ -518,6 +539,7 @@ impl GovernanceContract {
     /// This cleans up stale proposals and allows new ones to be created.
     pub fn expire_proposal(env: Env, caller: Address) -> Result<(), GovernanceError> {
         caller.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let pending: PendingTransfer = env
             .storage()
@@ -552,14 +574,17 @@ impl GovernanceContract {
     // ── Views ─────────────────────────────────────────────────────────────────
 
     pub fn get_current_admin(env: Env) -> Result<Address, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         Self::read_admin(&env)
     }
 
     pub fn get_admin(env: Env) -> Result<Address, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         Self::read_admin(&env)
     }
 
     pub fn get_target(env: Env) -> Result<Address, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&KEY_TARGET)
@@ -567,6 +592,7 @@ impl GovernanceContract {
     }
 
     pub fn get_pending_transfer(env: Env) -> Result<PendingTransfer, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&KEY_PENDING)
@@ -574,10 +600,12 @@ impl GovernanceContract {
     }
 
     pub fn get_pending(env: Env) -> Option<PendingTransfer> {
+        Self::bump_instance_ttl(&env);
         env.storage().instance().get(&KEY_PENDING)
     }
 
     pub fn has_pending_transfer(env: Env) -> bool {
+        Self::bump_instance_ttl(&env);
         if let Some(pending) = env
             .storage()
             .instance()
@@ -590,6 +618,7 @@ impl GovernanceContract {
     }
 
     pub fn get_approval_count(env: Env) -> Result<u32, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
@@ -601,6 +630,7 @@ impl GovernanceContract {
     /// Returns seconds remaining until the timelock expires.
     /// Returns 0 if already elapsed or no pending transfer exists.
     pub fn get_timelock_remaining(env: Env) -> u64 {
+        Self::bump_instance_ttl(&env);
         match env
             .storage()
             .instance()
@@ -619,6 +649,7 @@ impl GovernanceContract {
     }
 
     pub fn get_proposal_count(env: Env) -> u32 {
+        Self::bump_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&KEY_PROPOSAL_COUNT)
@@ -626,6 +657,7 @@ impl GovernanceContract {
     }
 
     pub fn get_signers(env: Env) -> Result<Vec<Address>, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
@@ -635,6 +667,7 @@ impl GovernanceContract {
     }
 
     pub fn get_threshold(env: Env) -> Result<u32, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
@@ -644,6 +677,7 @@ impl GovernanceContract {
     }
 
     pub fn has_approved(env: Env, signer: Address) -> Result<bool, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
