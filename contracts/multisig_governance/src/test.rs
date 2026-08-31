@@ -712,3 +712,37 @@ fn has_approved_tracks_approvals() {
     assert!(client.has_approved(&s1));
     assert!(client.has_approved(&s2));
 }
+
+// ── Bug fix: #1664 ───────────────────────────────────────────────────────────
+
+/// After a successful finalization the new admin must be able to propose
+/// another transfer immediately — `finalize_admin_transfer` must NOT set
+/// `KEY_LAST_CANCELLED_AT`, which is reserved for cancellations only.
+#[test]
+fn new_admin_can_propose_immediately_after_finalization() {
+    let (env, client, admin, _) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    // 1. Admin proposes a transfer
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.approve_transfer(&s);
+
+    // 2. Finalize the transfer
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+    client.finalize_admin_transfer(&admin);
+    assert_eq!(client.get_current_admin(), proposed);
+
+    // 3. The new admin should be able to propose another transfer immediately
+    //    (no REPROPOSAL_COOLDOWN error).
+    let next_proposed = Address::generate(&env);
+    let s2 = Address::generate(&env);
+    let signers2 = Vec::from_slice(&env, core::slice::from_ref(&s2));
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 2);
+    client.propose_admin_transfer(&next_proposed, &signers2, &1, &MIN_TIMELOCK_SECONDS);
+    assert!(client.has_pending_transfer());
+    let pending = client.get_pending_transfer();
+    assert_eq!(pending.proposed_admin, next_proposed);
+}
