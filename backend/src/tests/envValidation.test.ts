@@ -15,20 +15,7 @@ describe('Environment Variable Validation', () => {
       });
   });
 
-  beforeEach(() => {
-    jest.resetModules();
-    process.env = { ...originalEnv };
-    jest.clearAllMocks();
-  });
-
-  afterAll(() => {
-    process.env = originalEnv;
-    mockExit.mockRestore();
-  });
-
-  it('should not exit if all required variables are present', () => {
-    // All required variables are expected to be in originalEnv/process.env
-    // or we set them here for the test
+  const setValidEnv = () => {
     process.env.DATABASE_URL = 'postgres://localhost';
     process.env.REDIS_URL = 'redis://localhost';
     process.env.JWT_SECRET = 'secret';
@@ -45,7 +32,22 @@ describe('Environment Variable Validation', () => {
     process.env.SCORE_DELTA_LATE = '5';
     process.env.REMITTANCE_NFT_CONTRACT_ID = 'C3';
     process.env.MULTISIG_GOVERNANCE_CONTRACT_ID = 'C4';
+    process.env.PII_KEK_KEY = 'a'.repeat(64);
+  };
 
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = { ...originalEnv };
+    setValidEnv();
+    jest.clearAllMocks();
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+    mockExit.mockRestore();
+  });
+
+  it('should not exit if all required variables are present', () => {
     expect(() => validateEnvVars()).not.toThrow();
     expect(mockExit).not.toHaveBeenCalled();
   });

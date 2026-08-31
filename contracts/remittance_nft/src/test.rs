@@ -489,7 +489,7 @@ fn test_apply_score_delta_supports_positive_and_negative_adjustments() {
 }
 
 #[test]
-fn test_apply_score_delta_floors_at_zero() {
+fn test_apply_score_delta_floors_at_min_score() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -510,7 +510,8 @@ fn test_apply_score_delta_floors_at_zero() {
         &None,
     );
 
-    client.apply_score_delta(&user, &-50, &None);
+    // Applying delta -200 to score 350 would be 150 without floor, but clamps to MIN_CREDIT_SCORE (300)
+    client.apply_score_delta(&user, &-200, &None);
     assert_eq!(client.get_score(&user), 300);
 }
 
