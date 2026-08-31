@@ -3793,7 +3793,6 @@ fn test_set_grace_period_ledgers_requires_admin() {
 
     env.mock_auths(&[]);
     manager.set_grace_period_ledgers(&5_000);
-}
 
 // ── Pause functionality tests ──────────────────────────────────────────────
 
@@ -4574,3 +4573,49 @@ fn test_liquidate_decreases_score_and_records_default() {
     assert_eq!(nft_client.get_default_count(&borrower), 1);
     assert!(nft_client.is_seized(&borrower));
 }
+
+#[test]
+fn test_refinance_loan_rejects_seized_borrower() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+    stellar_token.mint(&borrower, &50_000);
+
+    // Create two loans. Loan 1 will be liquidated (seizing the borrower's NFT),
+    // while Loan 2 remains Approved � the exact gap #1062 targets.
+    let loan_id_1 = manager.request_loan(&borrower, &1_000, &17_280);
+    let loan_id_2 = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id_1);
+    manager.approve_loan(&loan_id_2);
+    manager.deposit_collateral(&loan_id_1, &1_000);
+
+    // Liquidate loan 1 to seize the borrower's NFT (no ledger advance needed).
+    let liquidator = Address::generate(&env);
+    manager.liquidate(&liquidator, &loan_id_1);
+
+    // Borrower is now seized but loan 2 is still Approved.
+    assert!(nft_client.is_seized(&borrower));
+    assert_eq!(manager.get_loan(&loan_id_2).status, LoanStatus::Approved);
+
+    // Attempting to refinance the active loan must fail with SeizedBorrower.
+    let result = manager.try_refinance_loan(&loan_id_2, &1_000, &17_280);
+    assert_eq!(result, Err(Ok(LoanError::SeizedBorrower)));
+}
+
+
+
