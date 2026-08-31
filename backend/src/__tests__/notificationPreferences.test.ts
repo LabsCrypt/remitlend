@@ -66,10 +66,35 @@ describe('notification preferences endpoints', () => {
     });
   });
 
+  it('returns persisted perTypeOverrides on GET', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        email_enabled: true,
+        sms_enabled: false,
+        phone: '+15551234567',
+        per_type_overrides: { repayment_due: true, loan_approved: false },
+      }],
+    });
+
+    const response = await request(app)
+      .get('/api/notifications/preferences')
+      .set(bearer('GTESTUSER5555555555555555555555555555555555555555555555555'));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      emailEnabled: true,
+      smsEnabled: false,
+      phone: '+15551234567',
+      perTypeOverrides: { repayment_due: true, loan_approved: false },
+    });
+  });
+
   it('writes valid preferences and returns updated payload', async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ email_enabled: true, sms_enabled: true, phone: '+14155552671' }],
     });
+    // Mock for upsert into user_notification_preferences
+    mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
     const response = await request(app)
       .put('/api/notifications/preferences')
@@ -86,7 +111,7 @@ describe('notification preferences endpoints', () => {
       emailEnabled: true,
       smsEnabled: true,
       phone: '+14155552671',
-      perTypeOverrides: {},
+      perTypeOverrides: { repayment_due: true },
     });
   });
 

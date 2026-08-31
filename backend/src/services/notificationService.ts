@@ -176,9 +176,12 @@ async function sendSMS(phone: string, message: string) {
 class NotificationService {
   async getNotificationPreferences(userId: string): Promise<NotificationPreferences> {
     const result = await query(
-      `SELECT email_enabled, sms_enabled, phone
-       FROM user_profiles
-       WHERE public_key = $1
+      `SELECT up.email_enabled, up.sms_enabled, up.phone,
+             unp.per_type_overrides
+       FROM user_profiles up
+       LEFT JOIN user_notification_preferences unp
+         ON unp.user_id = up.public_key
+       WHERE up.public_key = $1
        LIMIT 1`,
       [userId],
     );
@@ -197,13 +200,13 @@ class NotificationService {
       emailEnabled: Boolean(row.email_enabled),
       smsEnabled: Boolean(row.sms_enabled),
       phone: (row.phone as string | null) ?? null,
-      perTypeOverrides: {},
+      perTypeOverrides: (row.per_type_overrides as Record<string, boolean>) ?? {},
     };
   }
 
   async updateNotificationPreferences(
     userId: string,
-    payload: Pick<NotificationPreferences, 'emailEnabled' | 'smsEnabled' | 'phone'>,
+    payload: Pick<NotificationPreferences, 'emailEnabled' | 'smsEnabled' | 'phone' | 'perTypeOverrides'>,
   ): Promise<NotificationPreferences> {
     const result = await query(
       `UPDATE user_profiles
@@ -221,11 +224,21 @@ class NotificationService {
       phone: payload.phone,
     };
 
+    const perTypeOverrides = payload.perTypeOverrides ?? {};
+
+    // Upsert per-type overrides into user_notification_preferences
+    await query(
+      `INSERT INTO user_notification_preferences (user_id, per_type_overrides)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET per_type_overrides = $2`,
+      [userId, JSON.stringify(perTypeOverrides)],
+    );
+
     return {
       emailEnabled: Boolean(row.email_enabled),
       smsEnabled: Boolean(row.sms_enabled),
       phone: (row.phone as string | null) ?? null,
-      perTypeOverrides: {},
+      perTypeOverrides,
     };
   }
 
