@@ -27,6 +27,8 @@
 //! | `CollateralDeposited` | `("CollateralDeposited", borrower: Address, loan_id: u32)` | `amount: i128` |
 //! | `CollateralReleased` | `("CollateralReleased", borrower: Address, loan_id: u32)` | `()` |
 //! | `LateFeeRateUpdated` | `("LateFeeRateUpdated", admin: Address)` | `(old_rate: u32, new_rate: u32)` |
+//! | `LiquidationThresholdUpdated` | `("LiquidationThresholdUpdated", admin: Address)` | `(old_threshold: u32, new_threshold: u32)` |
+//! | `LiquidationBonusUpdated` | `("LiquidationBonusUpdated", admin: Address)` | `(old_bonus: u32, new_bonus: u32)` |
 //! | `GracePeriodUpdated` | `("GracePeriodUpdated", admin: Address)` | `(old_ledgers: u32, new_ledgers: u32)` |
 //! | `DefaultWindowUpdated` | `("DefaultWindowUpdated", admin: Address)` | `(old_ledgers: u32, new_ledgers: u32)` |
 //! | `MaxLoanAmountUpdated` | `("MaxLoanAmountUpdated", admin: Address)` | `(old_amount: i128, new_amount: i128)` |
@@ -254,6 +256,29 @@ pub fn collateral_released(env: &Env, borrower: Address, loan_id: u32) {
 pub fn late_fee_rate_updated(env: &Env, admin: Address, old_rate: u32, new_rate: u32) {
     let topics = (Symbol::new(env, "LateFeeRateUpdated"), admin);
     env.events().publish(topics, (old_rate, new_rate));
+}
+
+/// Emits event when the liquidation threshold BPS is updated by admin.
+///
+/// - **Topics**: `("LiquidationThresholdUpdated", admin: Address)`
+/// - **Data**: `(old_threshold: u32, new_threshold: u32)`
+pub fn liquidation_threshold_updated(
+    env: &Env,
+    admin: Address,
+    old_threshold: u32,
+    new_threshold: u32,
+) {
+    let topics = (Symbol::new(env, "LiquidationThresholdUpdated"), admin);
+    env.events().publish(topics, (old_threshold, new_threshold));
+}
+
+/// Emits event when the liquidation bonus BPS is updated by admin.
+///
+/// - **Topics**: `("LiquidationBonusUpdated", admin: Address)`
+/// - **Data**: `(old_bonus: u32, new_bonus: u32)`
+pub fn liquidation_bonus_updated(env: &Env, admin: Address, old_bonus: u32, new_bonus: u32) {
+    let topics = (Symbol::new(env, "LiquidationBonusUpdated"), admin);
+    env.events().publish(topics, (old_bonus, new_bonus));
 }
 
 /// Emits event when grace period ledgers setting is updated by admin.

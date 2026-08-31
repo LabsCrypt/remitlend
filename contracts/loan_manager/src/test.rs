@@ -168,6 +168,50 @@ fn test_set_min_score_accepts_nft_max_boundary() {
 }
 
 #[test]
+fn test_set_liquidation_threshold_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+
+    manager.set_liquidation_threshold(&14_500);
+
+    let events = env.events().all();
+    let event = events.get(events.len() - 1).unwrap();
+    let topic_0 = soroban_sdk::Symbol::from_val(&env, &event.1.get(0).unwrap());
+    let thresholds = <(u32, u32)>::from_val(&env, &event.2);
+
+    assert_eq!(
+        topic_0,
+        soroban_sdk::Symbol::new(&env, "LiquidationThresholdUpdated")
+    );
+    assert_eq!(thresholds, (15_000, 14_500));
+    assert_eq!(manager.get_liquidation_threshold(), 14_500);
+}
+
+#[test]
+fn test_set_liquidation_bonus_bps_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+
+    manager.set_liquidation_bonus_bps(&1_000);
+
+    let events = env.events().all();
+    let event = events.get(events.len() - 1).unwrap();
+    let topic_0 = soroban_sdk::Symbol::from_val(&env, &event.1.get(0).unwrap());
+    let bonuses = <(u32, u32)>::from_val(&env, &event.2);
+
+    assert_eq!(
+        topic_0,
+        soroban_sdk::Symbol::new(&env, "LiquidationBonusUpdated")
+    );
+    assert_eq!(bonuses, (500, 1_000));
+    assert_eq!(manager.get_liquidation_bonus_bps(), 1_000);
+}
+
+#[test]
 fn test_get_proposed_admin_returns_none_when_no_proposal() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
