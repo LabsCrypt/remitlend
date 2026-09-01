@@ -124,6 +124,19 @@ fn test_set_admin_updates_admin_immediately() {
 }
 
 #[test]
+fn test_accept_admin_fails_when_no_proposed_admin() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    let result = manager.try_accept_admin();
+    assert_eq!(result, Err(Ok(LoanError::NoProposedAdmin)));
+    // Admin must remain unchanged.
+    assert_eq!(manager.get_admin(), _token_admin);
+}
+
+#[test]
 fn test_set_min_score_valid_update_emits_event() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -467,6 +480,120 @@ fn test_reject_pending_loan() {
 
     let loan = manager.get_loan(&loan_id);
     assert_eq!(loan.status, LoanStatus::Rejected);
+}
+
+#[test]
+fn test_cancel_decrements_borrower_loan_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+
+    manager.cancel_loan(&borrower, &loan_id);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+}
+
+#[test]
+fn test_reject_decrements_borrower_loan_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+
+    manager.reject_loan(&loan_id, &String::from_str(&env, "manual review failed"));
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+}
+
+#[test]
+fn test_cancel_then_request_new_loan_succeeds() {
+    // Verifies the core issue: after cancelling a loan, the borrower can
+    // request a new one without hitting MaxLoansReached. (#1591)
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    manager.cancel_loan(&borrower, &loan_id);
+
+    // Borrower should be able to request a new loan after cancellation
+    let loan_id_2 = manager.request_loan(&borrower, &1_000, &17280);
+    let loan_2 = manager.get_loan(&loan_id_2);
+    assert_eq!(loan_2.status, LoanStatus::Pending);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+}
+
+#[test]
+fn test_reject_then_request_new_loan_succeeds() {
+    // Verifies the core issue: after a loan is rejected, the borrower can
+    // request a new one without hitting MaxLoansReached. (#1591)
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    manager.reject_loan(&loan_id, &String::from_str(&env, "manual review failed"));
+
+    // Borrower should be able to request a new loan after rejection
+    let loan_id_2 = manager.request_loan(&borrower, &1_000, &17280);
+    let loan_2 = manager.get_loan(&loan_id_2);
+    assert_eq!(loan_2.status, LoanStatus::Pending);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
 }
 
 #[test]
@@ -2409,7 +2536,7 @@ fn test_extend_loan_rejected_for_zero_ledgers() {
 
     // Try to extend with 0 ledgers
     let result = manager.try_extend_loan(&borrower, &loan_id, &0);
-    assert_eq!(result, Err(Ok(LoanError::InvalidTerm)));
+    assert_eq!(result, Err(Ok(LoanError::InvalidExtension)));
 }
 
 #[test]
@@ -2449,7 +2576,7 @@ fn test_extend_loan_max_extensions_limit() {
 
     // Fourth extension should fail
     let result = manager.try_extend_loan(&borrower, &loan_id, &1000);
-    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+    assert_eq!(result, Err(Ok(LoanError::MaxExtensionsReached)));
 }
 
 #[test]
@@ -3357,6 +3484,49 @@ fn test_refinance_loan_fails_when_score_drops_below_minimum() {
 }
 
 #[test]
+fn test_refinance_loan_fails_when_collateral_below_new_amount() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Inject collateral lower than the new amount being refinanced.
+    stellar_token.mint(&manager.address, &500);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 500;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    // Collateral (500) is below the new amount (1_000) → must be flagged as a
+    // collateral shortfall, not a score failure.
+    let result = manager.try_refinance_loan(&loan_id, &1_000, &17_280);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientCollateral)));
+    // Loan must remain unchanged.
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.amount, 1_000);
+    assert_eq!(loan.status, LoanStatus::Approved);
+}
+
+#[test]
 fn test_refinance_loan_equal_amount_leaves_principal_and_outstanding_unchanged() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -3479,7 +3649,7 @@ fn test_refinance_loan_fails_past_default_window() {
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
     nft_client.mint(
         &borrower,
-        &700,
+        &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
         &create_test_commitment(&env, 1),
@@ -3519,46 +3689,6 @@ fn test_refinance_loan_fails_past_default_window() {
     let result = manager.try_refinance_loan(&loan_id, &1_000, &17_280);
     assert_eq!(result, Err(Ok(LoanError::LoanPastDue)));
 
-    assert_eq!(manager.get_loan(&loan_id).amount, 1_000);
-}
-
-#[test]
-fn test_refinance_loan_fails_when_collateral_below_new_amount() {
-    let env = Env::default();
-    env.mock_all_auths_allowing_non_root_auth();
-
-    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
-    let borrower = Address::generate(&env);
-
-    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
-    nft_client.mint(
-        &borrower,
-        &700,
-        &history_hash,
-        &String::from_str(&env, "ipfs://QmTest"),
-        &create_test_commitment(&env, 1),
-        &None,
-    );
-
-    let stellar_token = StellarAssetClient::new(&env, &token_id);
-    stellar_token.mint(&pool_client, &50_000);
-
-    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
-    manager.approve_loan(&loan_id);
-
-    // Set collateral to 1_200, which is strictly less than target refinance amount of 2_000
-    stellar_token.mint(&manager.address, &1_200);
-    env.as_contract(&manager.address, || {
-        let key = DataKey::Loan(loan_id);
-        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
-        loan.collateral_amount = 1_200;
-        env.storage().persistent().set(&key, &loan);
-    });
-
-    let result = manager.try_refinance_loan(&loan_id, &2_000, &17_280);
-    assert_eq!(result, Err(Ok(LoanError::InsufficientCollateral)));
-
-    // Loan amount remains unchanged at 1_000
     assert_eq!(manager.get_loan(&loan_id).amount, 1_000);
 }
 
@@ -4068,7 +4198,7 @@ fn test_purge_emits_loan_purged_event() {
 }
 
 #[test]
-fn test_purge_cancelled_loan_decrements_borrower_loan_count() {
+fn test_purge_cancelled_loan_does_not_double_decrement() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
@@ -4086,11 +4216,15 @@ fn test_purge_cancelled_loan_decrements_borrower_loan_count() {
     );
 
     let loan_id = manager.request_loan(&borrower, &1_000, &17280);
-    manager.cancel_loan(&borrower, &loan_id);
-    manager.purge_loan(&loan_id);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
 
-    // Borrower loan count should have been decremented
-    // (no direct getter for borrower_loan_count, but we can verify no panic)
+    manager.cancel_loan(&borrower, &loan_id);
+    // cancel_loan decrements the count (#1591)
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    manager.purge_loan(&loan_id);
+    // purge should NOT double-decrement
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
 }
 
 // ── get_total_outstanding tests ────────────────────────────────────────────
@@ -4167,6 +4301,132 @@ fn test_get_total_outstanding_decreases_on_check_default() {
 
     manager.check_default(&loan_id);
     assert_eq!(manager.get_total_outstanding(&token_id), 0);
+}
+
+#[test]
+fn test_get_total_outstanding_returns_to_baseline_after_liquidation() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    manager.set_liquidation_threshold(&14_500);
+
+    let baseline = manager.get_total_outstanding(&token_id);
+    assert_eq!(baseline, 0);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+    assert_eq!(manager.get_total_outstanding(&token_id), baseline + 1_000);
+
+    manager.deposit_collateral(&loan_id, &1_400);
+    manager.liquidate(&liquidator, &loan_id);
+
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        baseline,
+        "liquidation must return TotalOutstanding exactly to its pre-loan baseline"
+    );
+}
+
+#[test]
+fn test_repeated_liquidations_do_not_shrink_available_liquidity() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower_a = Address::generate(&env);
+    let borrower_b = Address::generate(&env);
+    let borrower_c = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower_a,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTestA"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    nft_client.mint(
+        &borrower_b,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTestB"),
+        &create_test_commitment(&env, 2),
+        &None,
+    );
+    nft_client.mint(
+        &borrower_c,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTestC"),
+        &create_test_commitment(&env, 3),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower_a, &20_000);
+    stellar_token.mint(&borrower_b, &20_000);
+    stellar_token.mint(&borrower_c, &20_000);
+
+    manager.set_liquidation_threshold(&14_500);
+
+    let baseline = manager.get_total_outstanding(&token_id);
+    assert_eq!(baseline, 0);
+
+    // Approve + liquidate loan A: outstanding must return to baseline (not stay
+    // inflated), otherwise liquidity is permanently starved.
+    let loan_a = manager.request_loan(&borrower_a, &1_000, &17_280);
+    manager.approve_loan(&loan_a);
+    manager.deposit_collateral(&loan_a, &1_400);
+    manager.liquidate(&liquidator, &loan_a);
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        baseline,
+        "TotalOutstanding must return to baseline after the first liquidation"
+    );
+
+    // Approve + liquidate loan B: the bug compounded across multiple loans, so
+    // verify the second liquidation also returns outstanding to baseline.
+    let loan_b = manager.request_loan(&borrower_b, &1_000, &17_280);
+    manager.approve_loan(&loan_b);
+    manager.deposit_collateral(&loan_b, &1_400);
+    manager.liquidate(&liquidator, &loan_b);
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        baseline,
+        "repeated liquidations must not compound TotalOutstanding inflation"
+    );
+
+    // Because outstanding is genuinely back to baseline, available_liquidity is
+    // the full pool balance: a subsequent approve_loan must still succeed. (A
+    // and B are marked seized by their liquidations, so use a fresh borrower
+    // for loan C.)
+    let loan_c = manager.request_loan(&borrower_c, &1_000, &17_280);
+    assert_eq!(
+        manager.try_approve_loan(&loan_c),
+        Ok(Ok(())),
+        "a later approve_loan must not see starved available_liquidity"
+    );
 }
 
 #[test]

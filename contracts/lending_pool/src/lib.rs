@@ -112,7 +112,7 @@ pub enum DataKey {
     /// by `deposit`, `redeem`/`withdraw`, and `distribute_yield`. It is
     /// never derived from `token::Client::balance`, so an unsolicited
     /// direct transfer to the pool's address ("donation") cannot move the
-    /// share price.
+    /// share price (#1089).
     TotalManagedAssets(Address),
     /// token → number of active depositors
     DepositorCount(Address),
@@ -155,7 +155,7 @@ impl LendingPool {
     /// Decimals offset applied to both shares and assets before computing
     /// exchange rates: `10^3`. This is the standard ERC4626-style "virtual
     /// shares/assets" mitigation for the classic first-depositor inflation
-    /// attack: it makes the share price prohibitively expensive to
+    /// attack (#1089): it makes the share price prohibitively expensive to
     /// manipulate via a donation, because the attacker's donated assets are
     /// diluted by the offset instead of being able to round a victim's
     /// minted shares down to zero.
@@ -206,11 +206,11 @@ impl LendingPool {
     /// Deliberately never derived from `token::Client::balance`: reading the
     /// live balance would let anyone move the share price within a single
     /// ledger by transferring tokens directly to the pool's address,
-    /// without going through `deposit`/`redeem` (see #1380). It is mutated
-    /// only by `deposit` (+amount), `redeem`/`withdraw` (-assets_to_return),
-    /// and `distribute_yield` (+amount) — never by `adjust_outstanding`,
-    /// since moving principal between "idle" and "outstanding" does not
-    /// change the total value under management.
+    /// without going through `deposit`/`redeem` (see #1089, #1380). It is
+    /// mutated only by `deposit` (+amount), `redeem`/`withdraw`
+    /// (-assets_to_return), and `distribute_yield` (+amount) — never by
+    /// `adjust_outstanding`, since moving principal between "idle" and
+    /// "outstanding" does not change the total value under management.
     fn total_managed_assets(env: &Env, token: &Address) -> i128 {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -304,8 +304,8 @@ impl LendingPool {
     /// gives a 1-for-1 allocation) even when the pool is empty, without a
     /// special-cased first-depositor branch. The offset also means a
     /// donation-inflated `total_managed_assets_before` can no longer round a
-    /// victim's minted shares down to zero — see #1380. Rounds down, in the
-    /// pool's favor.
+    /// victim's minted shares down to zero — see #1089, #1380. Rounds down,
+    /// in the pool's favor.
     fn calc_shares_to_mint(
         amount: i128,
         total_managed_assets_before: i128,
