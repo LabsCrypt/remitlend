@@ -36,7 +36,26 @@ describe('Environment Variable Validation', () => {
 
   beforeEach(() => {
     jest.resetModules();
-    process.env = { ...originalEnv };
+    process.env = {
+      DATABASE_URL: 'postgres://localhost',
+      REDIS_URL: 'redis://localhost',
+      JWT_SECRET: 'secret',
+      STELLAR_RPC_URL: 'http://localhost',
+      STELLAR_NETWORK_PASSPHRASE: 'test',
+      LOAN_MANAGER_CONTRACT_ID: 'C1',
+      LENDING_POOL_CONTRACT_ID: 'C2',
+      POOL_TOKEN_ADDRESS: 'T1',
+      LOAN_MANAGER_ADMIN_SECRET: 'S1',
+      INTERNAL_API_KEY: 'K1',
+      FRONTEND_URL: 'http://localhost:3000',
+      SCORE_DELTA_REPAY: '15',
+      SCORE_DELTA_DEFAULT: '50',
+      SCORE_DELTA_LATE: '5',
+      REMITTANCE_NFT_CONTRACT_ID: 'C3',
+      MULTISIG_GOVERNANCE_CONTRACT_ID: 'C4',
+      PII_KEK_KEY: 'a'.repeat(64),
+      NODE_ENV: 'test',
+    };
     jest.clearAllMocks();
   });
 
