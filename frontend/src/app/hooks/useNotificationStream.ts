@@ -78,8 +78,7 @@ export function useNotificationStream() {
 
               try {
                 const payload = JSON.parse(dataStr) as
-                  | AppNotification
-                  | { type: "init"; notifications: AppNotification[] };
+                  AppNotification | { type: "init"; notifications: AppNotification[] };
 
                 queryClient.setQueryData(
                   queryKeys.notifications.all(),

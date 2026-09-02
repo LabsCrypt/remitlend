@@ -582,7 +582,7 @@ export class EventIndexer {
     await withTransaction(async (client: PoolClient) => {
       for (const event of parsedEvents) {
         const insertResult = await client.query(
-          `INSERT INTO loan_events (
+          `INSERT INTO contract_events (
             event_id,
             event_type,
             loan_id,

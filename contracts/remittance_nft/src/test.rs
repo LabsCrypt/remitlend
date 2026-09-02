@@ -1,7 +1,7 @@
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _, testutils::Events as _, testutils::Ledger as _, Address, BytesN, Env,
-    FromVal, String, Symbol,
+    contract, contractimpl, testutils::Address as _, testutils::Events as _,
+    testutils::Ledger as _, Address, BytesN, Env, FromVal, String, Symbol, Vec,
 };
 
 fn create_test_hash(env: &Env, value: u8) -> BytesN<32> {
@@ -946,10 +946,63 @@ fn test_record_default_auto_burns_after_threshold() {
     assert!(client.get_metadata(&user).is_some());
 
     client.record_default(&user, &None);
-    assert_eq!(client.get_default_count(&user), 2);
+    assert_eq!(client.get_default_count(&user), 0);
     assert!(client.get_metadata(&user).is_none());
     assert_eq!(client.get_score(&user), 0);
     assert!(!client.is_seized(&user));
+}
+
+#[test]
+fn test_reminted_account_resets_default_count_and_does_not_immediately_reburn() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.set_default_burn_threshold(&2);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 6),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    // Default user twice to auto-burn (threshold=2)
+    client.record_default(&user, &None);
+    client.record_default(&user, &None);
+    assert!(client.get_metadata(&user).is_none());
+    assert_eq!(client.get_default_count(&user), 0);
+
+    // Approve and remint
+    client.approve_remint(&user);
+    client.admin_remint(
+        &user,
+        &600,
+        &create_test_hash(&env, 7),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 2),
+    );
+
+    // Default count must be reset to 0
+    assert_eq!(client.get_default_count(&user), 0);
+    assert!(client.get_metadata(&user).is_some());
+
+    // Single record_default after remint increments count to 1 and does not re-burn
+    client.record_default(&user, &None);
+    assert_eq!(client.get_default_count(&user), 1);
+    assert!(client.get_metadata(&user).is_some());
+
+    // Second record_default hits threshold 2 and auto-burns again
+    client.record_default(&user, &None);
+    assert_eq!(client.get_default_count(&user), 0);
+    assert!(client.get_metadata(&user).is_none());
 }
 
 #[test]
@@ -2418,4 +2471,184 @@ fn test_admin_remint_rejects_bad_commitment() {
     // Verify new commitment is stored
     let stored = client.get_recipient_commitment(&user);
     assert_eq!(stored, new_commitment);
+}
+
+// ---------------------------------------------------------------------------
+// MockLoanManager – used exclusively by the issue-1663 transfer-guard tests.
+//
+// The mock is keyed by borrower address in instance storage:
+//   "loans":<borrower> -> Vec<u32>   (loan IDs)
+//   "status":<u32>     -> u32         (status discriminant for that loan ID)
+//
+// Status discriminants mirror the real LoanStatus enum:
+//   0 = Pending, 1 = Approved, 2 = Repaid, 3 = Defaulted,
+//   4 = Liquidated, 5 = Cancelled, 6 = Rejected
+// ---------------------------------------------------------------------------
+#[contract]
+pub struct MockLoanManager;
+
+#[contractimpl]
+impl MockLoanManager {
+    /// Record `loan_id` as belonging to `borrower` with the given `status`.
+    pub fn set_loan(env: Env, borrower: Address, loan_id: u32, status: u32) {
+        // Append to borrower's loan list
+        let mut loans: Vec<u32> = env
+            .storage()
+            .instance()
+            .get::<(soroban_sdk::Symbol, Address), Vec<u32>>(&(
+                soroban_sdk::Symbol::new(&env, "loans"),
+                borrower.clone(),
+            ))
+            .unwrap_or(Vec::new(&env));
+        loans.push_back(loan_id);
+        env.storage()
+            .instance()
+            .set(&(soroban_sdk::Symbol::new(&env, "loans"), borrower), &loans);
+        // Store status for this loan ID
+        env.storage().instance().set(
+            &(soroban_sdk::Symbol::new(&env, "status"), loan_id),
+            &status,
+        );
+    }
+
+    /// LoanManagerInterface::get_borrower_loans
+    pub fn get_borrower_loans(env: Env, borrower: Address) -> Vec<u32> {
+        env.storage()
+            .instance()
+            .get::<(soroban_sdk::Symbol, Address), Vec<u32>>(&(
+                soroban_sdk::Symbol::new(&env, "loans"),
+                borrower,
+            ))
+            .unwrap_or(Vec::new(&env))
+    }
+
+    /// LoanManagerInterface::get_loan_status
+    pub fn get_loan_status(env: Env, loan_id: u32) -> u32 {
+        env.storage()
+            .instance()
+            .get::<(soroban_sdk::Symbol, u32), u32>(&(
+                soroban_sdk::Symbol::new(&env, "status"),
+                loan_id,
+            ))
+            .unwrap_or(2) // default: Repaid (terminal)
+    }
+}
+
+// Helper to build the NFT client with a registered mock loan manager.
+fn setup_nft_with_loan_manager(env: &Env) -> (RemittanceNFTClient<'_>, Address, Address, Address) {
+    env.mock_all_auths();
+
+    let admin = Address::generate(env);
+    let nft_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(env, &nft_id);
+    client.initialize(&admin);
+
+    let mock_lm_id = env.register(MockLoanManager, ());
+    client.set_loan_manager(&mock_lm_id);
+
+    let borrower = Address::generate(env);
+    client.mint(
+        &borrower,
+        &600,
+        &create_test_hash(env, 55),
+        &create_test_uri(env),
+        &create_test_commitment(env, 1),
+        &None,
+    );
+
+    (client, mock_lm_id, borrower, admin)
+}
+
+/// Issue #1663 regression: transfer must be blocked when the sender has a
+/// *Pending* loan (status discriminant 0).
+#[test]
+fn test_transfer_blocked_when_sender_has_pending_loan() {
+    let env = Env::default();
+    let (client, mock_lm_id, borrower, _admin) = setup_nft_with_loan_manager(&env);
+    let new_wallet = Address::generate(&env);
+
+    // Register a Pending loan (status = 0) for the borrower
+    let mock_lm = MockLoanManagerClient::new(&env, &mock_lm_id);
+    mock_lm.set_loan(&borrower, &1, &0);
+
+    let result = client.try_transfer(&borrower, &new_wallet, &None);
+    assert_eq!(
+        result,
+        Err(Ok(NftError::ActiveLoanExists)),
+        "transfer must be blocked when the sender has a Pending loan"
+    );
+}
+
+/// Issue #1663 regression: transfer must be blocked when the sender has an
+/// *Approved* (disbursed) loan (status discriminant 1).
+#[test]
+fn test_transfer_blocked_when_sender_has_approved_loan() {
+    let env = Env::default();
+    let (client, mock_lm_id, borrower, _admin) = setup_nft_with_loan_manager(&env);
+    let new_wallet = Address::generate(&env);
+
+    // Register an Approved loan (status = 1)
+    let mock_lm = MockLoanManagerClient::new(&env, &mock_lm_id);
+    mock_lm.set_loan(&borrower, &42, &1);
+
+    let result = client.try_transfer(&borrower, &new_wallet, &None);
+    assert_eq!(
+        result,
+        Err(Ok(NftError::ActiveLoanExists)),
+        "transfer must be blocked when the sender has an Approved loan"
+    );
+}
+
+/// Transfer must succeed when all of the sender's loans are in a terminal
+/// state (Repaid = 2, Cancelled = 5, etc.).
+#[test]
+fn test_transfer_allowed_when_all_loans_are_terminal() {
+    let env = Env::default();
+    let (client, mock_lm_id, borrower, _admin) = setup_nft_with_loan_manager(&env);
+    let new_wallet = Address::generate(&env);
+
+    // Register only terminal-state loans
+    let mock_lm = MockLoanManagerClient::new(&env, &mock_lm_id);
+    mock_lm.set_loan(&borrower, &10, &2); // Repaid
+    mock_lm.set_loan(&borrower, &11, &5); // Cancelled
+
+    let result = client.try_transfer(&borrower, &new_wallet, &None);
+    assert!(
+        result.is_ok(),
+        "transfer must be allowed when all loans are terminal"
+    );
+    // Verify NFT moved to new wallet
+    assert!(client.get_metadata(&new_wallet).is_some());
+    assert!(client.get_metadata(&borrower).is_none());
+}
+
+/// Transfer guard must be a no-op (transparent) when no LoanManager has
+/// been registered — preserving backwards-compatibility.
+#[test]
+fn test_transfer_succeeds_without_loan_manager_configured() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let nft_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &nft_id);
+    client.initialize(&admin);
+
+    // No set_loan_manager call — guard must be skipped entirely.
+    let borrower = Address::generate(&env);
+    let new_wallet = Address::generate(&env);
+    client.mint(
+        &borrower,
+        &600,
+        &create_test_hash(&env, 77),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let result = client.try_transfer(&borrower, &new_wallet, &None);
+    assert!(
+        result.is_ok(),
+        "transfer must succeed when no LoanManager is registered"
+    );
 }

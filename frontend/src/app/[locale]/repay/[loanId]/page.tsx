@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { signTransaction } from "@stellar/freighter-api";
 import { submitLoanTransaction } from "../../../hooks/useApi";
 import { Button } from "../../../components/ui/Button";
 import {
@@ -16,8 +15,11 @@ import {
 import {
   selectIsWalletConnected,
   selectWalletAddress,
+  selectWalletNetwork,
   useWalletStore,
 } from "../../../stores/useWalletStore";
+import { useWallet } from "../../../components/providers/WalletProvider";
+import { getNetworkPassphrase } from "../../../utils/soroban";
 import { useContractToast } from "../../../hooks/useContractToast";
 import { TransactionPreviewModal } from "../../../components/transaction/TransactionPreviewModal";
 import { useTransactionPreview } from "../../../hooks/useTransactionPreview";
@@ -36,6 +38,8 @@ export default function RepayLoanPage() {
 
   const walletAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
+  const walletNetwork = useWalletStore(selectWalletNetwork);
+  const { signTransaction } = useWallet();
   const toast = useContractToast();
   const txPreview = useTransactionPreview();
 
@@ -64,7 +68,24 @@ export default function RepayLoanPage() {
 
   const handleRepayClick = async (event: FormEvent) => {
     event.preventDefault();
-    if (!isWalletConnected || !walletAddress) {
+    if (walletNetwork && !walletNetwork.isSupported) {
+      setLastError({
+        category: "unknown",
+        title: "Unsupported wallet network",
+        message:
+          "Repayment is not supported on the current wallet network. Switch your wallet to PUBLIC (mainnet) or TESTNET and try again.",
+        guidance:
+          "Open your wallet, switch to a supported network (PUBLIC or TESTNET), then retry the repayment.",
+        retryable: false,
+        cancelledByUser: false,
+      });
+      toast.error(
+        "Unsupported wallet network",
+        "Switch your wallet to PUBLIC or TESTNET before repaying.",
+      );
+      return;
+    }
+    if (!isWalletConnected || !walletAddress || !walletNetwork) {
       toast.error("Wallet not connected", "Please connect your wallet first.");
       return;
     }
@@ -85,12 +106,15 @@ export default function RepayLoanPage() {
         throw new Error("Contract configuration missing");
       }
 
+      const networkPassphrase = getNetworkPassphrase(walletNetwork.name);
+
       const { buildUnsignedRepaymentXdr } = await import("../../../utils/soroban");
       const xdr = await buildUnsignedRepaymentXdr({
         borrower: walletAddress,
         loanId,
         amount: amountNumber,
         contractId,
+        networkPassphrase,
       });
 
       txPreview.show(
@@ -115,7 +139,7 @@ export default function RepayLoanPage() {
           contractAddress: contractId,
         },
         async () => {
-          await executeRepayment(xdr);
+          await executeRepayment(xdr, networkPassphrase);
         },
       );
     } catch (error) {
@@ -127,28 +151,21 @@ export default function RepayLoanPage() {
     }
   };
 
-  const executeRepayment = async (unsignedXdr: string) => {
+  const executeRepayment = async (unsignedXdr: string, networkPassphrase: string) => {
     let toastId: string | number | null = null;
     try {
       setTrackerState("signing");
       setTrackerTitle("Awaiting wallet confirmation");
       setTrackerMessage("Approve the repayment transaction in your wallet.");
 
-      const signResult = await signTransaction(unsignedXdr, {
-        networkPassphrase: "Test SDF Network ; September 2015",
-      });
-      if (signResult.error) {
-        throw new Error(
-          typeof signResult.error === "string" ? signResult.error : "Failed to sign transaction",
-        );
-      }
+      const signedTxXdr = await signTransaction(unsignedXdr, { networkPassphrase });
 
       setTrackerState("submitting");
       setTrackerTitle("Submitting repayment");
       setTrackerMessage("Sending repayment transaction to the network.");
       toastId = toast.showPending("Repayment transaction submitted");
 
-      const result = await submitLoanTransaction(signResult.signedTxXdr);
+      const result = await submitLoanTransaction(signedTxXdr);
 
       if (result.status === "SUCCESS") {
         setTrackerTxHash(result.txHash);

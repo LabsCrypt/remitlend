@@ -28,6 +28,10 @@ pub enum NftError {
     MinterLimitReached = 19,
     CommitmentMalformed = 20,
     CommitmentMissing = 21,
+    /// Returned by `transfer` when the sender has one or more active loans
+    /// (Pending or Approved) in the registered LoanManager.  Borrowers must
+    /// fully repay or cancel all loans before relocating their reputation NFT.
+    ActiveLoanExists = 22,
 }
 
 #[contracttype]
@@ -65,6 +69,22 @@ pub enum DataKey {
     ProposedAdmin,
     MinRepaymentAmount,
     RecipientCommitment(Address),
+    /// Optional address of the LoanManager contract used to enforce the
+    /// active-loan transfer guard (see `transfer`).
+    LoanManager,
+}
+
+/// Minimal cross-contract interface exposed by the LoanManager contract.
+///
+/// Only the subset of methods required for the active-loan transfer guard is
+/// declared here.  The discriminants match the actual LoanStatus enum in
+/// loan_manager: Pending = 0, Approved = 1.
+#[soroban_sdk::contractclient(name = "LoanManagerClient")]
+pub trait LoanManagerInterface {
+    /// Returns the list of loan IDs associated with the given borrower.
+    fn get_borrower_loans(env: Env, borrower: Address) -> soroban_sdk::Vec<u32>;
+    /// Returns the raw status discriminant of a single loan.
+    fn get_loan_status(env: Env, loan_id: u32) -> u32;
 }
 
 #[contract]
@@ -345,6 +365,9 @@ impl RemittanceNFT {
         env.storage()
             .persistent()
             .remove(&DataKey::RecipientCommitment(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::DefaultCount(user.clone()));
 
         let burned_key = DataKey::Burned(user.clone());
         env.storage().persistent().set(&burned_key, &true);
@@ -609,6 +632,9 @@ impl RemittanceNFT {
         env.storage()
             .persistent()
             .remove(&DataKey::TransferCooldown(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::DefaultCount(user.clone()));
 
         // Write the new NFT metadata.
         let metadata = RemittanceMetadata {
@@ -956,6 +982,29 @@ impl RemittanceNFT {
         from.require_auth();
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
+        // Guard: block transfers while the sender has active loans.
+        //
+        // If a LoanManager address has been registered via `set_loan_manager`,
+        // we cross-call it to verify that none of the borrower's loans are in
+        // an active state (Pending = 0, Approved = 1).  This prevents the
+        // "credit wash" attack where a borrower facing default races to move
+        // their unblemished NFT to a clean address before penalties are applied.
+        if let Some(loan_manager_addr) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::LoanManager)
+        {
+            let loan_manager = LoanManagerClient::new(&env, &loan_manager_addr);
+            let loan_ids = loan_manager.get_borrower_loans(&from);
+            for loan_id in loan_ids.iter() {
+                // LoanStatus::Pending = 0, LoanStatus::Approved = 1
+                let status = loan_manager.get_loan_status(&loan_id);
+                if status == 0 || status == 1 {
+                    return Err(NftError::ActiveLoanExists);
+                }
+            }
+        }
+
         let transfer_cooldown_key = DataKey::TransferCooldown(from.clone());
         if let Some(next_allowed_ledger) = env
             .storage()
@@ -1258,6 +1307,36 @@ impl RemittanceNFT {
             ),
             (current_admin, new_admin),
         );
+    }
+
+    /// Register (or replace) the LoanManager contract address used by the
+    /// active-loan transfer guard.
+    ///
+    /// Must be called by the admin.  Once set, every call to `transfer` will
+    /// cross-call the LoanManager to ensure the sender has no Pending or
+    /// Approved loans.  Pass the zero-address or call with a subsequent
+    /// `set_loan_manager` to replace the address.
+    ///
+    /// Reverts with `ContractPaused` if the contract is paused.
+    pub fn set_loan_manager(env: Env, loan_manager: Address) -> Result<(), NftError> {
+        Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env)?;
+
+        env.storage()
+            .instance()
+            .set(&DataKey::LoanManager, &loan_manager);
+        Self::bump_instance_ttl(&env);
+
+        env.events()
+            .publish((Symbol::new(&env, "LoanMgrSet"),), loan_manager);
+        Ok(())
+    }
+
+    /// Return the currently registered LoanManager contract address, or
+    /// `None` if no address has been set.
+    pub fn get_loan_manager(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::LoanManager)
     }
 }
 

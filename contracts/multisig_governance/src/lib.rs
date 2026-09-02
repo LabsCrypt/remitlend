@@ -18,6 +18,11 @@ const MAX_SIGNERS: u32 = 20;
 /// Time-to-live for proposals before they expire (7 days in seconds).
 const PROPOSAL_TTL_SECONDS: u64 = 604_800;
 
+/// Maximum timelock delay. Must be strictly less than PROPOSAL_TTL_SECONDS
+/// so the finalize window [executable_after, expiry) is always non-empty.
+/// With the default TTL of 7 days this allows delays up to ~6 days 23 h 59 min.
+const MAX_TIMELOCK_SECONDS: u64 = PROPOSAL_TTL_SECONDS - 1;
+
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
@@ -47,6 +52,7 @@ pub enum GovernanceError {
     TimelockNotElapsed = 4010,
     ThresholdNotMet = 4011,
     DelayTooShort = 4012,
+    DelayTooLong = 4021,
     EmptySignerList = 4013,
     ReproposalCooldownActive = 4015,
     ProposalExpired = 4016,
@@ -201,7 +207,7 @@ impl GovernanceContract {
     /// Only the current admin may call this. Any pending proposal must be
     /// cancelled before a new one can be submitted.
     ///
-    /// `delay_seconds` must be >= MIN_TIMELOCK_SECONDS (86400 = 24 h).
+    /// `delay_seconds` must be in [MIN_TIMELOCK_SECONDS, MAX_TIMELOCK_SECONDS].
     /// `threshold` must be in [1, len(signers)] and len(signers) <= MAX_SIGNERS.
     pub fn propose_admin_transfer(
         env: Env,
@@ -261,6 +267,9 @@ impl GovernanceContract {
         }
         if delay_seconds < MIN_TIMELOCK_SECONDS {
             return Err(GovernanceError::DelayTooShort);
+        }
+        if delay_seconds > MAX_TIMELOCK_SECONDS {
+            return Err(GovernanceError::DelayTooLong);
         }
 
         let now = env.ledger().timestamp();

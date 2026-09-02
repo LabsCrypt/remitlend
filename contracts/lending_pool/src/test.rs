@@ -1668,14 +1668,15 @@ fn test_adjust_outstanding_zero_delta_is_a_no_op() {
     assert_eq!(pool_client.get_total_outstanding(&token), 1_000);
 }
 
-// ── #1380: slippage bounds & virtual-share/asset offset ───────────────────────
+// ── #1089 / #1380: donation-attack & slippage bounds ────────────────────────
 //
-// These tests reproduce the single-ledger share-price manipulation described
-// in #1380 and assert it is now prevented: a bare token transfer to the
-// pool's address ("donation") cannot move the share price, the classic
-// first-depositor inflation attack is defused by the virtual offset, and
-// `min_shares_out`/`min_assets_out` cause settlement to revert rather than
-// execute at a worse price than the caller expected.
+// These tests reproduce the first-depositor share inflation attack (#1089)
+// and single-ledger share-price manipulation (#1380), asserting they are
+// prevented: a bare token transfer to the pool's address ("donation")
+// cannot move the share price, the classic first-depositor inflation
+// attack is defused by the virtual offset, and `min_shares_out` /
+// `min_assets_out` cause settlement to revert rather than execute at a
+// worse price than the caller expected.
 
 #[test]
 fn test_donation_to_pool_address_does_not_move_share_price() {
@@ -2014,4 +2015,68 @@ fn test_utilization_accurate_when_yield_distributed() {
     // 4,000 outstanding / 15,000 total managed assets = 2,666 bps (26.66%)
     assert_eq!(stats_after.utilization_bps, 2_666);
     assert!(stats_after.utilization_bps > 0);
+}
+
+#[test]
+fn test_total_deposits_tracks_principal_after_yield_and_full_withdrawal() {
+    // Regression test for #1091: TotalDeposits must track principal only,
+    // not the yield-inclusive redemption amount. Two depositors, yield
+    // accrues, provider_a fully withdraws; assert TotalDeposits still
+    // reflects provider_b's principal (not corrupted low by yield), and
+    // that MaxPoolSize is enforced against that true principal figure.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider_a = Address::generate(&env);
+    let provider_b = Address::generate(&env);
+    stellar_asset_client.mint(&provider_a, &600);
+    stellar_asset_client.mint(&provider_b, &400);
+
+    // provider_a: 600 principal, provider_b: 400 principal.
+    pool_client.deposit(&provider_a, &token_id, &600, &0);
+    pool_client.deposit(&provider_b, &token_id, &400, &0);
+    assert_eq!(pool_client.get_total_deposits(&token_id), 1_000);
+
+    // 100 tokens of yield arrive; managed assets = 1100, principal unaffected.
+    stellar_asset_client.mint(&token_admin, &100);
+    pool_client.distribute_yield(&token_admin, &token_id, &100);
+    assert_eq!(pool_client.get_total_deposits(&token_id), 1_000);
+
+    // provider_a fully redeems their 600 shares. The payout (principal +
+    // pro-rata yield) is larger than provider_a's principal, but only the
+    // principal portion must be deducted from TotalDeposits.
+    let shares_a = pool_client.get_shares(&provider_a, &token_id);
+    let assets_returned = pool_client.preview_redeem(&token_id, &shares_a);
+    assert!(
+        assets_returned > 600,
+        "expected withdrawal to include yield: got {assets_returned}"
+    );
+    pool_client.withdraw(&provider_a, &token_id, &shares_a, &0);
+
+    // TotalDeposits must reflect provider_b's remaining principal (400),
+    // not be dragged down by provider_a's yield-inclusive payout.
+    assert_eq!(pool_client.get_total_deposits(&token_id), 400);
+
+    // MaxPoolSize must be enforced against this true principal figure: with
+    // a cap of 500, provider_b (or a new depositor) can still deposit up to
+    // 100 more before hitting the cap.
+    pool_client.set_max_pool_size(&token_id, &500);
+    stellar_asset_client.mint(&provider_b, &100);
+    pool_client.deposit(&provider_b, &token_id, &100, &0);
+    assert_eq!(pool_client.get_total_deposits(&token_id), 500);
+
+    stellar_asset_client.mint(&provider_b, &1);
+    let result = pool_client.try_deposit(&provider_b, &token_id, &1, &0);
+    assert!(
+        result.is_err(),
+        "deposit exceeding true-principal cap must be rejected"
+    );
 }

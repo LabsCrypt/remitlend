@@ -490,7 +490,7 @@ describe('EventIndexer – transaction atomicity via ingestRawEvents', () => {
 
     const mockClient: MockClient = {
       query: jest.fn<any>().mockImplementation(async (sql: string, params: unknown[]) => {
-        if (sql.includes('INSERT INTO loan_events')) {
+        if (sql.includes('INSERT INTO contract_events')) {
           return { rowCount: 1, rows: [{ event_id: 'apprv-001' }] };
         }
         if (sql.includes('INSERT INTO audit_logs')) {
@@ -540,7 +540,7 @@ describe('EventIndexer – transaction atomicity via ingestRawEvents', () => {
   it('persists admin config events into audit_logs', async () => {
     const mockClient: MockClient = {
       query: jest.fn<any>().mockImplementation(async (sql: string) => {
-        if (sql.includes('INSERT INTO loan_events')) {
+        if (sql.includes('INSERT INTO contract_events')) {
           return { rowCount: 1, rows: [{ event_id: 'admin-evt-001' }] };
         }
         if (sql.includes('INSERT INTO audit_logs')) {
