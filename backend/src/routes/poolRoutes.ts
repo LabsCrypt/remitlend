@@ -230,7 +230,7 @@ router.post(
  *   post:
  *     summary: Build an unsigned withdraw transaction
  *     description: >
- *       Builds an unsigned Soroban `withdraw(provider, token, shares)` transaction XDR
+ *       Builds an unsigned Soroban `withdraw(provider, token, shares, min_assets_out)` transaction XDR
  *       against the LendingPool contract. The frontend signs it with the user's wallet
  *       and submits via POST /api/pool/submit.
  *     tags: [Pool]
@@ -257,6 +257,10 @@ router.post(
  *                 type: number
  *                 description: Amount (shares) to withdraw
  *                 example: 500
+ *               minAssetsOut:
+ *                 type: number
+ *                 description: Minimum underlying assets to receive (slippage bound, defaults to 0)
+ *                 example: 490
  *     responses:
  *       200:
  *         description: Unsigned transaction XDR returned
@@ -285,7 +289,7 @@ router.post(
  *   post:
  *     summary: Build an unsigned emergency withdraw transaction
  *     description: >
- *       Builds an unsigned Soroban `emergency_withdraw(provider, token, shares)`
+ *       Builds an unsigned Soroban `emergency_withdraw(provider, token, shares, min_assets_out)`
  *       transaction XDR against the LendingPool contract. Bypasses the withdrawal
  *       cooldown. The frontend signs it with the user's wallet and submits via
  *       POST /api/pool/submit.
@@ -312,6 +316,10 @@ router.post(
  *               shares:
  *                 type: number
  *                 description: Amount (shares) to withdraw
+ *               minAssetsOut:
+ *                 type: number
+ *                 description: Minimum underlying assets to receive (slippage bound, defaults to 0)
+ *                 example: 490
  *     responses:
  *       200:
  *         description: Unsigned transaction XDR returned

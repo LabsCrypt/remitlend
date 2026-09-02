@@ -57,7 +57,9 @@ function ToastCard({ toast }: { toast: ToastItem }) {
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 20, scale: 0.96 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className={`w-full rounded-xl border p-4 shadow-lg shadow-zinc-900/5 ${getToastStyles(toast.type)}`}
+      className={`w-full rounded-xl border p-4 shadow-lg shadow-zinc-900/5 ${getToastStyles(
+        toast.type,
+      )}`}
       role="alert"
     >
       <div className="flex items-start gap-3">

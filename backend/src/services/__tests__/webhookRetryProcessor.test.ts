@@ -9,6 +9,9 @@ const mockQuery: jest.MockedFunction<
 jest.unstable_mockModule('../../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
+  withTransaction: jest.fn(async (fn: (client: { query: typeof mockQuery }) => Promise<unknown>) =>
+    fn({ query: mockQuery }),
+  ),
   getClient: jest.fn(),
   closePool: jest.fn(),
 }));
@@ -62,7 +65,7 @@ describe('WebhookRetryProcessor', () => {
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('FROM webhook_deliveries'),
+        expect.stringContaining('FOR UPDATE OF wd SKIP LOCKED'),
         expect.any(Array),
       );
     });
@@ -235,7 +238,7 @@ describe('WebhookRetryProcessor', () => {
       // Both deliveries should have been processed (one failed, one succeeded)
       expect(mockQuery).toHaveBeenCalledTimes(3);
       const updateCalls = mockQuery.mock.calls.filter((call) =>
-        (call[0] as string).includes('UPDATE'),
+        (call[0] as string).includes('UPDATE webhook_deliveries'),
       );
       expect(updateCalls).toHaveLength(2);
     });
@@ -278,7 +281,7 @@ describe('WebhookRetryProcessor', () => {
 
       // Both deliveries should have been updated in DB
       const updateCalls = mockQuery.mock.calls.filter((call) =>
-        (call[0] as string).includes('UPDATE'),
+        (call[0] as string).includes('UPDATE webhook_deliveries'),
       );
       expect(updateCalls).toHaveLength(2);
     });

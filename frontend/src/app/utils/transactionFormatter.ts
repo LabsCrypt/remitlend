@@ -186,7 +186,10 @@ export function formatRemittanceSend(params: {
   const operations: TransactionOperation[] = [
     {
       type: "Send Remittance",
-      description: `You are sending ${params.amount} ${params.token} to ${params.recipient.slice(0, 8)}...${params.recipient.slice(-6)}`,
+      description: `You are sending ${params.amount} ${params.token} to ${params.recipient.slice(
+        0,
+        8,
+      )}...${params.recipient.slice(-6)}`,
       amount: params.amount.toString(),
       token: params.token,
       details: {

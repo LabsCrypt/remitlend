@@ -2,17 +2,17 @@ version: "3.8"
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.9-alpine
     environment:
       POSTGRES_DB: remitlend
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
   redis:
-    image: redis:alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
 
   backend:
@@ -22,6 +22,10 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/remitlend
       - REDIS_URL=redis://redis:6379
+      - PII_KEK_ID=${PII_KEK_ID}
+      - PII_KMS_ENDPOINT=${PII_KMS_ENDPOINT}
+      - PII_KEK_REGION=${PII_KEK_REGION}
+      - LOG_REDACTION=strict
     ports:
       - "3001:3001"
     depends_on:
@@ -41,4 +45,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  pgdata:

@@ -192,4 +192,43 @@ describe('notification filters', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.notifications).toHaveLength(10);
   });
+
+  it('rejects invalid status', async () => {
+    const response = await request(app)
+      .get('/api/notifications?status=invalid_status')
+      .set(bearer(userId));
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+  });
+
+  it('rejects invalid type', async () => {
+    const response = await request(app)
+      .get('/api/notifications?type=invalid_type')
+      .set(bearer(userId));
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+  });
+
+  it('rejects non-numeric limit', async () => {
+    const response = await request(app).get('/api/notifications?limit=abc').set(bearer(userId));
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+  });
+
+  it('rejects out-of-bounds limit', async () => {
+    const response = await request(app).get('/api/notifications?limit=0').set(bearer(userId));
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+
+    const responseTooLarge = await request(app)
+      .get('/api/notifications?limit=101')
+      .set(bearer(userId));
+
+    expect(responseTooLarge.status).toBe(400);
+    expect(responseTooLarge.body.success).toBe(false);
+  });
 });

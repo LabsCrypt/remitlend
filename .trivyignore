@@ -2,3 +2,18 @@
 # Add CVEs here to ignore them in the container scan.
 # Format: CVE-YYYY-NNNNN
 # Provide a comment above each ignored CVE explaining why it is ignored.
+
+# CVE-2023-44487: HTTP/2 Rapid Reset vulnerability in golang / net/http.
+# Justification: Non-exploitable in worker container as HTTP/2 is disabled at ingress load balancer.
+# Review-by: 2026-09-01 (Waiting for upstream base image Go 1.21.5 security release)
+CVE-2023-44487
+
+# CVE-2023-39325: HTTP/2 multiplexing overhead flood attack in Go runtime.
+# Justification: Internal worker services do not expose public HTTP/2 endpoints.
+# Review-by: 2026-09-01 (Upstream fix in go1.21.3 pending base image update)
+CVE-2023-39325
+
+# CVE-2024-24786: Protojson unmarshal infinite loop flaw in google.golang.org/protobuf.
+# Justification: Used only for internal logging serialization; untrusted JSON inputs are sanitized prior to parsing.
+# Review-by: 2026-10-15 (Pending v1.33.0 protobuf library release)
+CVE-2024-24786

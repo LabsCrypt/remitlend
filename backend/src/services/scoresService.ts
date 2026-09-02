@@ -33,15 +33,15 @@ export async function updateUserScoresBulk(
   // Clamped the initial raw value payload insertion step to prevent violating constraints on initial inserts
   const valuePlaceholders = Array.from(
     { length: params.length / 2 },
-    (_, i) => `($${i * 2 + 1}, LEAST(850, GREATEST(300, 500 + $${i * 2 + 2})))`,
+    (_, i) => `($${i * 2 + 1}, LEAST(850, GREATEST(300, 500 - $${i * 2 + 2})))`,
   ).join(', ');
 
   const sql = `
-    INSERT INTO scores (user_id, current_score)
+    INSERT INTO scores (borrower, score)
     VALUES ${valuePlaceholders}
-    ON CONFLICT (user_id)
+    ON CONFLICT (borrower)
     DO UPDATE SET
-      current_score = LEAST(850, GREATEST(300, scores.current_score + EXCLUDED.current_score - 500)),
+      score = LEAST(850, GREATEST(300, scores.score + EXCLUDED.score - 500)),
       updated_at = CURRENT_TIMESTAMP`;
 
   try {
@@ -90,14 +90,14 @@ export async function setAbsoluteUserScoresBulk(scores: Map<string, number>): Pr
   // outside the normal 300..850 band (e.g. mid-migration during a contract
   // upgrade) still lands verbatim instead of being silently rewritten.
   const sql = `
-    WITH reconciled_scores (user_id, current_score) AS (
+    WITH reconciled_scores (borrower, score) AS (
       VALUES ${valuePlaceholders.join(',')}
     )
-    INSERT INTO scores (user_id, current_score)
-    SELECT user_id, current_score FROM reconciled_scores
-    ON CONFLICT (user_id)
+    INSERT INTO scores (borrower, score)
+    SELECT borrower, score FROM reconciled_scores
+    ON CONFLICT (borrower)
     DO UPDATE SET
-      current_score = EXCLUDED.current_score,
+      score = EXCLUDED.score,
       updated_at = CURRENT_TIMESTAMP
   `;
 

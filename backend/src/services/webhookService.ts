@@ -1,7 +1,12 @@
 import crypto from 'node:crypto';
-import { query } from '../db/connection.js';
+import { query, withTransaction, type PoolClient } from '../db/connection.js';
 import logger from '../utils/logger.js';
 
+// #1520 — this array is the single source of truth for which event types
+// external webhook subscribers can register for. docs/webhooks.md's
+// "Supported Event Types" section is a human-readable mirror of this list
+// (kept manually in sync) — update both together whenever an entry is
+// added, removed, or renamed here.
 export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   'LoanRequested',
   'LoanApproved',
@@ -276,7 +281,7 @@ const RETRY_DELAYS_MS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000] as const
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 export const getRetryDelayMs = (attemptNumber: number): number => {
-  const delayIndex = Math.min(attemptNumber - 1, RETRY_DELAYS_MS.length - 1);
+  const delayIndex = Math.max(0, Math.min(attemptNumber - 1, RETRY_DELAYS_MS.length - 1));
   return RETRY_DELAYS_MS[delayIndex] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
 };
 
@@ -287,28 +292,37 @@ export class WebhookService {
 
     try {
       const now = new Date();
-      const result = await query(
-        `SELECT id, subscription_id, callback_url, secret, event_id, event_type, 
-                payload, attempt_count
-         FROM webhook_deliveries wd
-         JOIN webhook_subscriptions ws ON wd.subscription_id = ws.id
-         WHERE wd.delivered_at IS NULL 
-           AND wd.next_retry_at IS NOT NULL
-           AND wd.next_retry_at <= $1
-           AND wd.attempt_count < $2
-         ORDER BY wd.next_retry_at ASC
-         LIMIT 100`,
-        [now, MAX_RETRY_ATTEMPTS],
-      );
+      const executeInTx =
+        typeof withTransaction === 'function'
+          ? withTransaction
+          : async (fn: (client: { query: typeof query }) => Promise<unknown>) => fn({ query });
 
-      if (result.rows.length === 0) {
+      const rows = (await executeInTx(async (client: PoolClient | { query: typeof query }) => {
+        const result = await client.query(
+          `SELECT wd.id, wd.subscription_id, ws.callback_url, ws.secret, wd.event_id, wd.event_type, 
+                  wd.payload, wd.attempt_count
+           FROM webhook_deliveries wd
+           JOIN webhook_subscriptions ws ON wd.subscription_id = ws.id
+           WHERE wd.delivered_at IS NULL 
+             AND wd.next_retry_at IS NOT NULL
+             AND wd.next_retry_at <= $1
+             AND wd.attempt_count < $2
+           ORDER BY wd.next_retry_at ASC
+           LIMIT 100
+           FOR UPDATE OF wd SKIP LOCKED`,
+          [now, MAX_RETRY_ATTEMPTS],
+        );
+        return result.rows;
+      })) as unknown[];
+
+      if (rows.length === 0) {
         logger.debug('No pending webhook retries');
         return;
       }
 
-      logger.withContext().info(`Processing ${result.rows.length} pending webhook retries`);
+      logger.withContext().info(`Processing ${rows.length} pending webhook retries`);
 
-      for (const row of result.rows) {
+      for (const row of rows) {
         const delivery = row as unknown as {
           id: number;
           subscription_id: number;

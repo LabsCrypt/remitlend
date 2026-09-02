@@ -15,6 +15,7 @@ import {
   getStellarNetworkPassphrase,
   getStellarRpcUrl,
 } from '../config/stellar.js';
+import { toStroops } from '../money/decimal.js';
 
 /**
  * Service for building and submitting Soroban contract transactions.
@@ -336,7 +337,7 @@ class SorobanService {
   }
 
   /**
-   * Builds an unsigned Soroban `withdraw(provider, token, shares)` transaction
+   * Builds an unsigned Soroban `withdraw(provider, token, shares, min_assets_out)` transaction
    * against the LendingPool contract.
    * Returns base64 XDR for the frontend to sign with the user's wallet.
    */
@@ -344,6 +345,7 @@ class SorobanService {
     providerPublicKey: string,
     tokenAddress: string,
     shares: number,
+    minAssetsOut: number = 0,
   ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
     const server = this.getRpcServer();
     const contractId = this.getLendingPoolContractId();
@@ -358,6 +360,7 @@ class SorobanService {
       type: 'address',
     });
     const sharesScVal = nativeToScVal(BigInt(shares), { type: 'i128' });
+    const minAssetsOutScVal = nativeToScVal(BigInt(minAssetsOut), { type: 'i128' });
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -367,7 +370,7 @@ class SorobanService {
         Operation.invokeContractFunction({
           contract: contractId,
           function: 'withdraw',
-          args: [providerScVal, tokenScVal, sharesScVal],
+          args: [providerScVal, tokenScVal, sharesScVal, minAssetsOutScVal],
         }),
       )
       .setTimeout(30)
@@ -380,13 +383,14 @@ class SorobanService {
       provider: providerPublicKey,
       token: tokenAddress,
       shares,
+      minAssetsOut,
     });
 
     return { unsignedTxXdr, networkPassphrase: passphrase };
   }
 
   /**
-   * Builds an unsigned Soroban `emergency_withdraw(provider, token, shares)` transaction
+   * Builds an unsigned Soroban `emergency_withdraw(provider, token, shares, min_assets_out)` transaction
    * against the LendingPool contract. Bypasses the withdrawal cooldown as a safety valve.
    * Returns base64 XDR for the frontend to sign with the user's wallet.
    */
@@ -394,6 +398,7 @@ class SorobanService {
     providerPublicKey: string,
     tokenAddress: string,
     shares: number,
+    minAssetsOut: number = 0,
   ): Promise<{ unsignedTxXdr: string; networkPassphrase: string }> {
     const server = this.getRpcServer();
     const contractId = this.getLendingPoolContractId();
@@ -408,6 +413,7 @@ class SorobanService {
       type: 'address',
     });
     const sharesScVal = nativeToScVal(BigInt(shares), { type: 'i128' });
+    const minAssetsOutScVal = nativeToScVal(BigInt(minAssetsOut), { type: 'i128' });
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -417,7 +423,7 @@ class SorobanService {
         Operation.invokeContractFunction({
           contract: contractId,
           function: 'emergency_withdraw',
-          args: [providerScVal, tokenScVal, sharesScVal],
+          args: [providerScVal, tokenScVal, sharesScVal, minAssetsOutScVal],
         }),
       )
       .setTimeout(30)
@@ -430,6 +436,7 @@ class SorobanService {
       provider: providerPublicKey,
       token: tokenAddress,
       shares,
+      minAssetsOut,
     });
 
     return { unsignedTxXdr, networkPassphrase: passphrase };
@@ -493,7 +500,7 @@ class SorobanService {
     const account = await server.getAccount(borrowerPublicKey);
 
     const loanIdScVal = nativeToScVal(loanId, { type: 'u32' });
-    const amountScVal = nativeToScVal(BigInt(amount), { type: 'i128' });
+    const amountScVal = nativeToScVal(toStroops(amount.toString()), { type: 'i128' });
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,

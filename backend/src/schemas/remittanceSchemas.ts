@@ -54,7 +54,16 @@ export const getRemittanceSchema = z.object({
   }),
 });
 
+// Schema for seed remittance records (user_id, amount, month, status)
+export const seedRemittanceSchema = z.object({
+  user_id: z.string().min(1, 'user_id is required'),
+  amount: z.number().positive('Amount must be positive'),
+  month: z.string().min(1, 'Month is required'),
+  status: z.string().min(1, 'Status is required'),
+});
+
 // Export types for TypeScript
 export type CreateRemittanceInput = z.infer<typeof createRemittanceSchema>;
 export type GetRemittancesInput = z.infer<typeof getRemittancesSchema>;
 export type GetRemittanceInput = z.infer<typeof getRemittanceSchema>;
+export type SeedRemittanceInput = z.infer<typeof seedRemittanceSchema>;

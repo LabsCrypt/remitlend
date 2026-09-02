@@ -13,6 +13,7 @@ jest.unstable_mockModule('../db/connection.js', () => ({
 }));
 
 const { listLoanDisputes } = await import('../controllers/adminDisputeController.js');
+const { encodeCursor } = await import('../utils/pagination.js');
 
 const flushAsync = async (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -22,7 +23,7 @@ const createMockResponse = (): Response =>
     json: jest.fn().mockReturnThis(),
   }) as unknown as Response;
 
-function disputeRow(id: number, status: string, created_at: string) {
+function disputeRow(id: number, status: string, created_at: string, seq = id) {
   return {
     id,
     loan_id: 100 + id,
@@ -30,7 +31,27 @@ function disputeRow(id: number, status: string, created_at: string) {
     status,
     reason: 'Test reason',
     created_at,
+    seq,
   };
+}
+
+// Wires the three sequential queries the controller issues when no snapshot_seq
+// is supplied: pin MAX(seq), fetch the page, then count the total at that snapshot.
+function mockQuerySequence(options: {
+  dataRows: Record<string, unknown>[];
+  maxSeq?: number;
+  totalCount?: number;
+}) {
+  const { dataRows, maxSeq = 1000, totalCount = dataRows.length } = options;
+  mockQuery.mockImplementation(async (sql: string) => {
+    if (sql.includes('MAX(seq)')) {
+      return { rows: [{ max_seq: maxSeq }], rowCount: 1 };
+    }
+    if (sql.includes('COUNT(*)')) {
+      return { rows: [{ count: String(totalCount) }], rowCount: 1 };
+    }
+    return { rows: dataRows, rowCount: dataRows.length };
+  });
 }
 
 describe('listLoanDisputes pagination', () => {
@@ -44,8 +65,7 @@ describe('listLoanDisputes pagination', () => {
       disputeRow(2, 'open', '2026-05-27T10:00:00.000Z'),
       disputeRow(1, 'open', '2026-05-26T10:00:00.000Z'),
     ];
-    // LIMIT is default 50 + 1 = 51 — fewer rows than limit, no next page
-    mockQuery.mockResolvedValueOnce({ rows, rowCount: 3 });
+    mockQuerySequence({ dataRows: rows, maxSeq: 500, totalCount: 3 });
 
     const req = { query: {} } as unknown as Request;
     const res = createMockResponse();
@@ -57,11 +77,12 @@ describe('listLoanDisputes pagination', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         success: true,
-        page_info: expect.objectContaining({
+        data: { items: rows },
+        page: expect.objectContaining({
           limit: 50,
-          count: 3,
-          has_next: false,
           next_cursor: null,
+          snapshot_seq: '500',
+          total_at_snapshot: 3,
         }),
       }),
     );
@@ -69,10 +90,14 @@ describe('listLoanDisputes pagination', () => {
 
   it('returns next_cursor when there are more results than limit', async () => {
     const rows = Array.from({ length: 51 }, (_, i) =>
-      disputeRow(100 - i, 'open', new Date(2026, 4, 28, 10, 0, 0, -i * 60_000).toISOString()),
+      disputeRow(
+        100 - i,
+        'open',
+        new Date(2026, 4, 28, 10, 0, 0, -i * 60_000).toISOString(),
+        100 - i,
+      ),
     );
-    // 51 rows for limit=50 + 1 check
-    mockQuery.mockResolvedValueOnce({ rows, rowCount: 51 });
+    mockQuerySequence({ dataRows: rows, totalCount: 51 });
 
     const req = { query: {} } as unknown as Request;
     const res = createMockResponse();
@@ -83,17 +108,17 @@ describe('listLoanDisputes pagination', () => {
 
     const jsonCall = (res.json as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
     expect(jsonCall.success).toBe(true);
-    const pageInfo = jsonCall.page_info as Record<string, unknown>;
-    expect(pageInfo.has_next).toBe(true);
-    expect(typeof pageInfo.next_cursor).toBe('string');
-    expect((jsonCall.data as unknown[]).length).toBe(50);
+    const page = jsonCall.page as Record<string, unknown>;
+    expect(typeof page.next_cursor).toBe('string');
+    const data = jsonCall.data as { items: unknown[] };
+    expect(data.items.length).toBe(50);
   });
 
   it('enforces max page size (capped at 100)', async () => {
     const rows = Array.from({ length: 100 }, (_, i) =>
-      disputeRow(i, 'open', new Date(2026, 4, 28, 10, 0, 0, -i * 60_000).toISOString()),
+      disputeRow(i, 'open', new Date(2026, 4, 28, 10, 0, 0, -i * 60_000).toISOString(), i),
     );
-    mockQuery.mockResolvedValueOnce({ rows, rowCount: 100 });
+    mockQuerySequence({ dataRows: rows, totalCount: 100 });
 
     const req = { query: { limit: '500' } } as unknown as Request;
     const res = createMockResponse();
@@ -103,14 +128,14 @@ describe('listLoanDisputes pagination', () => {
     await flushAsync();
 
     const jsonCall = (res.json as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
-    const pageInfo = jsonCall.page_info as Record<string, unknown>;
+    const page = jsonCall.page as Record<string, unknown>;
     // limit should be capped at 100
-    expect(pageInfo.limit).toBe(100);
+    expect(page.limit).toBe(100);
   });
 
   it('filters by status correctly', async () => {
     const rows = [disputeRow(1, 'resolved', '2026-05-28T10:00:00.000Z')];
-    mockQuery.mockResolvedValueOnce({ rows, rowCount: 1 });
+    mockQuerySequence({ dataRows: rows, totalCount: 1 });
 
     const req = { query: { status: 'resolved' } } as unknown as Request;
     const res = createMockResponse();
@@ -119,11 +144,12 @@ describe('listLoanDisputes pagination', () => {
     listLoanDisputes(req, res, next as unknown as NextFunction);
     await flushAsync();
 
-    // Verify SQL includes status filter
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('WHERE status = $1'),
-      expect.arrayContaining(['resolved']),
+    // Verify the data-fetch query includes the status filter
+    const dataCall = mockQuery.mock.calls.find(
+      (call) => call[0].includes('SELECT * FROM loan_disputes') && !call[0].includes('COUNT'),
     );
+    expect(dataCall?.[0]).toContain('WHERE status = $1');
+    expect(dataCall?.[1]).toEqual(expect.arrayContaining(['resolved']));
   });
 
   it('includes all statuses when status=all', async () => {
@@ -132,7 +158,7 @@ describe('listLoanDisputes pagination', () => {
       disputeRow(2, 'resolved', '2026-05-27T10:00:00.000Z'),
       disputeRow(1, 'rejected', '2026-05-26T10:00:00.000Z'),
     ];
-    mockQuery.mockResolvedValueOnce({ rows, rowCount: 3 });
+    mockQuerySequence({ dataRows: rows, totalCount: 3 });
 
     const req = { query: { status: 'all' } } as unknown as Request;
     const res = createMockResponse();
@@ -141,11 +167,11 @@ describe('listLoanDisputes pagination', () => {
     listLoanDisputes(req, res, next as unknown as NextFunction);
     await flushAsync();
 
-    // No WHERE clause for status
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.not.stringContaining('WHERE status'),
-      expect.any(Array),
+    // No WHERE status clause when status=all
+    const dataCall = mockQuery.mock.calls.find(
+      (call) => call[0].includes('SELECT * FROM loan_disputes') && !call[0].includes('COUNT'),
     );
+    expect(dataCall?.[0]).toEqual(expect.not.stringContaining('WHERE status'));
   });
 
   it('uses cursor pagination when cursor is provided', async () => {
@@ -153,10 +179,12 @@ describe('listLoanDisputes pagination', () => {
       disputeRow(2, 'open', '2026-05-27T10:00:00.000Z'),
       disputeRow(1, 'open', '2026-05-26T10:00:00.000Z'),
     ];
-    mockQuery.mockResolvedValueOnce({ rows, rowCount: 2 });
+    mockQuerySequence({ dataRows: rows, totalCount: 2 });
+
+    const cursor = encodeCursor(new Date('2026-05-28T10:00:00.000Z'), BigInt(3));
 
     const req = {
-      query: { cursor: '2026-05-28T10:00:00.000Z' },
+      query: { cursor },
     } as unknown as Request;
     const res = createMockResponse();
     const next = jest.fn<(err?: unknown) => void>();
@@ -164,14 +192,16 @@ describe('listLoanDisputes pagination', () => {
     listLoanDisputes(req, res, next as unknown as NextFunction);
     await flushAsync();
 
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('created_at < $2'),
-      expect.arrayContaining(['2026-05-28T10:00:00.000Z']),
+    const dataCall = mockQuery.mock.calls.find(
+      (call) => call[0].includes('SELECT * FROM loan_disputes') && !call[0].includes('COUNT'),
     );
+    // status=open (default) is $1, snapshot is $2, so the keyset seek starts at $3
+    expect(dataCall?.[0]).toContain('created_at < $3');
+    expect(dataCall?.[1]).toEqual(expect.arrayContaining(['2026-05-28T10:00:00.000Z']));
   });
 
   it('orders newest-first by default', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    mockQuerySequence({ dataRows: [], totalCount: 0 });
 
     const req = { query: {} } as unknown as Request;
     const res = createMockResponse();
@@ -180,9 +210,9 @@ describe('listLoanDisputes pagination', () => {
     listLoanDisputes(req, res, next as unknown as NextFunction);
     await flushAsync();
 
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('ORDER BY created_at DESC'),
-      expect.any(Array),
+    const dataCall = mockQuery.mock.calls.find(
+      (call) => call[0].includes('SELECT * FROM loan_disputes') && !call[0].includes('COUNT'),
     );
+    expect(dataCall?.[0]).toContain('ORDER BY created_at DESC');
   });
 });

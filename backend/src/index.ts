@@ -29,20 +29,27 @@ import {
   startScoreReconciliationScheduler,
   stopScoreReconciliationScheduler,
 } from './services/scoreReconciliationService.js';
+import {
+  startCrossContractReconciler,
+  stopCrossContractReconciler,
+} from './services/crossContractReconciler.js';
 import { sorobanService } from './services/sorobanService.js';
-import { validateLoanConfig } from './config/loanConfig.js';
+import { validateLoanConfigOnStartup } from './config/loanConfig.js';
 import { startLoanDueCheckCron, stopLoanDueCheckCron } from './cron/loanCheckCron.js';
 // Imported the score decay scheduler initialization wrapper
 import { startScoreDecayScheduler } from './cron/scoreDecayJob.js';
+import { initializePauseState } from './middleware/pauseGuard.js';
 
 const port = process.env.PORT || 3001;
 
 // Maintain a mutable handle to invoke clean scheduler closures on process stops
 let scoreDecaySchedulerHandle: { stop: () => void } | null = null;
 
-// Validate score delta and loan config on startup before accepting traffic
+// Validate loan config on startup before accepting traffic
+validateLoanConfigOnStartup();
+
+// Validate score delta config on startup before accepting traffic
 try {
-  validateLoanConfig();
   sorobanService.validateScoreConfig();
 } catch (err) {
   logger.error('Startup configuration is invalid, aborting startup.', { err });
@@ -54,6 +61,14 @@ try {
   await sorobanService.validateConfig();
 } catch (err) {
   logger.error('Soroban configuration is invalid, aborting startup.', { err });
+  process.exit(1);
+}
+
+// Initialize pause state table and load initial state
+try {
+  await initializePauseState();
+} catch (err) {
+  logger.error('Failed to initialize pause state', { err });
   process.exit(1);
 }
 
@@ -71,6 +86,9 @@ const server = app.listen(port, () => {
 
   // Start scheduled score reconciliation against on-chain state
   startScoreReconciliationScheduler();
+
+  // Start cross-contract (disbursement <-> score) reconciliation ledger sweep
+  startCrossContractReconciler();
 
   // Start periodic notification cleanup
   startNotificationCleanupScheduler();
@@ -103,6 +121,7 @@ const shutdown = async (signal: 'SIGTERM' | 'SIGINT') => {
     stopDefaultCheckerScheduler();
     stopWebhookRetryProcessor();
     stopScoreReconciliationScheduler();
+    stopCrossContractReconciler();
     stopNotificationCleanupScheduler();
 
     if (

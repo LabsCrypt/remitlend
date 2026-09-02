@@ -4,6 +4,33 @@ This document lists every environment variable used by the RemitLend platform. E
 
 ---
 
+## Demo Mode
+
+RemitLend includes a **demo / sandbox mode** that lets frontend developers and
+integration testers exercise API routes without interacting with real contracts
+or payment rails.  When enabled, certain endpoints return mock data instead of
+calling on-chain logic.
+
+### Enabling Demo Mode
+
+Set the following environment variable in the backend:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEMO_MODE` | (unset) | Set to `"true"` to enable sandbox responses for demo-gated routes |
+
+### Scope
+
+The files `backend/src/utils/demo.ts` and `backend/src/utils/demo-rate-limit.ts`
+are standalone demonstration scripts that illustrate how limit capping and rate
+limiting work.  They are not middleware themselves, but they document the
+patterns used by the sandbox middleware that activates when `DEMO_MODE=true`.
+
+Routes that check `DEMO_MODE` respond with mock data and are subject to a
+stricter rate limit (10 requests/minute/IP) to prevent abuse.
+
+---
+
 ## Backend (`backend/`)
 
 | Variable | Dev | Staging | Prod | Default | Description | Source |
@@ -74,18 +101,24 @@ This document lists every environment variable used by the RemitLend platform. E
 
 ## Frontend (`frontend/`)
 
-| Variable | Dev | Staging | Prod | Default | Description | Source |
-|---|---|---|---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | ✓ | ✓ | ✓ | `http://localhost:3001` | Backend API base URL | `frontend/src/app/hooks/useApi.ts` |
-| `NEXT_PUBLIC_APP_URL` | ✓ | ✓ | ✓ | `https://remitlend.com` | Public-facing app URL used for absolute links | `frontend/src/lib/canonicalUrl.ts` |
-| `NEXT_PUBLIC_SENTRY_DSN` | — | ✓ | ✓ | — | Sentry DSN for frontend error tracking | `frontend/src/sentry.client.config.ts` |
-| `SENTRY_DSN` | — | ✓ | ✓ | — | Sentry DSN server-side | `frontend/src/sentry.server.config.ts` |
-| `SENTRY_ORG` | — | ✓ | ✓ | — | Sentry organization slug | `frontend/sentry.client.config.ts` |
-| `SENTRY_PROJECT` | — | ✓ | ✓ | — | Sentry project slug | `frontend/sentry.client.config.ts` |
-| `SENTRY_AUTH_TOKEN` | — | ✓ | ✓ | — | Sentry auth token for source maps | `frontend/next.config.ts` |
-| `NODE_ENV` | ✓ | ✓ | ✓ | `development` | Node environment (`development`, `test`, `production`) | `next.config.ts` |
-| `NEXT_PUBLIC_STELLAR_EXPLORER_URL` | ✓ | ✓ | ✓ | `https://stellar.expert/explorer/testnet` | Stellar explorer base URL for transaction links | `frontend/src/components/ui/TxHashLink.tsx` |
-| `NEXT_PUBLIC_STELLAR_NETWORK` | ✓ | ✓ | ✓ | `testnet` | Stellar network name shown in the build-info footer | `frontend/src/components/BuildInfoFooter.tsx` |
+| Variable                           | Dev | Staging | Prod | Default                                   | Description                                            | Source                                      |
+| ---------------------------------- | --- | ------- | ---- | ----------------------------------------- | ------------------------------------------------------ | ------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`              | ✓   | ✓       | ✓    | `http://localhost:3001`                   | Backend API base URL                                   | `frontend/src/app/hooks/useApi.ts`          |
+| `NEXT_PUBLIC_APP_URL`              | ✓   | ✓       | ✓    | `https://remitlend.com`                   | Public-facing app URL used for absolute links          | `frontend/src/lib/canonicalUrl.ts`          |
+| `NEXT_PUBLIC_SENTRY_DSN`           | —   | ✓       | ✓    | —                                         | Sentry DSN for frontend error tracking                 | `frontend/src/sentry.client.config.ts`      |
+| `SENTRY_DSN`                       | —   | ✓       | ✓    | —                                         | Sentry DSN server-side                                 | `frontend/src/sentry.server.config.ts`      |
+| `SENTRY_ORG`                       | —   | ✓       | ✓    | —                                         | Sentry organization slug                               | `frontend/sentry.client.config.ts`          |
+| `SENTRY_PROJECT`                   | —   | ✓       | ✓    | —                                         | Sentry project slug                                    | `frontend/sentry.client.config.ts`          |
+| `SENTRY_AUTH_TOKEN`                | —   | ✓       | ✓    | —                                         | Sentry auth token for source maps                      | `frontend/next.config.ts`                   |
+| `NODE_ENV`                         | ✓   | ✓       | ✓    | `development`                             | Node environment (`development`, `test`, `production`) | `next.config.ts`                            |
+| `NEXT_PUBLIC_STELLAR_RPC_URL`       | ✓   | ✓       | ✓    | `https://soroban-testnet.stellar.org`     | Soroban RPC endpoint for simulating and submitting contract calls | `frontend/.env.example` |
+| `NEXT_PUBLIC_HORIZON_URL`           | ✓   | ✓       | ✓    | `https://horizon-testnet.stellar.org`     | Horizon endpoint for resolving transaction error details        | `frontend/.env.example` |
+| `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` | ✓ | ✓ | ✓ | `Test SDF Network ; September 2015` | Network passphrase the wallet signs against                    | `frontend/.env.example` |
+| `NEXT_PUBLIC_MANAGER_CONTRACT_ID`   | ✓   | ✓       | ✓    | —                                        | Lending pool manager contract address                           | `frontend/.env.example` |
+| `NEXT_PUBLIC_LOAN_MANAGER_CONTRACT_ID` | ✓ | ✓ | ✓ | —                                        | Loan manager contract address                                   | `frontend/.env.example` |
+| `NEXT_PUBLIC_NFT_CONTRACT_ID`       | ✓   | ✓       | ✓    | —                                        | Remittance NFT contract address                                 | `frontend/.env.example` |
+| `NEXT_PUBLIC_STELLAR_EXPLORER_URL` | ✓   | ✓       | ✓    | `https://stellar.expert/explorer/testnet` | Stellar explorer base URL for transaction links        | `frontend/src/components/ui/TxHashLink.tsx` |
+
 ---
 
 ## Contracts / Scripts (`contracts/`, `scripts/`)
@@ -96,6 +129,21 @@ This document lists every environment variable used by the RemitLend platform. E
 | `SOROBAN_NETWORK_PASSPHRASE` | ✓   | ✓       | ✓    | `Test SDF Network ; September 2015`   | Network passphrase for contract operations | `scripts/deploy.ts` |
 | `SOROBAN_ACCOUNT`            | ✓   | ✓       | ✓    | —                                     | Deployer account secret key                | `scripts/deploy.ts` |
 | `DEPLOY_CONFIG_PATH`         | —   | ✓       | ✓    | `scripts/deploy-config.json`          | Path to deploy configuration               | `scripts/deploy.ts` |
+
+---
+
+## Pinned Infrastructure Image Versions
+
+The `docker-compose.yml` and `docker-compose.staging.yml` files pin dependency
+images to specific minor versions to prevent silent environment drift.
+
+| Service  | Image                  | Used in                                               |
+| -------- | ---------------------- | ----------------------------------------------------- |
+| Postgres | `postgres:16.9-alpine` | `docker-compose.yml`, `docker-compose.staging.yml`    |
+| Redis    | `redis:7.4-alpine`     | `docker-compose.yml`, `docker-compose.staging.yml`    |
+
+When upgrading either dependency, update **both** compose files and this table
+in the same PR.
 
 ---
 

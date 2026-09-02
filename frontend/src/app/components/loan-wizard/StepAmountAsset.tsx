@@ -152,7 +152,9 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
                 helperText ||
                 (data.maxAmount === 0
                   ? "Not eligible"
-                  : `Eligible range: ${formatMoney(minAmount)} – ${formatMoney(data.maxAmount)} • Max ${decimals} decimal places`)
+                  : `Eligible range: ${formatMoney(minAmount)} – ${formatMoney(
+                      data.maxAmount,
+                    )} • Max ${decimals} decimal places`)
               }
               error={precisionError || undefined}
             />

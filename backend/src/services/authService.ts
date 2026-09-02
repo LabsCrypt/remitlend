@@ -22,6 +22,12 @@ export interface ChallengeMessage {
 
 const JWT_EXPIRES_IN = '24h';
 const CHALLENGE_EXPIRES_IN_MS = 5 * 60 * 1000;
+const CHALLENGE_EXPIRES_IN_SECONDS = CHALLENGE_EXPIRES_IN_MS / 1000;
+const CHALLENGE_NONCE_PREFIX = 'auth-challenge:';
+// Small allowance for client/server clock drift when a challenge timestamp
+// is slightly in the future.
+const CLOCK_SKEW_TOLERANCE_MS = 5 * 1000;
+const testChallengeStore = new Map<string, { message: string; expiresAt: number }>();
 
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -31,7 +37,35 @@ function getJwtSecret(): string {
   return secret;
 }
 
-export function generateChallenge(publicKey: string): ChallengeMessage {
+function challengeNonceKey(publicKey: string, nonce: string): string {
+  return `${CHALLENGE_NONCE_PREFIX}${publicKey}:${nonce}`;
+}
+
+function parseChallengeNonce(message: string): string | null {
+  const nonceMatch = message.match(/Nonce: ([a-f0-9]{64})/);
+  return nonceMatch?.[1] ?? null;
+}
+
+async function storeChallengeNonce(
+  publicKey: string,
+  nonce: string,
+  message: string,
+  timestamp: number,
+): Promise<boolean> {
+  const key = challengeNonceKey(publicKey, nonce);
+
+  if (process.env.NODE_ENV === 'test') {
+    testChallengeStore.set(key, {
+      message,
+      expiresAt: timestamp + CHALLENGE_EXPIRES_IN_MS,
+    });
+    return true;
+  }
+
+  return cacheService.setNotExists(key, message, CHALLENGE_EXPIRES_IN_SECONDS);
+}
+
+export async function generateChallenge(publicKey: string): Promise<ChallengeMessage> {
   if (!StrKey.isValidEd25519PublicKey(publicKey)) {
     throw new Error('Invalid Stellar public key');
   }
@@ -40,6 +74,10 @@ export function generateChallenge(publicKey: string): ChallengeMessage {
   const timestamp = Date.now();
 
   const message = `Sign this message to authenticate with RemitLend.\n\nNonce: ${nonce}\nTimestamp: ${timestamp}\n\nThis request will expire in 5 minutes.`;
+  const stored = await storeChallengeNonce(publicKey, nonce, message, timestamp);
+  if (!stored) {
+    throw new Error('Failed to store challenge nonce');
+  }
 
   return {
     message,
@@ -49,8 +87,39 @@ export function generateChallenge(publicKey: string): ChallengeMessage {
   };
 }
 
+export async function verifyAndConsumeChallenge(
+  publicKey: string,
+  message: string,
+): Promise<boolean> {
+  if (!StrKey.isValidEd25519PublicKey(publicKey)) {
+    return false;
+  }
+
+  const nonce = parseChallengeNonce(message);
+  if (!nonce) {
+    return false;
+  }
+
+  const key = challengeNonceKey(publicKey, nonce);
+
+  if (process.env.NODE_ENV === 'test') {
+    const stored = testChallengeStore.get(key);
+    if (!stored || stored.message !== message || stored.expiresAt < Date.now()) {
+      return false;
+    }
+    testChallengeStore.delete(key);
+    return true;
+  }
+
+  return cacheService.deleteIfMatch(key, message);
+}
+
 export function verifySignature(publicKey: string, message: string, signature: string): boolean {
   if (!StrKey.isValidEd25519PublicKey(publicKey)) {
+    return false;
+  }
+
+  if (!/^[A-Za-z0-9+/=]+$/.test(signature)) {
     return false;
   }
 
@@ -68,12 +137,32 @@ export function verifySignature(publicKey: string, message: string, signature: s
   }
 }
 
+/**
+ * Verifies that a challenge timestamp is still within the allowed age.
+ *
+ * A challenge is considered valid only when:
+ * - the timestamp is a valid finite number;
+ * - it is not in the future beyond the allowed clock-skew tolerance; and
+ * - its age does not exceed the configured maximum.
+ */
 export function verifyChallengeTimestamp(
   timestamp: number,
   maxAgeMs: number = CHALLENGE_EXPIRES_IN_MS,
 ): boolean {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return false;
+  }
+
   const now = Date.now();
-  return now - timestamp <= maxAgeMs;
+  const age = now - timestamp;
+
+  // Reject timestamps from the future, allowing a small clock-skew tolerance.
+  if (age < -CLOCK_SKEW_TOLERANCE_MS) {
+    return false;
+  }
+
+  // Reject expired challenges.
+  return age <= maxAgeMs;
 }
 
 export function generateJwtToken(publicKey: string): string {
@@ -111,8 +200,7 @@ const REVOKED_JTI_PREFIX = 'revoked-jti:';
 
 /**
  * Explicitly revokes a single token (e.g. on logout) by blacklisting its
- * jti until the token's natural expiry. Cheap because the blacklist only
- * ever needs to hold entries for tokens that were revoked early.
+ * jti until the token's natural expiry.
  */
 export async function revokeToken(jti: string, exp: number): Promise<void> {
   const ttlSeconds = exp - Math.floor(Date.now() / 1000);
@@ -121,9 +209,6 @@ export async function revokeToken(jti: string, exp: number): Promise<void> {
   await cacheService.set(`${REVOKED_JTI_PREFIX}${jti}`, true, ttlSeconds);
 }
 
-// If the cache backend is unreachable we fail open (treat the token as not
-// revoked) rather than block every authenticated request — the same
-// fail-open posture idempotencyMiddleware takes when Redis is unavailable.
 const REVOCATION_CHECK_TIMEOUT_MS = 250;
 
 export async function isTokenRevoked(jti: string): Promise<boolean> {
@@ -132,6 +217,7 @@ export async function isTokenRevoked(jti: string): Promise<boolean> {
       cacheService.get<boolean>(`${REVOKED_JTI_PREFIX}${jti}`),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), REVOCATION_CHECK_TIMEOUT_MS)),
     ]);
+
     return revoked === true;
   } catch {
     return false;
@@ -140,8 +226,7 @@ export async function isTokenRevoked(jti: string): Promise<boolean> {
 
 export function decodeJwtToken(token: string): JwtPayload | null {
   try {
-    const decoded = jwt.decode(token) as JwtPayload | null;
-    return decoded;
+    return jwt.decode(token) as JwtPayload | null;
   } catch {
     return null;
   }
@@ -153,6 +238,7 @@ export function extractBearerToken(authHeader: string | undefined): string | nul
   }
 
   const parts = authHeader.split(' ');
+
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
     return null;
   }

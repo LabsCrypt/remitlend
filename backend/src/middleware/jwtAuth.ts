@@ -200,6 +200,8 @@ export const requireScopes = (...requiredScopes: string[]) => {
       return next();
     }
 
+    // Correctly find the first required scope NOT present in grantedScopes.
+    // Using !grantedScopes.has(scope) ensures callers missing any required scope are rejected.
     const missingScope = requiredScopes.find((scope) => !grantedScopes.has(scope));
 
     if (missingScope) {

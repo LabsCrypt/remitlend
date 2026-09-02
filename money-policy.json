@@ -1,0 +1,6 @@
+{
+  "scale": 7,
+  "mode": "half_even",
+  "display_dp": 2,
+  "allocation": "largest_remainder"
+}

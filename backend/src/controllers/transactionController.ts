@@ -4,7 +4,7 @@ import { AppError } from '../errors/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
+const MAX_LIMIT = 500;
 
 function parseLimit(value: unknown): number {
   if (typeof value !== 'string') return DEFAULT_LIMIT;

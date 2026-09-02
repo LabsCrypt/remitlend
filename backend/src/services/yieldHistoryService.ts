@@ -135,6 +135,34 @@ export function normalizeYieldHistoryDays(days: number | undefined): YieldHistor
   return YIELD_HISTORY_DEFAULT_DAYS;
 }
 
+/**
+ * Reconstructs a daily depositor yield time series by joining pool-level and
+ * depositor-level contract events.
+ *
+ * Pool-level events (Deposit, Withdraw, EmergencyWithdraw, YieldDistributed) are
+ * replayed to rebuild the pool's running balance and total share count, while
+ * depositor-level events (Deposit, Withdraw, EmergencyWithdraw) are replayed to
+ * track the depositor's accumulated share count and cost basis over time. For
+ * each daily bucket the depositor's share position is re-valued against the
+ * current pool state, and an on-chain `currentSharePrice` overrides the final
+ * day's valuation when provided. The result is one point per day representing
+ * the depositor's cost basis, estimated current value, and net yield.
+ *
+ * @param address - The wallet address whose depositor history is being built.
+ * @param _token - The pool token address passed through as part of the public
+ *   signature. Currently unused inside this function: the implementation
+ *   queries events by `address` and `LENDING_POOL_CONTRACT_ID` only, and the
+ *   caller uses the token independently to fetch the on-chain share price.
+ * @param days - The lookback window (7, 30, or 90) used to select the events
+ *   and the daily buckets that make up the returned time series.
+ * @param currentSharePrice - Optional on-chain share price (scaled by
+ *   SHARE_PRICE_SCALE) used to value the depositor's shares on the final day.
+ * @returns Daily `YieldHistoryPoint[]` entries, one per bucket date, each with
+ *   an ISO `timestamp`, the depositor's accumulated `depositedValue` (cost
+ *   basis), the estimated `currentValue` of the share position, and the clamped
+ *   `netYield` (currentValue - depositedValue). Leading buckets with no
+ *   depositor activity are trimmed.
+ */
 export async function buildDepositorYieldHistory(
   address: string,
   _token: string,

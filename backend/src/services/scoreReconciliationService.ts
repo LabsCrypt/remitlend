@@ -91,9 +91,9 @@ class ScoreReconciliationService {
       )
       SELECT DISTINCT
         a.address,
-        s.current_score
+        s.score
       FROM active_loans a
-      LEFT JOIN scores s ON s.user_id = a.address
+      LEFT JOIN scores s ON s.borrower = a.address
       ORDER BY a.address ASC
       LIMIT $1
       `,
@@ -103,15 +103,14 @@ class ScoreReconciliationService {
     return result.rows.map((row) => {
       const record = row as {
         address?: string;
+        score?: number | string | null;
         current_score?: number | string | null;
       };
+      const scoreVal = record.score !== undefined ? record.score : record.current_score;
 
       return {
         address: String(record.address ?? ''),
-        dbScore:
-          record.current_score === null || record.current_score === undefined
-            ? null
-            : Number(record.current_score),
+        dbScore: scoreVal === null || scoreVal === undefined ? null : Number(scoreVal),
       };
     });
   }

@@ -84,7 +84,10 @@ export default function ActivityPage() {
     const remittanceEvents: ActivityItem[] = remittances.map((remittance) => ({
       id: `remittance-${remittance.id}`,
       type: "Remittance",
-      description: `To ${remittance.recipientAddress.slice(0, 6)}...${remittance.recipientAddress.slice(-4)}`,
+      description: `To ${remittance.recipientAddress.slice(
+        0,
+        6,
+      )}...${remittance.recipientAddress.slice(-4)}`,
       amount: `-${formatCurrency(remittance.amount)}`,
       timestamp: new Date(remittance.createdAt).toISOString(),
       status: remittance.status,

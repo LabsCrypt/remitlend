@@ -236,6 +236,7 @@ export const useGamificationStore = create<GamificationStore>()(
           const { xp, level } = get();
           const newLevel = calculateLevel(xp);
 
+          // Only trigger level-up celebration when new level strictly exceeds current level
           if (newLevel > level) {
             const levelUpReward = LEVEL_THRESHOLDS.find((t) => t.level === newLevel);
             if (levelUpReward) {

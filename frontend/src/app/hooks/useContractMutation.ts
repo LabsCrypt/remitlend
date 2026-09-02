@@ -19,7 +19,7 @@
 
 import { type UseMutationResult } from "@tanstack/react-query";
 import { useContractToast } from "./useContractToast";
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { useGamificationStore } from "../stores/useGamificationStore";
 
 interface ContractMutationOptions {
@@ -51,7 +51,6 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
 ) {
   const toast = useContractToast();
   const gamificationStore = useGamificationStore();
-  const toastIdRef = useRef<string | number | null>(null);
 
   const {
     pendingMessage = "Processing transaction...",
@@ -84,15 +83,13 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
     variables: TVariables,
     mutationOptions?: Parameters<typeof mutation.mutate>[1],
   ) => {
-    if (!disableToast) {
-      toastIdRef.current = toast.showPending(pendingMessage);
-    }
+    const toastId = !disableToast ? toast.showPending(pendingMessage) : null;
 
     mutation.mutate(variables, {
       ...mutationOptions,
       onSuccess: (data, vars, onMutateResult, context) => {
-        if (!disableToast && toastIdRef.current !== null) {
-          toast.showSuccess(toastIdRef.current, {
+        if (!disableToast && toastId !== null) {
+          toast.showSuccess(toastId, {
             successMessage,
             txHash: data.txHash,
             network,
@@ -102,8 +99,8 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
         mutationOptions?.onSuccess?.(data, vars, onMutateResult, context);
       },
       onError: (error, vars, onMutateResult, context) => {
-        if (!disableToast && toastIdRef.current !== null) {
-          toast.showError(toastIdRef.current, {
+        if (!disableToast && toastId !== null) {
+          toast.showError(toastId, {
             errorMessage: error instanceof Error ? error.message : errorMessage,
           });
         }
@@ -116,15 +113,13 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
     variables: TVariables,
     mutationOptions?: Parameters<typeof mutation.mutateAsync>[1],
   ) => {
-    if (!disableToast) {
-      toastIdRef.current = toast.showPending(pendingMessage);
-    }
+    const toastId = !disableToast ? toast.showPending(pendingMessage) : null;
 
     try {
       const data = await mutation.mutateAsync(variables, mutationOptions);
 
-      if (!disableToast && toastIdRef.current !== null) {
-        toast.showSuccess(toastIdRef.current, {
+      if (!disableToast && toastId !== null) {
+        toast.showSuccess(toastId, {
           successMessage,
           txHash: data.txHash,
           network,
@@ -135,8 +130,8 @@ export function useContractMutation<TData extends { txHash?: string }, TError, T
 
       return data;
     } catch (error) {
-      if (!disableToast && toastIdRef.current !== null) {
-        toast.showError(toastIdRef.current, {
+      if (!disableToast && toastId !== null) {
+        toast.showError(toastId, {
           errorMessage: error instanceof Error ? error.message : errorMessage,
         });
       }

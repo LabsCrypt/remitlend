@@ -15,6 +15,11 @@ on:
     # Weekly, Monday 06:00 UTC — catches newly-published query updates.
     - cron: "0 6 * * 1"
 
+# Cancel superseded CodeQL runs on the same PR to save runner minutes.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
@@ -25,10 +30,10 @@ jobs:
       actions: read
     strategy:
       fail-fast: false
-     matrix:
-  language:
-    - javascript-typescript
-    - rust
+      matrix:
+        language:
+          - javascript-typescript
+          - rust
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,19 +46,20 @@ jobs:
 
       # JS/TS needs no compilation; autobuild is a no-op safeguard.
       - name: Autobuild JS/TS
-  if: matrix.language == 'javascript-typescript'
-  uses: github/codeql-action/autobuild@v3
+        if: matrix.language == 'javascript-typescript'
+        uses: github/codeql-action/autobuild@v3
 
-- name: Install Rust toolchain
-  if: matrix.language == 'rust'
-  uses: dtolnay/rust-toolchain@stable
-  with:
-    targets: wasm32-unknown-unknown
+      - name: Install Rust toolchain
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.0
+          targets: wasm32-unknown-unknown
 
-- name: Build Soroban contracts workspace
-  if: matrix.language == 'rust'
-  working-directory: contracts
-  run: cargo build --workspace --target wasm32-unknown-unknown
+      - name: Build Soroban contracts workspace
+        if: matrix.language == 'rust'
+        working-directory: contracts
+        run: cargo build --workspace --target wasm32-unknown-unknown
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

@@ -28,6 +28,42 @@ export interface PollTransactionResult {
   message: string;
 }
 
+/**
+ * Frontend message mapping for backend ErrorCodes.
+ * Ensured in sync with backend/src/errors/errorCodes.ts via CI check script.
+ */
+export const ERROR_CODE_MESSAGES: Record<string, string> = {
+  INVALID_AMOUNT: "Amount must be a positive number",
+  INVALID_PUBLIC_KEY: "Invalid Stellar public key",
+  INVALID_SIGNATURE: "Invalid cryptographic signature",
+  INVALID_CHALLENGE: "Invalid challenge format",
+  MISSING_FIELD: "Required field is missing",
+  VALIDATION_ERROR: "Validation failed",
+  UNAUTHORIZED: "Unauthorized access",
+  TOKEN_EXPIRED: "Session token has expired",
+  TOKEN_INVALID: "Invalid session token",
+  CHALLENGE_EXPIRED: "Authentication challenge has expired",
+  FORBIDDEN: "Forbidden access",
+  ACCESS_DENIED: "Access to resource denied",
+  NOT_FOUND: "Resource not found",
+  LOAN_NOT_FOUND: "Loan not found",
+  USER_NOT_FOUND: "User account not found",
+  POOL_NOT_FOUND: "Lending pool not found",
+  CONFLICT: "Resource conflict occurred",
+  DUPLICATE_REQUEST: "Duplicate request ignored",
+  RATE_LIMIT_EXCEEDED: "Rate limit exceeded. Please wait",
+  INTERNAL_ERROR: "Internal server error occurred",
+  DATABASE_ERROR: "Database error occurred",
+  EXTERNAL_SERVICE_ERROR: "External service error occurred",
+  BLOCKCHAIN_ERROR: "Blockchain operation failed",
+  BORROWER_MISMATCH: "Borrower wallet mismatch",
+  INSUFFICIENT_BALANCE: "Insufficient account balance",
+  LOAN_ALREADY_REPAID: "Loan has already been repaid",
+  LOAN_NOT_ACTIVE: "Loan is not active",
+  INVALID_LOAN_ID: "Invalid loan ID provided",
+  INVALID_TX_XDR: "Invalid transaction XDR format",
+};
+
 const DEFAULT_HORIZON_URL = "https://horizon-testnet.stellar.org";
 
 function toErrorMessage(error: unknown): string {
@@ -144,11 +180,12 @@ export function mapTransactionError(error: unknown): TransactionErrorDetails {
   };
 }
 
-async function fetchTransactionStatus(
+export async function fetchTransactionStatus(
   txHash: string,
   horizonUrl: string,
+  signal?: AbortSignal,
 ): Promise<"pending" | "success" | "failed"> {
-  const response = await fetch(`${horizonUrl}/transactions/${txHash}`);
+  const response = await fetch(`${horizonUrl}/transactions/${txHash}`, { signal });
 
   if (response.status === 404) {
     return "pending";
@@ -160,6 +197,24 @@ async function fetchTransactionStatus(
 
   const payload = (await response.json()) as { successful?: boolean };
   return payload.successful ? "success" : "failed";
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 export async function pollTransactionStatus(
@@ -181,17 +236,28 @@ export async function pollTransactionStatus(
       };
     }
 
-    const status = await fetchTransactionStatus(txHash, horizonUrl);
+    try {
+      const status = await fetchTransactionStatus(txHash, horizonUrl, signal);
 
-    if (status === "success") {
-      return { status: "success", message: "Transaction confirmed on-chain." };
+      if (status === "success") {
+        return { status: "success", message: "Transaction confirmed on-chain." };
+      }
+
+      if (status === "failed") {
+        return { status: "failed", message: "Transaction failed on-chain." };
+      }
+    } catch {
+      if (signal?.aborted) {
+        return {
+          status: "cancelled",
+          message: "Status tracking cancelled by user.",
+        };
+      }
+      // Tolerate transient network or Horizon errors (e.g. 429, 500, 502, network failure)
+      // and continue polling until timeoutMs.
     }
 
-    if (status === "failed") {
-      return { status: "failed", message: "Transaction failed on-chain." };
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    await delay(intervalMs, signal);
   }
 
   return {

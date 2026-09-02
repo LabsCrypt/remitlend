@@ -26,6 +26,12 @@ pub enum NftError {
     BelowMinimum = 17,
     InvalidMetadataUri = 18,
     MinterLimitReached = 19,
+    CommitmentMalformed = 20,
+    CommitmentMissing = 21,
+    /// Returned by `transfer` when the sender has one or more active loans
+    /// (Pending or Approved) in the registered LoanManager.  Borrowers must
+    /// fully repay or cancel all loans before relocating their reputation NFT.
+    ActiveLoanExists = 22,
 }
 
 #[contracttype]
@@ -62,6 +68,23 @@ pub enum DataKey {
     Paused,
     ProposedAdmin,
     MinRepaymentAmount,
+    RecipientCommitment(Address),
+    /// Optional address of the LoanManager contract used to enforce the
+    /// active-loan transfer guard (see `transfer`).
+    LoanManager,
+}
+
+/// Minimal cross-contract interface exposed by the LoanManager contract.
+///
+/// Only the subset of methods required for the active-loan transfer guard is
+/// declared here.  The discriminants match the actual LoanStatus enum in
+/// loan_manager: Pending = 0, Approved = 1.
+#[soroban_sdk::contractclient(name = "LoanManagerClient")]
+pub trait LoanManagerInterface {
+    /// Returns the list of loan IDs associated with the given borrower.
+    fn get_borrower_loans(env: Env, borrower: Address) -> soroban_sdk::Vec<u32>;
+    /// Returns the raw status discriminant of a single loan.
+    fn get_loan_status(env: Env, loan_id: u32) -> u32;
 }
 
 #[contract]
@@ -82,12 +105,16 @@ impl RemittanceNFT {
     pub const MAX_ALLOWED_BURN_THRESHOLD: u32 = 1000; // Set as appropriate for your business logic
     pub const MAX_AUTHORIZED_MINTERS: u32 = 32;
     const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 0;
-    /// Minimum repayment amount accepted by update_score() (1/10 XLM in stroops).
+    /// Stroop scale (10^7) — token amounts are denominated in stroops.
+    pub const STROOP_SCALE: i128 = 10_000_000;
+    /// Points denominator: 1 point per 100 tokens (100 * STROOP_SCALE stroops).
+    const POINTS_DENOMINATOR: i128 = 100 * Self::STROOP_SCALE; // 1_000_000_000 stroops = $100
+    /// Minimum repayment amount accepted by update_score() (1 point worth in stroops).
     /// Dust repayments below this threshold award 0 score points due to integer
-    /// division (`repayment_amount / 100 == 0`) but still write storage and emit
+    /// division (`repayment_amount / POINTS_DENOMINATOR == 0`) but still write storage and emit
     /// events, enabling spam attacks. This floor rejects such calls early with
     /// InvalidRepaymentAmount (error 7).
-    pub const MIN_SCORE_UPDATE_REPAYMENT: i128 = 100;
+    pub const MIN_SCORE_UPDATE_REPAYMENT: i128 = Self::POINTS_DENOMINATOR;
 
     fn admin_key() -> soroban_sdk::Symbol {
         symbol_short!("ADMIN")
@@ -310,6 +337,10 @@ impl RemittanceNFT {
                 .storage()
                 .persistent()
                 .has(&DataKey::Score(user.clone()))
+            || env
+                .storage()
+                .persistent()
+                .has(&DataKey::RecipientCommitment(user.clone()))
     }
 
     fn burn_internal(env: &Env, user: &Address) {
@@ -331,6 +362,12 @@ impl RemittanceNFT {
         env.storage()
             .persistent()
             .remove(&DataKey::TransferCooldown(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::RecipientCommitment(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::DefaultCount(user.clone()));
 
         let burned_key = DataKey::Burned(user.clone());
         env.storage().persistent().set(&burned_key, &true);
@@ -478,10 +515,16 @@ impl RemittanceNFT {
         initial_score: u32,
         history_hash: BytesN<32>,
         metadata_uri: String,
+        recipient_commitment: BytesN<32>,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
         let _admin_direct_mint = minter.is_none();
         Self::require_admin_or_authorized_minter(&env, minter)?;
+
+        // Validate commitment is exactly 32 bytes (SHA-256 output)
+        if recipient_commitment.len() != 32 {
+            return Err(NftError::CommitmentMalformed);
+        }
 
         // Validate metadata URI format
         Self::validate_metadata_uri(&env, &metadata_uri)?;
@@ -506,10 +549,19 @@ impl RemittanceNFT {
             metadata_uri,
         };
 
+        // Store recipient commitment (no plaintext PII on-chain)
+        let commitment_key = DataKey::RecipientCommitment(user.clone());
+        env.storage()
+            .persistent()
+            .set(&commitment_key, &recipient_commitment);
+        Self::bump_persistent_ttl(&env, &commitment_key);
+
         env.storage().persistent().set(&metadata_key, &metadata);
         Self::bump_persistent_ttl(&env, &metadata_key);
-        env.events()
-            .publish((symbol_short!("Mint"), user), initial_score);
+        env.events().publish(
+            (symbol_short!("Mint"), user),
+            (initial_score, recipient_commitment),
+        );
 
         Ok(())
     }
@@ -531,10 +583,16 @@ impl RemittanceNFT {
         initial_score: u32,
         history_hash: BytesN<32>,
         metadata_uri: String,
+        recipient_commitment: BytesN<32>,
     ) -> Result<(), NftError> {
         // Admin-only — no minter bypass allowed for remints.
         Self::admin(&env).require_auth();
         Self::assert_not_paused(&env)?;
+
+        // Validate commitment is exactly 32 bytes
+        if recipient_commitment.len() != 32 {
+            return Err(NftError::CommitmentMalformed);
+        }
 
         // Validate metadata URI format
         Self::validate_metadata_uri(&env, &metadata_uri)?;
@@ -574,6 +632,9 @@ impl RemittanceNFT {
         env.storage()
             .persistent()
             .remove(&DataKey::TransferCooldown(user.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::DefaultCount(user.clone()));
 
         // Write the new NFT metadata.
         let metadata = RemittanceMetadata {
@@ -584,9 +645,18 @@ impl RemittanceNFT {
         env.storage().persistent().set(&metadata_key, &metadata);
         Self::bump_persistent_ttl(&env, &metadata_key);
 
+        // Store recipient commitment (no plaintext PII on-chain)
+        let commitment_key = DataKey::RecipientCommitment(user.clone());
+        env.storage()
+            .persistent()
+            .set(&commitment_key, &recipient_commitment);
+        Self::bump_persistent_ttl(&env, &commitment_key);
+
         // Emit a distinct AdminRemint event — auditably separate from Mint events.
-        env.events()
-            .publish((symbol_short!("AdmRemint"), user.clone()), initial_score);
+        env.events().publish(
+            (symbol_short!("AdmRemint"), user.clone()),
+            (initial_score, recipient_commitment),
+        );
 
         Ok(())
     }
@@ -651,7 +721,7 @@ impl RemittanceNFT {
             return Err(NftError::BelowMinimum);
         }
 
-        // Reject dust repayments that award zero score points (repayment_amount / 100 == 0)
+        // Reject dust repayments that award zero score points (repayment_amount / POINTS_DENOMINATOR == 0)
         // but still incur storage writes and event emissions, enabling low-cost spam.
         if repayment_amount < Self::MIN_SCORE_UPDATE_REPAYMENT {
             return Err(NftError::InvalidRepaymentAmount);
@@ -662,8 +732,8 @@ impl RemittanceNFT {
         let mut metadata =
             Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
-        // Simple logic: 1 point per 100 units of repayment.
-        let points_i128 = repayment_amount / 100;
+        // Simple logic: 1 point per 100 tokens of repayment (scaled for stroops).
+        let points_i128 = repayment_amount / Self::POINTS_DENOMINATOR;
         if points_i128 == 0 {
             return Ok(());
         }
@@ -912,6 +982,29 @@ impl RemittanceNFT {
         from.require_auth();
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
+        // Guard: block transfers while the sender has active loans.
+        //
+        // If a LoanManager address has been registered via `set_loan_manager`,
+        // we cross-call it to verify that none of the borrower's loans are in
+        // an active state (Pending = 0, Approved = 1).  This prevents the
+        // "credit wash" attack where a borrower facing default races to move
+        // their unblemished NFT to a clean address before penalties are applied.
+        if let Some(loan_manager_addr) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::LoanManager)
+        {
+            let loan_manager = LoanManagerClient::new(&env, &loan_manager_addr);
+            let loan_ids = loan_manager.get_borrower_loans(&from);
+            for loan_id in loan_ids.iter() {
+                // LoanStatus::Pending = 0, LoanStatus::Approved = 1
+                let status = loan_manager.get_loan_status(&loan_id);
+                if status == 0 || status == 1 {
+                    return Err(NftError::ActiveLoanExists);
+                }
+            }
+        }
+
         let transfer_cooldown_key = DataKey::TransferCooldown(from.clone());
         if let Some(next_allowed_ledger) = env
             .storage()
@@ -926,8 +1019,32 @@ impl RemittanceNFT {
 
         let metadata = Self::get_or_migrate_metadata(&env, &from).ok_or(NftError::NftNotFound)?;
 
+        // A previously burned destination must go through the same
+        // remint-approval gate mint()/admin_remint() enforce. Without this,
+        // a defaulted account can regain a clean credit identity simply by
+        // receiving a transfer, since burn_internal() clears every field
+        // has_any_remittance_state() checks except the Burned flag itself
+        // (see #1059).
+        if env.storage().persistent().has(&DataKey::Burned(to.clone())) {
+            return Err(NftError::BurnedRequiresApproval);
+        }
+
         if Self::has_any_remittance_state(&env, &to) {
             return Err(NftError::DestinationOccupied);
+        }
+
+        // A burned destination must not silently regain a clean credit
+        // identity via transfer. Mirrors the same gate mint() applies
+        // (see BurnedRequiresApproval above): recovery for a burned
+        // account can only happen through approve_remint() + admin_remint(),
+        // which clears the Burned flag atomically alongside writing new
+        // metadata. Without this check, has_any_remittance_state(to) alone
+        // is insufficient — burn_internal() removes Metadata/Score but
+        // leaves Burned(to) set, so a burned address would otherwise pass
+        // straight through and end up simultaneously Burned and
+        // credit-bearing.
+        if env.storage().persistent().has(&DataKey::Burned(to.clone())) {
+            return Err(NftError::BurnedRequiresApproval);
         }
 
         let from_metadata_key = DataKey::Metadata(from.clone());
@@ -971,6 +1088,20 @@ impl RemittanceNFT {
             env.storage().persistent().set(&to_seized_key, &true);
             Self::bump_persistent_ttl(&env, &to_seized_key);
             env.storage().persistent().remove(&from_seized_key);
+        }
+
+        let from_commitment_key = DataKey::RecipientCommitment(from.clone());
+        if let Some(commitment) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, BytesN<32>>(&from_commitment_key)
+        {
+            let to_commitment_key = DataKey::RecipientCommitment(to.clone());
+            env.storage()
+                .persistent()
+                .set(&to_commitment_key, &commitment);
+            Self::bump_persistent_ttl(&env, &to_commitment_key);
+            env.storage().persistent().remove(&from_commitment_key);
         }
 
         env.storage()
@@ -1094,6 +1225,16 @@ impl RemittanceNFT {
         approved
     }
 
+    /// Get the recipient commitment for a user.
+    /// Returns the 32-byte SHA-256 commitment (preimage || salt) stored at mint.
+    pub fn get_recipient_commitment(env: Env, user: Address) -> Result<BytesN<32>, NftError> {
+        let key = DataKey::RecipientCommitment(user);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(NftError::CommitmentMissing)
+    }
+
     pub fn is_paused(env: Env) -> bool {
         Self::bump_instance_ttl(&env);
         env.storage()
@@ -1180,6 +1321,36 @@ impl RemittanceNFT {
             ),
             (current_admin, new_admin),
         );
+    }
+
+    /// Register (or replace) the LoanManager contract address used by the
+    /// active-loan transfer guard.
+    ///
+    /// Must be called by the admin.  Once set, every call to `transfer` will
+    /// cross-call the LoanManager to ensure the sender has no Pending or
+    /// Approved loans.  Pass the zero-address or call with a subsequent
+    /// `set_loan_manager` to replace the address.
+    ///
+    /// Reverts with `ContractPaused` if the contract is paused.
+    pub fn set_loan_manager(env: Env, loan_manager: Address) -> Result<(), NftError> {
+        Self::admin(&env).require_auth();
+        Self::assert_not_paused(&env)?;
+
+        env.storage()
+            .instance()
+            .set(&DataKey::LoanManager, &loan_manager);
+        Self::bump_instance_ttl(&env);
+
+        env.events()
+            .publish((Symbol::new(&env, "LoanMgrSet"),), loan_manager);
+        Ok(())
+    }
+
+    /// Return the currently registered LoanManager contract address, or
+    /// `None` if no address has been set.
+    pub fn get_loan_manager(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::LoanManager)
     }
 }
 

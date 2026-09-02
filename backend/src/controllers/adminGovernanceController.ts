@@ -54,7 +54,9 @@ export const getPendingGovernance = asyncHandler(async (_req: Request, res: Resp
           executableAt: first.executable_at,
           expiresAt: first.expires_at,
           signers: result.rows
-            .filter((row: GovernanceRow) => row.signer_address)
+            .filter(
+              (row: GovernanceRow) => row.proposal_id === first.proposal_id && row.signer_address,
+            )
             .map((row: GovernanceRow) => ({
               address: row.signer_address,
               approved: Boolean(row.approved),

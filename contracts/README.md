@@ -12,17 +12,58 @@ RemitLend uses three core smart contracts:
 
 ## Prerequisites
 
-- [Rust Toolchain](https://www.rust-lang.org/tools/install) (latest stable)
+- [Rust Toolchain](https://www.rust-lang.org/tools/install) installed via `rustup` **1.23.0 or newer**
 - [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup)
 - [wasm32-unknown-unknown target](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
+
+### The pinned toolchain
+
+This directory contains a `rust-toolchain.toml` that pins the exact toolchain
+used to build the contracts:
+
+```toml
+[toolchain]
+channel = "1.85.0"
+targets = ["wasm32-unknown-unknown"]
+components = ["rustfmt", "clippy"]
+```
+
+**You do not need to install this toolchain yourself.** Any `cargo` or `rustc`
+command run from inside `contracts/` is intercepted by `rustup`, which reads
+this file, downloads the pinned toolchain and the `wasm32-unknown-unknown`
+target on first use, and runs the real command with them. The first build after
+cloning will therefore pause to download a toolchain — that is expected, not a
+failure.
+
+The pin is what makes builds reproducible: a WASM built on a different compiler
+version can differ byte-for-byte, which breaks on-chain hash verification even
+when the source is identical. Do not work around it by overriding the channel.
+
+**Minimum rustup version: 1.23.0**, the release that added `rust-toolchain.toml`
+support. On anything older the file is ignored and you get confusing errors —
+typically a compile failure against your system toolchain, or
+`error: target 'wasm32-unknown-unknown' not found`, rather than a clear message
+about the pin. Check and upgrade with:
+
+```bash
+rustup --version
+rustup self update
+```
+
+If you must confirm the pin is active, run `rustup show` from `contracts/` —
+the pinned version should be listed as the active toolchain, with `overridden
+by` pointing at `rust-toolchain.toml`.
 
 ### Installation
 
 ```bash
-# Install Rust
+# Install Rust (rustup 1.23.0+; skip if already installed, then `rustup self update`)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Add wasm32 target
+# Add wasm32 target.
+# Optional here — rust-toolchain.toml already declares it, so rustup installs
+# it automatically for the pinned toolchain on first build. Harmless to run,
+# and useful if you also build outside this directory.
 rustup target add wasm32-unknown-unknown
 
 # Install Soroban CLI

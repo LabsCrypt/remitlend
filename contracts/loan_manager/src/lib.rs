@@ -162,6 +162,7 @@ impl LoanManager {
     const DEFAULT_SCORE_PENALTY_POINTS: u32 = 50;
     const NFT_MAX_SCORE: u32 = 850;
     const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 100;
+    const STROOPS_PER_TOKEN: i128 = 10_000_000;
     const MAX_EXTENSIONS: u32 = 3;
     const EXTENSION_FEE_BPS: u32 = 100; // 1% of remaining principal
     /// Default minimum interest rate (configurable via set_rate_bounds). #631
@@ -240,6 +241,12 @@ impl LoanManager {
         }
     }
 
+    // Falls back to the configured default rate (rather than trapping
+    // request_loan/refinance) both when the oracle invocation itself fails -
+    // e.g. the oracle contract reverts, panics, or returns an undecodable
+    // value (#1128) - and when a successfully returned oracle rate is out of
+    // bounds (#631): a compromised or stale oracle cannot grant free loans
+    // (rate=0) or cause instant defaults (extreme rate).
     fn compute_interest_rate(env: &Env, borrower: &Address, amount: i128, score: u32) -> u32 {
         if let Some(oracle_addr) = env
             .storage()
@@ -247,18 +254,19 @@ impl LoanManager {
             .get::<_, Address>(&DataKey::RateOracle)
         {
             let client = RateOracleClient::new(env, &oracle_addr);
-            let oracle_rate = client.get_rate(borrower, &amount, &score);
 
-            // Bounds-check the oracle response (#631): a compromised or stale oracle
-            // cannot grant free loans (rate=0) or cause instant defaults (extreme rate).
-            // Falls back to the configured default rate rather than reverting the tx.
-            let min_rate = Self::min_rate_bps(env);
-            let max_rate = Self::max_rate_bps(env);
+            match client.try_get_rate(borrower, &amount, &score) {
+                Ok(Ok(oracle_rate)) => {
+                    let min_rate = Self::min_rate_bps(env);
+                    let max_rate = Self::max_rate_bps(env);
 
-            if oracle_rate < min_rate || oracle_rate > max_rate {
-                Self::read_interest_rate(env)
-            } else {
-                oracle_rate
+                    if oracle_rate < min_rate || oracle_rate > max_rate {
+                        Self::read_interest_rate(env)
+                    } else {
+                        oracle_rate
+                    }
+                }
+                _ => Self::read_interest_rate(env),
             }
         } else {
             Self::read_interest_rate(env)
@@ -356,18 +364,43 @@ impl LoanManager {
             .and_then(|v| v.checked_mul(PRECISION))
             .ok_or(LoanError::AmountTooLarge)?;
 
+        if loan.term_ledgers == 0 {
+            return Err(LoanError::InvalidTerm);
+        }
         let denominator = 10_000i128
-            .checked_mul(Self::DEFAULT_TERM_LEDGERS as i128)
+            .checked_mul(loan.term_ledgers as i128)
             .ok_or(LoanError::AmountTooLarge)?;
 
-        let total_interest = numerator / denominator;
-        let interest_delta = total_interest / PRECISION;
-        let new_residual = total_interest % PRECISION;
+        // All stroop-quantity division routes through the shared `money`
+        // crate so contracts, backend and frontend apply identical rounding
+        // semantics. Floor is used here (not half-even) because the
+        // remainder is explicitly carried forward as `interest_residual`
+        // rather than discarded, so no precision is lost across calls.
+        let total_interest = money::round_div(numerator, denominator, money::RoundingMode::Floor)
+            .map_err(|_| LoanError::AmountTooLarge)?;
+        let interest_delta =
+            money::round_div(total_interest, PRECISION, money::RoundingMode::Floor)
+                .map_err(|_| LoanError::AmountTooLarge)?;
+        let new_residual = total_interest
+            .checked_sub(
+                interest_delta
+                    .checked_mul(PRECISION)
+                    .ok_or(LoanError::AmountTooLarge)?,
+            )
+            .ok_or(LoanError::AmountTooLarge)?;
 
         // Add the previous residual to the new calculation
         let combined_residual = loan.interest_residual + new_residual;
-        let additional_interest = combined_residual / PRECISION;
-        let final_residual = combined_residual % PRECISION;
+        let additional_interest =
+            money::round_div(combined_residual, PRECISION, money::RoundingMode::Floor)
+                .map_err(|_| LoanError::AmountTooLarge)?;
+        let final_residual = combined_residual
+            .checked_sub(
+                additional_interest
+                    .checked_mul(PRECISION)
+                    .ok_or(LoanError::AmountTooLarge)?,
+            )
+            .ok_or(LoanError::AmountTooLarge)?;
 
         let total_accrued_delta = interest_delta
             .checked_add(additional_interest)
@@ -455,10 +488,14 @@ impl LoanManager {
             return 0;
         }
 
-        let ratio = collateral_amount
-            .checked_mul(Self::MAX_RATIO_BPS as i128)
-            .expect("collateral ratio overflow")
-            / total_debt;
+        let ratio = money::round_div(
+            collateral_amount
+                .checked_mul(Self::MAX_RATIO_BPS as i128)
+                .expect("collateral ratio overflow"),
+            total_debt,
+            money::RoundingMode::Floor,
+        )
+        .expect("collateral ratio overflow");
 
         ratio.min(u32::MAX as i128) as u32
     }
@@ -602,15 +639,26 @@ impl LoanManager {
         }
 
         let overdue_ledgers = current_ledger - late_fee_start;
-        // Late fee is calculated on original principal amount only, not remaining debt.
-        // This ensures the 25% late fee cap is meaningful regardless of payment state.
-        let incremental_fee = loan
-            .amount
+        // Late fee is calculated on remaining principal and uses the loan's actual
+        // term length, so custom-term loans and partially repaid loans are billed correctly.
+        let term_ledgers = if loan.term_ledgers == 0 {
+            Self::DEFAULT_TERM_LEDGERS as i128
+        } else {
+            loan.term_ledgers as i128
+        };
+        let late_fee_numerator = remaining_principal
             .checked_mul(Self::late_fee_rate_bps(env) as i128)
             .and_then(|value| value.checked_mul(overdue_ledgers as i128))
-            .and_then(|value| value.checked_div(10_000))
-            .and_then(|value| value.checked_div(Self::DEFAULT_TERM_LEDGERS as i128))
             .expect("late fee overflow");
+        let late_fee_denominator = 10_000i128
+            .checked_mul(term_ledgers)
+            .expect("late fee overflow");
+        let incremental_fee = money::round_div(
+            late_fee_numerator,
+            late_fee_denominator,
+            money::RoundingMode::Floor,
+        )
+        .expect("late fee overflow");
 
         // Global debt cap: Total outstanding (principal + interest + late fees)
         // cannot exceed original_principal * MAX_PENALTY_MULTIPLIER.
@@ -679,16 +727,25 @@ impl LoanManager {
                 continue;
             }
 
+            // Note: this is a hand-rolled largest-remainder allocation rather
+            // than `money::split_pro_rata` because each bucket must also be
+            // capped at its own `due` amount (a category can't be overpaid),
+            // which the generic allocator does not support. The division
+            // itself still routes through the shared `money::round_div`
+            // helper so the rounding semantics stay identical across layers.
             let scaled = amount
                 .checked_mul(due)
                 .expect("repayment allocation overflow");
-            let payment = scaled
-                .checked_div(total_debt)
+            let payment = money::round_div(scaled, total_debt, money::RoundingMode::Floor)
                 .expect("repayment allocation underflow");
 
             payments[idx] = payment;
             remainders[idx] = scaled
-                .checked_rem(total_debt)
+                .checked_sub(
+                    payment
+                        .checked_mul(total_debt)
+                        .expect("repayment allocation overflow"),
+                )
                 .expect("repayment allocation underflow");
             allocated = allocated
                 .checked_add(payment)
@@ -1113,7 +1170,7 @@ impl LoanManager {
     ///
     /// Requires admin authorization and the loan manager, lending pool, and NFT
     /// contract to be unpaused. The target loan must be [`LoanStatus::Pending`];
-    /// approval records the default term, due date, interest/late-fee ledgers,
+    /// approval records the requested term, due date, interest/late-fee ledgers,
     /// and total outstanding balance before transferring funds from the lending
     /// pool to the borrower.
     ///
@@ -1153,7 +1210,10 @@ impl LoanManager {
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
-        let term_ledgers = Self::read_default_term(&env);
+        let term_ledgers = loan.term_ledgers;
+        if term_ledgers == 0 {
+            return Err(LoanError::InvalidTerm);
+        }
 
         // Cross-contract READ for liquidity check — still in the CHECKS phase.
         let pool_client = PoolClient::new(&env, &lending_pool);
@@ -1209,6 +1269,38 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
         let _ = Self::current_total_debt(&env, &mut loan)?;
         Ok(loan)
+    }
+
+    /// Return the raw status discriminant of a loan without accruing interest.
+    ///
+    /// This lightweight read is designed for cross-contract callers (e.g.,
+    /// [`RemittanceNFT::transfer`]) that only need to know whether a loan is
+    /// active (Pending = 0, Approved = 1) and do not require a full Loan
+    /// struct with up-to-date accrued interest.
+    ///
+    /// Returns [`LoanError::LoanNotFound`] when `loan_id` is unknown.
+    pub fn get_loan_status(env: Env, loan_id: u32) -> Result<u32, LoanError> {
+        let loan_key = DataKey::Loan(loan_id);
+        let loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
+        // Map LoanStatus to its u32 discriminant.
+        // This must stay in sync with the LoanStatus enum definition:
+        //   Pending = 0, Approved = 1, Repaid = 2, Defaulted = 3,
+        //   Liquidated = 4, Cancelled = 5, Rejected = 6
+        let discriminant = match loan.status {
+            LoanStatus::Pending => 0,
+            LoanStatus::Approved => 1,
+            LoanStatus::Repaid => 2,
+            LoanStatus::Defaulted => 3,
+            LoanStatus::Liquidated => 4,
+            LoanStatus::Cancelled => 5,
+            LoanStatus::Rejected => 6,
+        };
+        Ok(discriminant)
     }
 
     /// Repay part or all of an approved loan.
@@ -1381,7 +1473,7 @@ impl LoanManager {
                     // Use apply_score_delta rather than update_score so score adjustments
                     // work for any token denomination without hitting RemittanceNFT's
                     // anti-dust repayment floor (which assumes XLM stroops).
-                    let points_i128 = amount / 100;
+                    let points_i128 = amount / (100 * Self::STROOPS_PER_TOKEN);
                     let points_i32 = if points_i128 > i32::MAX as i128 {
                         i32::MAX
                     } else if points_i128 <= 0 {
@@ -1605,7 +1697,15 @@ impl LoanManager {
         let collateral_amount = loan.collateral_amount;
         let configured_bonus = collateral_amount
             .checked_mul(Self::liquidation_bonus_bps(&env) as i128)
-            .and_then(|value| value.checked_div(Self::MAX_RATIO_BPS as i128))
+            .ok_or(())
+            .and_then(|value| {
+                money::round_div(
+                    value,
+                    Self::MAX_RATIO_BPS as i128,
+                    money::RoundingMode::Floor,
+                )
+                .map_err(|_| ())
+            })
             .expect("liquidation bonus overflow");
 
         // Ensure bonus cap is enforced - bonus BPS should never exceed MAX_LIQUIDATION_BONUS_BPS
@@ -1637,15 +1737,27 @@ impl LoanManager {
         Self::apply_debt_recovery(&mut loan, debt_repaid);
         loan.status = LoanStatus::Liquidated;
         loan.collateral_amount = 0;
-        env.storage().persistent().set(&loan_key, &loan);
-        Self::bump_persistent_ttl(&env, &loan_key);
-        Self::decrement_borrower_loan_count(&env, &loan.borrower);
 
         let token: Address = env
             .storage()
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
+        Self::adjust_total_outstanding(&env, &token, -loan.amount);
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+        Self::decrement_borrower_loan_count(&env, &loan.borrower);
+
+        let nft_contract = Self::nft_contract(&env);
+        let nft_client = NftClient::new(&env, &nft_contract);
+        nft_client.decrease_score(
+            &loan.borrower,
+            &Self::DEFAULT_SCORE_PENALTY_POINTS,
+            &Some(env.current_contract_address()),
+        );
+        nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
+
         let lending_pool: Address = env
             .storage()
             .instance()
@@ -1719,6 +1831,10 @@ impl LoanManager {
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
 
+        // Decrement the borrower's active loan count so cancelled loans
+        // do not permanently consume loan slots. (#1591)
+        Self::decrement_borrower_loan_count(&env, &loan.borrower);
+
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;
             let token: Address = env
@@ -1760,6 +1876,10 @@ impl LoanManager {
         loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
+
+        // Decrement the borrower's active loan count so rejected loans
+        // do not permanently consume loan slots. (#1591)
+        Self::decrement_borrower_loan_count(&env, &loan.borrower);
 
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;
@@ -1814,22 +1934,36 @@ impl LoanManager {
         let collateral_key = DataKey::Collateral(loan_id);
         env.storage().persistent().remove(&collateral_key);
 
-        // Cancelled and Rejected loans still hold a borrower loan count
-        // (they are never decremented by cancel_loan / reject_loan), so
-        // clean it up here.
-        if matches!(loan.status, LoanStatus::Cancelled | LoanStatus::Rejected) {
-            Self::decrement_borrower_loan_count(&env, &loan.borrower);
-        }
+        // Note: borrower loan count is already decremented by cancel_loan
+        // and reject_loan themselves (#1591), so no additional decrement is
+        // needed here for Cancelled/Rejected loans.
 
         events::loan_purged(&env, loan_id);
         Ok(())
     }
 
-    /// Refinance an active loan in good standing (not past due).
-    /// Settles all accrued interest and late fees, adjusts the principal to
-    /// new_amount (drawing from or returning funds to the pool), and resets
-    /// the due date to current_ledger + new_term.
-    /// Requires both borrower auth and admin auth.
+    /// Refinance an active loan.
+    ///
+    /// Refinancing is allowed for an active loan ([`LoanStatus::Approved`]) until the end of
+    /// its default window (`due_date + default_window`). Settles all accrued interest and
+    /// late fees, adjusts the principal to `new_amount` (drawing from or returning funds to
+    /// the lending pool), re-validates borrower credit score, and resets the due date to
+    /// `current_ledger + new_term`.
+    ///
+    /// # Authorization Requirements
+    /// Requires authorization from both the contract **admin** (`admin.require_auth()`) and the **borrower** (`loan.borrower.require_auth()`).
+    ///
+    /// # Error Conditions
+    /// - [`LoanError::ContractPaused`]: If the loan manager contract is paused.
+    /// - [`LoanError::LoanNotFound`]: If no loan matches `loan_id`.
+    /// - [`LoanError::LoanNotActive`]: If the loan status is not [`LoanStatus::Approved`].
+    /// - [`LoanError::LoanPastDue`]: If the current ledger sequence exceeds the end of the default window (`due_date + default_window`).
+    /// - [`LoanError::InvalidAmount`]: If `new_amount <= 0` or exceeds `max_loan_amount`.
+    /// - [`LoanError::InvalidTerm`]: If `new_term` is outside the configured `[min_term, max_term]` bounds.
+    /// - [`LoanError::NotInitialized`]: If the NFT contract reference is not configured in storage.
+    /// - [`LoanError::InsufficientScore`]: If the borrower's credit score falls below `min_score`.
+    /// - [`LoanError::InsufficientCollateral`]: If recorded collateral is strictly less than `new_amount`.
+    /// - [`LoanError::InsufficientPoolLiquidity`]: When refinancing to a higher principal, if available pool liquidity cannot cover the increase.
     pub fn refinance_loan(
         env: Env,
         loan_id: u32,
@@ -1910,12 +2044,33 @@ impl LoanManager {
 
         // Validate collateral covers new amount (collateral must be >= loan amount)
         if loan.collateral_amount < new_amount {
-            return Err(LoanError::InsufficientScore);
+            return Err(LoanError::InsufficientCollateral);
         }
 
         // Settle all accrued interest and late fees up to now.
         Self::accrue_interest(&env, &mut loan)?;
         let _ = Self::accrue_late_fee(&env, &mut loan);
+
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+        let token_client = TokenClient::new(&env, &token);
+
+        // Transfer accrued interest + late fees from borrower to lending pool before resetting.
+        let accrued_settlement = loan
+            .accrued_interest
+            .checked_add(loan.accrued_late_fee)
+            .expect("overflow");
+        if accrued_settlement > 0 {
+            token_client.transfer(&loan.borrower, &lending_pool, &accrued_settlement);
+        }
 
         loan.interest_paid = loan
             .interest_paid
@@ -1932,18 +2087,6 @@ impl LoanManager {
         // Adjust principal to new_amount.
         let remaining_principal = Self::remaining_principal(&loan);
 
-        let token: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .expect("token not set");
-        let lending_pool: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::LendingPool)
-            .expect("lending pool not set");
-        let token_client = TokenClient::new(&env, &token);
-
         match new_amount.cmp(&remaining_principal) {
             core::cmp::Ordering::Greater => {
                 // Pool disburses the additional amount to the borrower.
@@ -1952,7 +2095,7 @@ impl LoanManager {
                     .expect("underflow");
                 let pool_balance = token_client.balance(&lending_pool);
                 let outstanding_after_excluding_current = Self::total_outstanding(&env, &token)
-                    .checked_sub(loan.amount)
+                    .checked_sub(remaining_principal)
                     .expect("total outstanding underflow");
                 let available_liquidity = pool_balance
                     .checked_sub(outstanding_after_excluding_current)
@@ -1971,12 +2114,14 @@ impl LoanManager {
 
                 // Return excess collateral proportionally if new amount is smaller
                 if new_amount < remaining_principal {
-                    let collateral_to_return = loan
-                        .collateral_amount
-                        .checked_mul(excess_principal)
-                        .expect("multiplication overflow")
-                        .checked_div(remaining_principal)
-                        .expect("division by zero");
+                    let collateral_to_return = money::round_div(
+                        loan.collateral_amount
+                            .checked_mul(excess_principal)
+                            .expect("multiplication overflow"),
+                        remaining_principal,
+                        money::RoundingMode::Floor,
+                    )
+                    .expect("division by zero");
                     if collateral_to_return > 0 {
                         token_client.transfer(
                             &env.current_contract_address(),
@@ -1994,7 +2139,7 @@ impl LoanManager {
         }
 
         let outstanding_delta = new_amount
-            .checked_sub(loan.amount)
+            .checked_sub(remaining_principal)
             .expect("outstanding delta overflow");
         Self::adjust_total_outstanding(&env, &token, outstanding_delta);
 
@@ -2454,7 +2599,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::ProposedAdmin)
-            .ok_or(LoanError::NotInitialized)?;
+            .ok_or(LoanError::NoProposedAdmin)?;
         proposed_admin.require_auth();
 
         env.storage()
@@ -2573,7 +2718,7 @@ impl LoanManager {
         Self::require_not_paused(&env)?;
 
         if extra_ledgers == 0 {
-            return Err(LoanError::InvalidTerm);
+            return Err(LoanError::InvalidExtension);
         }
 
         let loan_key = DataKey::Loan(loan_id);
@@ -2606,14 +2751,15 @@ impl LoanManager {
 
         // Check extension limit
         if loan.extension_count >= Self::MAX_EXTENSIONS {
-            return Err(LoanError::InvalidConfiguration);
+            return Err(LoanError::MaxExtensionsReached);
         }
 
         // Calculate extension fee (1% of remaining principal)
         let remaining_principal = Self::remaining_principal(&loan);
         let extension_fee = remaining_principal
             .checked_mul(Self::EXTENSION_FEE_BPS as i128)
-            .and_then(|v| v.checked_div(10_000))
+            .ok_or(())
+            .and_then(|v| money::round_div(v, 10_000, money::RoundingMode::Floor).map_err(|_| ()))
             .expect("extension fee overflow");
 
         // Collect extension fee from borrower if any

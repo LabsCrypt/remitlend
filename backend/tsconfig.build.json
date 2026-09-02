@@ -7,5 +7,11 @@
     "declaration": false,
     "declarationMap": false
   },
-  "exclude": ["src/**/*.test.ts", "src/**/__tests__/**", "jest.config.ts"]
+  "exclude": [
+    "**/*.spec.ts",
+    "src/**/*.test.ts",
+    "src/**/__tests__/**",
+    "jest.config.ts",
+    "src/seed/data/remittance.spec.ts"
+  ]
 }

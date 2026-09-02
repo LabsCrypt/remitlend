@@ -25,14 +25,6 @@ export const getNotifications = asyncHandler(async (req: Request, res: Response)
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
 
-  // Validate date formats
-  if (from && Number.isNaN(Date.parse(from))) {
-    throw AppError.badRequest("Invalid 'from' date format");
-  }
-  if (to && Number.isNaN(Date.parse(to))) {
-    throw AppError.badRequest("Invalid 'to' date format");
-  }
-
   const [notifications, unreadCount] = await Promise.all([
     notificationService.getNotificationsForUser(userId, limit, type, status, from, to),
     notificationService.getUnreadCount(userId),
@@ -50,9 +42,20 @@ export const markRead = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user?.publicKey;
   if (!userId) throw AppError.unauthorized('Authentication required');
 
+  const MAX_IDS_PER_REQUEST = 100;
+
   const { ids } = req.body as { ids?: unknown };
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'number')) {
     throw AppError.badRequest('Body must contain an array of numeric ids');
+  }
+
+  if (ids.length === 0) {
+    res.json({ success: true });
+    return;
+  }
+
+  if (ids.length > MAX_IDS_PER_REQUEST) {
+    throw AppError.badRequest(`Cannot mark more than ${MAX_IDS_PER_REQUEST} notifications at once`);
   }
 
   await notificationService.markRead(userId, ids as number[]);

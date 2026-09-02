@@ -82,3 +82,25 @@ export function validateLoanConfig(): LoanConfig {
   const loanConfig = getLoanConfig();
   return loanConfig;
 }
+
+/**
+ * Startup guard — mirrors validateEnvVars().
+ * Calls getLoanConfig() and, on any validation failure, logs the error and
+ * terminates the process immediately so the server never starts with bad loan
+ * parameters.
+ */
+export function validateLoanConfigOnStartup(): void {
+  try {
+    getLoanConfig();
+  } catch (err) {
+    const boldRed = (msg: string) => `\x1b[1;31m${msg}\x1b[0m`;
+    const bold = (msg: string) => `\x1b[1m${msg}\x1b[0m`;
+
+    const errorPrefix = boldRed('FATAL ERROR: Loan config validation failed');
+    const detail = bold(err instanceof Error ? err.message : String(err));
+    const actionMsg = `Please verify the loan config variables in your \x1b[4m.env\x1b[0m file.`;
+
+    console.error(`\n${errorPrefix}\n${detail}\n${actionMsg}\n`);
+    process.exit(1);
+  }
+}

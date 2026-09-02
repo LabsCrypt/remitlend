@@ -15,6 +15,8 @@ process.env.ADMIN_WALLETS = ADMIN;
 // both the cancel (PENDING|OPEN) and reject (PENDING) guards.
 const loans: Record<string, { status: string; address: string }> = {
   'loan-123': { status: 'PENDING', address: BORROWER },
+  'open-loan': { status: 'OPEN', address: BORROWER },
+  'defaulted-loan': { status: 'DEFAULTED', address: BORROWER },
   'completed-loan': { status: 'COMPLETED', address: BORROWER },
   'loan-1': { status: 'PENDING', address: BORROWER },
 };
@@ -98,6 +100,24 @@ describe('POST /api/loans/:loanId/build-cancel', () => {
       .set('Authorization', borrowerAuth);
 
     expect(response.status).toBe(400);
+  });
+
+  it('should allow an OPEN loan to be cancelled', async () => {
+    const response = await request(app)
+      .post('/api/loans/open-loan/build-cancel')
+      .set('Authorization', borrowerAuth);
+
+    expect(response.status).toBe(200);
+    expect(mockBuildCancelLoanTx).toHaveBeenCalledWith(BORROWER, 'open-loan');
+  });
+
+  it('should reject a DEFAULTED loan', async () => {
+    const response = await request(app)
+      .post('/api/loans/defaulted-loan/build-cancel')
+      .set('Authorization', borrowerAuth);
+
+    expect(response.status).toBe(400);
+    expect(mockBuildCancelLoanTx).not.toHaveBeenCalledWith(BORROWER, 'defaulted-loan');
   });
 });
 

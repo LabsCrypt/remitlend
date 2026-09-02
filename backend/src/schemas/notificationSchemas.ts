@@ -30,6 +30,7 @@ export const getNotificationsQuerySchema = z.object({
       'repayment_due',
       'repayment_confirmed',
       'loan_defaulted',
+      'loan_liquidated',
       'score_changed',
     ])
     .optional(),
@@ -38,6 +39,8 @@ export const getNotificationsQuerySchema = z.object({
   to: isoDateString.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
+
+export type GetNotificationsQuery = z.infer<typeof getNotificationsQuerySchema>;
 
 export const validateNotificationPhone = (phone: string | null): boolean => {
   if (!phone) return true;

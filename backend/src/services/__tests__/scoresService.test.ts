@@ -112,7 +112,7 @@ describe('updateUserScoresBulk', () => {
       const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
 
       expect(sql).toContain('INSERT INTO scores');
-      expect(sql).toContain('ON CONFLICT (user_id)');
+      expect(sql).toContain('ON CONFLICT (borrower)');
       expect(params).toEqual(['user1', 10]);
     }, 20000);
 

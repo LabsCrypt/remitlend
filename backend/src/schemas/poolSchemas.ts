@@ -6,12 +6,14 @@ export const buildPoolTransactionSchema = z.object({
   depositorPublicKey: stellarAddressSchema,
   token: stellarAddressSchema,
   amount: positiveAmountSchema,
+  minAssetsOut: z.number().int().nonnegative().optional(),
 });
 
 export const emergencyWithdrawSchema = z.object({
   depositorPublicKey: stellarAddressSchema,
   token: stellarAddressSchema,
   shares: positiveAmountSchema,
+  minAssetsOut: z.number().int().nonnegative().optional(),
 });
 
 export const getDepositorYieldHistorySchema = z.object({

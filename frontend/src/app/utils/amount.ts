@@ -1,3 +1,8 @@
+import {
+  parseAmount as parseCanonicalAmount,
+  formatStroops as formatCanonicalStroops,
+} from "../../../lib/money/format";
+
 export const STROOP_DECIMALS = 7;
 export const STROOP_SCALE = 10 ** STROOP_DECIMALS;
 
@@ -57,6 +62,20 @@ export function toStroops(value: string, decimals = STROOP_DECIMALS): bigint | n
     return null;
   }
 
+  // The canonical 7-decimal (stroop) case routes through the shared
+  // cross-layer money policy (frontend/lib/money/format.ts) so parsing here
+  // agrees bit-for-bit with the contract and backend implementations of the
+  // same policy. Non-standard precisions (e.g. 2-decimal USDC) fall back to
+  // local bigint scaling, which is exact for those assets since they never
+  // carry sub-display precision to round.
+  if (decimals === STROOP_DECIMALS) {
+    try {
+      return parseCanonicalAmount(value);
+    } catch {
+      return null;
+    }
+  }
+
   const [whole = "0", fraction = ""] = value.split(".");
   const normalizedFraction = fraction.padEnd(decimals, "0");
 
@@ -68,6 +87,25 @@ export function toStroops(value: string, decimals = STROOP_DECIMALS): bigint | n
   } catch {
     return null;
   }
+}
+
+/**
+ * Format an exact stroop amount as a decimal string with no precision loss —
+ * the inverse of {@link toStroops}. Unlike `Number(stroops) / 1e7` followed
+ * by `toFixed`, this never routes the value through a floating-point
+ * `number`, so it agrees with the settlement amount at full precision.
+ */
+export function fromStroops(value: bigint, decimals = STROOP_DECIMALS): string {
+  if (decimals === STROOP_DECIMALS) {
+    return formatCanonicalStroops(value, { decimalPlaces: STROOP_DECIMALS });
+  }
+
+  const negative = value < BigInt(0);
+  const magnitude = negative ? -value : value;
+  const scale = BigInt(10) ** BigInt(decimals);
+  const whole = magnitude / scale;
+  const fraction = (magnitude % scale).toString().padStart(decimals, "0");
+  return `${negative ? "-" : ""}${whole.toString()}.${fraction}`;
 }
 
 export function buildAmountHelperText(

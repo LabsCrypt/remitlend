@@ -5,6 +5,7 @@ import { query } from '../db/connection.js';
 import { withTransaction } from '../db/transaction.js';
 import { AppError } from '../errors/AppError.js';
 import logger from '../utils/logger.js';
+import { isValidStellarAddress } from '../utils/stellar.js';
 
 export interface CreateRemittancePayload {
   recipientAddress: string;
@@ -28,15 +29,6 @@ export interface Remittance {
   xdr?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-/**
- * Validates a Stellar public key format
- */
-function isValidStellarAddress(address: string): boolean {
-  if (!address || typeof address !== 'string') return false;
-  if (address.length !== 56 || !address.startsWith('G')) return false;
-  return /^G[A-Z2-7]{55}$/.test(address);
 }
 
 const normalizeCurrency = (currency: string): string => currency.trim().toUpperCase();

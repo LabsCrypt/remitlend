@@ -7,6 +7,7 @@ const mockBuildEmergencyWithdrawTx =
       providerPublicKey: string,
       tokenAddress: string,
       shares: number,
+      minAssetsOut?: number,
     ) => Promise<{ unsignedTxXdr: string; networkPassphrase: string }>
   >();
 
@@ -44,7 +45,7 @@ describe('emergencyWithdrawFromPool', () => {
     jest.clearAllMocks();
   });
 
-  it('builds an unsigned emergency withdraw transaction', async () => {
+  it('builds an unsigned emergency withdraw transaction with default minAssetsOut (0)', async () => {
     mockBuildEmergencyWithdrawTx.mockResolvedValue({
       unsignedTxXdr: 'AAAAAgAAAAtlbWVyZ2VuY3lfd2l0aGRyYXc=',
       networkPassphrase: 'Test SDF Network ; September 2015',
@@ -64,7 +65,41 @@ describe('emergencyWithdrawFromPool', () => {
     emergencyWithdrawFromPool(req, res, next as unknown as NextFunction);
     await flushAsync();
 
-    expect(mockBuildEmergencyWithdrawTx).toHaveBeenCalledWith('GDEPOSITOR123', 'GTOKEN456', 500);
+    expect(mockBuildEmergencyWithdrawTx).toHaveBeenCalledWith('GDEPOSITOR123', 'GTOKEN456', 500, 0);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      unsignedTxXdr: 'AAAAAgAAAAtlbWVyZ2VuY3lfd2l0aGRyYXc=',
+      networkPassphrase: 'Test SDF Network ; September 2015',
+    });
+  });
+
+  it('builds an unsigned emergency withdraw transaction with explicit minAssetsOut', async () => {
+    mockBuildEmergencyWithdrawTx.mockResolvedValue({
+      unsignedTxXdr: 'AAAAAgAAAAtlbWVyZ2VuY3lfd2l0aGRyYXc=',
+      networkPassphrase: 'Test SDF Network ; September 2015',
+    });
+
+    const req = {
+      body: {
+        depositorPublicKey: 'GDEPOSITOR123',
+        token: 'GTOKEN456',
+        shares: 500,
+        minAssetsOut: 450,
+      },
+      user: { publicKey: 'GDEPOSITOR123' },
+    } as unknown as Request;
+    const res = createMockResponse();
+    const next = jest.fn<(err?: unknown) => void>();
+
+    emergencyWithdrawFromPool(req, res, next as unknown as NextFunction);
+    await flushAsync();
+
+    expect(mockBuildEmergencyWithdrawTx).toHaveBeenCalledWith(
+      'GDEPOSITOR123',
+      'GTOKEN456',
+      500,
+      450,
+    );
     expect(res.json).toHaveBeenCalledWith({
       success: true,
       unsignedTxXdr: 'AAAAAgAAAAtlbWVyZ2VuY3lfd2l0aGRyYXc=',

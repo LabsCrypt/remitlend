@@ -15,6 +15,7 @@ RemitLend is a decentralized lending platform built on the Stellar network using
     - [Frontend Standard Library & Patterns](docs/wiki/frontend-patterns.md)
 - [Security Model](#security-model)
 - [Technology Stack](#technology-stack)
+- [Lender Dashboard Design](LENDERS_DASHBOARD_DESIGN.md)
 
 ## Overview
 

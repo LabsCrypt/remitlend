@@ -1,12 +1,12 @@
 #![no_main]
 
 use arbitrary::Arbitrary;
-use libfuzzer_sys::fuzz_target;
 use lending_pool::LendingPool;
+use libfuzzer_sys::fuzz_target;
 use loan_manager::{LoanManager, LoanManagerClient};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, Env, BytesN, Symbol, IntoVal, Val};
+use soroban_sdk::{Address, BytesN, Env, IntoVal, Symbol, Val};
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
 
@@ -66,7 +66,7 @@ fuzz_target!(|data: FuzzAction| {
     let loan_manager_id = env.register(LoanManager, ());
     let loan_manager_client = LoanManagerClient::new(&env, &loan_manager_id);
     loan_manager_client.initialize(&nft_id, &lending_pool_id, &token_id, &admin);
-    
+
     // Authorize LoanManager to update scores in NFT contract
     nft_client.authorize_minter(&loan_manager_id);
 
@@ -85,7 +85,14 @@ fuzz_target!(|data: FuzzAction| {
 
             // Mint NFT for user with specific score
             let history_hash = BytesN::from_array(&env, &[0u8; 32]);
-            nft_client.mint(&user, &score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
+            nft_client.mint(
+                &user,
+                &score,
+                &history_hash,
+                &soroban_sdk::String::from_str(&env, "ipfs://test"),
+                &BytesN::from_array(&env, &[0u8; 32]),
+                &None,
+            );
 
             let result = rcall!(&env, loan_manager_client, "request_loan", (user, amount));
 
@@ -117,7 +124,14 @@ fuzz_target!(|data: FuzzAction| {
 
             // Mint NFT for user
             let history_hash = BytesN::from_array(&env, &[0u8; 32]);
-            nft_client.mint(&user, &initial_score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
+            nft_client.mint(
+                &user,
+                &initial_score,
+                &history_hash,
+                &soroban_sdk::String::from_str(&env, "ipfs://test"),
+                &BytesN::from_array(&env, &[0u8; 32]),
+                &None,
+            );
 
             let score_before = nft_client.get_score(&user);
             let result = rcall!(&env, loan_manager_client, "repay", (user, amount));
@@ -127,7 +141,11 @@ fuzz_target!(|data: FuzzAction| {
 
                 // Verify invariant: score should be updated (increased by 1 per 100 units)
                 let expected_increase = (amount / 100) as u32;
-                assert_eq!(score_after, score_before + expected_increase, "Score should increase correctly after repayment");
+                assert_eq!(
+                    score_after,
+                    score_before + expected_increase,
+                    "Score should increase correctly after repayment"
+                );
                 assert!(score_after >= 0, "Score should never be negative");
             }
         }
@@ -136,18 +154,33 @@ fuzz_target!(|data: FuzzAction| {
             let mut users = HashMap::new();
 
             for op in operations {
-                let user_addr = users.entry(op.user_id).or_insert_with(|| {
-                    let addr = Address::generate(&env);
-                    let history_hash = BytesN::from_array(&env, &[0u8; 32]);
-                    // Initialize user with some score
-                    nft_client.mint(&addr, &op.score, &history_hash, &soroban_sdk::String::from_str(&env, "ipfs://test"), &None);
-                    addr
-                }).clone();
+                let user_addr = users
+                    .entry(op.user_id)
+                    .or_insert_with(|| {
+                        let addr = Address::generate(&env);
+                        let history_hash = BytesN::from_array(&env, &[0u8; 32]);
+                        // Initialize user with some score
+                        nft_client.mint(
+                            &addr,
+                            &op.score,
+                            &history_hash,
+                            &soroban_sdk::String::from_str(&env, "ipfs://test"),
+                            &BytesN::from_array(&env, &[0u8; 32]),
+                            &None,
+                        );
+                        addr
+                    })
+                    .clone();
 
                 match op.operation_type % 2 {
                     0 if op.amount > 0 => {
                         // Request loan
-                        let _ = rcall!(&env, loan_manager_client, "request_loan", (user_addr, op.amount));
+                        let _ = rcall!(
+                            &env,
+                            loan_manager_client,
+                            "request_loan",
+                            (user_addr, op.amount)
+                        );
                     }
                     1 if op.amount > 0 => {
                         // Repay
@@ -159,4 +192,3 @@ fuzz_target!(|data: FuzzAction| {
         }
     }
 });
-

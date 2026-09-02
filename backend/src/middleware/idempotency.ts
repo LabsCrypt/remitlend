@@ -27,6 +27,7 @@ export const idempotencyMiddleware = async (
 
   try {
     const cacheKey = `idemp:${key}`;
+    const lockKey = `idemp:${key}:lock`;
     const cached = await cacheService.get<CachedResponse>(cacheKey);
 
     if (cached) {
@@ -43,6 +44,22 @@ export const idempotencyMiddleware = async (
         .set('X-Idempotency-Cache', 'HIT')
         .set('X-Idempotent-Replayed', 'true')
         .json(cached.body);
+      return;
+    }
+
+    // Acquire an in-flight lock to prevent concurrent duplicate executions.
+    // If another request with the same key is already being processed,
+    // reject this one with 409 Conflict.
+    const lockAcquired = await cacheService.setNotExists(
+      lockKey,
+      { pid: process.pid, startedAt: Date.now() },
+      30,
+    );
+
+    if (!lockAcquired) {
+      res.status(409).json({
+        error: 'A request with this Idempotency-Key is already in progress.',
+      });
       return;
     }
 
@@ -80,6 +97,13 @@ export const idempotencyMiddleware = async (
 
     // Store the response in cache once the request is finished
     res.on('finish', async () => {
+      // Release the in-flight lock
+      try {
+        await cacheService.delete(lockKey);
+      } catch {
+        // Lock will expire via TTL if deletion fails
+      }
+
       // Only cache 2xx and 4xx status codes.
       // 5xx errors should usually be retried without returning a cached failure.
       if (res.statusCode >= 200 && res.statusCode < 500 && responseBody) {

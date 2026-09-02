@@ -544,9 +544,9 @@ checksum = "2bfcf67fea2815c2fc3b90873fae90957be12ff417335dfadc7f52927feb03b2"
 
 [[package]]
 name = "ethnum"
-version = "1.5.2"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
+checksum = "40404c3f5f511ec4da6fe866ddf6a717c309fdbb69fbbad7b0f3edab8f2e835f"
 
 [[package]]
 name = "ff"
@@ -765,6 +765,7 @@ dependencies = [
 name = "lending_pool"
 version = "0.0.1"
 dependencies = [
+ "money",
  "soroban-sdk",
 ]
 
@@ -785,6 +786,7 @@ name = "loan_manager"
 version = "0.0.1"
 dependencies = [
  "lending_pool",
+ "money",
  "remittance_nft",
  "soroban-sdk",
 ]
@@ -800,6 +802,14 @@ name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
+
+[[package]]
+name = "money"
+version = "0.0.1"
+dependencies = [
+ "rand",
+ "soroban-sdk",
+]
 
 [[package]]
 name = "multisig_governance"

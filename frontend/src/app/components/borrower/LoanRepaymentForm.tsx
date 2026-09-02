@@ -117,7 +117,14 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
   };
 
   const handlePayFullAmount = () => {
-    setAmount(totalOwed.toFixed(7).replace(/\.?0+$/, ""));
+    // Previously hardcoded `.toFixed(7)` regardless of asset — for a
+    // 2-decimal asset like USDC that both mis-displays the amount (showing
+    // 7 fractional digits) and rounds half-up via `toFixed`, which can
+    // disagree with the backend's half-even settlement by a sub-cent unit.
+    // `getAssetDecimals` matches this form's asset precision; the shared
+    // money policy's rounding mode is applied consistently everywhere else
+    // via `frontend/lib/money/format.ts`.
+    setAmount(totalOwed.toFixed(getAssetDecimals("USDC")).replace(/\.?0+$/, ""));
     setError(null);
   };
 
@@ -186,6 +193,12 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
           </p>
 
           <OperationProgress transaction={repayment.transaction} type="repayment" />
+
+          {repayment.error && (
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              {repayment.error}
+            </p>
+          )}
 
           {/* Action Button */}
           <Button

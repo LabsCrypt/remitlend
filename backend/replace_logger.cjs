@@ -1,3 +1,16 @@
+/**
+ * One-time migration script that updates logger calls from:
+ *   logger.info(), logger.warn(), logger.error()
+ * to:
+ *   logger.withContext().info(), logger.withContext().warn(),
+ *   logger.withContext().error().
+ *
+ * This script is intended only for the logger API migration and
+ * is not part of the application's runtime. It can be retained
+ * for reference or removed after the migration is complete unless
+ * a similar migration is needed in the future.
+ */
+
 const fs = require('fs');
 const path = require('path');
 

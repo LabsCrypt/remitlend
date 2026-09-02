@@ -249,7 +249,7 @@ async function main() {
 
     // LendingPool
     console.log('  LendingPool.initialize');
-    await invoke(server, poolContractId, 'initialize', [config.token, adminAddr], account, passphrase);
+    await invoke(server, poolContractId, 'initialize', [adminAddr], account, passphrase);
 
     // LoanManager — validates minter authorization on-chain during this call.
     console.log('  LoanManager.initialize');

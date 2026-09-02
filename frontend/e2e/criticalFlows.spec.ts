@@ -1,4 +1,13 @@
 // e2e coverage temporarily skipped: assertions rely on product wiring (wallet-connect state, /api/* mock paths, Zustand hydration) that has drifted from the current app. Restore file-by-file once the flows are re-aligned with the mocks.
+//
+// Scope after consolidation (see frontend/e2e/README.md):
+//   - Lending-pool deposit flow
+//   - Remittance history view
+//   - Settings update & logout
+//
+// Loan-request and repay flows were removed; they are covered by
+// borrower-loan-flow.spec.ts and borrower-repay-flow.spec.ts with a single
+// consistent set of route mocks.
 import { test, expect, type Page, type Route } from "@playwright/test";
 
 // Mock wallet address for all tests

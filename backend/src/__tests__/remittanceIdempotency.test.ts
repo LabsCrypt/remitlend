@@ -34,14 +34,17 @@ jest.unstable_mockModule('../services/remittanceService.js', () => ({
   },
 }));
 
-// In-memory fake so the idempotency middleware's cache reads/writes actually
-// persist across the two requests issued in the test below.
 const fakeCacheStore = new Map<string, unknown>();
 jest.unstable_mockModule('../services/cacheService.js', () => ({
   cacheService: {
     get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
     set: jest.fn(async (key: string, value: unknown) => {
       fakeCacheStore.set(key, value);
+    }),
+    setNotExists: jest.fn(async (key: string, value: unknown) => {
+      if (fakeCacheStore.has(key)) return false;
+      fakeCacheStore.set(key, value);
+      return true;
     }),
     delete: jest.fn(async (key: string) => {
       fakeCacheStore.delete(key);

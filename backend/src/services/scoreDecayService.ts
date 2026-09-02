@@ -15,7 +15,7 @@ export interface InactiveBorrower {
 // Get borrowers who have not repaid in the last month
 export async function getInactiveBorrowers(): Promise<InactiveBorrower[]> {
   const result = await query(`
-    SELECT s.borrower, s.score, MAX(e.ledger_closed_at) AS last_repayment
+    SELECT s.borrower AS borrower, s.score AS score, MAX(e.ledger_closed_at) AS last_repayment
     FROM scores s
     LEFT JOIN contract_events e ON s.borrower = e.address AND e.event_type = 'LoanRepaid'
     GROUP BY s.borrower, s.score

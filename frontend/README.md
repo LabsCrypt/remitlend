@@ -62,7 +62,7 @@ npm run typecheck    # TypeScript type check (tsc --noEmit)
 npm test             # Jest unit tests
 npm run test:watch   # Jest in watch mode
 npm run test:e2e     # Playwright end-to-end tests
-npm run audit:a11y   # Build then run axe-playwright accessibility audit
+npm run audit:a11y   # Run axe-playwright accessibility audit on key pages
 ```
 
 > **Note:** `npm run lint` runs `prettier --check` — it checks formatting, not ESLint rules.
@@ -115,6 +115,7 @@ frontend/
 │       │   ├── useToastStore.ts
 │       │   └── useGamificationStore.ts
 │       ├── hooks/              # Custom React hooks
+│       │   └── README_TOAST_SYSTEM.md  # Toast notification system architecture & usage
 │       ├── lib/                # API clients and utilities
 │       └── utils/              # Pure helpers (cn, stellar, amount, csv …)
 ├── i18n.config.ts
@@ -282,7 +283,7 @@ Specs live in `e2e/` and cover critical user flows:
 ### Accessibility audit
 
 ```bash
-npm run audit:a11y   # builds then runs axe-playwright
+npm run audit:a11y   # runs axe-playwright accessibility checks via Playwright
 ```
 
 ## API Integration
@@ -291,6 +292,10 @@ The frontend talks to the Express backend for off-chain data and uses `@stellar/
 directly for on-chain calls.
 
 **Backend base URL:** `NEXT_PUBLIC_API_URL` (default: `http://localhost:3001`)
+
+## Architecture & System Documentation
+
+- [Toast & Notification System Guide](src/app/hooks/README_TOAST_SYSTEM.md) — Detailed architecture and usage for `useContractToast`, `useContractMutation`, and Sonner transaction feedback.
 
 ## Deployment
 
@@ -331,6 +336,7 @@ rm -rf node_modules package-lock.json && npm install
 
 ## Resources
 
+- [Toast System Documentation](src/app/hooks/README_TOAST_SYSTEM.md)
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Tailwind CSS v4 Documentation](https://tailwindcss.com/docs)
 - [Zustand Documentation](https://zustand.docs.pmnd.rs)

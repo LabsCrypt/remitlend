@@ -7,13 +7,15 @@ interface CopyButtonProps {
   value: string;
 }
 
+export const COPY_FEEDBACK_RESET_MS = 2000;
+
 export function CopyButton({ value }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(value).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), COPY_FEEDBACK_RESET_MS);
     });
   };
 

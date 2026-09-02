@@ -200,7 +200,7 @@ export const depositToPool = asyncHandler(async (req: Request, res: Response) =>
     amount: number;
   };
 
-  if (!depositorPublicKey || !token || !amount || amount <= 0) {
+  if (!depositorPublicKey || !token || !amount || amount === 0) {
     throw AppError.badRequest('depositorPublicKey, token, and a positive amount are required');
   }
 
@@ -231,10 +231,11 @@ export const depositToPool = asyncHandler(async (req: Request, res: Response) =>
  * Build an unsigned LendingPool withdraw transaction.
  */
 export const withdrawFromPool = asyncHandler(async (req: Request, res: Response) => {
-  const { depositorPublicKey, token, amount } = req.body as {
+  const { depositorPublicKey, token, amount, minAssetsOut } = req.body as {
     depositorPublicKey: string;
     token: string;
     amount: number;
+    minAssetsOut?: number;
   };
 
   // Note: 'amount' here refers to shares to withdraw.
@@ -248,7 +249,12 @@ export const withdrawFromPool = asyncHandler(async (req: Request, res: Response)
     throw AppError.forbidden('depositorPublicKey must match your authenticated wallet');
   }
 
-  const result = await sorobanService.buildWithdrawTx(depositorPublicKey, token, amount);
+  const result = await sorobanService.buildWithdrawTx(
+    depositorPublicKey,
+    token,
+    amount,
+    minAssetsOut ?? 0,
+  );
 
   // Invalidate stale pool stats cache now that a withdrawal has been initiated
   await invalidateOnWithdraw(depositorPublicKey);
@@ -257,6 +263,7 @@ export const withdrawFromPool = asyncHandler(async (req: Request, res: Response)
     depositor: depositorPublicKey,
     token,
     shares: amount,
+    minAssetsOut: minAssetsOut ?? 0,
   });
 
   res.json({
@@ -271,10 +278,11 @@ export const withdrawFromPool = asyncHandler(async (req: Request, res: Response)
  * Build an unsigned LendingPool emergency_withdraw transaction.
  */
 export const emergencyWithdrawFromPool = asyncHandler(async (req: Request, res: Response) => {
-  const { depositorPublicKey, token, shares } = req.body as {
+  const { depositorPublicKey, token, shares, minAssetsOut } = req.body as {
     depositorPublicKey: string;
     token: string;
     shares: number;
+    minAssetsOut?: number;
   };
 
   if (!depositorPublicKey || !token || !shares || shares <= 0) {
@@ -287,12 +295,18 @@ export const emergencyWithdrawFromPool = asyncHandler(async (req: Request, res: 
     throw AppError.forbidden('depositorPublicKey must match your authenticated wallet');
   }
 
-  const result = await sorobanService.buildEmergencyWithdrawTx(depositorPublicKey, token, shares);
+  const result = await sorobanService.buildEmergencyWithdrawTx(
+    depositorPublicKey,
+    token,
+    shares,
+    minAssetsOut ?? 0,
+  );
 
   logger.info('Emergency withdraw transaction built', {
     depositor: depositorPublicKey,
     token,
     shares,
+    minAssetsOut: minAssetsOut ?? 0,
   });
 
   res.json({

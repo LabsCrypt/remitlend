@@ -25,6 +25,7 @@ import {
   generateChallenge,
   verifySignature,
   verifyChallengeTimestamp,
+  verifyAndConsumeChallenge,
   generateJwtToken,
   revokeToken,
 } from '../services/authService.js';
@@ -40,7 +41,7 @@ const logAuthFailure = (req: Request, publicKey: string | undefined, reason: str
   });
 };
 
-export const requestChallenge = (req: Request, res: Response): void => {
+export const requestChallenge = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { publicKey } = req.body;
 
   if (!publicKey || typeof publicKey !== 'string') {
@@ -50,7 +51,7 @@ export const requestChallenge = (req: Request, res: Response): void => {
 
   let challenge;
   try {
-    challenge = generateChallenge(publicKey);
+    challenge = await generateChallenge(publicKey);
   } catch (error) {
     if (error instanceof Error && error.message === 'Invalid Stellar public key') {
       logAuthFailure(req, publicKey, 'invalid_public_key');
@@ -67,9 +68,9 @@ export const requestChallenge = (req: Request, res: Response): void => {
     success: true,
     data: challenge,
   });
-};
+});
 
-export const login = (req: Request, res: Response): void => {
+export const login = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { publicKey, message, signature } = req.body;
 
   if (!publicKey || typeof publicKey !== 'string') {
@@ -105,6 +106,12 @@ export const login = (req: Request, res: Response): void => {
     throw AppError.unauthorized('Invalid signature', ErrorCode.INVALID_SIGNATURE);
   }
 
+  const isIssuedChallenge = await verifyAndConsumeChallenge(publicKey, message);
+  if (!isIssuedChallenge) {
+    logAuthFailure(req, publicKey, 'challenge_not_issued_or_replayed');
+    throw AppError.unauthorized('Invalid or already used challenge', ErrorCode.INVALID_CHALLENGE);
+  }
+
   const token = generateJwtToken(publicKey);
   const cookieName = process.env.JWT_COOKIE_NAME ?? 'remitlend_jwt';
 
@@ -125,7 +132,7 @@ export const login = (req: Request, res: Response): void => {
       publicKey,
     },
   });
-};
+});
 
 export async function listAuditLogs(
   req: Request,

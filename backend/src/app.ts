@@ -22,12 +22,14 @@ import notificationsRoutes from './routes/notificationsRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import remittanceRoutes from './routes/remittanceRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
+import { registerStatusRoutes } from './routes/statusRoutes.js';
 import { requireApiKey } from './middleware/auth.js';
 import { globalRateLimiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { metricsHandler, metricsMiddleware } from './middleware/metrics.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
+import { pauseGuard } from './middleware/pauseGuard.js';
 import { asyncHandler } from './utils/asyncHandler.js';
 import { AppError } from './errors/AppError.js';
 const app = express();
@@ -116,6 +118,10 @@ app.use(globalRateLimiter);
 app.use(requestIdMiddleware);
 app.use(requestLogger);
 app.use(metricsMiddleware);
+
+// Pause guard: reject state-mutating requests when contracts are paused
+// Issue #1381: Cross-layer emergency pause coordination
+app.use(pauseGuard);
 
 app.get('/', (_req: Request, res: Response) => {
   res.send('RemitLend Backend is running');
@@ -276,6 +282,11 @@ app.get(
     });
   }),
 );
+
+// Status routes - public endpoints (available without authentication)
+const statusRouter = express.Router();
+registerStatusRoutes(statusRouter);
+app.use('/', statusRouter);
 
 // Legacy routes (deprecated, maintained for backward compatibility)
 app.use('/api', simulationRoutes);

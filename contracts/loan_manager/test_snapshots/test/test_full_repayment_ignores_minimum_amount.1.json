@@ -91,6 +91,9 @@
                 {
                   "string": "ipfs://QmTest"
                 },
+                {
+                  "bytes": "0100000000000000000000000000000000000000000000000000000000000000"
+                },
                 "void"
               ]
             }
@@ -729,7 +732,7 @@
                         "symbol": "score"
                       },
                       "val": {
-                        "u32": 610
+                        "u32": 600
                       }
                     }
                   ]
@@ -748,7 +751,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "ScoreHistory"
+                  "symbol": "RecipientCommitment"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
@@ -768,7 +771,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "ScoreHistory"
+                      "symbol": "RecipientCommitment"
                     },
                     {
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
@@ -777,44 +780,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "vec": [
-                    {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "ledger"
-                          },
-                          "val": {
-                            "u32": 0
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "new_score"
-                          },
-                          "val": {
-                            "u32": 610
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "old_score"
-                          },
-                          "val": {
-                            "u32": 600
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "reason"
-                          },
-                          "val": {
-                            "symbol": "ADJ"
-                          }
-                        }
-                      ]
-                    }
-                  ]
+                  "bytes": "0100000000000000000000000000000000000000000000000000000000000000"
                 }
               }
             },

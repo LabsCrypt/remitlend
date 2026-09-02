@@ -27,11 +27,11 @@ describe('Idempotency Middleware', () => {
     };
     next = jest.fn();
 
-    // Mock cacheService explicitly for each test if needed
-    // In ESM with Jest, mocking can be tricky, so we rely on manual mocks of the singleton instance if possible
-    // or use jest.spyOn if the instance is exported.
+    // Mock cacheService explicitly for each test
     jest.spyOn(cacheService, 'get').mockReset();
     jest.spyOn(cacheService, 'set').mockReset();
+    jest.spyOn(cacheService, 'setNotExists').mockResolvedValue(true);
+    jest.spyOn(cacheService, 'delete').mockResolvedValue();
   });
 
   afterEach(() => {

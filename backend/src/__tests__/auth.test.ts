@@ -46,6 +46,7 @@ describe('Auth API', () => {
 
       const challengeResponse = await request(app)
         .post('/api/auth/challenge')
+        .set('X-Forwarded-For', '10.10.10.1')
         .send({ publicKey: keypair.publicKey() })
         .expect(200);
 
@@ -310,6 +311,31 @@ describe('authService unit tests', () => {
 
       const result = authService.verifyChallengeTimestamp(timestamp, maxAge);
       expect(result).toBe(true);
+    });
+  });
+
+  describe('challenge nonce consumption', () => {
+    it('allows a server-issued challenge exactly once', async () => {
+      const keypair = Keypair.random();
+      const challenge = await authService.generateChallenge(keypair.publicKey());
+
+      await expect(
+        authService.verifyAndConsumeChallenge(keypair.publicKey(), challenge.message),
+      ).resolves.toBe(true);
+      await expect(
+        authService.verifyAndConsumeChallenge(keypair.publicKey(), challenge.message),
+      ).resolves.toBe(false);
+    });
+
+    it('rejects self-issued challenge messages', async () => {
+      const keypair = Keypair.random();
+      const nonce = 'a'.repeat(64);
+      const timestamp = Date.now();
+      const message = `Sign this message to authenticate with RemitLend.\n\nNonce: ${nonce}\nTimestamp: ${timestamp}\n\nThis request will expire in 5 minutes.`;
+
+      await expect(
+        authService.verifyAndConsumeChallenge(keypair.publicKey(), message),
+      ).resolves.toBe(false);
     });
   });
 

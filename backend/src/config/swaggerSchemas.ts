@@ -505,6 +505,10 @@ export const swaggerSchemas = {
     required: ['eventId', 'eventType', 'borrower', 'ledger', 'ledgerClosedAt', 'txHash'],
   },
   Pagination: {
+    description:
+      'Cursor-based pagination envelope. See the ' +
+      '[pagination contract](../../../docs/pagination-contract.md) for the full ' +
+      'contract: offset semantics, maximum limit cap, and total count behaviour.',
     type: 'object',
     properties: {
       total: { type: 'integer' },

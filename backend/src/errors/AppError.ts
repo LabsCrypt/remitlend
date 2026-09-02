@@ -61,6 +61,10 @@ export class AppError extends Error {
     return new AppError(message, 500, false, errorCode ?? ErrorCode.INTERNAL_ERROR);
   }
 
+  static serviceUnavailable(message = 'Service unavailable', errorCode?: ErrorCode): AppError {
+    return new AppError(message, 503, true, errorCode ?? ErrorCode.SERVICE_UNAVAILABLE);
+  }
+
   /**
    * Create a validation error with field information.
    */

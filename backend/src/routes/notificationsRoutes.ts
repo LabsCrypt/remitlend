@@ -8,6 +8,8 @@ import {
   updateNotificationPreferences,
 } from '../controllers/notificationController.js';
 import { requireJwtAuth, requireScopes } from '../middleware/jwtAuth.js';
+import { validateQuery } from '../middleware/validation.js';
+import { getNotificationsQuerySchema } from '../schemas/notificationSchemas.js';
 
 const router = Router();
 
@@ -33,7 +35,7 @@ const router = Router();
  *         name: type
  *         schema:
  *           type: string
- *           enum: [loan_approved, repayment_due, repayment_confirmed, loan_defaulted, score_changed]
+ *           enum: [loan_approved, repayment_due, repayment_confirmed, loan_defaulted, loan_liquidated, score_changed]
  *         description: Filter by notification type
  *       - in: query
  *         name: status
@@ -61,7 +63,13 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/NotificationsResponse'
  */
-router.get('/', requireJwtAuth, requireScopes('read:notifications'), getNotifications);
+router.get(
+  '/',
+  requireJwtAuth,
+  requireScopes('read:notifications'),
+  validateQuery(getNotificationsQuerySchema),
+  getNotifications,
+);
 
 /**
  * @swagger

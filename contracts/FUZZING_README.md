@@ -49,6 +49,16 @@ The fuzz testing covers all three main contracts:
 4. **Metadata Integrity**: History hash should be properly updated and maintained
 5. **Backward Compatibility**: Legacy score data should be properly migrated
 
+## Pull Request Template
+
+When opening a PR for fuzz testing changes, use the fuzzing-specific PR template instead of the default one. GitHub does not auto-select it, so append the `template` query parameter to the compare URL:
+
+```
+https://github.com/<org>/<repo>/compare/main...<your-branch>?template=PR_TEMPLATE_FUZZING.md
+```
+
+The template lives at `.github/PULL_REQUEST_TEMPLATE/PR_TEMPLATE_FUZZING.md` and covers invariants, fuzz targets, and campaign results.
+
 ## Setup Instructions
 
 ### Prerequisites

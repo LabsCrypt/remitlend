@@ -7,6 +7,12 @@ use soroban_sdk::{
     contract, contractimpl, testutils::Address as _, Address, BytesN, Env, FromVal, String,
 };
 
+fn create_test_commitment(env: &Env, value: u8) -> BytesN<32> {
+    let mut commitment_bytes = [0u8; 32];
+    commitment_bytes[0] = value;
+    BytesN::from_array(env, &commitment_bytes)
+}
+
 // Mock RateOracle contract for testing the oracle interest-rate code path.
 #[contract]
 pub struct MockRateOracle;
@@ -21,6 +27,26 @@ impl MockRateOracle {
         env.storage().instance().set(&"rate", &rate);
     }
 }
+
+// Mock RateOracle that always panics, simulating a reverting/incompatible
+// oracle (#1128) so we can verify request_loan falls back to the default
+// rate instead of trapping. Nested in its own module because `contractimpl`
+// generates module-scoped items keyed by function name, which would
+// otherwise collide with `MockRateOracle::get_rate` above.
+mod mock_panicking_rate_oracle {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct MockPanickingRateOracle;
+
+    #[contractimpl]
+    impl MockPanickingRateOracle {
+        pub fn get_rate(_env: Env, _borrower: Address, _amount: i128, _score: u32) -> u32 {
+            panic!("oracle unavailable");
+        }
+    }
+}
+use mock_panicking_rate_oracle::MockPanickingRateOracle;
 
 fn setup_test<'a>(
     env: &Env,
@@ -95,6 +121,19 @@ fn test_set_admin_updates_admin_immediately() {
     manager.accept_admin();
 
     assert_eq!(manager.get_admin(), new_admin);
+}
+
+#[test]
+fn test_accept_admin_fails_when_no_proposed_admin() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+
+    let result = manager.try_accept_admin();
+    assert_eq!(result, Err(Ok(LoanError::NoProposedAdmin)));
+    // Admin must remain unchanged.
+    assert_eq!(manager.get_admin(), _token_admin);
 }
 
 #[test]
@@ -194,6 +233,7 @@ fn test_migration_guard_prevents_double_execution() {
         &600,
         &history_hash,
         &soroban_sdk::String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -241,6 +281,7 @@ fn test_loan_request_success() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -273,6 +314,7 @@ fn test_loan_request_failure_low_score() {
         &400,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -295,6 +337,7 @@ fn test_approve_loan_flow() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -336,6 +379,7 @@ fn test_approve_loan_fails_when_pool_has_insufficient_liquidity() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -362,6 +406,7 @@ fn test_approve_loan_accounts_for_outstanding_approved_loans() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -369,6 +414,7 @@ fn test_approve_loan_accounts_for_outstanding_approved_loans() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -400,6 +446,7 @@ fn test_cancel_pending_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -424,6 +471,7 @@ fn test_reject_pending_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -432,6 +480,120 @@ fn test_reject_pending_loan() {
 
     let loan = manager.get_loan(&loan_id);
     assert_eq!(loan.status, LoanStatus::Rejected);
+}
+
+#[test]
+fn test_cancel_decrements_borrower_loan_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+
+    manager.cancel_loan(&borrower, &loan_id);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+}
+
+#[test]
+fn test_reject_decrements_borrower_loan_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+
+    manager.reject_loan(&loan_id, &String::from_str(&env, "manual review failed"));
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+}
+
+#[test]
+fn test_cancel_then_request_new_loan_succeeds() {
+    // Verifies the core issue: after cancelling a loan, the borrower can
+    // request a new one without hitting MaxLoansReached. (#1591)
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    manager.cancel_loan(&borrower, &loan_id);
+
+    // Borrower should be able to request a new loan after cancellation
+    let loan_id_2 = manager.request_loan(&borrower, &1_000, &17280);
+    let loan_2 = manager.get_loan(&loan_id_2);
+    assert_eq!(loan_2.status, LoanStatus::Pending);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+}
+
+#[test]
+fn test_reject_then_request_new_loan_succeeds() {
+    // Verifies the core issue: after a loan is rejected, the borrower can
+    // request a new one without hitting MaxLoansReached. (#1591)
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    manager.reject_loan(&loan_id, &String::from_str(&env, "manual review failed"));
+
+    // Borrower should be able to request a new loan after rejection
+    let loan_id_2 = manager.request_loan(&borrower, &1_000, &17280);
+    let loan_2 = manager.get_loan(&loan_id_2);
+    assert_eq!(loan_2.status, LoanStatus::Pending);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
 }
 
 #[test]
@@ -448,6 +610,7 @@ fn test_paused_blocks_new_loans_and_repayments_but_allows_collateral_release() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -542,6 +705,7 @@ fn test_cancel_pending_loan_returns_collateral() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -581,6 +745,7 @@ fn test_reject_pending_loan_returns_collateral() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -641,6 +806,46 @@ fn test_admin_transfer_via_propose_accept() {
 }
 
 #[test]
+fn test_approved_loan_preserves_requested_term_boundaries() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let min_term = 1u32;
+    let max_term = 100_000u32;
+    manager.set_min_term_ledgers(&min_term);
+    manager.set_max_term_ledgers(&max_term);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000_000);
+
+    for requested_term in [min_term, max_term] {
+        let loan_id = manager.request_loan(&borrower, &1_000, &requested_term);
+        let pending_loan = manager.get_loan(&loan_id);
+        assert_eq!(pending_loan.term_ledgers, requested_term);
+
+        let approval_ledger = env.ledger().sequence();
+        manager.approve_loan(&loan_id);
+
+        let approved_loan = manager.get_loan(&loan_id);
+        assert_eq!(approved_loan.term_ledgers, requested_term);
+        assert_eq!(approved_loan.due_date, approval_ledger + requested_term);
+    }
+}
+
+#[test]
 fn test_configurable_interest_rate_and_default_term() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -654,6 +859,7 @@ fn test_configurable_interest_rate_and_default_term() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -707,6 +913,7 @@ fn test_legacy_zero_interest_config_falls_back_to_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -733,6 +940,7 @@ fn test_repayment_flow() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -764,8 +972,8 @@ fn test_repayment_flow() {
     let completed = manager.get_loan(&loan_id);
     assert_eq!(completed.status, LoanStatus::Repaid);
 
-    // Score updates include both partial and final repayment contributions.
-    assert_eq!(nft_client.get_score(&borrower), 610);
+    // Tiny raw amounts do not cross the whole-token score threshold.
+    assert_eq!(nft_client.get_score(&borrower), 600);
 }
 
 #[test]
@@ -782,6 +990,7 @@ fn test_partial_repayment_tracks_split_balances() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -819,6 +1028,7 @@ fn test_minimum_repayment_amount_enforced() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -849,6 +1059,7 @@ fn test_full_repayment_ignores_minimum_amount() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -882,6 +1093,7 @@ fn test_request_loan_above_max_amount_fails() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     manager.set_max_loan_amount(&500);
@@ -904,6 +1116,7 @@ fn test_small_repayment_does_not_change_score() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     assert_eq!(nft_client.get_score(&borrower), 600);
@@ -922,6 +1135,41 @@ fn test_small_repayment_does_not_change_score() {
 }
 
 #[test]
+fn test_stroop_repayment_score_uses_whole_token_scale() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &2_000_000_000);
+    stellar_token.mint(&borrower, &2_000_000_000);
+    manager.set_max_loan_amount(&1_000_000_000);
+    manager.set_min_repayment_amount(&1);
+
+    let small_loan_id = manager.request_loan(&borrower, &100_000_000, &17280);
+    manager.approve_loan(&small_loan_id);
+    manager.repay(&borrower, &small_loan_id, &100_000_000);
+    assert_eq!(nft_client.get_score(&borrower), 600);
+
+    let threshold_loan_id = manager.request_loan(&borrower, &1_000_000_000, &17280);
+    manager.approve_loan(&threshold_loan_id);
+    manager.repay(&borrower, &threshold_loan_id, &1_000_000_000);
+    assert_eq!(nft_client.get_score(&borrower), 601);
+}
+
+#[test]
 fn test_late_full_repayment_applies_score_penalty() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -935,6 +1183,7 @@ fn test_late_full_repayment_applies_score_penalty() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -998,6 +1247,7 @@ fn test_approve_already_approved_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1026,6 +1276,7 @@ fn test_approve_loan_insufficient_pool_liquidity() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1052,6 +1303,7 @@ fn test_borrower_max_active_loans_enforced_and_released_on_repay() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1090,6 +1342,7 @@ fn test_borrower_max_active_loans_blocks_new_requests() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1122,6 +1375,7 @@ fn test_request_loan_negative_amount() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1142,6 +1396,7 @@ fn test_check_default_success() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1183,6 +1438,7 @@ fn test_check_default_not_past_due() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1210,6 +1466,7 @@ fn test_check_default_already_repaid() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1242,6 +1499,7 @@ fn test_check_default_respects_default_window() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1275,6 +1533,7 @@ fn test_check_defaults_batch() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -1282,6 +1541,7 @@ fn test_check_defaults_batch() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -1289,6 +1549,7 @@ fn test_check_defaults_batch() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1353,6 +1614,7 @@ fn test_check_defaults_all_ineligible_returns_zero() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1391,6 +1653,7 @@ fn test_overdue_repayment_charges_late_fee() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1434,6 +1697,7 @@ fn test_overdue_partial_repayment_still_reduces_principal() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1462,6 +1726,56 @@ fn test_overdue_partial_repayment_still_reduces_principal() {
 }
 
 #[test]
+fn test_interest_accrual_uses_loan_term_not_default_term() {
+    // Regression test: accrue_interest must use the loan's own term_ledgers as
+    // the amortization denominator. A loan with a custom (longer) term accrues
+    // interest at a lower per-ledger rate than the DEFAULT_TERM_LEDGERS rate,
+    // inversely proportional to its term. Before the fix, both loans below
+    // accrued at the DEFAULT_TERM_LEDGERS (1-day) rate regardless of term.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &100_000);
+
+    env.ledger().set_sequence_number(1);
+
+    // Same principal and interest rate; different amortization terms.
+    const DEFAULT_TERM: u32 = 17_280; // 1 day in ledgers
+    const DOUBLE_TERM: u32 = 34_560; // 2 days in ledgers
+
+    let loan_default = manager.request_loan(&borrower, &1_000, &DEFAULT_TERM);
+    manager.approve_loan(&loan_default);
+
+    let loan_double = manager.request_loan(&borrower, &1_000, &DOUBLE_TERM);
+    manager.approve_loan(&loan_double);
+
+    // Advance one full 1-day (17,280 ledger) window, then query both loans.
+    // get_loan() triggers interest accrual up to the current ledger.
+    env.ledger().set_sequence_number(1 + DEFAULT_TERM);
+
+    let default_loan = manager.get_loan(&loan_default);
+    let double_loan = manager.get_loan(&loan_double);
+
+    assert_eq!(default_loan.accrued_interest, 120);
+    // Double the term => half the per-ledger interest over the same window.
+    assert_eq!(double_loan.accrued_interest, 60);
+}
+
+#[test]
 fn test_set_late_fee_rate_rejects_above_cap() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -1470,6 +1784,58 @@ fn test_set_late_fee_rate_rejects_above_cap() {
 
     let result = manager.try_set_late_fee_rate(&2_501);
     assert_eq!(result, Err(Ok(LoanError::InvalidRate)));
+}
+
+#[test]
+fn test_deposit_collateral_moves_funds_from_borrower_to_contract() {
+    // Regression test for #1353: deposit_collateral's token transfer was
+    // reported as paying the borrower instead of taking collateral from
+    // them. That direction is already correct on main (verified via git
+    // blame: fixed in a prior, unrelated commit — see PR description) — this
+    // test pins the exact expected balance movement on both sides so any
+    // future regression here is caught immediately: the borrower's balance
+    // must decrease by the deposited amount and the contract's must
+    // increase by the same amount, not the reverse.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17280);
+    manager.approve_loan(&loan_id);
+
+    let borrower_balance_before = token_client.balance(&borrower);
+    let contract_balance_before = token_client.balance(&manager.address);
+
+    manager.deposit_collateral(&loan_id, &500);
+
+    assert_eq!(
+        token_client.balance(&borrower),
+        borrower_balance_before - 500,
+        "borrower must pay collateral into the contract, not receive funds"
+    );
+    assert_eq!(
+        token_client.balance(&manager.address),
+        contract_balance_before + 500,
+        "the contract must hold the deposited collateral in escrow"
+    );
+    assert_eq!(manager.get_collateral(&loan_id), 500);
 }
 
 #[test]
@@ -1486,6 +1852,7 @@ fn test_deposit_collateral_and_auto_release_on_full_repayment() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1531,6 +1898,7 @@ fn test_collateral_is_seized_on_default() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1579,6 +1947,7 @@ fn test_collateral_is_seized_on_batch_default() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     nft_client.mint(
@@ -1586,6 +1955,7 @@ fn test_collateral_is_seized_on_batch_default() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1635,6 +2005,7 @@ fn test_liquidate_under_threshold_transfers_bonus_and_refund() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1689,6 +2060,7 @@ fn test_liquidate_rejects_healthy_collateral_ratio() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1721,6 +2093,7 @@ fn test_liquidation_bonus_cap_enforced() {
         &650,
         &history_hash,
         &soroban_sdk::String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1773,6 +2146,7 @@ fn test_deposit_collateral_rejects_non_active_loan() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1794,6 +2168,7 @@ fn test_small_loan_interest_accrual_precision() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1840,6 +2215,7 @@ fn test_query_functions() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1868,6 +2244,7 @@ fn test_get_borrower_loans() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1929,6 +2306,7 @@ fn test_pending_loans_count_against_cap() {
         &600,
         &BytesN::from_array(&env, &[1u8; 32]),
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -1966,6 +2344,7 @@ fn test_extend_loan_happy_path() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2009,6 +2388,7 @@ fn test_extend_loan_wrong_borrower() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2038,6 +2418,7 @@ fn test_extend_loan_rejected_for_pending_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2064,6 +2445,7 @@ fn test_extend_loan_rejected_for_repaid_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2095,6 +2477,7 @@ fn test_extend_loan_rejected_for_defaulted_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2141,6 +2524,7 @@ fn test_extend_loan_rejected_for_zero_ledgers() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2152,7 +2536,7 @@ fn test_extend_loan_rejected_for_zero_ledgers() {
 
     // Try to extend with 0 ledgers
     let result = manager.try_extend_loan(&borrower, &loan_id, &0);
-    assert_eq!(result, Err(Ok(LoanError::InvalidTerm)));
+    assert_eq!(result, Err(Ok(LoanError::InvalidExtension)));
 }
 
 #[test]
@@ -2170,6 +2554,7 @@ fn test_extend_loan_max_extensions_limit() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2191,7 +2576,7 @@ fn test_extend_loan_max_extensions_limit() {
 
     // Fourth extension should fail
     let result = manager.try_extend_loan(&borrower, &loan_id, &1000);
-    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+    assert_eq!(result, Err(Ok(LoanError::MaxExtensionsReached)));
 }
 
 #[test]
@@ -2209,6 +2594,7 @@ fn test_extend_loan_charges_fee() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2248,6 +2634,7 @@ fn test_extend_loan_multiple_extensions() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2303,6 +2690,7 @@ fn test_oracle_rate_within_bounds_accepted() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2322,6 +2710,40 @@ fn test_oracle_rate_within_bounds_accepted() {
 
     // Should use the oracle rate (800 BPS), not the default (1200 BPS)
     assert_eq!(loan.interest_rate_bps, 800);
+}
+
+#[test]
+fn test_panicking_oracle_falls_back_to_default_rate() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    // Setup
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    // Deploy a mock oracle that always panics, simulating a reverting or
+    // otherwise incompatible oracle contract (#1128).
+    let oracle_id = env.register(MockPanickingRateOracle, ());
+    manager.set_rate_oracle(&oracle_id);
+
+    // request_loan must not trap even though the oracle invocation fails —
+    // it should fall back to the configured default interest rate.
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    let loan = manager.get_loan(&loan_id);
+
+    assert_eq!(loan.interest_rate_bps, 1200);
 }
 
 #[test]
@@ -2476,6 +2898,7 @@ fn test_oracle_rate_below_min_falls_back_to_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2512,6 +2935,7 @@ fn test_oracle_rate_above_max_falls_back_to_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2548,6 +2972,7 @@ fn test_rate_bounds_persist_across_operations() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
     let stellar_token = StellarAssetClient::new(&env, &token_id);
@@ -2586,6 +3011,7 @@ fn test_interest_calculation_overflow_safety() {
         &800,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2634,6 +3060,7 @@ fn test_liquidate_with_collateral_shortfall_has_no_refund() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmShortfall"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2682,6 +3109,7 @@ fn test_liquidate_rejects_repaid_loan() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmRepaid"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2717,6 +3145,7 @@ fn test_liquidate_emits_loan_liquidated_event_with_expected_amounts() {
         &640,
         &history_hash,
         &String::from_str(&env, "ipfs://QmLiquidationEvent"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2755,6 +3184,7 @@ fn test_late_fee_cap_at_total_debt_limit() {
         &600,
         &soroban_sdk::BytesN::from_array(&env, &[0u8; 32]),
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2791,6 +3221,7 @@ fn test_late_fees_stop_accruing_when_principal_paid() {
         &600,
         &soroban_sdk::BytesN::from_array(&env, &[0u8; 32]),
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2829,6 +3260,7 @@ fn test_refinance_loan_increases_principal_draws_from_pool() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2871,6 +3303,51 @@ fn test_refinance_loan_increases_principal_draws_from_pool() {
 }
 
 #[test]
+fn test_refinance_loan_increasing_amount_increases_total_outstanding() {
+    // Regression test for #1354: refinancing to a larger amount (borrowing
+    // more) must INCREASE total_outstanding by the borrowed delta, not
+    // decrease it — a flipped sign here would let a borrower's recorded debt
+    // shrink while the pool actually pays them more.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&manager.address, &5_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 5_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Refinance from 1_000 to 2_000 — total_outstanding must grow by 1_000.
+    manager.refinance_loan(&loan_id, &2_000, &17_280);
+
+    let total_outstanding_after = manager.get_total_outstanding(&token_id);
+    assert_eq!(total_outstanding_after, total_outstanding_before + 1_000);
+}
+
+#[test]
 fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -2884,6 +3361,7 @@ fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
         &700,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2922,6 +3400,50 @@ fn test_refinance_loan_decreases_principal_returns_excess_to_pool() {
 }
 
 #[test]
+fn test_refinance_loan_decreasing_amount_decreases_total_outstanding() {
+    // Regression test for #1354: refinancing to a smaller amount (paying
+    // down principal) must DECREASE total_outstanding by the returned delta.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &2_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&manager.address, &2_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 2_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Refinance down from 2_000 to 1_000 — total_outstanding must shrink by 1_000.
+    manager.refinance_loan(&loan_id, &1_000, &17_280);
+
+    let total_outstanding_after = manager.get_total_outstanding(&token_id);
+    assert_eq!(total_outstanding_after, total_outstanding_before - 1_000);
+}
+
+#[test]
 fn test_refinance_loan_fails_when_score_drops_below_minimum() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -2935,6 +3457,7 @@ fn test_refinance_loan_fails_when_score_drops_below_minimum() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -2960,6 +3483,318 @@ fn test_refinance_loan_fails_when_score_drops_below_minimum() {
     assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
 }
 
+#[test]
+fn test_refinance_loan_fails_when_collateral_below_new_amount() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Inject collateral lower than the new amount being refinanced.
+    stellar_token.mint(&manager.address, &500);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 500;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    // Collateral (500) is below the new amount (1_000) → must be flagged as a
+    // collateral shortfall, not a score failure.
+    let result = manager.try_refinance_loan(&loan_id, &1_000, &17_280);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientCollateral)));
+    // Loan must remain unchanged.
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.amount, 1_000);
+    assert_eq!(loan.status, LoanStatus::Approved);
+}
+
+#[test]
+fn test_refinance_loan_equal_amount_leaves_principal_and_outstanding_unchanged() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    let token_client = TokenClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Set collateral to 1_000
+    stellar_token.mint(&manager.address, &1_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 1_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let borrower_balance_before = token_client.balance(&borrower);
+    let pool_balance_before = token_client.balance(&pool_client);
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Refinance to the exact same amount (1_000)
+    let res = manager.try_refinance_loan(&loan_id, &1_000, &17_280);
+    assert_eq!(res, Ok(Ok(())));
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.amount, 1_000);
+    assert_eq!(loan.principal_paid, 0);
+    assert_eq!(loan.status, LoanStatus::Approved);
+
+    // Verify balances and total_outstanding are unchanged
+    assert_eq!(token_client.balance(&borrower), borrower_balance_before);
+    assert_eq!(token_client.balance(&pool_client), pool_balance_before);
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        total_outstanding_before
+    );
+}
+
+#[test]
+fn test_refinance_loan_fails_when_pool_liquidity_insufficient() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    let token_client = TokenClient::new(&env, &token_id);
+
+    // Mint just 1_000 for pool (exact amount for loan approval)
+    stellar_token.mint(&pool_client, &1_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Pool balance is now 0 after funding loan
+    assert_eq!(token_client.balance(&pool_client), 0);
+
+    // Set collateral to 5_000 so collateral check passes
+    stellar_token.mint(&manager.address, &5_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 5_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let borrower_balance_before = token_client.balance(&borrower);
+    let total_outstanding_before = manager.get_total_outstanding(&token_id);
+
+    // Attempt to refinance increase to 2_000 when pool liquidity is insufficient
+    let result = manager.try_refinance_loan(&loan_id, &2_000, &17_280);
+    assert_eq!(result, Err(Ok(LoanError::InsufficientPoolLiquidity)));
+
+    // Verify state remains unchanged
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.amount, 1_000);
+    assert_eq!(token_client.balance(&borrower), borrower_balance_before);
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        total_outstanding_before
+    );
+}
+
+#[test]
+fn test_refinance_loan_fails_past_default_window() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Set collateral to 2_000
+    stellar_token.mint(&manager.address, &2_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 2_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    let loan = manager.get_loan(&loan_id);
+    let default_window = manager.get_default_window_ledgers();
+
+    // Past due_date but within default_window -> refinancing succeeds
+    env.ledger().set_sequence_number(loan.due_date + 100);
+    let ok_res = manager.try_refinance_loan(&loan_id, &1_000, &17_280);
+    assert!(
+        ok_res.is_ok(),
+        "Refinancing within default window must succeed"
+    );
+
+    // Past updated due_date + default_window -> refinancing fails with LoanPastDue
+    let updated_loan = manager.get_loan(&loan_id);
+    env.ledger()
+        .set_sequence_number(updated_loan.due_date + default_window + 1);
+    let result = manager.try_refinance_loan(&loan_id, &1_000, &17_280);
+    assert_eq!(result, Err(Ok(LoanError::LoanPastDue)));
+
+    assert_eq!(manager.get_loan(&loan_id).amount, 1_000);
+}
+
+#[test]
+fn test_refinance_loan_fails_when_term_outside_bounds() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &50_000);
+
+    // Set term bounds: [1_000, 20_000]
+    manager.set_min_term_ledgers(&1_000);
+    manager.set_max_term_ledgers(&20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Set collateral
+    stellar_token.mint(&manager.address, &1_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 1_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    // Test new_term below min (500 < 1_000)
+    let res_below = manager.try_refinance_loan(&loan_id, &1_000, &500);
+    assert_eq!(res_below, Err(Ok(LoanError::InvalidTerm)));
+
+    // Test new_term above max (25_000 > 20_000)
+    let res_above = manager.try_refinance_loan(&loan_id, &1_000, &25_000);
+    assert_eq!(res_above, Err(Ok(LoanError::InvalidTerm)));
+
+    // Loan term remains 17_280
+    assert_eq!(manager.get_loan(&loan_id).term_ledgers, 17_280);
+}
+
+// ── set_grace_period_ledgers tests ───────────────────────────────────────────
+
+#[test]
+fn test_set_grace_period_ledgers_success_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+
+    let old_grace = manager.get_grace_period_ledgers();
+    let new_grace = 5_000; // default window is 17_280 by default
+
+    manager.set_grace_period_ledgers(&new_grace);
+
+    let events = env.events().all();
+    let event = events.get(events.len() - 1).unwrap();
+    let topic_0 = soroban_sdk::Symbol::from_val(&env, &event.1.get(0).unwrap());
+    let (old_val, new_val) = <(u32, u32)>::from_val(&env, &event.2);
+
+    assert_eq!(
+        topic_0,
+        soroban_sdk::Symbol::new(&env, "GracePeriodUpdated")
+    );
+    assert_eq!((old_val, new_val), (old_grace, new_grace));
+    assert_eq!(manager.get_grace_period_ledgers(), new_grace);
+}
+
+#[test]
+fn test_set_grace_period_ledgers_fails_when_exceeding_default_window() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+
+    let current_default_window = manager.get_default_window_ledgers();
+    let invalid_grace = current_default_window + 1;
+
+    let result = manager.try_set_grace_period_ledgers(&invalid_grace);
+    assert_eq!(result, Err(Ok(LoanError::InvalidConfiguration)));
+
+    // Verify grace period remained unchanged
+    assert_ne!(manager.get_grace_period_ledgers(), invalid_grace);
+}
+
+#[test]
+#[should_panic]
+fn test_set_grace_period_ledgers_requires_admin() {
+    let env = Env::default();
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+
+    env.mock_auths(&[]);
+    manager.set_grace_period_ledgers(&5_000);
+}
+
 // ── Pause functionality tests ──────────────────────────────────────────────
 
 #[test]
@@ -2976,6 +3811,7 @@ fn test_pause_blocks_request_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3002,6 +3838,7 @@ fn test_pause_blocks_approve_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3034,6 +3871,7 @@ fn test_pause_blocks_repay() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3068,6 +3906,7 @@ fn test_unpause_restores_request_loan() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3130,6 +3969,7 @@ fn test_collateral_release_works_while_paused() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3178,6 +4018,7 @@ fn test_purge_repaid_loan_removes_storage() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3213,6 +4054,7 @@ fn test_purge_cancelled_loan_removes_storage() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3242,6 +4084,7 @@ fn test_purge_rejected_loan_removes_storage() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3271,6 +4114,7 @@ fn test_purge_pending_loan_rejected() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3294,6 +4138,7 @@ fn test_purge_approved_loan_rejected() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3332,6 +4177,7 @@ fn test_purge_emits_loan_purged_event() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3352,7 +4198,7 @@ fn test_purge_emits_loan_purged_event() {
 }
 
 #[test]
-fn test_purge_cancelled_loan_decrements_borrower_loan_count() {
+fn test_purge_cancelled_loan_does_not_double_decrement() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
@@ -3365,15 +4211,20 @@ fn test_purge_cancelled_loan_decrements_borrower_loan_count() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
     let loan_id = manager.request_loan(&borrower, &1_000, &17280);
-    manager.cancel_loan(&borrower, &loan_id);
-    manager.purge_loan(&loan_id);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
 
-    // Borrower loan count should have been decremented
-    // (no direct getter for borrower_loan_count, but we can verify no panic)
+    manager.cancel_loan(&borrower, &loan_id);
+    // cancel_loan decrements the count (#1591)
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
+
+    manager.purge_loan(&loan_id);
+    // purge should NOT double-decrement
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
 }
 
 // ── get_total_outstanding tests ────────────────────────────────────────────
@@ -3394,6 +4245,7 @@ fn test_get_total_outstanding_tracks_approve_and_repay() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3431,6 +4283,7 @@ fn test_get_total_outstanding_decreases_on_check_default() {
         &600,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3451,6 +4304,132 @@ fn test_get_total_outstanding_decreases_on_check_default() {
 }
 
 #[test]
+fn test_get_total_outstanding_returns_to_baseline_after_liquidation() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower, &20_000);
+
+    manager.set_liquidation_threshold(&14_500);
+
+    let baseline = manager.get_total_outstanding(&token_id);
+    assert_eq!(baseline, 0);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+    assert_eq!(manager.get_total_outstanding(&token_id), baseline + 1_000);
+
+    manager.deposit_collateral(&loan_id, &1_400);
+    manager.liquidate(&liquidator, &loan_id);
+
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        baseline,
+        "liquidation must return TotalOutstanding exactly to its pre-loan baseline"
+    );
+}
+
+#[test]
+fn test_repeated_liquidations_do_not_shrink_available_liquidity() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower_a = Address::generate(&env);
+    let borrower_b = Address::generate(&env);
+    let borrower_c = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower_a,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTestA"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    nft_client.mint(
+        &borrower_b,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTestB"),
+        &create_test_commitment(&env, 2),
+        &None,
+    );
+    nft_client.mint(
+        &borrower_c,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTestC"),
+        &create_test_commitment(&env, 3),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+    stellar_token.mint(&borrower_a, &20_000);
+    stellar_token.mint(&borrower_b, &20_000);
+    stellar_token.mint(&borrower_c, &20_000);
+
+    manager.set_liquidation_threshold(&14_500);
+
+    let baseline = manager.get_total_outstanding(&token_id);
+    assert_eq!(baseline, 0);
+
+    // Approve + liquidate loan A: outstanding must return to baseline (not stay
+    // inflated), otherwise liquidity is permanently starved.
+    let loan_a = manager.request_loan(&borrower_a, &1_000, &17_280);
+    manager.approve_loan(&loan_a);
+    manager.deposit_collateral(&loan_a, &1_400);
+    manager.liquidate(&liquidator, &loan_a);
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        baseline,
+        "TotalOutstanding must return to baseline after the first liquidation"
+    );
+
+    // Approve + liquidate loan B: the bug compounded across multiple loans, so
+    // verify the second liquidation also returns outstanding to baseline.
+    let loan_b = manager.request_loan(&borrower_b, &1_000, &17_280);
+    manager.approve_loan(&loan_b);
+    manager.deposit_collateral(&loan_b, &1_400);
+    manager.liquidate(&liquidator, &loan_b);
+    assert_eq!(
+        manager.get_total_outstanding(&token_id),
+        baseline,
+        "repeated liquidations must not compound TotalOutstanding inflation"
+    );
+
+    // Because outstanding is genuinely back to baseline, available_liquidity is
+    // the full pool balance: a subsequent approve_loan must still succeed. (A
+    // and B are marked seized by their liquidations, so use a fresh borrower
+    // for loan C.)
+    let loan_c = manager.request_loan(&borrower_c, &1_000, &17_280);
+    assert_eq!(
+        manager.try_approve_loan(&loan_c),
+        Ok(Ok(())),
+        "a later approve_loan must not see starved available_liquidity"
+    );
+}
+
+#[test]
 fn test_is_liquidatable_healthy_loan() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -3464,6 +4443,7 @@ fn test_is_liquidatable_healthy_loan() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3492,6 +4472,7 @@ fn test_is_liquidatable_under_threshold() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3522,6 +4503,7 @@ fn test_is_liquidatable_exactly_at_threshold() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3551,6 +4533,7 @@ fn test_is_liquidatable_zero_collateral() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3577,6 +4560,7 @@ fn test_is_liquidatable_non_active_loan() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3598,6 +4582,7 @@ fn test_get_loan_health_matches_liquidation_state() {
         &650,
         &history_hash,
         &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
         &None,
     );
 
@@ -3669,4 +4654,49 @@ fn test_set_rate_oracle_emits_rate_oracle_updated_event() {
         has_oracle_event,
         "RateOracleUpdated event should be emitted"
     );
+}
+
+#[test]
+fn test_liquidate_decreases_score_and_records_default() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let liquidator = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&borrower, &500);
+    manager.deposit_collateral(&loan_id, &500);
+
+    assert_eq!(nft_client.get_score(&borrower), 600);
+    assert_eq!(nft_client.get_default_count(&borrower), 0);
+    assert!(!nft_client.is_seized(&borrower));
+
+    env.ledger().set_sequence_number(50_000);
+
+    manager.liquidate(&liquidator, &loan_id);
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.status, LoanStatus::Liquidated);
+    assert_eq!(loan.collateral_amount, 0);
+
+    assert_eq!(nft_client.get_score(&borrower), 550);
+    assert_eq!(nft_client.get_default_count(&borrower), 1);
+    assert!(nft_client.is_seized(&borrower));
 }

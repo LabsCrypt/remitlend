@@ -28,6 +28,7 @@ describe('scoreDecayService', () => {
       const sql = mockQuery.mock.calls[0]![0];
       expect(sql).toContain('FROM scores s');
       expect(sql).toContain('s.borrower');
+      expect(sql).toContain('s.score');
       expect(sql).not.toContain('FROM borrowers');
     });
   });

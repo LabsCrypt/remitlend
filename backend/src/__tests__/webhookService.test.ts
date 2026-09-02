@@ -9,6 +9,9 @@ const mockQuery: jest.MockedFunction<
 jest.unstable_mockModule('../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
+  withTransaction: jest.fn(async (fn: (client: { query: typeof mockQuery }) => Promise<unknown>) =>
+    fn({ query: mockQuery }),
+  ),
   getClient: jest.fn(),
   closePool: jest.fn(),
 }));
