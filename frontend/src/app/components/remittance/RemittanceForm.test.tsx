@@ -106,7 +106,7 @@ describe("RemittanceForm", () => {
     });
   });
 
-  it("should show warning for memo longer than 28 characters", async () => {
+  it("should show warning for memo longer than 28 bytes", async () => {
     const user = userEvent.setup();
     render(<RemittanceForm onSuccess={mockOnSuccess} />);
 
@@ -126,11 +126,35 @@ describe("RemittanceForm", () => {
     fireEvent.click(reviewButton);
 
     await waitFor(() => {
-      expect(screen.getByText("Memo must be 28 characters or less")).toBeInTheDocument();
+      expect(screen.getByText("Memo must be 28 bytes or less (Stellar MEMO_TEXT limit)")).toBeInTheDocument();
     });
   });
 
-  it("should display character count for memo", async () => {
+  it("should reject multibyte memo that exceeds 28 bytes", async () => {
+    const user = userEvent.setup();
+    render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+    const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+    const amountInput = screen.getByPlaceholderText("0.00");
+
+    await user.type(addressInput, VALID_ADDRESS);
+    await user.type(amountInput, "100");
+
+    const memoInput = screen.getByLabelText(/^Memo/);
+    // "ñ" is 2 bytes in UTF-8, so 15 x ñ = 30 bytes (> 28)
+    fireEvent.change(memoInput, {
+      target: { value: "ñññññññññññññññ" },
+    });
+
+    const reviewButton = screen.getByRole("button", { name: /review/i });
+    fireEvent.click(reviewButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Memo must be 28 bytes or less (Stellar MEMO_TEXT limit)")).toBeInTheDocument();
+    });
+  });
+
+  it("should display byte count for memo", async () => {
     const user = userEvent.setup();
     render(<RemittanceForm onSuccess={mockOnSuccess} />);
 
@@ -138,7 +162,7 @@ describe("RemittanceForm", () => {
     await user.type(memoInput, "Test memo");
 
     await waitFor(() => {
-      expect(screen.getByText("9/28 characters")).toBeInTheDocument();
+      expect(screen.getByText("9/28 bytes")).toBeInTheDocument();
     });
   });
 
