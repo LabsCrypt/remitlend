@@ -53,7 +53,6 @@ export function useRepaymentOperation(options?: {
   const uid = useId();
   const transactionId = `repayment-${uid}`;
   const transaction = useTransaction(transactionId);
-  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const repayLoan = useRepayLoan();
   const { signTransaction } = useWallet();
