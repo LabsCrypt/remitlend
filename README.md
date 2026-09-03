@@ -213,6 +213,14 @@ For details on how to report a security vulnerability, please see our [Security 
 
 We welcome contributions from developers of all skill levels! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on how to get started.
 
+### Bug-hunt exercise
+
+Some issues are intentionally seeded bugs used for contributor bug-hunting. The
+answer key for these bugs is **teacher-only** and is deliberately **not** part of
+the public repository (it is listed in `.gitignore` and never committed to the
+default branch) so that browsing the repo does not spoil the exercise. Do not
+commit a `BUG_HUNT_ANSWER_KEY.md` file in any pull request.
+
 ### Environment Variables
 
 See [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for a full reference of all environment variables across backend, frontend, and scripts. Each `.env.example` file also links to this document.

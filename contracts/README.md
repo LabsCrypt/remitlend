@@ -10,6 +10,19 @@ RemitLend uses three core smart contracts:
 2. **Loan Manager** - Manages the complete loan lifecycle
 3. **Lending Pool** - Handles liquidity deposits and withdrawals
 
+### `fix_args.py` (one-time migration helper)
+
+`contracts/fix_args.py` is a **one-time** migration helper. It patches
+`contracts/remittance_nft/src/test.rs` (swapped `commitment`/`uri` args, event
+encoding fixes). It is not part of the normal build/test workflow — run it once
+from the repo root with:
+
+```bash
+python3 contracts/fix_args.py
+```
+
+Re-running it afterwards is harmless (the substitutions become no-ops).
+
 ## Prerequisites
 
 - [Rust Toolchain](https://www.rust-lang.org/tools/install) installed via `rustup` **1.23.0 or newer**

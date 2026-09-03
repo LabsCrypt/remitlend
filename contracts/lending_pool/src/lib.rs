@@ -671,12 +671,16 @@ impl LendingPool {
         let share_key = DataKey::Shares(provider.clone(), token.clone());
         env.storage().persistent().set(&share_key, &new_shares);
         Self::bump_persistent_ttl(&env, &share_key);
-        let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
-        let current_ledger = env.ledger().sequence();
-        env.storage()
-            .persistent()
-            .set(&deposit_key, &current_ledger);
-        Self::bump_persistent_ttl(&env, &deposit_key);
+        // Keep the original timestamp for top-ups. Replacing it would
+        // re-lock already-matured shares whenever a provider adds liquidity.
+        // A first deposit is the only operation that establishes cooldown
+        // state; subsequent deposits mint shares without resetting it.
+        if existing_shares == 0 {
+            let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
+            let current_ledger = env.ledger().sequence();
+            env.storage().persistent().set(&deposit_key, &current_ledger);
+            Self::bump_persistent_ttl(&env, &deposit_key);
+        }
 
         let new_total_shares = cur_total_shares
             .checked_add(shares_to_mint)
