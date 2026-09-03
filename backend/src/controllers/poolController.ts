@@ -194,21 +194,31 @@ export const getDepositorYieldHistory = asyncHandler(async (req: Request, res: R
  * Build an unsigned LendingPool deposit transaction.
  */
 export const depositToPool = asyncHandler(async (req: Request, res: Response) => {
-  const { depositorPublicKey, token, amount } = req.body as {
+  const { depositorPublicKey, token, amount, minSharesOut } = req.body as {
     depositorPublicKey: string;
     token: string;
     amount: number;
+    minSharesOut: number;
   };
 
   if (!depositorPublicKey || !token || !amount || amount === 0) {
     throw AppError.badRequest('depositorPublicKey, token, and a positive amount are required');
   }
 
+  if (minSharesOut === undefined || minSharesOut < 0) {
+    throw AppError.badRequest('minSharesOut is required and must be non-negative');
+  }
+
   if (depositorPublicKey !== req.user?.publicKey) {
     throw AppError.forbidden('depositorPublicKey must match your authenticated wallet');
   }
 
-  const result = await sorobanService.buildDepositTx(depositorPublicKey, token, amount);
+  const result = await sorobanService.buildDepositTx(
+    depositorPublicKey,
+    token,
+    amount,
+    minSharesOut,
+  );
 
   // Invalidate stale pool stats cache now that a deposit has been initiated
   await invalidateOnDeposit(depositorPublicKey);

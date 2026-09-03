@@ -1033,6 +1033,20 @@ impl RemittanceNFT {
             return Err(NftError::DestinationOccupied);
         }
 
+        // A burned destination must not silently regain a clean credit
+        // identity via transfer. Mirrors the same gate mint() applies
+        // (see BurnedRequiresApproval above): recovery for a burned
+        // account can only happen through approve_remint() + admin_remint(),
+        // which clears the Burned flag atomically alongside writing new
+        // metadata. Without this check, has_any_remittance_state(to) alone
+        // is insufficient — burn_internal() removes Metadata/Score but
+        // leaves Burned(to) set, so a burned address would otherwise pass
+        // straight through and end up simultaneously Burned and
+        // credit-bearing.
+        if env.storage().persistent().has(&DataKey::Burned(to.clone())) {
+            return Err(NftError::BurnedRequiresApproval);
+        }
+
         let from_metadata_key = DataKey::Metadata(from.clone());
         let to_metadata_key = DataKey::Metadata(to.clone());
         env.storage().persistent().set(&to_metadata_key, &metadata);

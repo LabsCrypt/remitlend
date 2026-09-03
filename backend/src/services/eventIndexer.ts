@@ -12,7 +12,6 @@ import { eventStreamService } from './eventStreamService.js';
 import { notificationService, type NotificationType } from './notificationService.js';
 import { sorobanService } from './sorobanService.js';
 import { updateUserScoresBulk } from './scoresService.js';
-import { AppError } from '../errors/AppError.js';
 import { recordIndexerLedgers } from '../middleware/metrics.js';
 import { setPauseState } from '../middleware/pauseGuard.js';
 import { fromStroops } from '../money/decimal.js';
@@ -454,9 +453,6 @@ export class EventIndexer {
           fetchedEvents: 0,
           insertedEvents: 0,
         };
-        throw AppError.badRequest(
-          `Invalid ledger range: endLedger (${endLedger}) cannot be less than startLedger (${startLedger})`,
-        );
       }
 
       try {
@@ -1023,27 +1019,6 @@ export class EventIndexer {
       ...(borrowerRefund !== undefined ? { borrowerRefund } : {}),
     };
   }
-
-  /* private async _updateUserScore(userId: string, delta: number): Promise<void> {
-    if (!userId) return;
-    try {
-      await query(
-        `INSERT INTO scores (borrower, score)
-         VALUES ($1, $2)
-         ON CONFLICT (borrower)
-         DO UPDATE SET
-           score = LEAST(850, GREATEST(300, scores.score + $3)),
-           updated_at = CURRENT_TIMESTAMP`,
-        [userId, 500 + delta, delta],
-      );
-      logger.withContext().info('Updated user score from indexed event', {
-        userId,
-        delta,
-      });
-    } catch (error) {
-      logger.withContext().error('Failed to update user score', { userId, error });
-    }
-  } */
 
   private async triggerNotification(event: ContractEvent): Promise<void> {
     if (!event.address) return;

@@ -60,7 +60,7 @@ pub fn loan_requested(env: &Env, loan_id: u32, borrower: Address, amount: i128) 
 /// 1. `LoanApproved` (emitted here with loan terms and interest rate)
 /// 2. `LoanApprv` (emitted by [`loan_approved_by_admin`] with admin and borrower address)
 ///
-/// Indexers should de-duplicate or reconcile both events.
+///    Indexers should de-duplicate or reconcile both events.
 pub fn loan_approved(
     env: &Env,
     loan_id: u32,
