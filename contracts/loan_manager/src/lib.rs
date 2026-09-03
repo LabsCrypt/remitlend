@@ -467,12 +467,8 @@ impl LoanManager {
         total_debt: i128,
         threshold_bps: u32,
     ) -> bool {
-        if total_debt <= 0 {
+        if total_debt <= 0 || collateral_amount <= 0 {
             return false;
-        }
-
-        if collateral_amount <= 0 {
-            return true;
         }
 
         collateral_amount
@@ -1216,11 +1212,14 @@ impl LoanManager {
         }
 
         // Cross-contract READ for liquidity check — still in the CHECKS phase.
+        //
+        // #1589: `pool_balance` is the lending pool's live token balance, which
+        // already excludes principal disbursed to borrowers on approval.
+        // Deducting `total_outstanding` again would double-count active debt
+        // and reject valid loans once pool utilization exceeds 50%.
         let pool_client = PoolClient::new(&env, &lending_pool);
         let pool_balance = pool_client.pool_balance(&token);
-        let total_outstanding = Self::total_outstanding(&env, &token);
-        let available_liquidity = pool_balance.checked_sub(total_outstanding).unwrap_or(0);
-        if available_liquidity < loan.amount {
+        if pool_balance < loan.amount {
             return Err(LoanError::InsufficientPoolLiquidity);
         }
 
@@ -1269,6 +1268,38 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
         let _ = Self::current_total_debt(&env, &mut loan)?;
         Ok(loan)
+    }
+
+    /// Return the raw status discriminant of a loan without accruing interest.
+    ///
+    /// This lightweight read is designed for cross-contract callers (e.g.,
+    /// [`RemittanceNFT::transfer`]) that only need to know whether a loan is
+    /// active (Pending = 0, Approved = 1) and do not require a full Loan
+    /// struct with up-to-date accrued interest.
+    ///
+    /// Returns [`LoanError::LoanNotFound`] when `loan_id` is unknown.
+    pub fn get_loan_status(env: Env, loan_id: u32) -> Result<u32, LoanError> {
+        let loan_key = DataKey::Loan(loan_id);
+        let loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
+        // Map LoanStatus to its u32 discriminant.
+        // This must stay in sync with the LoanStatus enum definition:
+        //   Pending = 0, Approved = 1, Repaid = 2, Defaulted = 3,
+        //   Liquidated = 4, Cancelled = 5, Rejected = 6
+        let discriminant = match loan.status {
+            LoanStatus::Pending => 0,
+            LoanStatus::Approved => 1,
+            LoanStatus::Repaid => 2,
+            LoanStatus::Defaulted => 3,
+            LoanStatus::Liquidated => 4,
+            LoanStatus::Cancelled => 5,
+            LoanStatus::Rejected => 6,
+        };
+        Ok(discriminant)
     }
 
     /// Repay part or all of an approved loan.
@@ -1572,7 +1603,7 @@ impl LoanManager {
     }
 
     /// Returns whether `loan_id` is currently eligible for liquidation.
-    /// Non-`Approved` loans always return `false`.
+    /// Non-`Approved` loans and loans with zero or below-floor collateral always return `false`.
     pub fn is_liquidatable(env: Env, loan_id: u32) -> Result<bool, LoanError> {
         let loan_key = DataKey::Loan(loan_id);
         let mut loan: Loan = env
@@ -1583,6 +1614,10 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
 
         if loan.status != LoanStatus::Approved {
+            return Ok(false);
+        }
+
+        if loan.collateral_amount <= 0 {
             return Ok(false);
         }
 
@@ -1619,18 +1654,18 @@ impl LoanManager {
     ///
     /// Requires `liquidator` authorization and the loan manager, lending pool,
     /// and NFT contract to be unpaused. The target loan must be
-    /// [`LoanStatus::Approved`] and its collateral ratio must be below the
-    /// configured liquidation threshold. Collateral first repays debt to the
-    /// lending pool. When collateral exceeds debt, the liquidator receives the
-    /// configured bonus capped by the surplus, and any remaining surplus is
-    /// refunded to the borrower; otherwise all collateral goes to debt recovery.
+    /// [`LoanStatus::Approved`], have collateral above zero, and its collateral
+    /// ratio must be below the configured liquidation threshold. Collateral first
+    /// repays debt to the lending pool. When collateral exceeds debt, the liquidator
+    /// receives the configured bonus capped by the surplus, and any remaining surplus
+    /// is refunded to the borrower; otherwise all collateral goes to debt recovery.
     ///
     /// Returns [`LoanError::ContractPaused`], [`LoanError::PoolPaused`], or
     /// [`LoanError::NftPaused`] when pause checks fail; [`LoanError::LoanNotFound`]
     /// when `loan_id` is unknown; [`LoanError::LoanNotActive`] when the loan is
     /// not approved; [`LoanError::AmountTooLarge`] if debt accrual overflows;
-    /// and [`LoanError::LoanNotLiquidatable`] when the collateral ratio is still
-    /// at or above the liquidation threshold.
+    /// and [`LoanError::LoanNotLiquidatable`] when the loan has zero or below-floor collateral
+    /// or the collateral ratio is still at or above the liquidation threshold.
     pub fn liquidate(env: Env, liquidator: Address, loan_id: u32) -> Result<(), LoanError> {
         use soroban_sdk::token::TokenClient;
 
@@ -1647,6 +1682,10 @@ impl LoanManager {
 
         if loan.status != LoanStatus::Approved {
             return Err(LoanError::LoanNotActive);
+        }
+
+        if loan.collateral_amount <= 0 {
+            return Err(LoanError::LoanNotLiquidatable);
         }
 
         let total_debt = {
@@ -1799,6 +1838,10 @@ impl LoanManager {
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
 
+        // Decrement the borrower's active loan count so cancelled loans
+        // do not permanently consume loan slots. (#1591)
+        Self::decrement_borrower_loan_count(&env, &loan.borrower);
+
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;
             let token: Address = env
@@ -1840,6 +1883,10 @@ impl LoanManager {
         loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
+
+        // Decrement the borrower's active loan count so rejected loans
+        // do not permanently consume loan slots. (#1591)
+        Self::decrement_borrower_loan_count(&env, &loan.borrower);
 
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;
@@ -1894,12 +1941,30 @@ impl LoanManager {
         let collateral_key = DataKey::Collateral(loan_id);
         env.storage().persistent().remove(&collateral_key);
 
-        // Cancelled and Rejected loans still hold a borrower loan count
-        // (they are never decremented by cancel_loan / reject_loan), so
-        // clean it up here.
-        if matches!(loan.status, LoanStatus::Cancelled | LoanStatus::Rejected) {
-            Self::decrement_borrower_loan_count(&env, &loan.borrower);
+        // Remove the purged loan id from the borrower's loan list so that
+        // get_borrower_loans no longer returns a dangling id.
+        let borrower_loans_key = DataKey::BorrowerLoans(loan.borrower.clone());
+        if let Some(existing) = env
+            .storage()
+            .instance()
+            .get::<_, Vec<u32>>(&borrower_loans_key)
+        {
+            let mut updated: Vec<u32> = Vec::new(&env);
+            for id in existing.iter() {
+                if id != loan_id {
+                    updated.push_back(id);
+                }
+            }
+            if updated.is_empty() {
+                env.storage().instance().remove(&borrower_loans_key);
+            } else {
+                env.storage().instance().set(&borrower_loans_key, &updated);
+            }
         }
+
+        // Note: borrower loan count is already decremented by cancel_loan
+        // and reject_loan themselves (#1591), so no additional decrement is
+        // needed here for Cancelled/Rejected loans.
 
         events::loan_purged(&env, loan_id);
         Ok(())
@@ -2057,13 +2122,11 @@ impl LoanManager {
                     .checked_sub(remaining_principal)
                     .expect("underflow");
                 let pool_balance = token_client.balance(&lending_pool);
-                let outstanding_after_excluding_current = Self::total_outstanding(&env, &token)
-                    .checked_sub(remaining_principal)
-                    .expect("total outstanding underflow");
-                let available_liquidity = pool_balance
-                    .checked_sub(outstanding_after_excluding_current)
-                    .unwrap_or(0);
-                if available_liquidity < additional {
+                // #1589: `pool_balance` is the live idle balance and already
+                // excludes disbursed principal, so it must not be reduced by
+                // outstanding debt (which would double-count it and could even
+                // underflow once other loans are repaid).
+                if pool_balance < additional {
                     return Err(LoanError::InsufficientPoolLiquidity);
                 }
                 token_client.transfer(&lending_pool, &loan.borrower, &additional);
@@ -2562,7 +2625,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::ProposedAdmin)
-            .ok_or(LoanError::NotInitialized)?;
+            .ok_or(LoanError::NoProposedAdmin)?;
         proposed_admin.require_auth();
 
         env.storage()
@@ -2681,7 +2744,7 @@ impl LoanManager {
         Self::require_not_paused(&env)?;
 
         if extra_ledgers == 0 {
-            return Err(LoanError::InvalidTerm);
+            return Err(LoanError::InvalidExtension);
         }
 
         let loan_key = DataKey::Loan(loan_id);
@@ -2714,7 +2777,7 @@ impl LoanManager {
 
         // Check extension limit
         if loan.extension_count >= Self::MAX_EXTENSIONS {
-            return Err(LoanError::InvalidConfiguration);
+            return Err(LoanError::MaxExtensionsReached);
         }
 
         // Calculate extension fee (1% of remaining principal)

@@ -24,38 +24,46 @@ const LoanApplicationWizard = dynamic(
 );
 
 // Score band thresholds
-const EXCELLENT_SCORE_THRESHOLD = 750;
-const GOOD_SCORE_THRESHOLD = 670;
-const FAIR_SCORE_THRESHOLD = 580;
-const MINIMUM_ELIGIBLE_SCORE_THRESHOLD = 500;
+export const EXCELLENT_SCORE_THRESHOLD = 750;
+export const GOOD_SCORE_THRESHOLD = 670;
+export const FAIR_SCORE_THRESHOLD = 580;
+export const MINIMUM_ELIGIBLE_SCORE_THRESHOLD = 500;
 
 // Maximum loan amounts per score band
-const EXCELLENT_SCORE_MAX_LOAN = 50_000;
-const GOOD_SCORE_MAX_LOAN = 25_000;
-const FAIR_SCORE_MAX_LOAN = 10_000;
-const MINIMUM_SCORE_MAX_LOAN = 5_000;
+export const EXCELLENT_SCORE_MAX_LOAN = 50_000;
+export const GOOD_SCORE_MAX_LOAN = 25_000;
+export const FAIR_SCORE_MAX_LOAN = 10_000;
+export const MINIMUM_SCORE_MAX_LOAN = 5_000;
+
+// Default on-chain maximum loan limit fallback
+export const DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT = 50_000;
 
 // Warning range
-const NEAR_MINIMUM_SCORE_DELTA = 40;
+export const NEAR_MINIMUM_SCORE_DELTA = 40;
 
-function getScoreBandMax(score: number): number {
+export function getScoreBandMax(score: number, maxContractAmount?: number): number {
+  let tierLimit = 0;
   if (score >= EXCELLENT_SCORE_THRESHOLD) {
-    return EXCELLENT_SCORE_MAX_LOAN;
+    tierLimit = EXCELLENT_SCORE_MAX_LOAN;
+  } else if (score >= GOOD_SCORE_THRESHOLD) {
+    tierLimit = GOOD_SCORE_MAX_LOAN;
+  } else if (score >= FAIR_SCORE_THRESHOLD) {
+    tierLimit = FAIR_SCORE_MAX_LOAN;
+  } else if (score >= MINIMUM_ELIGIBLE_SCORE_THRESHOLD) {
+    tierLimit = MINIMUM_SCORE_MAX_LOAN;
+  } else {
+    return 0;
   }
 
-  if (score >= GOOD_SCORE_THRESHOLD) {
-    return GOOD_SCORE_MAX_LOAN;
+  if (
+    typeof maxContractAmount === "number" &&
+    Number.isFinite(maxContractAmount) &&
+    maxContractAmount > 0
+  ) {
+    return Math.min(tierLimit, maxContractAmount);
   }
 
-  if (score >= FAIR_SCORE_THRESHOLD) {
-    return FAIR_SCORE_MAX_LOAN;
-  }
-
-  if (score >= MINIMUM_ELIGIBLE_SCORE_THRESHOLD) {
-    return MINIMUM_SCORE_MAX_LOAN;
-  }
-
-  return 0;
+  return Math.min(tierLimit, DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT);
 }
 
 export default function RequestLoanPage() {
@@ -105,10 +113,7 @@ export default function RequestLoanPage() {
 
   const minimumScore = minScoreConfig?.minScore ?? 500;
   const resolvedCreditScore = creditScore ?? 0;
-  const maxAmount = Math.min(
-    getScoreBandMax(resolvedCreditScore),
-    minScoreConfig?.maxAmount ?? Number.POSITIVE_INFINITY,
-  );
+  const maxAmount = getScoreBandMax(resolvedCreditScore, minScoreConfig?.maxAmount);
   const scoreDelta = resolvedCreditScore - minimumScore;
   const isCloseToMinimum = scoreDelta >= 0 && scoreDelta <= NEAR_MINIMUM_SCORE_DELTA;
   const isIneligible = isWalletConnected && !isLoadingConfig && !isLoadingScore && scoreDelta < 0;

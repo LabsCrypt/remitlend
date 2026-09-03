@@ -8,15 +8,18 @@ import {
   TransactionBuilder,
   xdr,
 } from "@stellar/stellar-sdk";
+import { DEFAULT_NETWORK_PASSPHRASE, getNetworkPassphrase } from "./networkPassphrase";
+
+export { DEFAULT_NETWORK_PASSPHRASE, getNetworkPassphrase };
 
 const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
-const DEFAULT_NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 
 interface BuildLoanRequestXdrParams {
   borrower: string;
   amount: number;
   term: number;
   contractId: string;
+  decimals?: number;
   rpcUrl?: string;
   networkPassphrase?: string;
 }
@@ -26,6 +29,7 @@ interface BuildRepaymentXdrParams {
   loanId: string;
   amount: number;
   contractId: string;
+  decimals?: number;
   rpcUrl?: string;
   networkPassphrase?: string;
 }
@@ -35,13 +39,18 @@ export async function buildUnsignedLoanRequestXdr({
   amount,
   term,
   contractId,
+  decimals = STROOP_DECIMALS,
   rpcUrl = process.env.NEXT_PUBLIC_STELLAR_RPC_URL ?? DEFAULT_RPC_URL,
   networkPassphrase = process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ??
     DEFAULT_NETWORK_PASSPHRASE,
 }: BuildLoanRequestXdrParams): Promise<string> {
   const server = new rpc.Server(rpcUrl);
   const source = await server.getAccount(borrower);
-  const amountScVal = nativeToScVal(BigInt(Math.floor(amount)), { type: "i128" });
+  const scaledAmount = toStroops(String(Math.floor(amount)), decimals);
+  if (scaledAmount === null) {
+    throw new Error(`Invalid amount for ${decimals}-decimal asset: ${amount}`);
+  }
+  const amountScVal = nativeToScVal(scaledAmount, { type: "i128" });
   const termScVal = nativeToScVal(term, { type: "u32" });
   const borrowerScVal = new Address(borrower).toScVal();
 
@@ -72,6 +81,7 @@ export async function buildUnsignedRepaymentXdr({
   loanId,
   amount,
   contractId,
+  decimals = STROOP_DECIMALS,
   rpcUrl = process.env.NEXT_PUBLIC_STELLAR_RPC_URL ?? DEFAULT_RPC_URL,
   networkPassphrase = process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ??
     DEFAULT_NETWORK_PASSPHRASE,
@@ -81,7 +91,11 @@ export async function buildUnsignedRepaymentXdr({
 
   const borrowerScVal = new Address(borrower).toScVal();
   const loanIdScVal = nativeToScVal(BigInt(loanId), { type: "u64" });
-  const amountScVal = nativeToScVal(BigInt(Math.floor(amount)), { type: "i128" });
+  const scaledAmount = toStroops(String(Math.floor(amount)), decimals);
+  if (scaledAmount === null) {
+    throw new Error(`Invalid amount for ${decimals}-decimal asset: ${amount}`);
+  }
+  const amountScVal = nativeToScVal(scaledAmount, { type: "i128" });
 
   const tx = new TransactionBuilder(source, {
     fee: "10000",

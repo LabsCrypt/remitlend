@@ -4,6 +4,7 @@ import { WebhookService } from './webhookService.js';
 import { jobMetricsService } from './jobMetricsService.js';
 
 let retryProcessorInterval: NodeJS.Timeout | null = null;
+let inFlight = false;
 
 /**
  * Starts the webhook retry processor.
@@ -29,22 +30,29 @@ export function startWebhookRetryProcessor(): void {
   logger.withContext().info('Starting webhook retry processor');
 
   // Run retry processor every 10 seconds
-  retryProcessorInterval = setInterval(async () => {
-    const startTime = Date.now();
-    const jobName = 'webhookRetryProcessor';
+  retryProcessorInterval = setInterval(() => {
+    void (async () => {
+      if (inFlight) return;
+      inFlight = true;
 
-    try {
-      await refreshWebhookRetryQueueDepth();
-      await WebhookService.processRetries();
-      await refreshWebhookRetryQueueDepth();
+      const startTime = Date.now();
+      const jobName = 'webhookRetryProcessor';
 
-      const durationMs = Date.now() - startTime;
-      jobMetricsService.recordSuccess(jobName, durationMs);
-    } catch (error) {
-      const durationMs = Date.now() - startTime;
-      jobMetricsService.recordFailure(jobName, error as Error | string, durationMs);
-      logger.withContext().error('Error in webhook retry processor interval', { error });
-    }
+      try {
+        await refreshWebhookRetryQueueDepth();
+        await WebhookService.processRetries();
+        await refreshWebhookRetryQueueDepth();
+
+        const durationMs = Date.now() - startTime;
+        jobMetricsService.recordSuccess(jobName, durationMs);
+      } catch (error) {
+        const durationMs = Date.now() - startTime;
+        jobMetricsService.recordFailure(jobName, error as Error | string, durationMs);
+        logger.withContext().error('Error in webhook retry processor interval', { error });
+      } finally {
+        inFlight = false;
+      }
+    })();
   }, 10 * 1000);
 }
 
