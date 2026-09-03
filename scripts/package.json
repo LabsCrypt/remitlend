@@ -21,7 +21,7 @@
     "@types/node": "^20.12.7",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.1",
-    "typescript": "^5.4.5"
+    "typescript": "^7.0.2"
   },
   "overrides": {
     "axios": "1.13.5"
