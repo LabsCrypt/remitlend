@@ -12,7 +12,7 @@
     "money:property-test": "tsx money-property-test.ts"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^14.4.3",
+    "@stellar/stellar-sdk": "^17.0.1",
     "dotenv": "^16.4.5",
     "fs-extra": "^11.2.0"
   },
