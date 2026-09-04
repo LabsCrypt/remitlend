@@ -32,7 +32,11 @@ export interface Toast {
 
 /** All modal identifiers in the app. Add new modals here as the app grows. */
 export type ModalId =
-  "connectWallet" | "confirmLoan" | "confirmRemittance" | "kycVerification" | "transactionDetails";
+  | "connectWallet"
+  | "confirmLoan"
+  | "confirmRemittance"
+  | "kycVerification"
+  | "transactionDetails";
 
 export interface ModalState {
   isOpen: boolean;

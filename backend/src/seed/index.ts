@@ -4,8 +4,13 @@ import logger from '../utils/logger.js';
 
 dotenv.config();
 
+// eslint-disable-next-line prettier/prettier
 type NotificationType =
-  'loan_approved' | 'repayment_due' | 'repayment_confirmed' | 'loan_defaulted' | 'score_changed';
+  | 'loan_approved'
+  | 'repayment_due'
+  | 'repayment_confirmed'
+  | 'loan_defaulted'
+  | 'score_changed';
 
 interface DevUser {
   userId: string;
