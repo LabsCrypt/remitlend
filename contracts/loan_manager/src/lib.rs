@@ -2753,7 +2753,8 @@ impl LoanManager {
 
     /// Extend a loan's due date by the specified number of ledgers.
     /// Only callable by the borrower while the loan is in Approved status.
-    /// Rejects extension if loan is defaulted, repaid, or has exceeded max extensions.
+    /// Rejects extension if loan is defaulted, repaid, has exceeded max extensions,
+    /// or would push cumulative `term_ledgers` above [`MaxTermLedgers`].
     /// Optionally charges an extension fee (1% of remaining principal).
     pub fn extend_loan(
         env: Env,
@@ -2803,6 +2804,19 @@ impl LoanManager {
             return Err(LoanError::MaxExtensionsReached);
         }
 
+        let max_term_ledgers: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MaxTermLedgers)
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
+        let new_term_ledgers = loan
+            .term_ledgers
+            .checked_add(extra_ledgers)
+            .ok_or(LoanError::InvalidTerm)?;
+        if new_term_ledgers > max_term_ledgers {
+            return Err(LoanError::InvalidTerm);
+        }
+
         // Calculate extension fee (1% of remaining principal)
         let remaining_principal = Self::remaining_principal(&loan);
         let extension_fee = remaining_principal
@@ -2827,12 +2841,13 @@ impl LoanManager {
             token_client.transfer(&borrower, &lending_pool, &extension_fee);
         }
 
-        // Extend the due date
+        // Extend the due date and cumulative term
         let new_due_date = loan
             .due_date
             .checked_add(extra_ledgers)
             .expect("due date overflow");
         loan.due_date = new_due_date;
+        loan.term_ledgers = new_term_ledgers;
 
         // Increment extension count
         loan.extension_count = loan

@@ -95,6 +95,8 @@ fn setup_test<'a>(
     )
 }
 
+const EXTEND_TEST_MAX_TERM: u32 = 50_000;
+
 fn create_upgrade_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[9u8; 32])
 }
@@ -2491,6 +2493,7 @@ fn test_extend_loan_happy_path() {
     stellar_token.mint(&pool_client, &10_000);
 
     // Request and approve loan
+    manager.set_max_term_ledgers(&EXTEND_TEST_MAX_TERM);
     let loan_id = manager.request_loan(&borrower, &1000, &17280);
     manager.approve_loan(&loan_id);
 
@@ -2498,6 +2501,7 @@ fn test_extend_loan_happy_path() {
     let loan_before = manager.get_loan(&loan_id);
     let original_due_date = loan_before.due_date;
     assert_eq!(loan_before.extension_count, 0);
+    assert_eq!(loan_before.term_ledgers, 17280);
 
     // Extend loan by 1000 ledgers
     let extension_ledgers = 1000u32;
@@ -2506,6 +2510,7 @@ fn test_extend_loan_happy_path() {
     // Verify extension
     let loan_after = manager.get_loan(&loan_id);
     assert_eq!(loan_after.due_date, original_due_date + extension_ledgers);
+    assert_eq!(loan_after.term_ledgers, 17280 + extension_ledgers);
     assert_eq!(loan_after.extension_count, 1);
     assert_eq!(loan_after.status, LoanStatus::Approved);
 }
@@ -2700,6 +2705,7 @@ fn test_extend_loan_max_extensions_limit() {
     stellar_token.mint(&borrower, &50_000);
 
     // Request and approve loan
+    manager.set_max_term_ledgers(&EXTEND_TEST_MAX_TERM);
     let loan_id = manager.request_loan(&borrower, &1000, &17280);
     manager.approve_loan(&loan_id);
 
@@ -2741,6 +2747,7 @@ fn test_extend_loan_charges_fee() {
     let token_client = TokenClient::new(&env, &token_id);
 
     // Request and approve loan
+    manager.set_max_term_ledgers(&EXTEND_TEST_MAX_TERM);
     let loan_id = manager.request_loan(&borrower, &1000, &17280);
     manager.approve_loan(&loan_id);
 
@@ -2780,21 +2787,25 @@ fn test_extend_loan_multiple_extensions() {
     stellar_token.mint(&borrower, &5_000);
 
     // Request and approve loan
+    manager.set_max_term_ledgers(&EXTEND_TEST_MAX_TERM);
     let loan_id = manager.request_loan(&borrower, &1000, &17280);
     manager.approve_loan(&loan_id);
 
     let loan_initial = manager.get_loan(&loan_id);
     let mut expected_due_date = loan_initial.due_date;
+    let mut expected_term_ledgers = loan_initial.term_ledgers;
 
     // Extend 3 times
     for i in 1..=3 {
         let extension_ledgers = 500u32;
         manager.extend_loan(&borrower, &loan_id, &extension_ledgers);
         expected_due_date += extension_ledgers;
+        expected_term_ledgers += extension_ledgers;
 
         let loan = manager.get_loan(&loan_id);
         assert_eq!(loan.extension_count, i as u32);
         assert_eq!(loan.due_date, expected_due_date);
+        assert_eq!(loan.term_ledgers, expected_term_ledgers);
     }
 }
 
@@ -2809,6 +2820,72 @@ fn test_extend_loan_not_found() {
     // Try to extend non-existent loan
     let result = manager.try_extend_loan(&borrower, &999, &1000);
     assert_eq!(result, Err(Ok(LoanError::LoanNotFound)));
+}
+
+#[test]
+fn test_extend_loan_rejected_when_exceeding_max_term_ledgers() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    let max_term = 5_000u32;
+    manager.set_max_term_ledgers(&max_term);
+    let loan_id = manager.request_loan(&borrower, &1000, &max_term);
+    manager.approve_loan(&loan_id);
+
+    let result = manager.try_extend_loan(&borrower, &loan_id, &1);
+    assert_eq!(result, Err(Ok(LoanError::InvalidTerm)));
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.term_ledgers, max_term);
+}
+
+#[test]
+fn test_extend_loan_accepts_extension_up_to_max_term_ledgers() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+    stellar_token.mint(&borrower, &5_000);
+
+    let initial_term = 4_000u32;
+    let max_term = 5_000u32;
+    manager.set_max_term_ledgers(&max_term);
+    let loan_id = manager.request_loan(&borrower, &1000, &initial_term);
+    manager.approve_loan(&loan_id);
+
+    let extension_ledgers = max_term - initial_term;
+    manager.extend_loan(&borrower, &loan_id, &extension_ledgers);
+
+    let loan = manager.get_loan(&loan_id);
+    assert_eq!(loan.term_ledgers, max_term);
 }
 
 // ── Oracle rate bounds tests ───────────────────────────────────────────────
@@ -3121,6 +3198,7 @@ fn test_rate_bounds_persist_across_operations() {
     manager.set_max_rate_bps(&50_000);
 
     // Request and approve loan
+    manager.set_max_term_ledgers(&EXTEND_TEST_MAX_TERM);
     let loan_id = manager.request_loan(&borrower, &1000, &17280);
     manager.approve_loan(&loan_id);
 
