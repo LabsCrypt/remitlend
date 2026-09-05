@@ -10,12 +10,33 @@ RemitLend uses three core smart contracts:
 2. **Loan Manager** - Manages the complete loan lifecycle
 3. **Lending Pool** - Handles liquidity deposits and withdrawals
 
+### `fix_args.py` (one-time migration helper)
+
+`contracts/fix_args.py` is a **one-time** migration helper. It patches
+`contracts/remittance_nft/src/test.rs` (swapped `commitment`/`uri` args, event
+encoding fixes). It is not part of the normal build/test workflow — run it once
+from the repo root with:
+
+```bash
+python3 contracts/fix_args.py
+```
+
+Re-running it afterwards is harmless (the substitutions become no-ops).
+
 ## Prerequisites
 
-<<<<<<< HEAD
 - [Rust Toolchain](https://www.rust-lang.org/tools/install) installed via `rustup` **1.23.0 or newer**
-- [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup)
+- [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup) (v22.0.0+)
 - [wasm32-unknown-unknown target](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
+
+### Required Versions
+
+| Dependency    | Version |
+| ------------- | ------- |
+| `soroban-sdk` | 22.0.0  |
+| `soroban-cli` | 22.0.0+ |
+
+> These versions are pinned in `contracts/Cargo.toml` — keep the two files in sync when upgrading.
 
 ### The pinned toolchain
 
@@ -54,20 +75,6 @@ rustup self update
 If you must confirm the pin is active, run `rustup show` from `contracts/` —
 the pinned version should be listed as the active toolchain, with `overridden
 by` pointing at `rust-toolchain.toml`.
-=======
-- [Rust Toolchain](https://www.rust-lang.org/tools/install) (latest stable)
-- [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup) (v22.0.0+)
-- [wasm32-unknown-unknown target](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
-
-### Required Versions
-
-| Dependency | Version |
-|------------|---------|
-| `soroban-sdk` | 22.0.0 |
-| `soroban-cli` | 22.0.0+ |
-
-> These versions are pinned in `contracts/Cargo.toml` — keep the two files in sync when upgrading.
->>>>>>> 5c8064c (fix: normalize non-Error rejections in asyncHandler, add tests, document SDK version and PII inventory)
 
 ### Installation
 

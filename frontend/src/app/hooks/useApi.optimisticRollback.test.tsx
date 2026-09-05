@@ -95,7 +95,7 @@ const seedDepositor = (): DepositorPortfolio => ({
   firstDepositAt: "2026-01-01",
 });
 
-describe("useRepayLoan optimistic rollback", () => {
+describe("useRepayLoan repayment transaction building", () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
@@ -115,38 +115,47 @@ describe("useRepayLoan optimistic rollback", () => {
     return { loanDetail, borrowerLoans, poolStats };
   }
 
-  it("onMutate updates loan detail optimistically while pending", async () => {
-    global.fetch = mockFetchSuccess({ txHash: "abc" }) as unknown as typeof fetch;
+  it("returns the unsigned XDR without marking the loan repaid", async () => {
+    global.fetch = mockFetchSuccess({
+      unsignedTxXdr: "xdr",
+      networkPassphrase: "passphrase",
+    }) as unknown as typeof fetch;
     const { queryClient, wrapper } = createTestHarness();
     seedRepayCache(queryClient);
 
     const { result } = renderHook(() => useRepayLoan(), { wrapper });
 
-    result.current.mutate({ loanId: LOAN_ID, amount: 100, borrowerAddress: BORROWER });
-
-    await waitFor(() => {
-      const cached = queryClient.getQueryData<LoanDetails>(queryKeys.loans.detail(String(LOAN_ID)));
-      expect(cached?.totalOwed).toBe(750);
-      expect(cached?.totalRepaid).toBe(300);
-      expect(cached?.status).toBe("active");
+    const built = await result.current.mutateAsync({
+      loanId: LOAN_ID,
+      amount: 100,
+      borrowerAddress: BORROWER,
     });
+
+    expect(built).toEqual({ unsignedTxXdr: "xdr", networkPassphrase: "passphrase" });
+    expect(queryClient.getQueryData(queryKeys.loans.detail(String(LOAN_ID)))).toEqual(
+      seedLoanDetail(),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/loans/${LOAN_ID}/repay`),
+      expect.objectContaining({
+        body: JSON.stringify({ amount: 100, borrowerPublicKey: BORROWER }),
+      }),
+    );
   });
 
-  it("onMutate flips status to repaid when repayment covers totalOwed", async () => {
-    global.fetch = mockFetchSuccess({ txHash: "abc" }) as unknown as typeof fetch;
+  it("rejects an invalid build response before signing can begin", async () => {
+    global.fetch = mockFetchSuccess({ unsignedTxXdr: "xdr" }) as unknown as typeof fetch;
     const { queryClient, wrapper } = createTestHarness();
     seedRepayCache(queryClient);
 
     const { result } = renderHook(() => useRepayLoan(), { wrapper });
 
-    result.current.mutate({ loanId: LOAN_ID, amount: 850, borrowerAddress: BORROWER });
-
-    await waitFor(() => {
-      const cached = queryClient.getQueryData<LoanDetails>(queryKeys.loans.detail(String(LOAN_ID)));
-      expect(cached?.totalOwed).toBe(0);
-      expect(cached?.totalRepaid).toBe(1050);
-      expect(cached?.status).toBe("repaid");
-    });
+    await expect(
+      result.current.mutateAsync({ loanId: LOAN_ID, amount: 850, borrowerAddress: BORROWER }),
+    ).rejects.toThrow("invalid transaction data");
+    expect(queryClient.getQueryData(queryKeys.loans.detail(String(LOAN_ID)))).toEqual(
+      seedLoanDetail(),
+    );
   });
 
   it("onError restores exact previous loan detail, borrower loans, and pool stats", async () => {
@@ -167,8 +176,11 @@ describe("useRepayLoan optimistic rollback", () => {
     expect(queryClient.getQueryData(queryKeys.pool.stats())).toEqual(poolStats);
   });
 
-  it("onSettled invalidates loans.detail, borrowerLoans.byAddress, and pool.stats", async () => {
-    global.fetch = mockFetchSuccess({ txHash: "abc" }) as unknown as typeof fetch;
+  it("does not invalidate repayment data until a signed transaction is submitted", async () => {
+    global.fetch = mockFetchSuccess({
+      unsignedTxXdr: "xdr",
+      networkPassphrase: "passphrase",
+    }) as unknown as typeof fetch;
     const { queryClient, wrapper } = createTestHarness();
     seedRepayCache(queryClient);
     const invalidateSpy = jest.spyOn(queryClient, "invalidateQueries");
@@ -179,13 +191,7 @@ describe("useRepayLoan optimistic rollback", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.loans.detail(String(LOAN_ID)),
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.borrowerLoans.byAddress(BORROWER),
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.pool.stats() });
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
 

@@ -69,8 +69,8 @@ describe('scoreReconciliationService', () => {
     it('treats borrower with matching on-chain score as non-divergent', async () => {
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { address: 'GB...ABC', current_score: 700 },
-          { address: 'GB...DEF', current_score: 650 },
+          { address: 'GB...ABC', score: 700 },
+          { address: 'GB...DEF', score: 650 },
         ],
         rowCount: 2,
       });
@@ -89,7 +89,7 @@ describe('scoreReconciliationService', () => {
 
     it('detects divergence when on-chain score differs from DB score', async () => {
       mockQuery.mockResolvedValueOnce({
-        rows: [{ address: 'GB...ABC', current_score: 700 }],
+        rows: [{ address: 'GB...ABC', score: 700 }],
         rowCount: 1,
       });
 
@@ -109,7 +109,7 @@ describe('scoreReconciliationService', () => {
 
     it('treats null dbScore as divergent with null absoluteDifference', async () => {
       mockQuery.mockResolvedValueOnce({
-        rows: [{ address: 'GB...XYZ', current_score: null }],
+        rows: [{ address: 'GB...XYZ', score: null }],
         rowCount: 1,
       });
 
@@ -125,9 +125,9 @@ describe('scoreReconciliationService', () => {
     it('increments failedBorrowerCount when on-chain lookup rejects', async () => {
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { address: 'GB...ABC', current_score: 700 },
-          { address: 'GB...DEF', current_score: 650 },
-          { address: 'GB...GHI', current_score: 600 },
+          { address: 'GB...ABC', score: 700 },
+          { address: 'GB...DEF', score: 650 },
+          { address: 'GB...GHI', score: 600 },
         ],
         rowCount: 3,
       });
@@ -148,8 +148,8 @@ describe('scoreReconciliationService', () => {
     it('does not crash the entire run when one on-chain lookup fails', async () => {
       mockQuery.mockResolvedValueOnce({
         rows: [
-          { address: 'GB...ABC', current_score: 700 },
-          { address: 'GB...DEF', current_score: 700 },
+          { address: 'GB...ABC', score: 700 },
+          { address: 'GB...DEF', score: 700 },
         ],
         rowCount: 2,
       });
@@ -171,7 +171,7 @@ describe('scoreReconciliationService', () => {
       process.env.SCORE_RECONCILIATION_AUTOCORRECT_ENABLED = 'true';
 
       mockQuery.mockResolvedValueOnce({
-        rows: [{ address: 'GB...ABC', current_score: 700 }],
+        rows: [{ address: 'GB...ABC', score: 700 }],
         rowCount: 1,
       });
 
@@ -196,7 +196,7 @@ describe('scoreReconciliationService', () => {
       process.env.SCORE_RECONCILIATION_AUTOCORRECT_THRESHOLD = '0';
 
       mockQuery.mockResolvedValueOnce({
-        rows: [{ address: 'GB...NULL', current_score: null }],
+        rows: [{ address: 'GB...NULL', score: null }],
         rowCount: 1,
       });
 
@@ -217,7 +217,7 @@ describe('scoreReconciliationService', () => {
       process.env.SCORE_RECONCILIATION_AUTOCORRECT_THRESHOLD = '100';
 
       mockQuery.mockResolvedValueOnce({
-        rows: [{ address: 'GB...ABC', current_score: 700 }],
+        rows: [{ address: 'GB...ABC', score: 700 }],
         rowCount: 1,
       });
 
@@ -237,7 +237,7 @@ describe('scoreReconciliationService', () => {
       process.env.SCORE_RECONCILIATION_AUTOCORRECT_ENABLED = 'false';
 
       mockQuery.mockResolvedValueOnce({
-        rows: [{ address: 'GB...ABC', current_score: 700 }],
+        rows: [{ address: 'GB...ABC', score: 700 }],
         rowCount: 1,
       });
 
@@ -254,7 +254,7 @@ describe('scoreReconciliationService', () => {
 
     it('does not perform bulk write when there are zero corrections', async () => {
       mockQuery.mockResolvedValueOnce({
-        rows: [{ address: 'GB...ABC', current_score: 700 }],
+        rows: [{ address: 'GB...ABC', score: 700 }],
         rowCount: 1,
       });
 

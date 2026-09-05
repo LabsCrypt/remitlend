@@ -19,11 +19,11 @@ import { hasUnresolvedLedgerGaps } from './ledgerCheckpoints.js';
 /**
  * Owed-vs-paid reconciliation for a single loan, computed entirely in
  * `bigint` stroops (see `backend/src/money/decimal.ts`). `owedStroops` is
- * the originally approved principal; `paidStroops` is every `LoanRepaid`
- * amount summed to date. `driftStroops` is `owedStroops - paidStroops`
- * clamped at zero once the loan is fully repaid — a nonzero value here
- * after a `LoanRepaid`/`LoanDefaulted` terminal event indicates the kind of
- * cross-layer rounding drift issue #1378 closes.
+ * the originally approved principal; `paidStroops` is the principal
+ * component of every `LoanRepaid` amount, capped at `owedStroops`.
+ * `driftStroops` is `owedStroops - paidStroops`. LoanRepaid amounts include
+ * yield (interest + late fees), so capping at principal prevents false
+ * drift on fully repaid loans with interest (#1601).
  */
 export interface LoanReconciliation {
   loanId: number;
@@ -64,15 +64,19 @@ export async function reconcileLoanStroops(loanId: number): Promise<LoanReconcil
     }
   }
 
-  const driftStroops = owedStroops > paidStroops ? owedStroops - paidStroops : 0n;
+  // FIX: Cap paidStroops at owedStroops. LoanRepaid.amount includes yield
+  // (interest + late fees) on top of principal. Once the principal is fully
+  // repaid, any excess is yield — not drift.
+  const principalPaidStroops = paidStroops > owedStroops ? owedStroops : paidStroops;
+  const driftStroops = owedStroops - principalPaidStroops;
 
   return {
     loanId,
     owedStroops,
-    paidStroops,
+    paidStroops: principalPaidStroops,
     driftStroops,
     owedDisplay: fromStroops(owedStroops),
-    paidDisplay: fromStroops(paidStroops),
+    paidDisplay: fromStroops(principalPaidStroops),
   };
 }
 

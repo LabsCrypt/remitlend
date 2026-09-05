@@ -66,9 +66,9 @@ describe('scoreReconciliationService', () => {
 
     mockQuery.mockResolvedValueOnce({
       rows: [
-        { address: 'GBORROWER1', current_score: 700 },
-        { address: 'GBORROWER2', current_score: 600 },
-        { address: 'GBORROWER3', current_score: null },
+        { address: 'GBORROWER1', score: 700 },
+        { address: 'GBORROWER2', score: 600 },
+        { address: 'GBORROWER3', score: null },
       ],
     });
 

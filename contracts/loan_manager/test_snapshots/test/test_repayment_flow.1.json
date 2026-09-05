@@ -732,7 +732,7 @@
                         "symbol": "score"
                       },
                       "val": {
-                        "u32": 610
+                        "u32": 600
                       }
                     }
                   ]
@@ -787,124 +787,6 @@
             "ext": "v0"
           },
           518400
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "ScoreHistory"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "ScoreHistory"
-                    },
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "vec": [
-                    {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "ledger"
-                          },
-                          "val": {
-                            "u32": 2000
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "new_score"
-                          },
-                          "val": {
-                            "u32": 605
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "old_score"
-                          },
-                          "val": {
-                            "u32": 600
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "reason"
-                          },
-                          "val": {
-                            "symbol": "ADJ"
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "ledger"
-                          },
-                          "val": {
-                            "u32": 2000
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "new_score"
-                          },
-                          "val": {
-                            "u32": 610
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "old_score"
-                          },
-                          "val": {
-                            "u32": 605
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "reason"
-                          },
-                          "val": {
-                            "symbol": "ADJ"
-                          }
-                        }
-                      ]
-                    }
-                  ]
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          520400
         ]
       ],
       [

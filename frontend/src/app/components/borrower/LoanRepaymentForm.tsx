@@ -194,6 +194,12 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
 
           <OperationProgress transaction={repayment.transaction} type="repayment" />
 
+          {repayment.error && (
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              {repayment.error}
+            </p>
+          )}
+
           {/* Action Button */}
           <Button
             variant="primary"

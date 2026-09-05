@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { query, getClient } from '../db/connection.js';
 import { runner as migrate } from 'node-pg-migrate';
 import type { PoolClient } from 'pg';
+import { updateUserScoresBulk } from '../services/scoresService.js';
 
 let databaseAvailable = false;
 
@@ -74,6 +75,19 @@ describeIf('Migrations', () => {
     expect(Number(result.rows[0]?.score ?? 0)).toBe(700);
 
     await query(`DELETE FROM scores WHERE borrower = $1`, ['G_MIGRATION_TEST_SCORE']);
+  });
+
+  it('should exercise updateUserScoresBulk against post-migration scores table', async () => {
+    const testBorrower = 'G_MIGRATION_TEST_BULK_SCORE';
+    await query(`DELETE FROM scores WHERE borrower = $1`, [testBorrower]);
+
+    const updates = new Map<string, number>([[testBorrower, 50]]);
+    await updateUserScoresBulk(updates);
+
+    const result = await query(`SELECT score FROM scores WHERE borrower = $1`, [testBorrower]);
+    expect(Number(result.rows[0]?.score ?? 0)).toBe(550);
+
+    await query(`DELETE FROM scores WHERE borrower = $1`, [testBorrower]);
   });
 
   it('should have the indexer_state table after running up', async () => {
