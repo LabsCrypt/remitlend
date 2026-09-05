@@ -214,4 +214,140 @@ describe('DefaultChecker', () => {
       expect(mockRecordFailure).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('sequence number assignment (#1094)', () => {
+    // Use a valid Stellar keypair for Account construction
+    const validPublicKey = Keypair.random().publicKey();
+
+    beforeEach(() => {
+      // Override getAccount to return an account with a known sequence number
+      fakeServer.getAccount.mockResolvedValue(new Account(validPublicKey, '42'));
+    });
+
+    it('fetches the admin account exactly once per run, not per batch', async () => {
+      process.env.DEFAULT_CHECK_BATCH_SIZE = '1';
+      mockSetNotExists.mockResolvedValue(true);
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => tx);
+      fakeServer.sendTransaction.mockResolvedValue({ hash: 'abc', status: 'PENDING' });
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'SUCCESS' });
+
+      const checker = new DefaultChecker();
+      await checker.checkOverdueLoans([1, 2, 3]);
+
+      // getAccount should be called once for the initial fetch,
+      // NOT once per batch (3 batches at batch_size=1)
+      expect(fakeServer.getAccount).toHaveBeenCalledTimes(1);
+    });
+
+    it('assigns strictly increasing sequence numbers across batches', async () => {
+      process.env.DEFAULT_CHECK_BATCH_SIZE = '1';
+      mockSetNotExists.mockResolvedValue(true);
+
+      const preparedTxns: unknown[] = [];
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => {
+        preparedTxns.push(tx);
+        return tx;
+      });
+      fakeServer.sendTransaction.mockResolvedValue({ hash: 'abc', status: 'PENDING' });
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'SUCCESS' });
+
+      const checker = new DefaultChecker();
+      const result = await checker.checkOverdueLoans([1, 2, 3]);
+
+      expect(result).not.toBeNull();
+      expect(result!.batches).toHaveLength(3);
+
+      // Extract sequence numbers from prepared transactions.
+      // Transaction objects expose a `sequence` property (string).
+      const seqNums = preparedTxns.map((tx) => {
+        const t = tx as { sequence?: string };
+        return t.sequence ?? '';
+      });
+
+      // All sequence numbers must be non-empty
+      for (const s of seqNums) {
+        expect(s).not.toBe('');
+      }
+
+      // All sequence numbers must be unique
+      const unique = new Set(seqNums);
+      expect(unique.size).toBe(seqNums.length);
+
+      // Sequence numbers must be strictly increasing (43, 44, 45)
+      for (let i = 1; i < seqNums.length; i++) {
+        expect(BigInt(seqNums[i]!)).toBeGreaterThan(BigInt(seqNums[i - 1]!));
+      }
+    });
+
+    it('succeeds with all batches when concurrency > 1 and batch size creates multiple batches', async () => {
+      process.env.DEFAULT_CHECK_BATCH_SIZE = '2';
+      process.env.DEFAULT_CHECK_CONCURRENCY = '3';
+      mockSetNotExists.mockResolvedValue(true);
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => tx);
+      fakeServer.sendTransaction.mockResolvedValue({ hash: 'abc', status: 'PENDING' });
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'SUCCESS' });
+
+      const checker = new DefaultChecker();
+      const result = await checker.checkOverdueLoans([1, 2, 3, 4, 5]);
+
+      expect(result).not.toBeNull();
+      // 5 loans / batch_size 2 = 3 batches (2+2+1)
+      expect(result!.batches).toHaveLength(3);
+      // All batches should succeed — no txBAD_SEQ
+      expect(result!.successfulSubmissions).toBe(3);
+      expect(result!.failedSubmissions).toBe(0);
+    });
+
+    it('does not reuse the same sequence number even when batches fail on other errors', async () => {
+      process.env.DEFAULT_CHECK_BATCH_SIZE = '1';
+      mockSetNotExists.mockResolvedValue(true);
+
+      const preparedTxns: unknown[] = [];
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => {
+        preparedTxns.push(tx);
+        return tx;
+      });
+      // Second batch fails with a non-seq error, first and third succeed
+      fakeServer.sendTransaction
+        .mockResolvedValueOnce({ hash: 'h1', status: 'PENDING' })
+        .mockRejectedValueOnce(new Error('network error'))
+        .mockResolvedValueOnce({ hash: 'h3', status: 'PENDING' });
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'SUCCESS' });
+
+      const checker = new DefaultChecker();
+      const result = await checker.checkOverdueLoans([1, 2, 3]);
+
+      expect(result!.batches).toHaveLength(3);
+      expect(result!.successfulSubmissions).toBe(2);
+      expect(result!.failedSubmissions).toBe(1);
+
+      // Even though batch 2 failed, all 3 transactions were built
+      // with unique sequence numbers (no collision)
+      const seqNums = preparedTxns.map((tx) => {
+        const t = tx as { sequence?: string };
+        return t.sequence ?? '';
+      });
+      const unique = new Set(seqNums);
+      expect(unique.size).toBe(3);
+    });
+
+    it('negative: rejects batches with identical sequence numbers (old behavior)', async () => {
+      // This test documents what would happen if getAccount were called per-batch
+      // with no fix — all batches would get the same sequence and fail.
+      // With the fix, this scenario should never occur, so we verify the fix
+      // by asserting getAccount is called once.
+      process.env.DEFAULT_CHECK_BATCH_SIZE = '1';
+      mockSetNotExists.mockResolvedValue(true);
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => tx);
+      fakeServer.sendTransaction.mockResolvedValue({ hash: 'abc', status: 'PENDING' });
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'SUCCESS' });
+
+      const checker = new DefaultChecker();
+      await checker.checkOverdueLoans([1, 2, 3]);
+
+      // With the fix: getAccount is called exactly once (for initial fetch)
+      expect(fakeServer.getAccount).toHaveBeenCalledTimes(1);
+      // Without the fix it would be called 3 times (once per batch)
+    });
+  });
 });

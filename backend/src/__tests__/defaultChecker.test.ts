@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { Account, Keypair } from '@stellar/stellar-sdk';
 import logger from '../utils/logger.js';
 import { DefaultChecker } from '../services/defaultChecker.js';
 
@@ -34,10 +35,14 @@ describe('DefaultChecker', () => {
     // Stubbed so this test doesn't hit the real (unmocked) db/connection.js —
     // see hasSuspectLedgerRanges in defaultChecker.ts, added for issue #1376.
     (checker as unknown as Record<string, unknown>).hasSuspectLedgerRanges = async () => false;
+    const validPublicKey = Keypair.random().publicKey();
     (checker as unknown as Record<string, unknown>).assertConfigured = () => ({
-      signer: {},
+      signer: {
+        publicKey: () => validPublicKey,
+      },
       server: {
         getLatestLedger: async () => ({ sequence: 4321 }),
+        getAccount: async (publicKey: string) => new Account(publicKey, '100'),
       },
       passphrase: 'test-passphrase',
     });
