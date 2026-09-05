@@ -11,7 +11,7 @@ import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals
 
 let mockQuery: jest.Mock<(...args: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>>;
 let EventIndexer: new (config: { rpcUrl: string; contractIds?: string[] }) => {
-  getSuspectRanges: () => Promise<Array<{ rangeStart: number; rangeEnd: number }>>;
+  getSuspectRanges: (contract?: string) => Promise<Array<{ rangeStart: number; rangeEnd: number }>>;
   pollOnce: () => Promise<void>;
   running: boolean;
   rpc: { getEvents: unknown; getLatestLedger: unknown };
@@ -230,11 +230,69 @@ describe('EventIndexer gap detection (contiguous-cursor invariant, #1376)', () =
     });
 
     const indexer = makeIndexer();
-    const ranges = await indexer.getSuspectRanges();
+    const ranges = await indexer.getSuspectRanges('CONTRACT002');
 
     expect(ranges).toEqual([
       { rangeStart: 1001, rangeEnd: 1039 },
       { rangeStart: 2001, rangeEnd: 2010 },
+    ]);
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("status = 'suspect'"), [
+      'CONTRACT002',
+    ]);
+  });
+
+  it('tracks checkpoints and cursors independently for each configured contract', async () => {
+    const inserted: Array<{ sql: string; params: unknown[] }> = [];
+    const updated: unknown[][] = [];
+    const eventFilters: unknown[] = [];
+
+    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('SELECT last_ledger')) {
+        return {
+          rows: [{ last_ledger: params[0] === 'CONTRACT001' ? 10 : 20 }],
+          rowCount: 1,
+        };
+      }
+      if (sql.includes('FROM ledger_checkpoints')) {
+        return {
+          rows: [{ range_end: params[0] === 'CONTRACT001' ? 10 : 20 }],
+          rowCount: 1,
+        };
+      }
+      if (sql.includes('INSERT INTO ledger_checkpoints')) {
+        inserted.push({ sql, params });
+        return { rows: [], rowCount: 1 };
+      }
+      if (sql.includes('UPDATE indexer_state')) {
+        updated.push(params);
+        return { rows: [], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const indexer = new EventIndexer({
+      rpcUrl: 'http://localhost:8000',
+      contractIds: ['CONTRACT001', 'CONTRACT002'],
+    });
+    indexer.running = true;
+    indexer.rpc = {
+      getLatestLedger: async () => ({ sequence: 25 }),
+      getEvents: async (request: { filters: Array<{ contractIds: string[] }> }) => {
+        eventFilters.push(request.filters[0]?.contractIds);
+        return { events: [] };
+      },
+    };
+
+    await indexer.pollOnce();
+
+    expect(eventFilters).toEqual([['CONTRACT001'], ['CONTRACT002']]);
+    expect(inserted.map((row) => row.params)).toEqual([
+      ['CONTRACT001', 11, 25],
+      ['CONTRACT002', 21, 25],
+    ]);
+    expect(updated).toEqual([
+      [25, 'CONTRACT001'],
+      [25, 'CONTRACT002'],
     ]);
   });
 });

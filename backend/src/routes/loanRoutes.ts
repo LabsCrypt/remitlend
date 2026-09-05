@@ -322,7 +322,7 @@ router.get(
  *   post:
  *     summary: Build an unsigned loan request transaction
  *     description: >
- *       Builds an unsigned Soroban `request_loan(borrower, amount)` transaction XDR.
+ *       Builds an unsigned Soroban `request_loan(borrower, amount, term)` transaction XDR.
  *       The frontend signs it with the user's wallet and submits via POST /api/loans/submit.
  *     tags: [Loans]
  *     security:
@@ -344,6 +344,10 @@ router.get(
  *               borrowerPublicKey:
  *                 type: string
  *                 description: Borrower's Stellar public key (must match JWT)
+ *               term:
+ *                 type: number
+ *                 description: Loan term in ledgers (defaults to 17280)
+ *                 example: 17280
  *     responses:
  *       200:
  *         description: Unsigned transaction XDR returned

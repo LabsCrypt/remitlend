@@ -25,7 +25,9 @@ async function unwrapDek(dekWrapped: Buffer, kekId: string): Promise<Buffer> {
     const { plaintext } = (await resp.json()) as { plaintext: string };
     return Buffer.from(plaintext, 'base64');
   }
-  const kek = Buffer.from(process.env.PII_KEK_KEY ?? '0'.repeat(64), 'hex');
+  const kekHex = process.env.PII_KEK_KEY;
+  if (!kekHex) throw new Error('PII_KEK_KEY is required for local KEK unwrapping but is not set');
+  const kek = Buffer.from(kekHex, 'hex');
   const decipher = crypto.createDecipheriv('aes-256-gcm', kek, dekWrapped.subarray(0, 12));
   decipher.setAuthTag(dekWrapped.subarray(12, 28));
   const decrypted = Buffer.concat([decipher.update(dekWrapped.subarray(28)), decipher.final()]);
@@ -43,7 +45,9 @@ async function wrapDek(dek: Buffer): Promise<Buffer> {
     const { wrapped_key } = (await resp.json()) as { wrapped_key: string };
     return Buffer.from(wrapped_key, 'base64');
   }
-  const kek = Buffer.from(process.env.PII_KEK_KEY ?? '0'.repeat(64), 'hex');
+  const kekHex = process.env.PII_KEK_KEY;
+  if (!kekHex) throw new Error('PII_KEK_KEY is required for local KEK wrapping but is not set');
+  const kek = Buffer.from(kekHex, 'hex');
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv('aes-256-gcm', kek, iv);
   const encrypted = Buffer.concat([cipher.update(dek), cipher.final()]);

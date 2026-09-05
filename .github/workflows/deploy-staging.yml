@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
 
+# Serialize staging deploys so overlapping pushes cannot race the retagging
+# step (staging-latest → staging-previous) or interleave on the SSH target.
+# cancel-in-progress is deliberately OFF: an in-progress deploy must finish
+# rather than be killed mid-rollback. A superseded run simply waits its turn.
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write

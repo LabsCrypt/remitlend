@@ -864,7 +864,7 @@
                         "symbol": "score"
                       },
                       "val": {
-                        "u32": 710
+                        "u32": 700
                       }
                     }
                   ]
@@ -913,88 +913,6 @@
                 "durability": "persistent",
                 "val": {
                   "bytes": "0100000000000000000000000000000000000000000000000000000000000000"
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          518400
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "ScoreHistory"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "ScoreHistory"
-                    },
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "vec": [
-                    {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "ledger"
-                          },
-                          "val": {
-                            "u32": 0
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "new_score"
-                          },
-                          "val": {
-                            "u32": 710
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "old_score"
-                          },
-                          "val": {
-                            "u32": 700
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "reason"
-                          },
-                          "val": {
-                            "symbol": "ADJ"
-                          }
-                        }
-                      ]
-                    }
-                  ]
                 }
               }
             },

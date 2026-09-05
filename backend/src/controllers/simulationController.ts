@@ -26,8 +26,8 @@ export const getRemittanceHistory = asyncHandler(async (req: Request, res: Respo
   const { userId } = req.params;
 
   // 1. Fetch current score from database
-  const scoreResult = await query('SELECT current_score FROM scores WHERE user_id = $1', [userId]);
-  const score = scoreResult.rows[0]?.current_score ?? 500;
+  const scoreResult = await query('SELECT score FROM scores WHERE borrower = $1', [userId]);
+  const score = scoreResult.rows[0]?.score ?? scoreResult.rows[0]?.current_score ?? 500;
 
   // 2. Fetch all repayment and default events for history calculation
   const eventsResult = await query(
@@ -131,8 +131,8 @@ export const simulatePayment = asyncHandler(async (req: Request, res: Response) 
   const userId = req.user!.publicKey;
 
   // Fetch current score
-  const scoreResult = await query('SELECT current_score FROM scores WHERE user_id = $1', [userId]);
-  const currentScore = scoreResult.rows[0]?.current_score ?? 500;
+  const scoreResult = await query('SELECT score FROM scores WHERE borrower = $1', [userId]);
+  const currentScore = scoreResult.rows[0]?.score ?? scoreResult.rows[0]?.current_score ?? 500;
 
   const { repaymentDelta } = sorobanService.getScoreConfig();
   const newScore = Math.min(850, currentScore + repaymentDelta);

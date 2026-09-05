@@ -29,16 +29,21 @@ export const up = (pgm) => {
     ALTER INDEX IF EXISTS loan_events_tx_hash_index RENAME TO contract_events_tx_hash_index;
   `);
 
-  // 5. Create a view for backward compatibility with existing code that still queries 'loan_events'
+  // 5. Create a view for backward compatibility with existing code that still queries 'loan_events'.
+  // Keep it read-compatible with older callers while avoiding writes through the view.
   pgm.sql(`
+    DROP VIEW IF EXISTS loan_events;
     CREATE VIEW loan_events AS
     SELECT
       id,
       event_id,
       event_type,
       loan_id,
+      address,
       address AS borrower,
       amount,
+      interest_rate_bps,
+      term_ledgers,
       ledger,
       ledger_closed_at,
       tx_hash,

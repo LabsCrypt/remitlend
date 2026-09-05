@@ -11,6 +11,7 @@ export const up = (pgm) => {
           id SERIAL PRIMARY KEY,
           borrower VARCHAR(255) NOT NULL UNIQUE,
           score INTEGER NOT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       ELSE
@@ -20,6 +21,9 @@ export const up = (pgm) => {
         END IF;
         IF EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'scores' AND column_name = 'current_score') THEN
           ALTER TABLE scores RENAME COLUMN current_score TO score;
+        END IF;
+        IF NOT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'scores' AND column_name = 'created_at') THEN
+          ALTER TABLE scores ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
         END IF;
       END IF;
     END $$;

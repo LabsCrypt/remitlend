@@ -78,8 +78,7 @@ export function useNotificationStream() {
 
               try {
                 const payload = JSON.parse(dataStr) as
-                  | AppNotification
-                  | { type: "init"; notifications: AppNotification[] };
+                  AppNotification | { type: "init"; notifications: AppNotification[] };
 
                 queryClient.setQueryData(
                   queryKeys.notifications.all(),
@@ -115,6 +114,15 @@ export function useNotificationStream() {
               }
             }
           }
+        }
+
+        // Stream ended cleanly (done: true) — schedule reconnect with backoff
+        // just like an error close. This handles server-side idle timeouts,
+        // deploys, or load-balancer cutoffs.
+        if (!cancelled) {
+          const delay = Math.min(retryDelay.current, 30_000);
+          retryDelay.current = Math.min(delay * 2, 30_000);
+          timeoutRef.current = setTimeout(connect, delay);
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {

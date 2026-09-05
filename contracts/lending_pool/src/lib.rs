@@ -1,4 +1,43 @@
 #![no_std]
+//! # Lending Pool: Share-Based Liquidity Management
+//!
+//! ## Overview
+//! The lending pool is a liquidity contract that allows depositors to earn yield by providing tokens
+//! to borrowers. It uses an LP-token (shares) model where yield is implicit in the exchange rate
+//! between shares and underlying assets, eliminating the need for explicit claim or distribution steps.
+//!
+//! ## Share-Based Accounting
+//! Depositors receive LP shares proportional to the deposited amount and the current share price.
+//! The share price is `total_managed_assets / total_shares`, both inflated by virtual offsets
+//! (`VIRTUAL_ASSETS` and `VIRTUAL_SHARES`) to prevent rounding attacks. When withdrawing, depositors
+//! burn shares to receive the proportional underlying assets at the current exchange rate.
+//!
+//! ## Implicit Yield
+//! Yield enters the pool in two ways:
+//! - **Via LoanManager**: When borrowers repay loans with interest, the LoanManager contract
+//!   transfers tokens to the pool (interest component). This increases `total_managed_assets`,
+//!   raising the share price without minting new shares or requiring an explicit distribute call.
+//! - **Via distribute_yield**: Authorized callers can explicitly transfer yield via `distribute_yield`,
+//!   which also increases `total_managed_assets` and the share price.
+//!
+//! Since the share price automatically incorporates yield, a depositor's asset value grows
+//! over time simply by holding shares—no separate yield claim mechanism is needed.
+//!
+//! ## Loan/Utilization Relationship
+//! `total_managed_assets` (share price input) tracks the total value the pool has under management:
+//! idle balance plus outstanding loans. `total_outstanding` tracks how much principal is deployed
+//! in active loans. Utilization is the fraction of `total_managed_assets` currently out on loan.
+//!
+//! When borrowers repay with interest, `total_managed_assets` grows (yield captured) while
+//! `total_outstanding` shrinks (principal returned), raising the share price and lowering utilization.
+//! If a borrower defaults, `total_outstanding` may drop below actual pool balance, leaving
+//! the difference as a shortfall absorbed by remaining depositors.
+//!
+//! ## Multi-Token Keying
+//! A single contract instance serves multiple token pools. Storage keys (`DataKey`) include
+//! the token address, allowing independent accounting per token. For example, one instance
+//! can manage USDC, USDT, and BRL pools simultaneously with separate share prices and balances.
+
 // Lending pool contract for RemitLend.
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::{
@@ -11,23 +50,31 @@ use events::*;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PoolError {
+    /// The contract has already been initialized with an admin.
     AlreadyInitialized = 1,
+    /// The contract has not been initialized yet.
     NotInitialized = 2,
+    /// The pool is paused; deposits, withdrawals, and yield distribution are blocked.
     ContractPaused = 3,
+    /// The amount provided is invalid (zero or negative).
     InvalidAmount = 4,
+    /// Depositing the requested amount would exceed the max pool size cap for this token.
     PoolSizeExceeded = 5,
+    /// The provider does not have enough shares to burn for a withdrawal.
     InsufficientBalance = 6,
+    /// The pool does not have enough idle balance to satisfy the withdrawal.
     InsufficientLiquidity = 7,
+    /// The max pool size value is invalid (negative). Discriminant 8 is intentionally skipped for historical compatibility.
     InvalidMaxPoolSize = 9,
+    /// No admin has been proposed, so `accept_admin` cannot proceed.
     NoProposedAdmin = 10,
+    /// The requested withdrawal cooldown exceeds the maximum allowed duration.
     CooldownTooLong = 11,
-    /// `deposit` would mint fewer shares than the caller's `min_shares_out`.
+    /// `deposit` would mint fewer shares than the caller's `min_shares_out` (slippage protection).
     MinSharesNotMet = 12,
-    /// `redeem`/`withdraw` would return fewer assets than the caller's
-    /// `min_assets_out`.
+    /// `redeem`/`withdraw` would return fewer assets than the caller's `min_assets_out` (slippage protection).
     MinAssetsNotMet = 13,
-    /// The computed share/asset amount for an operation rounded down to
-    /// zero, so no value would actually move.
+    /// The computed share/asset amount for an operation rounded down to zero, so no value would actually move.
     ZeroShares = 14,
 }
 
@@ -65,7 +112,7 @@ pub enum DataKey {
     /// by `deposit`, `redeem`/`withdraw`, and `distribute_yield`. It is
     /// never derived from `token::Client::balance`, so an unsolicited
     /// direct transfer to the pool's address ("donation") cannot move the
-    /// share price.
+    /// share price (#1089).
     TotalManagedAssets(Address),
     /// token → number of active depositors
     DepositorCount(Address),
@@ -108,7 +155,7 @@ impl LendingPool {
     /// Decimals offset applied to both shares and assets before computing
     /// exchange rates: `10^3`. This is the standard ERC4626-style "virtual
     /// shares/assets" mitigation for the classic first-depositor inflation
-    /// attack: it makes the share price prohibitively expensive to
+    /// attack (#1089): it makes the share price prohibitively expensive to
     /// manipulate via a donation, because the attacker's donated assets are
     /// diluted by the offset instead of being able to round a victim's
     /// minted shares down to zero.
@@ -159,11 +206,11 @@ impl LendingPool {
     /// Deliberately never derived from `token::Client::balance`: reading the
     /// live balance would let anyone move the share price within a single
     /// ledger by transferring tokens directly to the pool's address,
-    /// without going through `deposit`/`redeem` (see #1380). It is mutated
-    /// only by `deposit` (+amount), `redeem`/`withdraw` (-assets_to_return),
-    /// and `distribute_yield` (+amount) — never by `adjust_outstanding`,
-    /// since moving principal between "idle" and "outstanding" does not
-    /// change the total value under management.
+    /// without going through `deposit`/`redeem` (see #1089, #1380). It is
+    /// mutated only by `deposit` (+amount), `redeem`/`withdraw`
+    /// (-assets_to_return), and `distribute_yield` (+amount) — never by
+    /// `adjust_outstanding`, since moving principal between "idle" and
+    /// "outstanding" does not change the total value under management.
     fn total_managed_assets(env: &Env, token: &Address) -> i128 {
         Self::bump_instance_ttl(env);
         env.storage()
@@ -257,8 +304,8 @@ impl LendingPool {
     /// gives a 1-for-1 allocation) even when the pool is empty, without a
     /// special-cased first-depositor branch. The offset also means a
     /// donation-inflated `total_managed_assets_before` can no longer round a
-    /// victim's minted shares down to zero — see #1380. Rounds down, in the
-    /// pool's favor.
+    /// victim's minted shares down to zero — see #1089, #1380. Rounds down,
+    /// in the pool's favor.
     fn calc_shares_to_mint(
         amount: i128,
         total_managed_assets_before: i128,
@@ -624,12 +671,16 @@ impl LendingPool {
         let share_key = DataKey::Shares(provider.clone(), token.clone());
         env.storage().persistent().set(&share_key, &new_shares);
         Self::bump_persistent_ttl(&env, &share_key);
-        let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
-        let current_ledger = env.ledger().sequence();
-        env.storage()
-            .persistent()
-            .set(&deposit_key, &current_ledger);
-        Self::bump_persistent_ttl(&env, &deposit_key);
+        // Keep the original timestamp for top-ups. Replacing it would
+        // re-lock already-matured shares whenever a provider adds liquidity.
+        // A first deposit is the only operation that establishes cooldown
+        // state; subsequent deposits mint shares without resetting it.
+        if existing_shares == 0 {
+            let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
+            let current_ledger = env.ledger().sequence();
+            env.storage().persistent().set(&deposit_key, &current_ledger);
+            Self::bump_persistent_ttl(&env, &deposit_key);
+        }
 
         let new_total_shares = cur_total_shares
             .checked_add(shares_to_mint)

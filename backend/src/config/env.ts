@@ -55,5 +55,30 @@ export function validateEnvVars(): void {
     process.exit(1);
   }
 
+  // PII encryption requires either a KMS endpoint or a local KEK key.
+  // Both missing means PII would be encrypted with a static all-zero key.
+  const hasKmsEndpoint = process.env.PII_KMS_ENDPOINT && process.env.PII_KMS_ENDPOINT.trim() !== '';
+  const hasKekKey = process.env.PII_KEK_KEY && process.env.PII_KEK_KEY.trim() !== '';
+
+  if (!hasKmsEndpoint && !hasKekKey) {
+    const boldRed = (msg: string) => `\x1b[1;31m${msg}\x1b[0m`;
+    const bold = (msg: string) => `\x1b[1m${msg}\x1b[0m`;
+
+    const errorPrefix = boldRed('FATAL ERROR: PII encryption misconfiguration');
+    const msg = `PII_KEK_KEY or PII_KMS_ENDPOINT must be provided. ${bold('Both are missing.')}`;
+    const actionMsg =
+      'Set PII_KMS_ENDPOINT for remote KMS encryption or PII_KEK_KEY for local envelope encryption.';
+
+    console.error(`\n${errorPrefix}\n${msg}\n${actionMsg}\n`);
+
+    logger.error('PII encryption env validation failure', {
+      hasKmsEndpoint,
+      hasKekKey,
+      node_env: process.env.NODE_ENV,
+    });
+
+    process.exit(1);
+  }
+
   logger.info('Environment variables validated successfully.');
 }

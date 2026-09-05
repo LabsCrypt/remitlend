@@ -87,7 +87,7 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
       const args = invokeContractArgs.args();
       expect(args.length).toBe(4);
       expect(scValToNative(args[2])).toBe(1000n);
-      expect(scValToNative(args[3])).toBe(950n);
+      expect(scValToNative(args[3])).toBe(9_500_000_000n);
     });
   });
 
@@ -133,7 +133,7 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
       const args = invokeContractArgs.args();
       expect(args.length).toBe(4);
       expect(scValToNative(args[2])).toBe(500n);
-      expect(scValToNative(args[3])).toBe(480n);
+      expect(scValToNative(args[3])).toBe(4_800_000_000n);
     });
   });
 });

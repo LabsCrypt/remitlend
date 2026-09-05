@@ -61,9 +61,10 @@ export const getScore = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const result = await query('SELECT current_score FROM scores WHERE user_id = $1', [userId]);
+  const result = await query('SELECT score FROM scores WHERE borrower = $1', [userId]);
 
-  const score = result.rows.length > 0 ? result.rows[0].current_score : 500;
+  const score =
+    result.rows.length > 0 ? (result.rows[0].score ?? result.rows[0].current_score) : 500;
   const band = getCreditBand(score);
 
   await cacheService.set(cacheKey, { score, band }, 300); // 5 minutes TTL
@@ -98,24 +99,25 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
   };
 
   // Get old score first for the response
-  const oldResult = await query('SELECT current_score FROM scores WHERE user_id = $1', [userId]);
-  const oldScore = oldResult.rows.length > 0 ? oldResult.rows[0].current_score : 500;
+  const oldResult = await query('SELECT score FROM scores WHERE borrower = $1', [userId]);
+  const oldScore =
+    oldResult.rows.length > 0 ? (oldResult.rows[0].score ?? oldResult.rows[0].current_score) : 500;
 
   const delta = onTime ? ON_TIME_DELTA : LATE_DELTA;
 
   // Use UPSERT: Get existing score or start at 500, then apply delta and clamp
   const result = await query(
-    `INSERT INTO scores (user_id, current_score)
+    `INSERT INTO scores (borrower, score)
      VALUES ($1, $2)
-     ON CONFLICT (user_id) 
+     ON CONFLICT (borrower) 
      DO UPDATE SET 
-       current_score = LEAST(850, GREATEST(300, scores.current_score + $3)),
+       score = LEAST(850, GREATEST(300, scores.score + $3)),
        updated_at = CURRENT_TIMESTAMP
-     RETURNING current_score`,
+     RETURNING score`,
     [userId, 500 + delta, delta],
   );
 
-  const newScore = result.rows[0].current_score;
+  const newScore = result.rows[0].score ?? result.rows[0].current_score;
   const band = getCreditBand(newScore);
 
   // Invalidate cache
@@ -165,9 +167,9 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
     `WITH 
        -- Current score from scores table
        current_score_cte AS (
-         SELECT COALESCE(current_score, 500) AS current_score
+         SELECT COALESCE(score, 500) AS current_score
          FROM scores
-         WHERE user_id = $1
+         WHERE borrower = $1
        ),
        -- All loan events for this borrower
        borrower_events AS (
@@ -262,7 +264,7 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
   );
 
   const breakdown = breakdownResult.rows[0] || {};
-  const score = parseInt(breakdown.current_score || '500', 10);
+  const score = parseInt(breakdown.current_score || breakdown.score || '500', 10);
   const band = getCreditBand(score);
   const totalLoans = parseInt(breakdown.total_loans || '0', 10);
   const repaidOnTime = parseInt(breakdown.on_time_count || '0', 10);

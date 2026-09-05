@@ -20,6 +20,17 @@ jest.unstable_mockModule('../../middleware/metrics.js', () => ({
   refreshWebhookRetryQueueDepth: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../utils/logger.js', () => ({
+  default: {
+    withContext: () => ({
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    }),
+  },
+}));
+
 jest.unstable_mockModule('../jobMetricsService.js', () => ({
   jobMetricsService: {
     recordSuccess: jest.fn(),
@@ -28,6 +39,8 @@ jest.unstable_mockModule('../jobMetricsService.js', () => ({
 }));
 
 const { WebhookService, getRetryDelayMs } = await import('../webhookService.js');
+const { startWebhookRetryProcessor, stopWebhookRetryProcessor } =
+  await import('../webhookRetryProcessor.js');
 
 const MAX_RETRY_ATTEMPTS = 4;
 
@@ -284,6 +297,108 @@ describe('WebhookRetryProcessor', () => {
         (call[0] as string).includes('UPDATE webhook_deliveries'),
       );
       expect(updateCalls).toHaveLength(2);
+    });
+  });
+
+  describe('overlap guard (in-flight)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      stopWebhookRetryProcessor();
+      jest.useRealTimers();
+    });
+
+    it('skips a tick when the previous run is still in-flight', async () => {
+      // First call resolves slowly
+      const firstCallResolvers: Array<() => void> = [];
+      const slowQuery: jest.MockedFunction<
+        (text: string, params?: unknown[]) => Promise<MockQueryResult>
+      > = jest.fn(async () => {
+        return new Promise<MockQueryResult>((resolve) => {
+          firstCallResolvers.push(() => resolve({ rows: [] }));
+        });
+      });
+
+      // Replace the mocked query used by processRetries
+      // The mock is hoisted, so we override the shared mockQuery's implementation
+      mockQuery.mockImplementation(slowQuery);
+
+      // Mock refreshWebhookRetryQueueDepth to succeed immediately
+      const { refreshWebhookRetryQueueDepth } = (await import('../../middleware/metrics.js')) as {
+        refreshWebhookRetryQueueDepth: jest.Mock;
+      };
+      refreshWebhookRetryQueueDepth.mockResolvedValue(undefined);
+
+      startWebhookRetryProcessor();
+
+      // Trigger first tick — starts processRetries which is awaiting
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      // processRetries is now in-flight; trigger second tick
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      // processRetries should have been called exactly once
+      expect(slowQuery).toHaveBeenCalledTimes(1);
+
+      // Resolve the in-flight call
+      firstCallResolvers[0]!();
+      // Flush any pending microtasks
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Now a subsequent tick should be able to run
+      mockQuery.mockReset();
+      mockQuery.mockResolvedValue({ rows: [] });
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not send duplicate deliveries when two ticks overlap', async () => {
+      const row = deliveryRow({ attempt_count: 1 });
+      const fetchMock = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+      })) as unknown as jest.MockedFunction<typeof fetch>;
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      let resolveFirst: (() => void) | null = null;
+      let callCount = 0;
+
+      mockQuery.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          // First SELECT returns a row but hangs before processing completes
+          return new Promise<MockQueryResult>((resolve) => {
+            resolveFirst = () => resolve({ rows: [row] });
+          });
+        }
+        // Subsequent calls (second tick would be blocked, but if it weren't...)
+        return { rows: [] };
+      });
+
+      const { refreshWebhookRetryQueueDepth } = (await import('../../middleware/metrics.js')) as {
+        refreshWebhookRetryQueueDepth: jest.Mock;
+      };
+      refreshWebhookRetryQueueDepth.mockResolvedValue(undefined);
+
+      startWebhookRetryProcessor();
+
+      // Trigger first tick
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      // Trigger second tick — should be blocked by inFlight
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      // fetch should NOT have been called yet (first tick is still pending)
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // Resolve the first tick
+      resolveFirst!();
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Now fetch was called exactly once for the delivery
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 

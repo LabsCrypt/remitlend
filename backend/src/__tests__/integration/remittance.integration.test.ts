@@ -1,5 +1,13 @@
 import { jest } from '@jest/globals';
 import request from 'supertest';
+import {
+  Account,
+  Asset,
+  Keypair,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk';
 import { query } from '../../db/connection.js';
 
 // Mocking with jest.unstable_mockModule (the ESM-safe path under
@@ -27,11 +35,30 @@ describeIfDb('Integration: Remittance Submit Flow', () => {
   let remittanceId: string;
   const senderAddress = 'GBTEST123SENDER456STELLAR789ADDRESS000';
   const recipientAddress = 'GBTEST123RECIPIENT456STELLAR789ADDRESS';
-  const validSignedXdr =
-    'AAAAAgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+  let validSignedXdr: string;
 
   beforeAll(async () => {
     authToken = `Bearer test-token-${senderAddress}`;
+
+    // A genuinely signed, epoch-valid TESTNET payment envelope so the
+    // endpoint's pre-submission envelope validation passes.
+    const envelopeKeypair = Keypair.random();
+    const account = new Account(envelopeKeypair.publicKey(), '12345');
+    const tx = new TransactionBuilder(account, {
+      fee: '100',
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: Keypair.random().publicKey(),
+          asset: Asset.native(),
+          amount: '1',
+        }),
+      )
+      .setTimeout(30)
+      .build();
+    tx.sign(envelopeKeypair);
+    validSignedXdr = tx.toXDR();
 
     await query('DELETE FROM remittances WHERE sender_id = $1', [senderAddress]);
 
@@ -85,19 +112,21 @@ describeIfDb('Integration: Remittance Submit Flow', () => {
     expect(dbResult.rows[0].tx_hash).toBe(mockTxHash);
   });
 
-  it('should reject invalid XDR with 400 error', async () => {
-    (sorobanService.submitSignedTx as jest.Mock).mockRejectedValue(new Error('Invalid XDR format'));
+  it('should reject invalid XDR with 400 error without calling the RPC or failing the record', async () => {
+    await query('UPDATE remittances SET status = $1 WHERE id = $2', ['pending', remittanceId]);
 
     const response = await request(app)
       .post(`/api/remittances/${remittanceId}/submit`)
       .set('Authorization', authToken)
-      .send({ signedXdr: 'invalid-xdr' })
-      .expect(500);
+      .send({ signedXdr: 'invalid-xdr!!!' })
+      .expect(400);
 
     expect(response.body.success).toBe(false);
+    // Envelope validation happens before submission.
+    expect(sorobanService.submitSignedTx).not.toHaveBeenCalled();
 
     const dbResult = await query('SELECT status FROM remittances WHERE id = $1', [remittanceId]);
-    expect(dbResult.rows[0].status).toBe('failed');
+    expect(dbResult.rows[0].status).toBe('pending');
   });
 
   it('should reject already-completed remittance with 400 error', async () => {
@@ -128,7 +157,7 @@ describeIfDb('Integration: Remittance Submit Flow', () => {
     expect(response.body.message).toContain('do not have access');
   });
 
-  it('should handle Stellar network rejection with 502 error message', async () => {
+  it('should handle Stellar network rejection with a failed status and error response', async () => {
     const stellarError = new Error('Stellar network rejected transaction');
     (sorobanService.submitSignedTx as jest.Mock).mockRejectedValue(stellarError);
 
