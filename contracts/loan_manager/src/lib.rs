@@ -2093,6 +2093,10 @@ impl LoanManager {
             return Err(LoanError::InsufficientScore);
         }
 
+        if nft_client.is_seized(&loan.borrower) {
+            return Err(LoanError::SeizedBorrower);
+        }
+
         // Validate collateral covers new amount (collateral must be >= loan amount)
         if loan.collateral_amount < new_amount {
             return Err(LoanError::InsufficientCollateral);
