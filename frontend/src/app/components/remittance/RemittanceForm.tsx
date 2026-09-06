@@ -59,8 +59,8 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
       }
     }
 
-    if (memo && memo.length > 28) {
-      newErrors.memo = "Memo must be 28 characters or less";
+    if (memo && new TextEncoder().encode(memo).length > 28) {
+      newErrors.memo = "Memo must be 28 bytes or less (Stellar MEMO_TEXT limit)";
     }
 
     setErrors(newErrors);
@@ -224,7 +224,7 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
               </label>
               <textarea
                 id="memo"
-                placeholder="Add a note for the recipient (max 28 characters)"
+                placeholder="Add a note for the recipient (max 28 bytes)"
                 value={memo}
                 onChange={(e) => handleMemoChange(e.target.value)}
                 disabled={mutation.isPending}
@@ -241,7 +241,7 @@ export function RemittanceForm({ onSuccess }: RemittanceFormProps) {
                 </div>
               )}
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {memo.length}/28 characters
+                {new TextEncoder().encode(memo).length}/28 bytes
               </p>
             </div>
 
