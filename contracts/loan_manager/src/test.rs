@@ -247,7 +247,7 @@ fn test_migration_guard_prevents_double_execution() {
     // First migration should succeed
     manager.migrate();
     let version1 = manager.version();
-    assert_eq!(version1, 4);
+    assert_eq!(version1, 5);
 
     // Verify data is still readable after migration
     let loan = manager.get_loan(&loan_id);
@@ -257,7 +257,7 @@ fn test_migration_guard_prevents_double_execution() {
     // Second migration should be idempotent (not error, just return early)
     manager.migrate();
     let version2 = manager.version();
-    assert_eq!(version2, 4);
+    assert_eq!(version2, 5);
 
     // Data should still be readable
     let loan_after = manager.get_loan(&loan_id);
@@ -272,7 +272,7 @@ fn test_loan_request_success() {
 
     let (manager, nft_client, _pool, _token, _token_admin) = setup_test(&env);
     let borrower = Address::generate(&env);
-    assert_eq!(manager.version(), 4);
+    assert_eq!(manager.version(), 5);
 
     // Give borrower a score high enough to pass (>= 500)
     let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);

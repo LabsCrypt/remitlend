@@ -1158,6 +1158,55 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "BorrowerLoans"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "BorrowerLoans"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u32": 1
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518401
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Loan"
                 },
                 {
@@ -1392,25 +1441,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "BorrowerLoans"
-                            },
-                            {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "vec": [
-                            {
-                              "u32": 1
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "DefaultWindowLedgers"
                             }
                           ]
@@ -1605,7 +1635,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 4
+                          "u32": 5
                         }
                       }
                     ]
