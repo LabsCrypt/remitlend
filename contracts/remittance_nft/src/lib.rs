@@ -544,7 +544,7 @@ impl RemittanceNFT {
         }
 
         let metadata = RemittanceMetadata {
-            score: initial_score.min(Self::MAX_SCORE),
+            score: initial_score.clamp(Self::MIN_CREDIT_SCORE, Self::MAX_SCORE),
             history_hash,
             metadata_uri,
         };
@@ -638,7 +638,7 @@ impl RemittanceNFT {
 
         // Write the new NFT metadata.
         let metadata = RemittanceMetadata {
-            score: initial_score.min(Self::MAX_SCORE),
+            score: initial_score.clamp(Self::MIN_CREDIT_SCORE, Self::MAX_SCORE),
             history_hash,
             metadata_uri,
         };

@@ -632,6 +632,31 @@ fn test_mint_rejects_unauthorized_minter() {
 }
 
 #[test]
+fn test_mint_clamps_score_below_minimum() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(
+        &user,
+        &100, // below MIN_CREDIT_SCORE (300)
+        &history_hash,
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    assert_eq!(client.get_score(&user), 300);
+}
+
+#[test]
 fn test_metadata_retrieval_before_and_after_mint() {
     let env = Env::default();
     env.mock_all_auths();
@@ -656,7 +681,7 @@ fn test_metadata_retrieval_before_and_after_mint() {
     );
 
     let metadata = client.get_metadata(&user).unwrap();
-    assert_eq!(metadata.score, 250);
+    assert_eq!(metadata.score, 300);
     assert_eq!(metadata.history_hash, history_hash);
 }
 
@@ -693,13 +718,13 @@ fn test_score_update_is_isolated_to_owner() {
 
     client.update_score(&alice, &9_000_000_000, &None);
 
-    assert_eq!(client.get_score(&alice), 109);
-    assert_eq!(client.get_score(&bob), 200);
+    assert_eq!(client.get_score(&alice), 309);
+    assert_eq!(client.get_score(&bob), 300);
 
     let alice_metadata = client.get_metadata(&alice).unwrap();
     let bob_metadata = client.get_metadata(&bob).unwrap();
-    assert_eq!(alice_metadata.score, 109);
-    assert_eq!(bob_metadata.score, 200);
+    assert_eq!(alice_metadata.score, 309);
+    assert_eq!(bob_metadata.score, 300);
 }
 
 #[test]
@@ -2149,7 +2174,7 @@ fn test_score_bounds_enforced() {
 
     client.initialize(&admin);
 
-    // Test lower bound (300)
+    // Test lower bound (300) — mint clamps to MIN_CREDIT_SCORE
     client.mint(
         &user,
         &200,
@@ -2158,7 +2183,7 @@ fn test_score_bounds_enforced() {
         &create_test_commitment(&env, 1),
         &None,
     );
-    assert_eq!(client.get_score(&user), 200); // Mint doesn't enforce MIN, only MAX
+    assert_eq!(client.get_score(&user), 300); // Clamped to MIN_CREDIT_SCORE
 
     // Test upper bound (850)
     let user2 = Address::generate(&env);

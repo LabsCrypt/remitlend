@@ -1837,6 +1837,83 @@ fn test_interest_accrual_uses_loan_term_not_default_term() {
 }
 
 #[test]
+fn test_interest_accrual_matches_rate_with_set_default_term() {
+    // Regression test: set a non-default term via set_default_term, then
+    // assert total interest over the full term matches interest_rate_bps
+    // within rounding (i.e., principal * rate_bps / 10000).
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &100_000);
+
+    // Set a non-default term of 20000 ledgers.
+    manager.set_default_term(&20_000);
+
+    env.ledger().set_sequence_number(1);
+
+    let loan = manager.request_loan(&borrower, &1_000, &20_000);
+    manager.approve_loan(&loan);
+
+    // Advance exactly one full term so all interest has accrued.
+    env.ledger().set_sequence_number(1 + 20_000);
+
+    let loan = manager.get_loan(&loan);
+    // Total interest over the full term = principal * rate_bps / 10000
+    // = 1000 * 1200 / 10000 = 120.
+    assert_eq!(loan.accrued_interest, 120);
+}
+
+#[test]
+fn test_interest_accrual_unchanged_for_default_term() {
+    // Regression test: when the loan's term equals DEFAULT_TERM_LEDGERS,
+    // interest accrual must produce byte-for-byte identical results to the
+    // original behavior before the fix.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &100_000);
+
+    env.ledger().set_sequence_number(1);
+
+    let loan = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan);
+
+    // Advance exactly one full default term.
+    env.ledger().set_sequence_number(1 + 17_280);
+
+    let loan = manager.get_loan(&loan);
+    assert_eq!(loan.accrued_interest, 120);
+}
+
+#[test]
 fn test_set_late_fee_rate_rejects_above_cap() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
@@ -3303,6 +3380,104 @@ fn test_late_fees_stop_accruing_when_principal_paid() {
     let loan = manager.get_loan(&loan_id);
     // Should have zero late fees because principal is paid
     assert_eq!(loan.accrued_late_fee, 0);
+}
+
+#[test]
+fn test_late_fee_accrual_uses_loan_term_not_default_term() {
+    // Regression test: accrue_late_fee must use the loan's own term_ledgers as
+    // the normalization denominator. A loan with a custom (longer) term accrues
+    // late fees at a lower per-ledger rate than the DEFAULT_TERM_LEDGERS rate,
+    // inversely proportional to its term.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &100_000);
+    stellar_token.mint(&borrower, &100_000);
+
+    manager.set_late_fee_rate(&500);
+    manager.set_grace_period_ledgers(&0);
+
+    env.ledger().set_sequence_number(1);
+
+    // Same principal and late-fee rate; different amortization terms.
+    const DEFAULT_TERM: u32 = 17_280;
+    const DOUBLE_TERM: u32 = 34_560;
+
+    let loan_default = manager.request_loan(&borrower, &1_000, &DEFAULT_TERM);
+    manager.approve_loan(&loan_default);
+
+    let loan_double = manager.request_loan(&borrower, &1_000, &DOUBLE_TERM);
+    manager.approve_loan(&loan_double);
+
+    // Advance past both due dates with different overdue amounts.
+    // Loan A due_date = 1 + 17280 = 17281, overdue = 25920
+    // Loan B due_date = 1 + 34560 = 34561, overdue = 8640
+    env.ledger().set_sequence_number(1 + DOUBLE_TERM + 8_640);
+
+    let default_loan = manager.get_loan(&loan_default);
+    let double_loan = manager.get_loan(&loan_double);
+
+    // Default term: 1000 * 500 * 25920 / (10000 * 17280) = 75
+    assert_eq!(default_loan.accrued_late_fee, 75);
+    // Double term: 1000 * 500 * 8640 / (10000 * 34560) = 12 (floor)
+    assert_eq!(double_loan.accrued_late_fee, 12);
+}
+
+#[test]
+fn test_late_fee_accrual_unchanged_for_default_term() {
+    // Regression test: when the loan's term equals DEFAULT_TERM_LEDGERS, late
+    // fee accrual must produce byte-for-byte identical results to the original
+    // behavior before the fix.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    manager.set_late_fee_rate(&500);
+    manager.set_grace_period_ledgers(&0);
+
+    env.ledger().set_sequence_number(1);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    // Advance 8640 ledgers past due date (same as test_overdue_repayment_charges_late_fee)
+    env.ledger().set_sequence_number(due_date + 8_640);
+
+    // Trigger accrual via get_loan
+    let loan = manager.get_loan(&loan_id);
+    // Late fee = 1000 * 500 * 8640 / (10000 * 17280) = 25
+    assert_eq!(loan.accrued_late_fee, 25);
 }
 
 // ── refinance_loan tests ───────────────────────────────────────────────────
@@ -5001,6 +5176,44 @@ fn test_set_rate_oracle_emits_rate_oracle_updated_event() {
         has_oracle_event,
         "RateOracleUpdated event should be emitted"
     );
+}
+
+#[test]
+#[should_panic]
+fn test_approve_loan_rejects_borrower_seized_after_request() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _token_admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10000);
+
+    let pending_loan_id = manager.request_loan(&borrower, &500, &17280);
+
+    let doomed_loan_id = manager.request_loan(&borrower, &500, &17280);
+    manager.approve_loan(&doomed_loan_id);
+
+    let due_date = manager.get_loan(&doomed_loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+    manager.check_default(&doomed_loan_id);
+
+    assert!(nft_client.is_seized(&borrower));
+
+    manager.approve_loan(&pending_loan_id);
 }
 
 #[test]
