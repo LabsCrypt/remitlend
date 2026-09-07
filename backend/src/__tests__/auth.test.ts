@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, jest } from '@jest/globals';
 import request from 'supertest';
 import app from '../app.js';
 import { Keypair } from '@stellar/stellar-sdk';
@@ -282,11 +282,16 @@ describe('authService unit tests', () => {
 
   describe('verifyChallengeTimestamp', () => {
     it('should accept timestamp at the window edge', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+
       const maxAge = 5 * 60 * 1000; // 5 minutes
       const timestamp = Date.now() - maxAge;
 
       const result = authService.verifyChallengeTimestamp(timestamp, maxAge);
       expect(result).toBe(true);
+
+      jest.useRealTimers();
     });
 
     it('should accept timestamp under the window', () => {
