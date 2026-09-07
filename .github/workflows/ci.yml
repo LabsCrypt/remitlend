@@ -278,3 +278,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Contracts check
         run: echo "Contracts format, clippy, tests, and build passed"
+
+  accrual-parity:
+    needs: [supply-chain-audit, money-policy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Run fixed-point accrual parity test against golden vectors
+        run: npm test -- src/__tests__/fixedPoint.test.ts
+        working-directory: backend

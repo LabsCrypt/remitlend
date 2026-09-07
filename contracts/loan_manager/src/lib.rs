@@ -29,6 +29,7 @@ pub trait LendingPoolInterface {
     fn get_total_outstanding(env: Env, token: Address) -> i128;
 }
 
+pub mod accrual;
 mod events;
 
 #[contracterror]
@@ -62,6 +63,9 @@ pub enum LoanError {
     InsufficientCollateral = 26,
     LoanNotLiquidatable = 27,
     LoanNotPurgable = 28,
+    IndexOverflow = 29,
+    StaleIndex = 30,
+    InsufficientRepayment = 31,
 }
 
 #[contracttype]
@@ -97,6 +101,7 @@ pub struct Loan {
     // Capped at MaxExtensions to prevent indefinite deferral.
     pub extension_count: u32,
     pub term_ledgers: u32,
+    pub index_at_origination: i128,
 }
 
 #[contracttype]
@@ -133,6 +138,8 @@ pub enum DataKey {
     MinRateBps,
     MaxRateBps,
     MigratedVersion,
+    BorrowIndex,
+    LastAccruedLedger,
 }
 
 #[contract]
@@ -956,6 +963,14 @@ impl LoanManager {
         env.storage()
             .instance()
             .set(&DataKey::MaxRateBps, &Self::MAX_RATE_BPS);
+        env.storage()
+            .persistent()
+            .set(&DataKey::BorrowIndex, &accrual::INDEX_SCALE);
+        env.storage()
+            .persistent()
+            .set(&DataKey::LastAccruedLedger, &env.ledger().sequence());
+        Self::bump_persistent_ttl(&env, &DataKey::BorrowIndex);
+        Self::bump_persistent_ttl(&env, &DataKey::LastAccruedLedger);
         Self::bump_instance_ttl(&env);
         Ok(())
     }
@@ -1146,6 +1161,7 @@ impl LoanManager {
             interest_residual: 0,
             extension_count: 0,
             term_ledgers: term,
+            index_at_origination: accrual::INDEX_SCALE,
         };
 
         env.storage()
@@ -1255,6 +1271,7 @@ impl LoanManager {
         loan.term_ledgers = term_ledgers;
         loan.due_date = env.ledger().sequence() + term_ledgers;
         loan.last_interest_ledger = env.ledger().sequence();
+        loan.index_at_origination = accrual::get_borrow_index(&env);
         loan.last_late_fee_ledger = loan
             .due_date
             .checked_add(Self::grace_period_ledgers(&env))
@@ -2198,6 +2215,7 @@ impl LoanManager {
         loan.interest_rate_bps =
             Self::compute_interest_rate(&env, &loan.borrower, new_amount, current_score);
         loan.last_interest_ledger = current_ledger;
+        loan.index_at_origination = accrual::get_borrow_index(&env);
         loan.due_date = current_ledger + new_term;
         loan.last_late_fee_ledger = loan.due_date;
 
@@ -2911,6 +2929,25 @@ impl LoanManager {
         }
 
         Ok(defaulted_count)
+    }
+
+    pub fn accrue_index(env: Env, rate_per_ledger_scaled: i128) -> Result<i128, LoanError> {
+        Self::require_not_paused(&env)?;
+        accrual::accrue(&env, rate_per_ledger_scaled)
+    }
+
+    pub fn get_borrow_index(env: Env) -> i128 {
+        accrual::get_borrow_index(&env)
+    }
+
+    pub fn owed_amount(env: Env, loan_id: u32) -> Result<i128, LoanError> {
+        let loan_key = DataKey::Loan(loan_id);
+        let loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .ok_or(LoanError::LoanNotFound)?;
+        accrual::owed_amount(&env, loan.amount, loan.index_at_origination)
     }
 }
 

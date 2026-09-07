@@ -15,6 +15,43 @@ import { cacheService } from './cacheService.js';
 import { jobMetricsService } from './jobMetricsService.js';
 import { fromStroops } from '../money/decimal.js';
 import { hasUnresolvedLedgerGaps } from './ledgerCheckpoints.js';
+import { calculateOwedFromIndex } from '../lib/fixedPoint.js';
+
+/**
+ * Calculates current owed amount for a loan using the latest interest_index snapshot.
+ * Owed = mulDiv(principal, latest_index, origin_index) (issue #1382).
+ * If no snapshot exists, returns principal.
+ */
+export async function calculateOwedForLoan(loanId: number, principal: bigint): Promise<bigint> {
+  const result = await query(
+    `SELECT index_value, origin_index
+     FROM interest_index
+     WHERE loan_id = $1
+     ORDER BY ledger_seq DESC
+     LIMIT 1`,
+    [loanId],
+  );
+
+  if (result.rows.length === 0) {
+    return principal;
+  }
+
+  const { index_value, origin_index } = result.rows[0];
+  return calculateOwedFromIndex(principal, BigInt(index_value), BigInt(origin_index));
+}
+
+/**
+ * Tests whether a loan's owed amount exceeds a given threshold.
+ * Uses interest_index snapshot owed calculation (issue #1382).
+ */
+export async function isLoanOwedAboveThreshold(
+  loanId: number,
+  principal: bigint,
+  threshold: bigint,
+): Promise<boolean> {
+  const owed = await calculateOwedForLoan(loanId, principal);
+  return owed > threshold;
+}
 
 /**
  * Owed-vs-paid reconciliation for a single loan, computed entirely in

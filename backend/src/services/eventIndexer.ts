@@ -15,8 +15,11 @@ import { updateUserScoresBulk } from './scoresService.js';
 import { recordIndexerLedgers } from '../middleware/metrics.js';
 import { setPauseState } from '../middleware/pauseGuard.js';
 import { fromStroops } from '../money/decimal.js';
+import { INDEX_SCALE } from '../lib/fixedPoint.js';
 
 const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
+  accrue: 'Accrue',
+  Accrue: 'Accrue',
   Mint: 'NFTMinted',
   AdmRemint: 'NFTMinted',
   ScoreUpd: 'ScoreUpdated',
@@ -80,6 +83,8 @@ interface ContractEvent extends IndexedLoanEvent {
   value: string;
   interestRateBps?: number;
   termLedgers?: number;
+  indexValue?: string;
+  ledgerSeq?: number;
 }
 
 interface EventIndexerConfig {
@@ -690,6 +695,54 @@ export class EventIndexer {
               );
             }
           }
+
+          // Handle Accrue events by recording interest index snapshots (issue #1382)
+          if (event.eventType === 'Accrue' && event.indexValue) {
+            const ledgerSeq = event.ledgerSeq ?? event.ledger;
+            const indexValue = event.indexValue;
+
+            // 1. Persist global snapshot
+            await client.query(
+              `INSERT INTO interest_index (loan_id, ledger_seq, index_value, origin_index)
+               VALUES (0, $1, $2, $3)
+               ON CONFLICT (loan_id, ledger_seq) DO UPDATE SET index_value = EXCLUDED.index_value`,
+              [ledgerSeq, indexValue, INDEX_SCALE.toString()],
+            );
+
+            // 2. Persist snapshot for active loans
+            const activeLoans = await client.query(
+              `WITH approved AS (
+                 SELECT loan_id
+                 FROM contract_events
+                 WHERE event_type = 'LoanApproved' AND loan_id IS NOT NULL
+                 GROUP BY loan_id
+               )
+               SELECT a.loan_id
+               FROM approved a
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM contract_events e
+                 WHERE e.loan_id = a.loan_id
+                   AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
+               )`,
+            );
+
+            for (const row of activeLoans.rows) {
+              const loanId = Number(row.loan_id);
+              const originRes = await client.query(
+                `SELECT origin_index FROM interest_index WHERE loan_id = $1 ORDER BY ledger_seq ASC LIMIT 1`,
+                [loanId],
+              );
+              const originIndex =
+                originRes.rows.length > 0 ? originRes.rows[0].origin_index : INDEX_SCALE.toString();
+
+              await client.query(
+                `INSERT INTO interest_index (loan_id, ledger_seq, index_value, origin_index)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (loan_id, ledger_seq) DO UPDATE SET index_value = EXCLUDED.index_value`,
+                [loanId, ledgerSeq, indexValue, originIndex],
+              );
+            }
+          }
         }
       }
 
@@ -740,6 +793,13 @@ export class EventIndexer {
         await setPauseState(true, [event.contractId], 'Emergency pause triggered by contract');
       } else if (event.eventType === 'PoolUnpaused') {
         await setPauseState(false, [], 'Contract pause lifted');
+      } else if (event.eventType === 'Accrue' && event.indexValue) {
+        const ledgerSeq = event.ledgerSeq ?? event.ledger;
+        eventStreamService.broadcastIndexSnapshot({
+          loan_id: 0,
+          ledger_seq: ledgerSeq,
+          index_value: event.indexValue,
+        });
       }
     }
 
@@ -758,6 +818,8 @@ export class EventIndexer {
     let interestRateBps: number | undefined;
     let termLedgers: number | undefined;
     let borrowerRefund: string | undefined;
+    let indexValue: string | undefined;
+    let ledgerSeq: number | undefined;
 
     if (type === 'LoanRequested') {
       // (type, loan_id, borrower), amount
@@ -989,6 +1051,13 @@ export class EventIndexer {
       address = this.decodeAddress(event.topic[2]);
       amount = this.decodeTupleFirstNumericValue(event.value);
       borrowerRefund = this.decodeTupleThirdNumericValue(event.value);
+    } else if (type === 'Accrue') {
+      // (type), (ledger_seq, index)
+      const data = scValToNative(event.value);
+      if (Array.isArray(data) && data.length >= 2) {
+        ledgerSeq = Number(data[0]);
+        indexValue = data[1].toString();
+      }
     }
 
     // Decode admin address for LoanApprv events (topic[1] = approving admin)
@@ -1017,6 +1086,8 @@ export class EventIndexer {
       ...(address !== undefined ? { address } : {}),
       ...(adminAddress !== undefined ? { adminAddress } : {}),
       ...(borrowerRefund !== undefined ? { borrowerRefund } : {}),
+      ...(indexValue !== undefined ? { indexValue } : {}),
+      ...(ledgerSeq !== undefined ? { ledgerSeq } : {}),
     };
   }
 
@@ -1277,3 +1348,20 @@ export class EventIndexer {
 // (Soroban RPC client, webhook/notification/event-stream services) — see
 // that file's doc comment.
 export { hasUnresolvedLedgerGaps } from './ledgerCheckpoints.js';
+
+/**
+ * Persists an interest index snapshot directly to interest_index (issue #1382).
+ */
+export async function persistIndexSnapshot(
+  loanId: number | bigint,
+  ledgerSeq: number | bigint,
+  indexValue: string | bigint,
+  originIndex: string | bigint,
+): Promise<void> {
+  await query(
+    `INSERT INTO interest_index (loan_id, ledger_seq, index_value, origin_index)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (loan_id, ledger_seq) DO UPDATE SET index_value = EXCLUDED.index_value`,
+    [loanId.toString(), ledgerSeq.toString(), indexValue.toString(), originIndex.toString()],
+  );
+}

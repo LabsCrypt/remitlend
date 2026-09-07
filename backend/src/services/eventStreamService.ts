@@ -282,6 +282,26 @@ class EventStreamService {
     }
   }
 
+  /**
+   * Broadcasts cumulative interest index snapshots over the SSE stream (issue #1382).
+   */
+  broadcastIndexSnapshot(snapshot: {
+    loan_id?: number | string;
+    ledger_seq: number | string;
+    index_value: string;
+  }): void {
+    const payload = `event: index-snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`;
+    const allClients = this.collectAllClients();
+    for (const client of allClients) {
+      try {
+        client.res.write(payload);
+      } catch (err) {
+        logger.withContext().error('SSE index snapshot write error', { err });
+        this.removeClient(client);
+      }
+    }
+  }
+
   /** Returns the number of active SSE connections. */
   getConnectionCount(): { borrower: number; admin: number; total: number } {
     let borrowerCount = 0;
