@@ -4,13 +4,7 @@ import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide
 import { Button } from "./Button";
 
 export type TransactionStatusState =
-  | "idle"
-  | "signing"
-  | "submitting"
-  | "polling"
-  | "success"
-  | "error"
-  | "cancelled";
+  "idle" | "signing" | "submitting" | "polling" | "success" | "error" | "cancelled";
 
 interface TransactionStatusTrackerProps {
   state: TransactionStatusState;

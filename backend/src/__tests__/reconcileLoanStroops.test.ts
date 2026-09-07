@@ -66,4 +66,25 @@ describe('reconcileLoanStroops', () => {
     expect(result.paidStroops).toBe(0n);
     expect(result.driftStroops).toBe(0n);
   });
+
+  it('caps paidStroops at principal for loans with interest (no false drift)', async () => {
+    const principal = toStroops('1000');
+    // Total repayments exceed principal because they include interest
+    const first = toStroops('600');
+    const second = toStroops('500'); // 100 excess is yield
+
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        { event_type: 'LoanApproved', amount: principal.toString() },
+        { event_type: 'LoanRepaid', amount: first.toString() },
+        { event_type: 'LoanRepaid', amount: second.toString() },
+      ],
+    });
+
+    const result = await reconcileLoanStroops(42);
+
+    expect(result.owedStroops).toBe(principal);
+    expect(result.paidStroops).toBe(principal); // capped at principal
+    expect(result.driftStroops).toBe(0n); // no false drift
+  });
 });

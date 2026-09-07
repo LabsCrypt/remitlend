@@ -1,3 +1,21 @@
+"""One-time migration helper for the Remittance NFT contract tests.
+
+Rewrites ``contracts/remittance_nft/src/test.rs`` in place to fix outdated
+patterns left over from an earlier version of the contract:
+
+* swaps the swapped ``commitment``/``uri`` arguments in ``admin_remint`` and
+  ``try_admin_remint`` call sites;
+* corrects the ``e.1.get(0).unwrap() == Symbol::new(...)`` comparison against
+  the mint event;
+* normalises the ``mint_event.2`` tuple encoding.
+
+This is **NOT** part of the normal build/test workflow. It is a one-off cleanup:
+running it again on an already-fixed file is a harmless no-op because all
+substitutions become no-ops. Invoke it from the repo root:
+
+    python3 contracts/fix_args.py
+"""
+
 import re
 
 with open('contracts/remittance_nft/src/test.rs', 'r') as f:
@@ -39,4 +57,3 @@ content = content.replace(
 
 with open('contracts/remittance_nft/src/test.rs', 'w') as f:
     f.write(content)
-
