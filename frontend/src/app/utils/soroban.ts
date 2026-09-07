@@ -14,6 +14,44 @@ export { DEFAULT_NETWORK_PASSPHRASE, getNetworkPassphrase };
 
 const DEFAULT_RPC_URL = "https://soroban-testnet.stellar.org";
 
+const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000;
+const DEFAULT_CONFIRMATION_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Wait until Soroban has indexed a submitted transaction.
+ *
+ * A successful submission only means that the RPC accepted the transaction;
+ * callers must wait for `getTransaction` to report SUCCESS before refreshing
+ * balances. FAILED is surfaced as an error and NOT_FOUND is retried until the
+ * timeout because indexing can lag immediately after submission.
+ */
+export async function waitForSorobanTransaction(
+  txHash: string,
+  options: {
+    rpcUrl?: string;
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  } = {},
+): Promise<void> {
+  const server = new rpc.Server(
+    options.rpcUrl ?? process.env.NEXT_PUBLIC_STELLAR_RPC_URL ?? DEFAULT_RPC_URL,
+  );
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_CONFIRMATION_TIMEOUT_MS);
+  const pollInterval = options.pollIntervalMs ?? DEFAULT_CONFIRMATION_POLL_INTERVAL_MS;
+
+  while (Date.now() <= deadline) {
+    const result = await server.getTransaction(txHash);
+    if (result.status === "SUCCESS") return;
+    if (result.status === "FAILED") {
+      throw new Error(`Soroban transaction ${txHash} failed on-chain`);
+    }
+
+    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error(`Timed out waiting for Soroban transaction ${txHash} to confirm`);
+}
+
 interface BuildLoanRequestXdrParams {
   borrower: string;
   amount: number;

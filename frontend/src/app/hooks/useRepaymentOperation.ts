@@ -24,6 +24,7 @@ import { useCallback, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTransaction } from "./useOptimisticUI";
 import { useWallet } from "../components/providers/WalletProvider";
+import { waitForSorobanTransaction } from "../utils/soroban";
 import {
   useDepositToPool,
   usePoolStats,
@@ -184,8 +185,7 @@ export function useDepositOperation(options?: {
         // Step 4: Poll for confirmation (new confirming state)
         transaction.confirm("Confirming transaction...");
 
-        // Simulate confirmation polling (in real implementation, poll the RPC)
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await waitForSorobanTransaction(submitResult.txHash);
 
         // Mark complete
         const txHash = submitResult.txHash;
@@ -276,8 +276,7 @@ export function useWithdrawalOperation(options?: {
         // Step 4: Poll for confirmation (new confirming state)
         transaction.confirm("Confirming transaction...");
 
-        // Simulate confirmation polling (in real implementation, poll the RPC)
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await waitForSorobanTransaction(submitResult.txHash);
 
         // Mark complete
         const txHash = submitResult.txHash;
