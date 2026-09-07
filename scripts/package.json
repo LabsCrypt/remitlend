@@ -14,13 +14,13 @@
   "dependencies": {
     "@stellar/stellar-sdk": "^14.4.3",
     "dotenv": "^16.4.5",
-    "fs-extra": "^11.2.0"
+    "fs-extra": "^11.4.0"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^20.12.7",
     "ts-node": "^10.9.2",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.4.5"
   },
   "overrides": {
