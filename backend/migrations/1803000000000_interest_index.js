@@ -13,24 +13,30 @@ export const shorthands = undefined;
  * @returns {void}
  */
 export const up = (pgm) => {
-  pgm.createTable('interest_index', {
-    loan_id: { type: 'bigint', notNull: true },
-    ledger_seq: { type: 'bigint', notNull: true },
-    index_value: { type: 'numeric(78, 0)', notNull: true },
-    origin_index: { type: 'numeric(78, 0)', notNull: true },
-    created_at: {
-      type: 'timestamptz',
-      notNull: true,
-      default: pgm.func('CURRENT_TIMESTAMP'),
+  pgm.createTable(
+    'interest_index',
+    {
+      loan_id: { type: 'bigint', notNull: true },
+      ledger_seq: { type: 'bigint', notNull: true },
+      index_value: { type: 'numeric(78, 0)', notNull: true },
+      origin_index: { type: 'numeric(78, 0)', notNull: true },
+      created_at: {
+        type: 'timestamptz',
+        notNull: true,
+        default: pgm.func('CURRENT_TIMESTAMP'),
+      },
     },
-  });
-
-  pgm.addConstraint('interest_index', 'interest_index_pkey', {
-    primaryKey: ['loan_id', 'ledger_seq'],
-  });
+    {
+      ifNotExists: true,
+      constraints: {
+        primaryKey: ['loan_id', 'ledger_seq'],
+      },
+    },
+  );
 
   pgm.createIndex('interest_index', ['loan_id', 'ledger_seq'], {
     name: 'idx_interest_index_loan_ledger',
+    ifNotExists: true,
   });
 };
 
@@ -39,5 +45,5 @@ export const up = (pgm) => {
  * @returns {void}
  */
 export const down = (pgm) => {
-  pgm.dropTable('interest_index');
+  pgm.dropTable('interest_index', { ifExists: true });
 };
