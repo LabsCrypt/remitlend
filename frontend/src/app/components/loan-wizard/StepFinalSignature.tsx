@@ -13,6 +13,7 @@ import { useTransactionPreview } from "../../hooks/useTransactionPreview";
 import { useCreateLoan } from "../../hooks/useApi";
 import { useContractToast } from "../../hooks/useContractToast";
 import { buildUnsignedLoanRequestXdr } from "../../utils/soroban";
+import { getAssetDecimals } from "../../utils/amount";
 import {
   mapTransactionError,
   pollTransactionStatus,
@@ -96,6 +97,7 @@ export function StepFinalSignature({
           amount: principal,
           term: data.termDays * 17280,
           contractId: managerContractId,
+          decimals: getAssetDecimals(data.asset),
         });
         if (!cancelled) setUnsignedXdr(xdr);
       } catch (err) {

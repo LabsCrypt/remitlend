@@ -11,7 +11,6 @@
     "**/*.spec.ts",
     "src/**/*.test.ts",
     "src/**/__tests__/**",
-    "jest.config.ts",
-    "src/seed/data/remittance.spec.ts"
+    "jest.config.ts"
   ]
 }

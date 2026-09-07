@@ -145,6 +145,24 @@ export function useSSE<T = unknown>({
             }
           }
         }
+
+        // Stream ended cleanly (done: true) — schedule reconnect with backoff
+        // just like an error close. This handles server-side idle timeouts,
+        // deploys, or load-balancer cutoffs.
+        setStatus("connecting");
+
+        reconnectAttempts.current += 1;
+
+        if (reconnectAttempts.current >= maxReconnectAttempts) {
+          startPolling();
+          return;
+        }
+
+        if (!cancelled) {
+          const delay = Math.min(retryDelay.current, 5_000);
+          retryDelay.current = Math.min(delay * 2, 30_000);
+          timeoutRef.current = setTimeout(connect, delay);
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           return;
