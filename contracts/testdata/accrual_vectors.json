@@ -1,0 +1,72 @@
+[
+  {
+    "principal": "100000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 1,
+    "expected_index": "1000000007922020087",
+    "expected_owed": "100000001"
+  },
+  {
+    "principal": "100000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 10,
+    "expected_index": "1000000079220203695",
+    "expected_owed": "100000008"
+  },
+  {
+    "principal": "100000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 100,
+    "expected_index": "1000000792202319355",
+    "expected_owed": "100000079"
+  },
+  {
+    "principal": "100000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 1000,
+    "expected_index": "1000007922051434909",
+    "expected_owed": "100000792"
+  },
+  {
+    "principal": "100000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 17280,
+    "expected_index": "1000136901876767884",
+    "expected_owed": "100013690"
+  },
+  {
+    "principal": "10000000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 100,
+    "expected_index": "1000000792202319355",
+    "expected_owed": "10000007922"
+  },
+  {
+    "principal": "10000000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 17280,
+    "expected_index": "1000136901876767884",
+    "expected_owed": "10001369019"
+  },
+  {
+    "principal": "10000000",
+    "rate_per_ledger_scaled": "7922020087",
+    "ledgers": 100,
+    "expected_index": "1000000792202319355",
+    "expected_owed": "10000008"
+  },
+  {
+    "principal": "500000000",
+    "rate_per_ledger_scaled": "19012852206",
+    "ledgers": 500,
+    "expected_index": "1000009506471198837",
+    "expected_owed": "500004753"
+  },
+  {
+    "principal": "1000000000",
+    "rate_per_ledger_scaled": "0",
+    "ledgers": 1000,
+    "expected_index": "1000000000000000000",
+    "expected_owed": "1000000000"
+  }
+]

@@ -678,7 +678,9 @@ impl LendingPool {
         if existing_shares == 0 {
             let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
             let current_ledger = env.ledger().sequence();
-            env.storage().persistent().set(&deposit_key, &current_ledger);
+            env.storage()
+                .persistent()
+                .set(&deposit_key, &current_ledger);
             Self::bump_persistent_ttl(&env, &deposit_key);
         }
 
