@@ -1,4 +1,5 @@
 import {
+  Account,
   BASE_FEE,
   Keypair,
   Operation,
@@ -345,9 +346,8 @@ export class DefaultChecker {
     signer: Keypair,
     passphrase: string,
     loanIds: number[],
+    account: Account,
   ): Promise<DefaultCheckBatchResult> {
-    const account = await server.getAccount(signer.publicKey());
-
     const loanIdsScVal = nativeToScVal(loanIds, { type: 'u32' });
 
     const tx = new TransactionBuilder(account, {
@@ -425,6 +425,7 @@ export class DefaultChecker {
     signer: Keypair,
     passphrase: string,
     loanIds: number[],
+    account: Account,
   ): Promise<DefaultCheckBatchResult> {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
@@ -444,6 +445,7 @@ export class DefaultChecker {
       signer,
       passphrase,
       loanIds,
+      account,
     ).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       return {
@@ -585,21 +587,40 @@ export class DefaultChecker {
       });
 
       const allChunks = chunk(targetIds, this.batchSize).filter((b) => b.length > 0);
-      const batchResults = await mapConcurrent(allChunks, this.concurrency, async (batch) => {
-        const result = await this.submitCheckDefaultsWithTimeout(server, signer, passphrase, batch);
 
-        logger.withContext().info('default_check.batch', {
-          runId,
-          loanIds: result.loanIds,
-          txHash: result.txHash,
-          submitStatus: result.submitStatus,
-          txStatus: result.txStatus,
-          error: result.error,
-          timedOut: result.timedOut,
-        });
+      // Fetch the admin account once and assign strictly increasing sequence
+      // numbers so concurrent batches never collide on txBAD_SEQ (issue #1094).
+      const adminAccount = await server.getAccount(signer.publicKey());
+      const baseSequence = BigInt(adminAccount.sequenceNumber());
+      const batchAccounts = allChunks.map(
+        (_, i) => new Account(signer.publicKey(), String(baseSequence + BigInt(i + 1))),
+      );
 
-        return result;
-      });
+      const batchResults = await mapConcurrent(
+        allChunks.map((batch, i) => ({ batch, account: batchAccounts[i]! })),
+        this.concurrency,
+        async ({ batch, account: batchAccount }) => {
+          const result = await this.submitCheckDefaultsWithTimeout(
+            server,
+            signer,
+            passphrase,
+            batch,
+            batchAccount,
+          );
+
+          logger.withContext().info('default_check.batch', {
+            runId,
+            loanIds: result.loanIds,
+            txHash: result.txHash,
+            submitStatus: result.submitStatus,
+            txStatus: result.txStatus,
+            error: result.error,
+            timedOut: result.timedOut,
+          });
+
+          return result;
+        },
+      );
 
       const loansChecked = targetIds.length;
       const successfulSubmissions = batchResults.filter((b) => !b.error && b.txHash).length;
