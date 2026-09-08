@@ -580,7 +580,7 @@ describe('EventIndexer', () => {
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
     expect(mockCreateNotification).toHaveBeenCalledTimes(1);
     expect(mockGetScoreConfig).toHaveBeenCalledTimes(1);
-    expect(insertStatements[0]).toContain('ON CONFLICT DO NOTHING');
+    expect(insertStatements[0]).toContain('ON CONFLICT (tx_hash, event_index) DO NOTHING');
   });
 
   it('ignores duplicate LoanApproved rows for the same loan and emits side effects once', async () => {

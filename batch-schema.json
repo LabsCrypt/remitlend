@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BatchAuthorizationSchema",
+  "description": "Frozen canonical schema specification for Soroban batch operations, receipt events, op-nonces, and cross-layer status reconciliation.",
+  "version": "1.0.0",
+  "events": {
+    "batch_receipt": {
+      "topic": [
+        "batch_receipt",
+        "BytesN<32>"
+      ],
+      "data": "Vec<(u64, ItemStatus)>"
+    }
+  },
+  "types": {
+    "ItemStatus": {
+      "variants": [
+        { "name": "Applied", "tag": 0, "payload": null },
+        { "name": "Skipped", "tag": 1, "payload": "u32" },
+        { "name": "Reverted", "tag": 2, "payload": "u32" }
+      ]
+    },
+    "OpKind": {
+      "variants": [
+        { "name": "ProcessDefaults", "value": 0 },
+        { "name": "ApproveLoans", "value": 1 },
+        { "name": "GovernanceExecute", "value": 2 }
+      ]
+    },
+    "OpNonce": {
+      "key": ["OpNonce", "Address", "OpKind"],
+      "value": "u64"
+    }
+  },
+  "error_codes": {
+    "LoanError": {
+      "NonceReused": 29,
+      "BatchWindowExpired": 30
+    },
+    "GovernanceError": {
+      "NonceReused": 4022
+    }
+  },
+  "entrypoints": {
+    "loan_manager": {
+      "process_defaults_batch": {
+        "params": [
+          { "name": "admin", "type": "Address" },
+          { "name": "batch_id", "type": "BytesN<32>" },
+          { "name": "loan_ids", "type": "Vec<u64>" },
+          { "name": "nonce", "type": "u64" },
+          { "name": "valid_until_ledger", "type": "u32" }
+        ],
+        "return": "Result<Vec<(u64, ItemStatus)>, LoanError>"
+      },
+      "approve_loans_batch": {
+        "params": [
+          { "name": "admin", "type": "Address" },
+          { "name": "batch_id", "type": "BytesN<32>" },
+          { "name": "loan_ids", "type": "Vec<u64>" },
+          { "name": "nonce", "type": "u64" },
+          { "name": "valid_until_ledger", "type": "u32" }
+        ],
+        "return": "Result<Vec<(u64, ItemStatus)>, LoanError>"
+      }
+    },
+    "multisig_governance": {
+      "execute": {
+        "params": [
+          { "name": "caller", "type": "Address" },
+          { "name": "proposal_id", "type": "u32" },
+          { "name": "nonce", "type": "u64" }
+        ],
+        "return": "Result<(), GovernanceError>"
+      }
+    }
+  }
+}

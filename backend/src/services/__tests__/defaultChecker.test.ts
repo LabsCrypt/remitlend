@@ -32,6 +32,7 @@ jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
   getClient: jest.fn(),
   closePool: jest.fn(),
+  withTransaction: jest.fn(async (fn: any) => fn({ query: mockQuery })),
 }));
 
 jest.unstable_mockModule('../cacheService.js', () => ({

@@ -20,6 +20,9 @@ export interface LoanEventPayload {
   ledger: number;
   ledgerClosedAt: string;
   txHash: string;
+  eventIndex?: number | undefined;
+  batchId?: string | undefined;
+  receiptItems?: Array<{ loanId: string; status: any }> | undefined;
 }
 
 type SseClient = Response;

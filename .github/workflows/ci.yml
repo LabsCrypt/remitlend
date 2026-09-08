@@ -21,7 +21,7 @@ jobs:
         run: |
           echo "Scanning lockfiles for known malicious packages..."
           BLOCKED="plain-crypto-js"
-          for lockfile in backend/package-lock.json frontend/package-lock.json scripts/package-lock.json; do
+          for lockfile in package-lock.json backend/package-lock.json frontend/package-lock.json scripts/package-lock.json; do
             if [ -f "$lockfile" ] && grep -q "$BLOCKED" "$lockfile"; then
               echo "::error::SUPPLY CHAIN ALERT: $lockfile contains $BLOCKED (confirmed malware)"
               exit 1
@@ -58,8 +58,8 @@ jobs:
         run: npx ts-node gen-money.ts --check
         working-directory: scripts
 
-  backend:
-    needs: [supply-chain-audit, money-policy]
+  types-drift:
+    needs: supply-chain-audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,22 +68,35 @@ jobs:
         with:
           node-version: 22
           cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-        working-directory: backend
+      - name: Check generated contract types are in sync
+        run: |
+          npm run generate:types
+          git diff --exit-code packages/contract-types/src/index.ts backend/src/types/batchTypes.generated.ts frontend/src/app/types/batchTypes.generated.ts
+
+  backend:
+    needs: [supply-chain-audit, money-policy, types-drift]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
       - name: Lint
-        run: npm run lint
-        working-directory: backend
+        run: npm run lint -w backend
       - name: Build
-        run: npm run build
-        working-directory: backend
+        run: npm run build -w backend
       - name: Type check
-        run: npm run typecheck
-        working-directory: backend
+        run: npm run typecheck -w backend
       - name: Run tests
-        run: npm test
-        working-directory: backend
+        run: npm test -w backend
         env:
           NODE_ENV: test
           DATABASE_URL: postgres://user:pass@localhost:5432/test
@@ -111,7 +124,7 @@ jobs:
           )
           FOUND=0
           for pattern in "${PII_PATTERNS[@]}"; do
-            if grep -rn "$pattern" src/ --include="*.ts" 2>/dev/null; then
+            if grep -rn "$pattern" backend/src/ --include="*.ts" 2>/dev/null; then
               echo "::error::PII leak detected in logger output: $pattern"
               FOUND=1
             fi
@@ -160,28 +173,24 @@ jobs:
         with:
           node-version: 22
           cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-        working-directory: backend
       - name: Migrate up from empty schema
-        run: npm run migrate:up
-        working-directory: backend
+        run: npm run migrate:up -w backend
         env:
           DATABASE_URL: postgres://pguser:pgpass@localhost:5432/remitlend_test
       - name: Migrate all the way down (reversibility check)
         run: |
           # Count migrations and roll them all back one by one
-          MIGRATION_COUNT=$(ls migrations/*.js 2>/dev/null | wc -l)
+          MIGRATION_COUNT=$(ls backend/migrations/*.js 2>/dev/null | wc -l)
           for i in $(seq 1 "$MIGRATION_COUNT"); do
-            npm run migrate:down -- --count 1
+            npm run migrate:down -w backend -- --count 1
           done
-        working-directory: backend
         env:
           DATABASE_URL: postgres://pguser:pgpass@localhost:5432/remitlend_test
       - name: Migrate up again (ordering + idempotency check)
-        run: npm run migrate:up
-        working-directory: backend
+        run: npm run migrate:up -w backend
         env:
           DATABASE_URL: postgres://pguser:pgpass@localhost:5432/remitlend_test
       - name: Verify no plaintext PII columns exist
@@ -213,12 +222,22 @@ jobs:
           PGPASSWORD: pgpass
 
   frontend:
-    needs: [supply-chain-audit, money-policy]
+    needs: [supply-chain-audit, money-policy, types-drift]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Frontend checks & build
-        run: echo "Frontend lint, typecheck, tests, and build passed"
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npm run typecheck -w frontend
+      - name: Frontend unit tests
+        run: npm test -w frontend -- src/app/hooks/phase0_reproduction.test.ts src/app/hooks/phase3_verification.test.ts
 
   scripts-typecheck:
     needs: supply-chain-audit
@@ -276,5 +295,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Contracts check
-        run: echo "Contracts format, clippy, tests, and build passed"
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Run contracts unit tests (with overflow-checks=true)
+        run: cargo test --manifest-path contracts/Cargo.toml
+      - name: Check zero warnings on changed crates
+        run: RUSTFLAGS="-D warnings" cargo check --manifest-path contracts/Cargo.toml -p loan_manager -p multisig_governance --target wasm32-unknown-unknown
+      - name: Contracts wasm build
+        run: cargo build --manifest-path contracts/Cargo.toml --target wasm32-unknown-unknown --release
+
+  batch-replay-e2e:
+    needs: [backend, contracts, types-drift]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pguser
+          POSTGRES_PASSWORD: pgpass
+          POSTGRES_DB: remitlend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pguser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run batch replay e2e container test
+        run: npm run test:e2e:container

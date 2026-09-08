@@ -51,6 +51,8 @@ export function useSSE<T = unknown>({
   onErrorRef.current = onError;
   const onFallbackPollRef = useRef(onFallbackPoll);
   onFallbackPollRef.current = onFallbackPoll;
+  const seenKeysRef = useRef<Set<string>>(new Set());
+  const MAX_SEEN_KEYS = 1000;
 
   useEffect(() => {
     if (!url) {
@@ -137,6 +139,20 @@ export function useSSE<T = unknown>({
                 const dataStr = line.slice(6);
                 try {
                   const data = JSON.parse(dataStr) as T;
+                  const anyData = data as any;
+                  if (anyData && typeof anyData === "object" && anyData.txHash) {
+                    const eventIndex = anyData.eventIndex ?? 0;
+                    const dedupKey = `${anyData.txHash}:${eventIndex}`;
+                    if (seenKeysRef.current.has(dedupKey)) {
+                      // Drop duplicate before cache write
+                      continue;
+                    }
+                    seenKeysRef.current.add(dedupKey);
+                    if (seenKeysRef.current.size > MAX_SEEN_KEYS) {
+                      const oldestKey = seenKeysRef.current.values().next().value;
+                      if (oldestKey) seenKeysRef.current.delete(oldestKey);
+                    }
+                  }
                   onMessageRef.current(data);
                 } catch (e) {
                   console.error("Failed to parse SSE data", e);

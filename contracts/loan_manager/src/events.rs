@@ -39,7 +39,17 @@
 //! | `MaxRateBpsUpdated` | `("MaxRateBpsUpdated", admin: Address)` | `(old_rate: u32, new_rate: u32)` |
 //! | `LoanPurged` | `("LoanPurged",)` | `loan_id: u32` |
 
-use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{symbol_short, Address, BytesN, Env, String, Symbol, Vec};
+use crate::ItemStatus;
+
+/// Emits event when a batch operation completes.
+///
+/// - **Topics**: `("batch_receipt", batch_id: BytesN<32>)`
+/// - **Data**: `items: Vec<(u64, ItemStatus)>`
+pub fn batch_receipt(env: &Env, batch_id: BytesN<32>, items: Vec<(u64, ItemStatus)>) {
+    let topics = (Symbol::new(env, "batch_receipt"), batch_id);
+    env.events().publish(topics, items);
+}
 
 /// Emits event when a borrower requests a new loan.
 ///

@@ -60,6 +60,8 @@ export interface SorobanRawEvent {
   contractId: string;
 }
 
+import type { ItemStatus, BatchReceiptItem } from '../types/batchTypes.generated.js';
+
 interface ContractEvent extends IndexedLoanEvent {
   amount?: string;
   loanId?: number;
@@ -80,6 +82,9 @@ interface ContractEvent extends IndexedLoanEvent {
   value: string;
   interestRateBps?: number;
   termLedgers?: number;
+  eventIndex?: number;
+  batchId?: string;
+  receiptItems?: BatchReceiptItem[];
 }
 
 interface EventIndexerConfig {
@@ -288,7 +293,9 @@ export class EventIndexer {
 
       const result = await this.processChunk(fromLedger, toLedger, contractId);
       await this.recordCheckpoint(contractId, fromLedger, result.lastProcessedLedger);
-      await this.updateLastIndexedLedger(contractId, result.lastProcessedLedger);
+      if (result.fetchedEvents === 0) {
+        await this.updateLastIndexedLedger(contractId, result.lastProcessedLedger);
+      }
       recordIndexerLedgers(result.lastProcessedLedger, latestLedger);
     }
   }
@@ -573,7 +580,7 @@ export class EventIndexer {
     // Collect score deltas per user within the transaction so that the score
     // upsert is atomic with the event inserts. A single bulk upsert at the
     // end avoids N+1 queries and keeps scores within [300, 850].
-    const scoreUpdates: Map<string, number> = new Map();
+      const scoreUpdates: Map<string, number> = new Map();
 
     await withTransaction(async (client: PoolClient) => {
       for (const event of parsedEvents) {
@@ -591,10 +598,11 @@ export class EventIndexer {
             topics,
             value,
             interest_rate_bps,
-            term_ledgers
+            term_ledgers,
+            event_index
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          ON CONFLICT DO NOTHING
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          ON CONFLICT (tx_hash, event_index) DO NOTHING
           RETURNING event_id`,
           [
             event.eventId,
@@ -610,11 +618,48 @@ export class EventIndexer {
             event.value,
             event.interestRateBps ?? null,
             event.termLedgers ?? null,
+            event.eventIndex ?? 0,
           ],
         );
 
         if ((insertResult.rowCount ?? 0) > 0) {
           insertedEvents.push(event);
+
+          // Handle batch_receipt consumption and broadcast_idempotency status update
+          if (event.eventType === ('batch_receipt' as any)) {
+            if (event.batchId) {
+              await client.query(
+                `UPDATE broadcast_idempotency
+                 SET status = 'applied', ledger_seq = $1, tx_hash = $2
+                 WHERE batch_id = $3 AND status != 'applied'`,
+                [event.ledger, event.txHash, event.batchId],
+              );
+            }
+
+            if (event.receiptItems && event.receiptItems.length > 0) {
+              const { defaultPenalty } = sorobanService.getScoreConfig();
+              for (const item of event.receiptItems) {
+                if (item.status.type === 'Applied') {
+                  const loanIdNum = Number(item.loanId);
+                  if (Number.isFinite(loanIdNum) && loanIdNum > 0) {
+                    const borrowerRes = await client.query(
+                      `SELECT address FROM contract_events 
+                       WHERE loan_id = $1 AND address IS NOT NULL 
+                       LIMIT 1`,
+                      [loanIdNum],
+                    );
+                    const borrowerAddr = borrowerRes.rows[0]?.address;
+                    if (borrowerAddr) {
+                      scoreUpdates.set(
+                        borrowerAddr,
+                        (scoreUpdates.get(borrowerAddr) ?? 0) - defaultPenalty,
+                      );
+                    }
+                  }
+                }
+              }
+            }
+          }
 
           if (this.isAdminConfigEventType(event.eventType)) {
             await client.query(
@@ -699,6 +744,37 @@ export class EventIndexer {
       if (scoreUpdates.size > 0) {
         await updateUserScoresBulk(scoreUpdates, client);
       }
+
+      // Atomically advance indexer_state within this transaction
+      const maxLedger = parsedEvents.reduce(
+        (max, e) => Math.max(max, e.ledger),
+        0,
+      );
+      const lastTxHash = parsedEvents[parsedEvents.length - 1]?.txHash ?? null;
+      const contractId = parsedEvents[0]?.contractId ?? this.getContractId();
+
+      if (maxLedger > 0) {
+        const updateResult = await client.query(
+          `UPDATE indexer_state
+           SET last_ledger = GREATEST(last_ledger, $1),
+               last_tx_hash = $2,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE contract = $3`,
+          [maxLedger, lastTxHash, contractId],
+        );
+
+        if ((updateResult.rowCount ?? 0) === 0) {
+          await client.query(
+            `INSERT INTO indexer_state (contract, last_ledger, last_tx_hash)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (contract) DO UPDATE
+             SET last_ledger = GREATEST(indexer_state.last_ledger, EXCLUDED.last_ledger),
+                 last_tx_hash = EXCLUDED.last_tx_hash,
+                 updated_at = CURRENT_TIMESTAMP`,
+            [contractId, maxLedger, lastTxHash],
+          );
+        }
+      }
     });
     // withTransaction commits here; any error triggers automatic ROLLBACK
 
@@ -726,6 +802,9 @@ export class EventIndexer {
         ledger: event.ledger,
         ledgerClosedAt: event.ledgerClosedAt.toISOString(),
         txHash: event.txHash,
+        eventIndex: event.eventIndex ?? 0,
+        ...(event.batchId ? { batchId: event.batchId } : {}),
+        ...(event.receiptItems ? { receiptItems: event.receiptItems } : {}),
       });
 
       this.triggerNotification(event).catch((error) => {
@@ -751,6 +830,78 @@ export class EventIndexer {
   private parseEvent(event: SorobanRawEvent): ContractEvent | null {
     const type = this.decodeEventType(event.topic[0]);
     if (!type) return null;
+
+    let eventIndex = 0;
+    if (event.id && event.id.includes('-')) {
+      const parts = event.id.split('-');
+      const lastPart = parts[parts.length - 1];
+      const parsed = lastPart !== undefined ? parseInt(lastPart, 10) : NaN;
+      if (Number.isFinite(parsed)) eventIndex = parsed;
+    }
+
+    if (type === ('batch_receipt' as any)) {
+      let batchId = '';
+      if (event.topic[1]) {
+        try {
+          const native = scValToNative(event.topic[1]);
+          if (Buffer.isBuffer(native)) {
+            batchId = native.toString('hex');
+          } else if (native instanceof Uint8Array) {
+            batchId = Buffer.from(native).toString('hex');
+          } else {
+            batchId = String(native);
+          }
+        } catch {
+          batchId = event.topic[1].toXDR('hex');
+        }
+      }
+
+      const receiptItems: BatchReceiptItem[] = [];
+      try {
+        const rawItems = scValToNative(event.value);
+        if (Array.isArray(rawItems)) {
+          for (const item of rawItems) {
+            if (Array.isArray(item) && item.length >= 2) {
+              const loanIdStr = String(item[0]);
+              const rawStatus = item[1];
+              let status: ItemStatus = { type: 'Applied' };
+
+              if (
+                rawStatus === 'Applied' ||
+                rawStatus?.Applied !== undefined ||
+                rawStatus?.[0] === 'Applied'
+              ) {
+                status = { type: 'Applied' };
+              } else if (rawStatus?.Skipped !== undefined || rawStatus?.[0] === 'Skipped') {
+                const code = Number(rawStatus?.Skipped?.[0] ?? rawStatus?.[1] ?? 0);
+                status = { type: 'Skipped', code };
+              } else if (rawStatus?.Reverted !== undefined || rawStatus?.[0] === 'Reverted') {
+                const code = Number(rawStatus?.Reverted?.[0] ?? rawStatus?.[1] ?? 0);
+                status = { type: 'Reverted', code };
+              }
+
+              receiptItems.push({ loanId: loanIdStr, status });
+            }
+          }
+        }
+      } catch (err) {
+        logger.withContext().warn('Failed to parse batch_receipt items', { err });
+      }
+
+      return {
+        eventId: event.id,
+        eventType: 'batch_receipt' as any,
+        ledger: event.ledger,
+        ledgerClosedAt: new Date(event.ledgerClosedAt),
+        txHash: event.txHash,
+        contractId: event.contractId.toString(),
+        topics: event.topic.map((t) => t.toXDR('base64')),
+        value: event.value.toXDR('base64'),
+        batchId,
+        receiptItems,
+        eventIndex,
+      };
+    }
 
     let loanId: number | undefined;
     let address: string | undefined;
@@ -1010,6 +1161,7 @@ export class EventIndexer {
       contractId: event.contractId.toString(),
       topics: event.topic.map((topic) => topic.toXDR('base64')),
       value: event.value.toXDR('base64'),
+      eventIndex,
       ...(amount !== undefined ? { amount } : {}),
       ...(loanId !== undefined ? { loanId } : {}),
       ...(interestRateBps !== undefined ? { interestRateBps } : {}),
@@ -1259,6 +1411,9 @@ export class EventIndexer {
 
     try {
       const rawType = value.sym().toString();
+      if (rawType === 'batch_receipt') {
+        return 'batch_receipt' as any;
+      }
       const normalizedType = EVENT_TYPE_ALIASES[rawType] ?? rawType;
 
       return SUPPORTED_WEBHOOK_EVENT_TYPES.includes(normalizedType as WebhookEventType)

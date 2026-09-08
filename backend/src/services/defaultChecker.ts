@@ -6,7 +6,9 @@ import {
   nativeToScVal,
   rpc,
 } from '@stellar/stellar-sdk';
-import { query } from '../db/connection.js';
+import { query, withTransaction, type PoolClient } from '../db/connection.js';
+import { randomBytes } from 'node:crypto';
+import { LoanError, type OpKind } from '../types/batchTypes.generated.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../errors/AppError.js';
 import { createSorobanRpcServer, getStellarNetworkPassphrase } from '../config/stellar.js';
@@ -340,80 +342,161 @@ export class DefaultChecker {
    * Builds and submits a Soroban transaction to mark loans as defaulted.
    * Invokes `check_defaults` on-chain; results in state changes and fee consumption.
    */
+  /**
+   * Builds and submits a Soroban transaction to mark loans as defaulted.
+   * Serializes sequence allocation under a PostgreSQL advisory lock (hash of 'default_checker_seq_allocator')
+   * to eliminate txBAD_SEQ contention across concurrent batch builders.
+   * Enforces broadcast idempotency via broadcast_idempotency table.
+   */
   private async submitCheckDefaults(
     server: rpc.Server,
     signer: Keypair,
     passphrase: string,
     loanIds: number[],
   ): Promise<DefaultCheckBatchResult> {
-    const account = await server.getAccount(signer.publicKey());
+    const opKind: OpKind = 'ProcessDefaults';
+    const batchId = randomBytes(32).toString('hex');
 
-    const loanIdsScVal = nativeToScVal(loanIds, { type: 'u32' });
+    return withTransaction(async (client: PoolClient) => {
+      // Advisory transaction lock serialized allocator
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('default_checker_seq_allocator'))`);
 
-    const tx = new TransactionBuilder(account, {
-      fee: BASE_FEE,
-      networkPassphrase: passphrase,
-    })
-      .addOperation(
-        Operation.invokeContractFunction({
-          contract: this.contractId,
-          function: 'check_defaults',
-          args: [loanIdsScVal],
-        }),
-      )
-      .setTimeout(30)
-      .build();
+      // 1. Allocate next monotonic application nonce
+      const nonceRes = await client.query(
+        `SELECT nonce FROM broadcast_idempotency 
+         WHERE op_key LIKE $1 
+         ORDER BY nonce DESC LIMIT 1`,
+        [`${this.contractId}:${opKind}:%`],
+      );
+      const lastNonce = nonceRes.rows?.[0]?.nonce;
+      const nextNonce = lastNonce != null ? BigInt(lastNonce) + 1n : 1n;
+      const opKey = `${this.contractId}:${opKind}:${nextNonce}`;
 
-    let prepared;
-    try {
-      prepared = await server.prepareTransaction(tx);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { loanIds, error: `prepareTransaction failed: ${message}` };
-    }
+      // 2. Insert-or-noop before building
+      const insertRes = await client.query(
+        `INSERT INTO broadcast_idempotency (op_key, batch_id, nonce, status)
+         VALUES ($1, $2, $3, 'pending')
+         ON CONFLICT (op_key) DO NOTHING
+         RETURNING op_key`,
+        [opKey, batchId, nextNonce.toString()],
+      );
 
-    prepared.sign(signer);
+      const inserted = (insertRes.rowCount ?? 0) > 0 || (insertRes.rows?.length ?? 0) > 0;
+      if (!inserted) {
+        logger.withContext().info('Batch default operation already pending or terminal, skipping broadcast', {
+          opKey,
+          batchId,
+        });
+        return { loanIds, error: 'batch already in flight or terminal' };
+      }
 
-    let send;
-    try {
-      send = await server.sendTransaction(prepared);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { loanIds, error: `sendTransaction failed: ${message}` };
-    }
+      // 3. Build transaction with fresh sequence number
+      const account = await server.getAccount(signer.publicKey());
+      const loanIdsScVal = nativeToScVal(loanIds, { type: 'u32' });
 
-    const txHash = send.hash;
-    const submitStatus = send.status;
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: passphrase,
+      })
+        .addOperation(
+          Operation.invokeContractFunction({
+            contract: this.contractId,
+            function: 'check_defaults',
+            args: [loanIdsScVal],
+          }),
+        )
+        .setTimeout(30)
+        .build();
 
-    if (!txHash) {
+      let prepared;
+      try {
+        prepared = await server.prepareTransaction(tx);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await client.query(`UPDATE broadcast_idempotency SET status = 'failed' WHERE op_key = $1`, [opKey]);
+        return { loanIds, error: `prepareTransaction failed: ${message}` };
+      }
+
+      prepared.sign(signer);
+
+      let send;
+      try {
+        send = await server.sendTransaction(prepared);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await client.query(`UPDATE broadcast_idempotency SET status = 'failed' WHERE op_key = $1`, [opKey]);
+        return { loanIds, error: `sendTransaction failed: ${message}` };
+      }
+
+      const txHash = send.hash;
+      const submitStatus = send.status;
+
+      if (!txHash) {
+        await client.query(`UPDATE broadcast_idempotency SET status = 'failed' WHERE op_key = $1`, [opKey]);
+        return {
+          loanIds,
+          ...(submitStatus !== undefined ? { submitStatus } : {}),
+          error: 'sendTransaction returned no hash',
+        };
+      }
+
+      // Transition pending -> submitted on RPC accept
+      await client.query(
+        `UPDATE broadcast_idempotency 
+         SET status = 'submitted', tx_hash = $1 
+         WHERE op_key = $2`,
+        [txHash, opKey],
+      );
+
+      let txStatus: string | undefined;
+      try {
+        const polled = await server.pollTransaction(txHash, {
+          attempts: this.pollAttempts,
+          sleepStrategy: (_attempt: number) => this.pollSleepMs,
+        });
+        txStatus = polled.status;
+
+        if (txStatus === 'SUCCESS') {
+          await client.query(
+            `UPDATE broadcast_idempotency SET status = 'applied' WHERE op_key = $1`,
+            [opKey],
+          );
+        } else if (txStatus === 'FAILED') {
+          const resultXdr = (polled as any).resultXdr ?? '';
+          if (resultXdr.includes(String(LoanError.NonceReused)) || resultXdr.includes('NonceReused')) {
+            // Idempotent success: on-chain nonce already advanced, operation is durably committed
+            await client.query(
+              `UPDATE broadcast_idempotency SET status = 'applied' WHERE op_key = $1`,
+              [opKey],
+            );
+          } else {
+            await client.query(
+              `UPDATE broadcast_idempotency SET status = 'failed' WHERE op_key = $1`,
+              [opKey],
+            );
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.withContext().warn('Default check transaction polling failed', {
+          txHash,
+          message,
+        });
+        if (message.includes('NonceReused') || message.includes(String(LoanError.NonceReused))) {
+          await client.query(
+            `UPDATE broadcast_idempotency SET status = 'applied' WHERE op_key = $1`,
+            [opKey],
+          );
+        }
+      }
+
       return {
         loanIds,
-        ...(submitStatus !== undefined ? { submitStatus } : {}),
-        error: 'sendTransaction returned no hash',
-      };
-    }
-
-    let txStatus: string | undefined;
-    try {
-      const polled = await server.pollTransaction(txHash, {
-        attempts: this.pollAttempts,
-        sleepStrategy: (_attempt: number) => this.pollSleepMs,
-      });
-      txStatus = polled.status;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.withContext().warn('Default check transaction polling failed', {
         txHash,
-        message,
-      });
-    }
-
-    return {
-      loanIds,
-      txHash,
-      ...(submitStatus !== undefined ? { submitStatus } : {}),
-      ...(txStatus !== undefined ? { txStatus } : {}),
-    };
+        ...(submitStatus !== undefined ? { submitStatus } : {}),
+        ...(txStatus !== undefined ? { txStatus } : {}),
+      };
+    });
   }
 
   /**
@@ -602,8 +685,8 @@ export class DefaultChecker {
       });
 
       const loansChecked = targetIds.length;
-      const successfulSubmissions = batchResults.filter((b) => !b.error && b.txHash).length;
-      const failedSubmissions = batchResults.filter((b) => b.error || !b.txHash).length;
+      const successfulSubmissions = batchResults.filter((b) => !b.error && !b.timedOut && b.txHash).length;
+      const failedSubmissions = batchResults.filter((b) => Boolean(b.error || b.timedOut || !b.txHash)).length;
 
       logger.withContext().info('default_check.run.complete', {
         runId,

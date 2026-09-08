@@ -1,4 +1,4 @@
-use crate::{DataKey, Loan, LoanError, LoanManager, LoanManagerClient, LoanStatus};
+use crate::{DataKey, ItemStatus, Loan, LoanError, LoanManager, LoanManagerClient, LoanStatus, OpKind};
 use lending_pool::{LendingPool, LendingPoolClient};
 use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::{Events, Ledger as _};
@@ -5383,4 +5383,119 @@ fn test_uncollateralized_loan_follows_default_path_after_default_window() {
     assert_eq!(nft_client.get_score(&borrower), 600); // 650 - 50 penalty
     assert_eq!(nft_client.get_default_count(&borrower), 1);
     assert!(nft_client.is_seized(&borrower));
+}
+
+#[test]
+fn test_process_defaults_batch_with_nonce_and_replay_protection() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Fast-forward past due date + default window
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+
+    let current_ledger = env.ledger().sequence();
+    let batch_id = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
+    let mut loan_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    loan_ids.push_back(loan_id as u64);
+
+    // Nonce starts at 0
+    assert_eq!(manager.get_op_nonce(&admin, &OpKind::ProcessDefaults), 0);
+
+    // 1. Batch expired error if valid_until_ledger < current_ledger
+    let expired_res = manager.try_process_defaults_batch(&admin, &batch_id, &loan_ids, &1, &(current_ledger - 1));
+    assert_eq!(expired_res, Err(Ok(LoanError::BatchWindowExpired)));
+
+    // 2. Nonce mismatch error if nonce != stored + 1 (e.g. nonce = 2 when stored = 0)
+    let bad_nonce_res = manager.try_process_defaults_batch(&admin, &batch_id, &loan_ids, &2, &(current_ledger + 100));
+    assert_eq!(bad_nonce_res, Err(Ok(LoanError::NonceReused)));
+
+    // 3. Success with nonce = 1, valid_until_ledger = current_ledger + 100
+    let res = manager.process_defaults_batch(&admin, &batch_id, &loan_ids, &1, &(current_ledger + 100));
+    assert_eq!(res.len(), 1);
+    let item = res.get(0).unwrap();
+    assert_eq!(item.0, loan_id as u64);
+    assert_eq!(item.1, ItemStatus::Applied);
+
+    // Verify stored nonce bumped to 1
+    assert_eq!(manager.get_op_nonce(&admin, &OpKind::ProcessDefaults), 1);
+
+    // 4. Replay attempt with same nonce = 1 traps NonceReused
+    let replay_res = manager.try_process_defaults_batch(&admin, &batch_id, &loan_ids, &1, &(current_ledger + 100));
+    assert_eq!(replay_res, Err(Ok(LoanError::NonceReused)));
+}
+
+#[test]
+fn test_approve_loans_batch_with_nonce_and_replay_protection() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &650,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &20_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+
+    env.ledger().set_sequence_number(100);
+    let current_ledger = env.ledger().sequence();
+    let batch_id = soroban_sdk::BytesN::from_array(&env, &[2u8; 32]);
+    let mut loan_ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    loan_ids.push_back(loan_id as u64);
+
+    // Nonce starts at 0
+    assert_eq!(manager.get_op_nonce(&admin, &OpKind::ApproveLoans), 0);
+
+    // BatchWindowExpired test
+    let expired_res = manager.try_approve_loans_batch(&admin, &batch_id, &loan_ids, &1, &(current_ledger - 1));
+    assert_eq!(expired_res, Err(Ok(LoanError::BatchWindowExpired)));
+
+    // Success with nonce = 1
+    let res = manager.approve_loans_batch(&admin, &batch_id, &loan_ids, &1, &(current_ledger + 100));
+    assert_eq!(res.len(), 1);
+    let item = res.get(0).unwrap();
+    assert_eq!(item.0, loan_id as u64);
+    assert_eq!(item.1, ItemStatus::Applied);
+
+    // Stored nonce bumped to 1
+    assert_eq!(manager.get_op_nonce(&admin, &OpKind::ApproveLoans), 1);
+
+    // Replay attempt traps NonceReused
+    let replay_res = manager.try_approve_loans_batch(&admin, &batch_id, &loan_ids, &1, &(current_ledger + 100));
+    assert_eq!(replay_res, Err(Ok(LoanError::NonceReused)));
+
+    // Independent op_kinds: OpKind::ProcessDefaults is still 0
+    assert_eq!(manager.get_op_nonce(&admin, &OpKind::ProcessDefaults), 0);
 }

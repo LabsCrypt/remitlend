@@ -1,0 +1,23 @@
+.PHONY: build test-unit test-integration test-e2e-container generate-types
+
+build:
+	node scripts/generate-types.mjs --check
+	cargo build --manifest-path contracts/Cargo.toml --target wasm32-unknown-unknown --release
+	npm run build -w backend
+	npm run build -w frontend
+
+test-unit:
+	cargo test --manifest-path contracts/Cargo.toml
+	npm run test -w backend
+	npm run test -w frontend
+
+test-integration:
+	npm run migrate:up -w backend
+	npm run migrate:down -w backend -- --count 3
+	npm run migrate:up -w backend
+
+test-e2e-container:
+	node scripts/e2e-batch-replay.mjs
+
+generate-types:
+	node scripts/generate-types.mjs
