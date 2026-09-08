@@ -929,3 +929,39 @@ fn max_delay_finalize_window_is_one_second() {
     client.finalize_admin_transfer(&admin);
     assert_eq!(client.get_current_admin(), proposed);
 }
+
+#[test]
+fn test_execute_with_nonce_and_replay_protection() {
+    let (env, client, admin, target) = setup();
+    let proposed = Address::generate(&env);
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+
+    set_ts(&env, 1000);
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    client.approve_transfer(&s);
+
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+
+    // Initial nonce is 0
+    assert_eq!(client.get_op_nonce(&admin, &OpKind::GovernanceExecute), 0);
+
+    // Calling execute with wrong nonce (e.g. 2 instead of 1) fails with NonceReused
+    let bad_nonce_res = client.try_execute(&admin, &1, &2);
+    assert_eq!(bad_nonce_res, Err(Ok(GovernanceError::NonceReused)));
+
+    // Calling execute with valid monotonic nonce (1) succeeds
+    let res = client.try_execute(&admin, &1, &1);
+    assert_eq!(res, Ok(Ok(())));
+
+    // Nonce bumped to 1
+    assert_eq!(client.get_op_nonce(&admin, &OpKind::GovernanceExecute), 1);
+    assert_eq!(client.get_current_admin(), proposed);
+
+    let target_client = MockTargetClient::new(&env, &target);
+    assert_eq!(target_client.get_admin(), proposed);
+
+    // Re-execution with the same nonce (1) fails with NonceReused
+    let replay_res = client.try_execute(&admin, &1, &1);
+    assert_eq!(replay_res, Err(Ok(GovernanceError::NonceReused)));
+}

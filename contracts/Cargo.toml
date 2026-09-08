@@ -17,9 +17,11 @@ soroban-sdk = "22.0.0"
 money = { path = "money" }
 
 [profile.dev]
+debug = 0
 overflow-checks = true
 
 [profile.test]
+debug = 0
 overflow-checks = true
 
 [profile.release]

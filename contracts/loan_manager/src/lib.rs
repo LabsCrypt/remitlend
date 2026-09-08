@@ -62,6 +62,24 @@ pub enum LoanError {
     InsufficientCollateral = 26,
     LoanNotLiquidatable = 27,
     LoanNotPurgable = 28,
+    NonceReused = 29,
+    BatchWindowExpired = 30,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum OpKind {
+    ProcessDefaults = 0,
+    ApproveLoans = 1,
+    GovernanceExecute = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ItemStatus {
+    Applied,
+    Skipped(u32),
+    Reverted(u32),
 }
 
 #[contracttype]
@@ -133,6 +151,7 @@ pub enum DataKey {
     MinRateBps,
     MaxRateBps,
     MigratedVersion,
+    OpNonce(Address, OpKind),
 }
 
 #[contract]
@@ -2911,6 +2930,214 @@ impl LoanManager {
         }
 
         Ok(defaulted_count)
+    }
+
+    pub fn process_defaults_batch(
+        env: Env,
+        admin: Address,
+        batch_id: BytesN<32>,
+        loan_ids: Vec<u64>,
+        nonce: u64,
+        valid_until_ledger: u32,
+    ) -> Result<Vec<(u64, ItemStatus)>, LoanError> {
+        admin.require_auth();
+        Self::require_not_paused(&env)?;
+
+        if env.ledger().sequence() > valid_until_ledger {
+            return Err(LoanError::BatchWindowExpired);
+        }
+
+        let nonce_key = DataKey::OpNonce(admin.clone(), OpKind::ProcessDefaults);
+        let stored_nonce: u64 = env.storage().persistent().get(&nonce_key).unwrap_or(0);
+        if nonce != stored_nonce.checked_add(1).ok_or(LoanError::NonceReused)? {
+            return Err(LoanError::NonceReused);
+        }
+
+        let mut receipt_items: Vec<(u64, ItemStatus)> = Vec::new(&env);
+        let default_window = Self::default_window_ledgers(&env);
+        let current_ledger = env.ledger().sequence();
+
+        for loan_id_u64 in loan_ids.iter() {
+            let loan_id = loan_id_u64 as u32;
+            let loan_key = DataKey::Loan(loan_id);
+            let mut loan: Loan = match env.storage().persistent().get(&loan_key) {
+                Some(l) => l,
+                None => {
+                    receipt_items.push_back((loan_id_u64, ItemStatus::Skipped(1))); // LoanNotFound
+                    continue;
+                }
+            };
+            Self::bump_persistent_ttl(&env, &loan_key);
+
+            if loan.status != LoanStatus::Approved {
+                receipt_items.push_back((loan_id_u64, ItemStatus::Skipped(2))); // LoanNotActive
+                continue;
+            }
+
+            let default_eligible_after = match loan.due_date.checked_add(default_window) {
+                Some(d) => d,
+                None => {
+                    receipt_items.push_back((loan_id_u64, ItemStatus::Reverted(3)));
+                    continue;
+                }
+            };
+
+            if current_ledger <= default_eligible_after {
+                receipt_items.push_back((loan_id_u64, ItemStatus::Skipped(4))); // LoanNotPastDue
+                continue;
+            }
+
+            loan.status = LoanStatus::Defaulted;
+            let token: Address = match env.storage().instance().get(&DataKey::Token) {
+                Some(t) => t,
+                None => {
+                    receipt_items.push_back((loan_id_u64, ItemStatus::Reverted(5)));
+                    continue;
+                }
+            };
+            Self::adjust_total_outstanding(&env, &token, -loan.amount);
+            env.storage().persistent().set(&loan_key, &loan);
+            Self::bump_persistent_ttl(&env, &loan_key);
+            Self::decrement_borrower_loan_count(&env, &loan.borrower);
+            Self::seize_collateral_internal(&env, loan_id);
+
+            let nft_contract = Self::nft_contract(&env);
+            let nft_client = NftClient::new(&env, &nft_contract);
+            nft_client.decrease_score(
+                &loan.borrower,
+                &Self::DEFAULT_SCORE_PENALTY_POINTS,
+                &Some(env.current_contract_address()),
+            );
+            nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
+
+            events::loan_defaulted(&env, loan_id, loan.borrower.clone());
+            receipt_items.push_back((loan_id_u64, ItemStatus::Applied));
+        }
+
+        events::batch_receipt(&env, batch_id, receipt_items.clone());
+
+        env.storage().persistent().set(&nonce_key, &nonce);
+        Self::bump_persistent_ttl(&env, &nonce_key);
+
+        Ok(receipt_items)
+    }
+
+    pub fn approve_loans_batch(
+        env: Env,
+        admin: Address,
+        batch_id: BytesN<32>,
+        loan_ids: Vec<u64>,
+        nonce: u64,
+        valid_until_ledger: u32,
+    ) -> Result<Vec<(u64, ItemStatus)>, LoanError> {
+        use soroban_sdk::token::TokenClient;
+
+        admin.require_auth();
+        Self::require_not_paused(&env)?;
+
+        if env.ledger().sequence() > valid_until_ledger {
+            return Err(LoanError::BatchWindowExpired);
+        }
+
+        let nonce_key = DataKey::OpNonce(admin.clone(), OpKind::ApproveLoans);
+        let stored_nonce: u64 = env.storage().persistent().get(&nonce_key).unwrap_or(0);
+        if nonce != stored_nonce.checked_add(1).ok_or(LoanError::NonceReused)? {
+            return Err(LoanError::NonceReused);
+        }
+
+        let mut receipt_items: Vec<(u64, ItemStatus)> = Vec::new(&env);
+
+        let lending_pool: Address = match env.storage().instance().get(&DataKey::LendingPool) {
+            Some(p) => p,
+            None => return Err(LoanError::NotInitialized),
+        };
+        let token: Address = match env.storage().instance().get(&DataKey::Token) {
+            Some(t) => t,
+            None => return Err(LoanError::NotInitialized),
+        };
+        let nft_contract: Address = match env.storage().instance().get(&DataKey::NftContract) {
+            Some(n) => n,
+            None => return Err(LoanError::NotInitialized),
+        };
+
+        let pool_client = PoolClient::new(&env, &lending_pool);
+        let nft_client = NftClient::new(&env, &nft_contract);
+        let token_client = TokenClient::new(&env, &token);
+
+        for loan_id_u64 in loan_ids.iter() {
+            let loan_id = loan_id_u64 as u32;
+            let loan_key = DataKey::Loan(loan_id);
+            let mut loan: Loan = match env.storage().persistent().get(&loan_key) {
+                Some(l) => l,
+                None => {
+                    receipt_items.push_back((loan_id_u64, ItemStatus::Skipped(1))); // LoanNotFound
+                    continue;
+                }
+            };
+            Self::bump_persistent_ttl(&env, &loan_key);
+
+            if loan.status != LoanStatus::Pending {
+                receipt_items.push_back((loan_id_u64, ItemStatus::Skipped(2))); // LoanNotPending
+                continue;
+            }
+
+            if nft_client.is_seized(&loan.borrower) {
+                receipt_items.push_back((loan_id_u64, ItemStatus::Reverted(LoanError::SeizedBorrower as u32)));
+                continue;
+            }
+
+            if loan.term_ledgers == 0 {
+                receipt_items.push_back((loan_id_u64, ItemStatus::Reverted(LoanError::InvalidTerm as u32)));
+                continue;
+            }
+
+            let pool_balance = pool_client.pool_balance(&token);
+            if pool_balance < loan.amount {
+                receipt_items.push_back((loan_id_u64, ItemStatus::Reverted(LoanError::InsufficientPoolLiquidity as u32)));
+                continue;
+            }
+
+            let amount_to_transfer = loan.amount;
+            let borrower_to_receive = loan.borrower.clone();
+            let current_ledger = env.ledger().sequence();
+            let due_date = match current_ledger.checked_add(loan.term_ledgers) {
+                Some(d) => d,
+                None => {
+                    receipt_items.push_back((loan_id_u64, ItemStatus::Reverted(LoanError::InvalidTerm as u32)));
+                    continue;
+                }
+            };
+
+            loan.status = LoanStatus::Approved;
+            loan.last_interest_ledger = current_ledger;
+            loan.last_late_fee_ledger = due_date;
+            loan.due_date = due_date;
+
+            env.storage().persistent().set(&loan_key, &loan);
+            Self::bump_persistent_ttl(&env, &loan_key);
+            Self::adjust_total_outstanding(&env, &token, loan.amount);
+
+            token_client.transfer(&lending_pool, &borrower_to_receive, &amount_to_transfer);
+
+            events::loan_approved(&env, loan_id, borrower_to_receive.clone(), loan.interest_rate_bps, loan.term_ledgers);
+
+            receipt_items.push_back((loan_id_u64, ItemStatus::Applied));
+        }
+
+        events::batch_receipt(&env, batch_id, receipt_items.clone());
+
+        env.storage().persistent().set(&nonce_key, &nonce);
+        Self::bump_persistent_ttl(&env, &nonce_key);
+
+        Ok(receipt_items)
+    }
+
+    pub fn get_op_nonce(env: Env, address: Address, op_kind: OpKind) -> u64 {
+        let nonce_key = DataKey::OpNonce(address, op_kind);
+        if env.storage().persistent().has(&nonce_key) {
+            Self::bump_persistent_ttl(&env, &nonce_key);
+        }
+        env.storage().persistent().get(&nonce_key).unwrap_or(0)
     }
 }
 

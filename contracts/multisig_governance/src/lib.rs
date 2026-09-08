@@ -60,6 +60,21 @@ pub enum GovernanceError {
     ProposalIdMismatch = 4018,
     ProposalNotActive = 4019,
     DuplicateSigner = 4020,
+    NonceReused = 4022,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum OpKind {
+    ProcessDefaults = 0,
+    ApproveLoans = 1,
+    GovernanceExecute = 2,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    OpNonce(Address, OpKind),
 }
 
 /// Status of a pending admin transfer proposal.
@@ -438,6 +453,90 @@ impl GovernanceContract {
             },
         );
         Ok(())
+    }
+
+    /// Execute a finalized proposal bound with caller-supplied application nonce.
+    /// Re-execution with a consumed nonce traps GovernanceError::NonceReused.
+    pub fn execute(
+        env: Env,
+        caller: Address,
+        proposal_id: u32,
+        nonce: u64,
+    ) -> Result<(), GovernanceError> {
+        caller.require_auth();
+
+        let nonce_key = DataKey::OpNonce(caller.clone(), OpKind::GovernanceExecute);
+        let stored_nonce: u64 = env.storage().persistent().get(&nonce_key).unwrap_or(0);
+        if nonce != stored_nonce.checked_add(1).ok_or(GovernanceError::NonceReused)? {
+            return Err(GovernanceError::NonceReused);
+        }
+
+        let pending: PendingTransfer = env
+            .storage()
+            .instance()
+            .get(&KEY_PENDING)
+            .ok_or(GovernanceError::NoPendingTransfer)?;
+
+        if pending.id != proposal_id {
+            return Err(GovernanceError::ProposalIdMismatch);
+        }
+
+        if pending.status != ProposalStatus::Active {
+            return Err(GovernanceError::ProposalNotActive);
+        }
+
+        let target: Address = env
+            .storage()
+            .instance()
+            .get(&KEY_TARGET)
+            .ok_or(GovernanceError::TargetNotSet)?;
+
+        let now = env.ledger().timestamp();
+
+        if now < pending.executable_after {
+            return Err(GovernanceError::TimelockNotElapsed);
+        }
+
+        let expiry_time = pending.proposed_at.saturating_add(PROPOSAL_TTL_SECONDS);
+        if now >= expiry_time {
+            return Err(GovernanceError::ProposalExpired);
+        }
+
+        let approval_count = pending.approvals.len();
+        if approval_count < pending.threshold {
+            return Err(GovernanceError::ThresholdNotMet);
+        }
+
+        let new_admin = pending.proposed_admin.clone();
+
+        env.invoke_contract::<()>(
+            &target,
+            &symbol_short!("set_admin"),
+            soroban_sdk::vec![&env, new_admin.clone().into_val(&env)],
+        );
+
+        env.storage().instance().remove(&KEY_PENDING);
+        env.storage().instance().set(&KEY_ADMIN, &new_admin);
+        env.storage().instance().set(&KEY_LAST_CANCELLED_AT, &now);
+
+        // Bump OpNonce
+        env.storage().persistent().set(&nonce_key, &nonce);
+
+        env.events().publish(
+            (symbol_short!("GovFin"), new_admin.clone()),
+            AdminTransferFinalizedEvent {
+                new_admin,
+                finalized_by: caller,
+                approval_count,
+                timestamp: now,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn get_op_nonce(env: Env, address: Address, op_kind: OpKind) -> u64 {
+        let nonce_key = DataKey::OpNonce(address, op_kind);
+        env.storage().persistent().get(&nonce_key).unwrap_or(0)
     }
 
     // ── Cancel ────────────────────────────────────────────────────────────────

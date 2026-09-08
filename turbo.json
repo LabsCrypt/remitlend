@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**"]
+    },
+    "test:unit": {},
+    "test:integration": {},
+    "test:e2e:container": {},
+    "generate:types": {}
+  }
+}
