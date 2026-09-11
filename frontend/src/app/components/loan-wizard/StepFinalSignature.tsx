@@ -22,6 +22,7 @@ import {
 import type { LoanWizardData } from "./LoanApplicationWizard";
 
 const ANNUAL_RATE_PERCENT = 12;
+const DEFAULT_TERM_LEDGERS = 17280;
 
 function formatMoney(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -95,7 +96,7 @@ export function StepFinalSignature({
         const xdr = await buildUnsignedLoanRequestXdr({
           borrower: borrowerAddress,
           amount: principal,
-          term: data.termDays * 17280,
+          term: data.termDays * DEFAULT_TERM_LEDGERS,
           contractId: managerContractId,
           decimals: getAssetDecimals(data.asset),
         });
@@ -188,7 +189,7 @@ export function StepFinalSignature({
             amount: principal,
             currency: data.asset,
             interestRate: ANNUAL_RATE_PERCENT,
-            termDays: data.termDays,
+            termDays: data.termDays * DEFAULT_TERM_LEDGERS,
             borrowerId: borrowerAddress,
           });
 
