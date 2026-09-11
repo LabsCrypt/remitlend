@@ -4,7 +4,7 @@ import { notificationService } from '../services/notificationService.js';
 import { jobMetricsService } from '../services/jobMetricsService.js';
 import logger from '../utils/logger.js';
 
-let scheduledTask: cron.ScheduledTask | null = null;
+let scheduledTask: ReturnType<typeof cron.schedule> | null = null;
 let inFlight = false;
 
 /**

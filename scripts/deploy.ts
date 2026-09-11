@@ -269,7 +269,7 @@ async function main() {
     // ── 4. Persist contract IDs ─────────────────────────────────────────────────
     console.log('\n[4/4] Writing contract addresses to .env files…');
 
-    const envBlock = [
+    const frontendEnvBlock = [
         ``,
         `# RemitLend contracts — ${network} — ${new Date().toISOString()}`,
         `NEXT_PUBLIC_NFT_CONTRACT_ID=${nftContractId}`,
@@ -278,8 +278,17 @@ async function main() {
         `NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID=${govContractId}`,
     ].join('\n');
 
-    await fs.appendFile(path.join(__dirname, '../frontend/.env.local'), envBlock);
-    await fs.appendFile(path.join(__dirname, '../backend/.env'), envBlock);
+    const backendEnvBlock = [
+        ``,
+        `# RemitLend contracts — ${network} — ${new Date().toISOString()}`,
+        `REMITTANCE_NFT_CONTRACT_ID=${nftContractId}`,
+        `LENDING_POOL_CONTRACT_ID=${poolContractId}`,
+        `LOAN_MANAGER_CONTRACT_ID=${managerContractId}`,
+        `MULTISIG_GOVERNANCE_CONTRACT_ID=${govContractId}`,
+    ].join('\n');
+
+    await fs.appendFile(path.join(__dirname, '../frontend/.env.local'), frontendEnvBlock);
+    await fs.appendFile(path.join(__dirname, '../backend/.env'), backendEnvBlock);
 
     console.log('\nDeployment complete.');
     console.log(`  RemittanceNFT  : ${nftContractId}`);
