@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { TokenBalance, WalletNetwork, WalletStatus } from "../../stores/useWalletStore";
 import { useWalletStore } from "../../stores/useWalletStore";
+import { getNetworkPassphrase } from "../../utils/networkPassphrase";
 
 type FreighterApi = typeof import("@stellar/freighter-api");
 
@@ -237,13 +238,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
   function disconnectWallet() {
     disconnect();
   }
-
-  const NETWORK_PASSPHRASES: Record<string, string> = {
-    PUBLIC: "Public Global Stellar Network ; October 2015",
-    TESTNET: "Test SDF Network ; September 2015",
-    FUTURENET: "Test SDF Future Network ; October 2022",
-    STANDALONE: "Standalone Network ; Separate from SDF",
-  };
 
   async function signTransaction(
     unsignedTxXdr: string,
