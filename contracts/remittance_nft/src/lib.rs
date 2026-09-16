@@ -1194,7 +1194,7 @@ impl RemittanceNFT {
             return Vec::new(&env);
         }
         let mut page = Vec::new(&env);
-        let end = (offset + limit).min(len);
+        let end = offset.saturating_add(limit).min(len);
         for idx in offset..end {
             page.push_back(history.get(idx).unwrap());
         }
