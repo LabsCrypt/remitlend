@@ -93,11 +93,7 @@ export function LendPageClient() {
     await withdrawalOp.executeWithdrawal({ amount, depositorAddress: address });
   };
 
-  const {
-    data: poolStats,
-    isLoading: poolLoading,
-    isError: poolError,
-  } = usePoolStats({ enabled: !!address });
+  const { data: poolStats, isLoading: poolLoading, isError: poolError } = usePoolStats();
   const {
     data: depositor,
     isLoading: depositorLoading,
@@ -156,14 +152,94 @@ export function LendPageClient() {
   const isWithdrawCooldownActive = cooldownRemainingSeconds > 0;
   const cooldownMinutes = Math.ceil(cooldownRemainingSeconds / 60);
 
+  const isLoading = poolLoading || depositorLoading || loansLoading || historyLoading;
+
+  // Pool-level analytics (TVL, utilization, APY, active loans) are public and must render
+  // whether or not a wallet is connected. Only wallet-scoped panels below are gated.
+  const poolOverview = (
+    <ErrorBoundary scope="lender overview" variant="section">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: "Total Pool Size",
+            value: formatCurrency(poolStats?.totalDeposits ?? 0),
+            icon: CircleDollarSign,
+          },
+          {
+            label: "Utilization Rate",
+            value: formatPercent(poolStats?.utilizationRate ?? 0),
+            icon: Percent,
+            tooltip:
+              "Utilization Rate: How much of the pool is currently loaned out. Higher utilization can increase yield, but may reduce instant liquidity.",
+          },
+          {
+            label: "Current APY",
+            value: formatPercent(poolStats?.apy ?? 0),
+            icon: Activity,
+            tooltip:
+              "APY (Annual Percentage Yield): The estimated yearly return on deposits, including compounding. This may vary with pool utilization and repayments.",
+          },
+          {
+            label: "Active Loans",
+            value: String(poolStats?.activeLoansCount ?? 0),
+            icon: HandCoins,
+          },
+        ].map((item) => (
+          <article
+            key={item.label}
+            className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none"
+          >
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+                <item.icon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  {item.label}
+                  {"tooltip" in item && item.tooltip ? (
+                    <Tooltip content={item.tooltip} label={`${item.label} info`} />
+                  ) : null}
+                </p>
+                {isLoading ? (
+                  <Skeleton className="mt-1 h-7 w-24" />
+                ) : (
+                  <p className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+                    {item.value}
+                  </p>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
+    </ErrorBoundary>
+  );
+
   if (!address) {
     return (
-      <section className="rounded-3xl border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-950">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Lender Dashboard</h1>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          Connect your wallet to view your lending pool portfolio.
-        </p>
-      </section>
+      <main className="space-y-6">
+        <header>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
+            Lender Portal
+          </p>
+          <h1 className="mt-2 text-3xl font-bold text-zinc-900 dark:text-zinc-50">Lend</h1>
+          <p className="mt-2 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
+            Track pool performance, manage deposits, and monitor yield growth.
+          </p>
+        </header>
+
+        {poolOverview}
+
+        <section className="rounded-3xl border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-950">
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Connect your wallet to start lending
+          </h2>
+          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+            Pool metrics above are public. Connect your wallet to deposit, withdraw, and track your
+            lending portfolio.
+          </p>
+        </section>
+      </main>
     );
   }
 
@@ -174,8 +250,6 @@ export function LendPageClient() {
       </section>
     );
   }
-
-  const isLoading = poolLoading || depositorLoading || loansLoading || historyLoading;
 
   return (
     <main className="space-y-6">
@@ -226,62 +300,7 @@ export function LendPageClient() {
         )}
       </header>
 
-      <ErrorBoundary scope="lender overview" variant="section">
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: "Total Pool Size",
-              value: formatCurrency(poolStats?.totalDeposits ?? 0),
-              icon: CircleDollarSign,
-            },
-            {
-              label: "Utilization Rate",
-              value: formatPercent(poolStats?.utilizationRate ?? 0),
-              icon: Percent,
-              tooltip:
-                "Utilization Rate: How much of the pool is currently loaned out. Higher utilization can increase yield, but may reduce instant liquidity.",
-            },
-            {
-              label: "Current APY",
-              value: formatPercent(poolStats?.apy ?? 0),
-              icon: Activity,
-              tooltip:
-                "APY (Annual Percentage Yield): The estimated yearly return on deposits, including compounding. This may vary with pool utilization and repayments.",
-            },
-            {
-              label: "Active Loans",
-              value: String(poolStats?.activeLoansCount ?? 0),
-              icon: HandCoins,
-            },
-          ].map((item) => (
-            <article
-              key={item.label}
-              className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-none"
-            >
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
-                  <item.icon className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    {item.label}
-                    {"tooltip" in item && item.tooltip ? (
-                      <Tooltip content={item.tooltip} label={`${item.label} info`} />
-                    ) : null}
-                  </p>
-                  {isLoading ? (
-                    <Skeleton className="mt-1 h-7 w-24" />
-                  ) : (
-                    <p className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-                      {item.value}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </article>
-          ))}
-        </section>
-      </ErrorBoundary>
+      {poolOverview}
 
       <ErrorBoundary scope="depositor summary" variant="section">
         <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
