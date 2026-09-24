@@ -3,6 +3,7 @@ import { AppError } from '../errors/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { notificationService, type NotificationType } from '../services/notificationService.js';
 import { encodeCursor, decodeCursor, parseKeysetParams } from '../utils/pagination.js';
+import { getLoanState } from '../services/loanStateService.js';
 
 /**
  * List all loan disputes for admin review with cursor-based pagination.
@@ -127,16 +128,17 @@ export const listLoanDisputes = asyncHandler(async (req, res) => {
  */
 export const getLoanDispute = asyncHandler(async (req, res) => {
   const { disputeId } = req.params;
-  const disputeResult = await query(
-    `SELECT d.*, l.* AS loan FROM loan_disputes d JOIN loans l ON l.id = d.loan_id WHERE d.id = $1`,
-    [disputeId],
-  );
+  const disputeResult = await query(`SELECT * FROM loan_disputes WHERE id = $1`, [disputeId]);
 
   if (disputeResult.rows.length === 0) {
     throw AppError.notFound('Dispute not found');
   }
 
-  res.json({ success: true, dispute: disputeResult.rows[0] });
+  const dispute = disputeResult.rows[0];
+  // Loan state lives in the indexed event stream, not a `loans` table.
+  const loan = await getLoanState(dispute.loan_id as number);
+
+  res.json({ success: true, dispute: { ...dispute, loan } });
 });
 
 /**
