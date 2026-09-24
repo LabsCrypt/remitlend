@@ -11,7 +11,8 @@ const ADMIN = Keypair.random().publicKey();
 process.env.JWT_SECRET = 'test-jwt-secret-min-32-chars-long!!';
 process.env.ADMIN_WALLETS = ADMIN;
 
-// Loan fixtures keyed by the id used in the request path. PENDING satisfies
+// Loan fixtures keyed by the id used in the request path. The status is the
+// expected projection of the fixture's `contract_events`. PENDING satisfies
 // both the cancel (PENDING|OPEN) and reject (PENDING) guards.
 const loans: Record<string, { status: string; address: string }> = {
   'loan-123': { status: 'PENDING', address: BORROWER },
@@ -20,6 +21,28 @@ const loans: Record<string, { status: string; address: string }> = {
   'completed-loan': { status: 'COMPLETED', address: BORROWER },
   'loan-1': { status: 'PENDING', address: BORROWER },
 };
+
+// Simulates the aggregated `contract_events` projection for a loan.
+function derivedLoanRow(loanId: string, fixture: { status: string; address: string }) {
+  const principal = '1000';
+  const approved = fixture.status !== 'PENDING';
+  return {
+    loan_id: loanId,
+    address: fixture.address,
+    principal,
+    approved_at: approved ? new Date().toISOString() : null,
+    approved_ledger: approved ? 100 : null,
+    interest_rate_bps: approved ? 1200 : null,
+    term_ledgers: approved ? 17280 : null,
+    total_repaid: fixture.status === 'COMPLETED' ? principal : '0',
+    is_approved: approved,
+    is_cancelled: fixture.status === 'CANCELLED',
+    is_rejected: fixture.status === 'REJECTED',
+    defaulted_at: fixture.status === 'DEFAULTED' ? new Date().toISOString() : null,
+    default_reversed_at: null,
+    latest_event_type: approved ? 'LoanApproved' : 'LoanRequested',
+  };
+}
 
 const mockQuery: jest.MockedFunction<
   (text: string, params?: unknown[]) => Promise<MockQueryResult>
@@ -31,9 +54,9 @@ const mockQuery: jest.MockedFunction<
   if (/from\s+loan_events/i.test(text)) {
     return { rows: loan ? [{ address: loan.address }] : [] };
   }
-  // Controllers load the loan row to check its status.
-  if (/from\s+loans\s+where\s+id/i.test(text)) {
-    return { rows: loan ? [{ id: loanId, status: loan.status }] : [] };
+  // Controllers derive the loan's status by aggregating contract_events.
+  if (/from\s+contract_events/i.test(text)) {
+    return { rows: loan ? [derivedLoanRow(loanId!, loan)] : [] };
   }
   // audit_logs INSERT and anything else: no-op.
   return { rows: [] };
