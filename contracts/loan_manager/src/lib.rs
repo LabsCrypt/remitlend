@@ -27,6 +27,7 @@ pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
     fn pool_balance(env: Env, token: Address) -> i128;
     fn get_total_outstanding(env: Env, token: Address) -> i128;
+    fn adjust_outstanding(env: Env, token: Address, delta: i128);
 }
 
 mod events;
@@ -576,6 +577,15 @@ impl LoanManager {
 
         env.storage().instance().set(&key, &updated);
         Self::bump_instance_ttl(env);
+
+        if let Some(lending_pool) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::LendingPool)
+        {
+            let pool_client = PoolClient::new(env, &lending_pool);
+            pool_client.adjust_outstanding(token, &delta);
+        }
     }
 
     fn borrower_loan_count(env: &Env, borrower: &Address) -> u32 {

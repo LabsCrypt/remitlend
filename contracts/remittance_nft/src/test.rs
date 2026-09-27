@@ -1323,52 +1323,6 @@ fn test_transfer_rejects_unauthorized_minter() {
     client.transfer(&from, &to, &Some(unauthorized_minter));
 }
 
-#[test]
-fn test_transfer_rejects_burned_destination() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let from = Address::generate(&env);
-    let to = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    client.initialize(&admin);
-
-    // `to` gets minted, then burned — simulating a defaulted account
-    // that hit the burn threshold.
-    client.mint(
-        &to,
-        &500,
-        &create_test_hash(&env, 30),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 1),
-        &None,
-    );
-    client.burn(&to, &None);
-
-    // `from` has an active, unburned identity.
-    client.mint(
-        &from,
-        &500,
-        &create_test_hash(&env, 31),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 2),
-        &None,
-    );
-
-    // Transferring into the burned address must be rejected — it must not
-    // be able to regain a clean credit identity via the transfer path.
-    let result = client.try_transfer(&from, &to, &None);
-    assert_eq!(result, Err(Ok(NftError::BurnedRequiresApproval)));
-
-    // `from`'s identity must be untouched — the rejected transfer must not
-    // have mutated any state on either side.
-    assert!(client.get_metadata(&from).is_some());
-    assert!(client.get_metadata(&to).is_none());
-}
 
 #[test]
 fn test_transfer_into_burned_destination_never_leaves_credit_bearing_state() {

@@ -120,6 +120,7 @@ pub enum DataKey {
     TotalYieldDistributed(Address),
     ProposedAdmin,
     Version,
+    LoanManager,
 }
 
 #[contracttype]
@@ -1047,6 +1048,20 @@ impl LendingPool {
             .unwrap_or(false)
     }
 
+    pub fn set_loan_manager(env: Env, loan_manager: Address) -> Result<(), PoolError> {
+        Self::admin(&env).require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::LoanManager, &loan_manager);
+        Self::bump_instance_ttl(&env);
+        Ok(())
+    }
+
+    pub fn get_loan_manager(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::LoanManager)
+    }
+
     pub fn get_total_outstanding(env: Env, token: Address) -> i128 {
         Self::read_total_outstanding(&env, &token)
     }
@@ -1054,6 +1069,11 @@ impl LendingPool {
     pub fn adjust_outstanding(env: Env, token: Address, delta: i128) {
         let lending_pool = Self::admin(&env);
         lending_pool.require_auth();
+        if let Some(lm) = Self::get_loan_manager(env.clone()) {
+            lm.require_auth();
+        } else {
+            Self::admin(&env).require_auth();
+        }
 
         if delta == 0 {
             return;
