@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Clock, ArrowUpRight, ArrowDownLeft, ExternalLink } from "lucide-react";
+import { Clock, ArrowUpRight, ArrowDownLeft, ExternalLink, AlertCircle } from "lucide-react";
 import { useWalletStore, selectIsWalletConnected } from "../../stores/useWalletStore";
 import { useLoans, useRemittances } from "../../hooks/useApi";
 import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
@@ -47,13 +47,31 @@ export default function ActivityPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [filterType, setFilterType] = useState<FilterType>("all");
 
-  const { data: loans = [], isLoading: loansLoading } = useLoans({ enabled: isConnected });
-  const { data: remittances = [], isLoading: remittancesLoading } = useRemittances({
+  const {
+    data: loans = [],
+    isLoading: loansLoading,
+    isError: loansError,
+    error: loansErrorObj,
+    refetch: refetchLoans,
+  } = useLoans({ enabled: isConnected });
+  const {
+    data: remittances = [],
+    isLoading: remittancesLoading,
+    isError: remittancesError,
+    error: remittancesErrorObj,
+    refetch: refetchRemittances,
+  } = useRemittances({
     enabled: isConnected,
   });
 
   const isLoading = loansLoading || remittancesLoading;
+  const isError = loansError || remittancesError;
   const isFilteredView = filterType !== "all";
+
+  const handleRetry = () => {
+    if (loansError) refetchLoans();
+    if (remittancesError) refetchRemittances();
+  };
 
   const allActivity = useMemo(() => {
     const loanEvents: ActivityItem[] = loans.map((loan) => ({
@@ -157,7 +175,7 @@ export default function ActivityPage() {
         <button
           type="button"
           onClick={handleExportCsv}
-          disabled={allActivity.length === 0 || isLoading}
+          disabled={allActivity.length === 0 || isLoading || isError}
           className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
         >
           Export CSV
@@ -196,6 +214,27 @@ export default function ActivityPage() {
                   className="h-16 bg-gradient-to-r from-zinc-100 to-zinc-50 dark:from-zinc-900 dark:to-zinc-800 rounded animate-pulse"
                 />
               ))}
+            </div>
+          ) : isError ? (
+            <div className="p-8 text-center" data-testid="activity-error-state">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/40 mb-4">
+                <AlertCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                Failed to load activity
+              </h3>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+                {loansErrorObj?.message ||
+                  remittancesErrorObj?.message ||
+                  "There was a problem loading your transaction history. Please try again."}
+              </p>
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="mt-4 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2"
+              >
+                Retry
+              </button>
             </div>
           ) : paginatedActivity.length === 0 ? (
             <div className="p-6">
