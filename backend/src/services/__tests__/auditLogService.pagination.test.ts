@@ -100,9 +100,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     it('omits the count query unless withTotal is set', async () => {
       await getAuditLogs({ limit: 2 });
 
-      const countCalls = mockQuery.mock.calls.filter(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCalls = mockQuery.mock.calls.filter(([text]) => String(text).includes('COUNT(*)'));
       expect(countCalls).toHaveLength(0);
     });
 
@@ -122,9 +120,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
         limit: 2,
       });
 
-      const countCall = mockQuery.mock.calls.find(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCall = mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'));
       const countSql = String(countCall?.[0]);
       const countValues = (countCall?.[1] as unknown[]) ?? [];
 

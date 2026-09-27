@@ -8,9 +8,12 @@
  *
  * Previously the stream wrote to `["notifications"]` via setQueryData, which only
  * matches that exact key, so live notifications did not show up in the bell/inbox.
+ *
+ * Also covers #1485: useNotificationStream must schedule reconnect when the
+ * server closes the stream cleanly (reader.read() returns done: true).
  */
 
-import { render, screen, act, waitFor } from "@testing-library/react";
+import { render, renderHook, screen, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useUserStore } from "../stores/useUserStore";
@@ -74,38 +77,6 @@ function createSseResponse(): MockSse {
   return { response, pushEvent };
 }
 
-function Harness() {
-  useNotificationStream();
-  const { data } = useNotifications();
-  return (
-    <div>
-      <span data-testid="unread">{data?.unreadCount ?? 0}</span>
-      <ul>
-        {(data?.notifications ?? []).map((n) => (
-          <li key={n.id}>{n.title}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function createWrapper(queryClient: QueryClient) {
- * Regression test for #1485: useNotificationStream must schedule reconnect
- * when the server closes the stream cleanly (reader.read() returns done: true).
- */
-
-import { renderHook, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { useNotificationStream } from "./useNotificationStream";
-
-// Mock useUserStore
-jest.mock("../stores/useUserStore", () => ({
-  useUserStore: jest.fn(),
-}));
-
-const { useUserStore } = require("../stores/useUserStore");
-
 /**
  * Creates a mock fetch response whose body.getReader().read() returns
  * { done: true } immediately — simulating a clean server-side close.
@@ -125,13 +96,22 @@ function mockFetchCleanClose() {
   });
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
+function Harness() {
+  useNotificationStream();
+  const { data } = useNotifications();
+  return (
+    <div>
+      <span data-testid="unread">{data?.unreadCount ?? 0}</span>
+      <ul>
+        {(data?.notifications ?? []).map((n) => (
+          <li key={n.id}>{n.title}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function createWrapper(queryClient = new QueryClient()): (props: { children: ReactNode }) => ReactNode {
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   };
@@ -168,13 +148,12 @@ describe("useNotificationStream", () => {
       isLoading: false,
       error: null,
     });
-    jest.useFakeTimers();
-    (useUserStore as unknown as jest.Mock).mockReturnValue({ authToken: "test-token" });
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     jest.restoreAllMocks();
+    jest.useRealTimers();
   });
 
   it("renders a streamed notification immediately in the list reader's cache entry", async () => {
@@ -239,27 +218,30 @@ describe("useNotificationStream", () => {
     await waitFor(() => expect(screen.getByText("Existing notification")).toBeInTheDocument());
     expect(screen.getByText("Streamed notification")).toBeInTheDocument();
     expect(screen.getByTestId("unread").textContent).toBe("2");
-    jest.useRealTimers();
   });
 
   it("schedules reconnect when stream ends cleanly (done: true)", async () => {
+    jest.useFakeTimers();
     const fetchMock = mockFetchCleanClose();
-    global.fetch = fetchMock;
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     renderHook(() => useNotificationStream(), { wrapper: createWrapper() });
 
     // Advance enough for fetch to resolve, stream to close, and reconnect to fire.
     // Initial backoff is ~1s, so 1500ms covers the first reconnect.
-    await act(() => jest.advanceTimersByTimeAsync(1500));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1500);
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not schedule reconnect after AbortError (cleanup)", async () => {
+    jest.useFakeTimers();
     const fetchMock = jest.fn().mockImplementation(() => {
       throw new DOMException("The operation was aborted", "AbortError");
     });
-    global.fetch = fetchMock;
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     const { unmount } = renderHook(() => useNotificationStream(), {
       wrapper: createWrapper(),
@@ -267,39 +249,49 @@ describe("useNotificationStream", () => {
 
     unmount();
 
-    await act(() => jest.advanceTimersByTimeAsync(5000));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("applies exponential backoff on clean stream close", async () => {
+    jest.useFakeTimers();
     const fetchMock = mockFetchCleanClose();
-    global.fetch = fetchMock;
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     renderHook(() => useNotificationStream(), { wrapper: createWrapper() });
 
     // Advance enough for multiple reconnects with exponential backoff.
     // Initial: ~1s, then 2s, then 4s, then 8s. 10s covers ~3 reconnects.
-    await act(() => jest.advanceTimersByTimeAsync(10_000));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10_000);
+    });
 
     // Should have been called at least 3 times (initial + 2 reconnects)
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
   it("does not reconnect when unmounted after initial connection", async () => {
+    jest.useFakeTimers();
     const fetchMock = mockFetchCleanClose();
-    global.fetch = fetchMock;
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     const { unmount } = renderHook(() => useNotificationStream(), {
       wrapper: createWrapper(),
     });
 
     // Let hook connect
-    await act(() => jest.advanceTimersByTimeAsync(500));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(500);
+    });
 
     unmount();
 
-    await act(() => jest.advanceTimersByTimeAsync(5000));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
 
     // No additional fetch calls after unmount
     expect(fetchMock).toHaveBeenCalledTimes(1);

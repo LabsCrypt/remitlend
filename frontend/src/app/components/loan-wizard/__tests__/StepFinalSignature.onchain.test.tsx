@@ -57,7 +57,7 @@ jest.mock("../providers/WalletProvider", () => ({
 
 jest.mock("../../hooks/useTransactionPreview", () => ({
   useTransactionPreview: () => ({
-    show: (...args: unknown[]) => previewShow(...(args as [])),
+    show: (...args: unknown[]) => previewShow(...(args as [unknown, () => Promise<void>])),
     close: jest.fn(),
     confirm: jest.fn(),
     // The modal is driven directly in these tests, so it never renders; the

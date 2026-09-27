@@ -23,7 +23,7 @@ jest.mock("@/app/hooks/useRepaymentOperation", () => ({
     confirm: jest.fn(),
     complete: jest.fn(),
     fail: jest.fn(),
-    executeRepayment: jest.fn().mockResolvedValue({ txHash: "abc" }),
+    executeRepayment: jest.fn(() => Promise.resolve({ txHash: "abc" })),
     error: null,
     clearError: jest.fn(),
   }),
