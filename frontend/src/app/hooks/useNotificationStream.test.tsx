@@ -6,11 +6,11 @@
  * and the inbox page's `["notifications", { limit, type, unread }]` keys), so a
  * pushed notification renders immediately instead of waiting for the 60s poll.
  *
- * Previously the stream wrote to `["notifications"]` via setQueryData, which only
- * matches that exact key, so live notifications did not show up in the bell/inbox.
+ * Regression test for #1485: useNotificationStream must schedule reconnect
+ * when the server closes the stream cleanly (reader.read() returns done: true).
  */
 
-import { render, screen, act, waitFor } from "@testing-library/react";
+import { render, screen, act, waitFor, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useUserStore } from "../stores/useUserStore";
@@ -36,7 +36,7 @@ function createSseResponse(): MockSse {
   const encoder = new TextEncoder();
   const queue: Uint8Array[] = [];
   let queueReader: (() => void) | null = null;
-  let closed = false;
+  const closed = false;
 
   const pushEvent = (payload: unknown) => {
     queue.push(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
@@ -74,38 +74,6 @@ function createSseResponse(): MockSse {
   return { response, pushEvent };
 }
 
-function Harness() {
-  useNotificationStream();
-  const { data } = useNotifications();
-  return (
-    <div>
-      <span data-testid="unread">{data?.unreadCount ?? 0}</span>
-      <ul>
-        {(data?.notifications ?? []).map((n) => (
-          <li key={n.id}>{n.title}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function createWrapper(queryClient: QueryClient) {
- * Regression test for #1485: useNotificationStream must schedule reconnect
- * when the server closes the stream cleanly (reader.read() returns done: true).
- */
-
-import { renderHook, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { useNotificationStream } from "./useNotificationStream";
-
-// Mock useUserStore
-jest.mock("../stores/useUserStore", () => ({
-  useUserStore: jest.fn(),
-}));
-
-const { useUserStore } = require("../stores/useUserStore");
-
 /**
  * Creates a mock fetch response whose body.getReader().read() returns
  * { done: true } immediately — simulating a clean server-side close.
@@ -125,15 +93,32 @@ function mockFetchCleanClose() {
   });
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
+function Harness() {
+  useNotificationStream();
+  const { data } = useNotifications();
+  return (
+    <div>
+      <span data-testid="unread">{data?.unreadCount ?? 0}</span>
+      <ul>
+        {(data?.notifications ?? []).map((n) => (
+          <li key={n.id}>{n.title}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function createWrapper(queryClient?: QueryClient) {
+  const qc =
+    queryClient ??
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
   };
 }
 
@@ -169,12 +154,12 @@ describe("useNotificationStream", () => {
       error: null,
     });
     jest.useFakeTimers();
-    (useUserStore as unknown as jest.Mock).mockReturnValue({ authToken: "test-token" });
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     jest.restoreAllMocks();
+    jest.useRealTimers();
   });
 
   it("renders a streamed notification immediately in the list reader's cache entry", async () => {
@@ -239,7 +224,6 @@ describe("useNotificationStream", () => {
     await waitFor(() => expect(screen.getByText("Existing notification")).toBeInTheDocument());
     expect(screen.getByText("Streamed notification")).toBeInTheDocument();
     expect(screen.getByTestId("unread").textContent).toBe("2");
-    jest.useRealTimers();
   });
 
   it("schedules reconnect when stream ends cleanly (done: true)", async () => {
