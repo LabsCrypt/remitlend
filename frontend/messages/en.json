@@ -167,7 +167,9 @@
       "repayment_due": "Repayment due",
       "repayment_confirmed": "Repayment confirmed",
       "loan_defaulted": "Loan defaulted",
-      "score_changed": "Score changed"
+      "score_changed": "Score changed",
+      "dispute_opened": "Dispute opened",
+      "dispute_contested": "Default contested"
     },
     "empty": {
       "title": "No notifications found",

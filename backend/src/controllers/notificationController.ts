@@ -101,6 +101,7 @@ export const updateNotificationPreferences = asyncHandler(async (req: Request, r
     emailEnabled: parsed.emailEnabled,
     smsEnabled: parsed.smsEnabled,
     phone,
+    perTypeOverrides: parsed.perTypeOverrides ?? {},
   });
 
   res.json(preferences);

@@ -133,6 +133,56 @@ function makeRawLoanApprvEvent(id = 'apprv-001'): Record<string, unknown> {
 }
 
 /**
+ * Build a deliberately malformed event that throws during parse.
+ *
+ * A `LoanApproved` event whose `value` decodes to a tuple shorter than 2
+ * elements makes `parseEvent` throw ("missing interest_rate_bps or
+ * term_ledgers"). This simulates the always-failing bad event from the issue:
+ * the indexer must quarantine it and still process the surrounding events.
+ */
+function makeRawMalformedLoanApprvEvent(id = 'malformed-001'): Record<string, unknown> {
+  const makeSym = (name: string) => ({
+    sym: () => ({ toString: () => name }),
+    toXDR: (_enc: string) => `xdr:${name}`,
+  });
+
+  return {
+    id,
+    pagingToken: id,
+    topic: [
+      makeSym('LoanApproved'),
+      {
+        _val: 42,
+        sym: () => {
+          throw new Error('not a sym');
+        },
+        toXDR: () => 'xdr:loanid',
+      },
+      {
+        _val: 'GBORROWER123',
+        sym: () => {
+          throw new Error('not a sym');
+        },
+        toXDR: () => 'xdr:borrower',
+      },
+    ],
+    value: {
+      // LoanApproved requires [interest_rate_bps, term_ledgers] (len >= 2);
+      // a single-element tuple forces parseEvent to throw.
+      _val: [250],
+      sym: () => {
+        throw new Error('not a sym');
+      },
+      toXDR: () => 'xdr:malformed-val',
+    },
+    ledger: 205,
+    ledgerClosedAt: new Date().toISOString(),
+    txHash: 'txhash-malformed-001',
+    contractId: { toString: () => 'CONTRACT001' },
+  };
+}
+
+/**
  * Build a raw Soroban event that parses as LoanLiquidated.
  * topic[0] = "LoanLiquidated", topic[1] = loan_id=7, topic[2] = borrower="GBORROWER456", topic[3] = liquidator
  * value    = [debt_repaid=5000, liquidator_bonus=500, borrower_refund=200]
@@ -287,12 +337,18 @@ beforeAll(async () => {
   }));
 
   jest.unstable_mockModule('../../utils/logger.js', () => ({
-    default: {
-      warn: jest.fn(),
-      error: jest.fn(),
-      info: jest.fn(),
-      debug: jest.fn(),
-    },
+    default: (() => {
+      const methods = {
+        warn: jest.fn(),
+        error: jest.fn(),
+        info: jest.fn(),
+        debug: jest.fn(),
+      };
+      return {
+        ...methods,
+        withContext: () => methods,
+      };
+    })(),
   }));
 
   jest.unstable_mockModule('../../utils/requestContext.js', () => ({
@@ -590,5 +646,68 @@ describe('EventIndexer – transaction atomicity via ingestRawEvents', () => {
     expect(call.loanId).toBe(7);
     expect(call.message).toContain('Loan #7');
     expect(call.message).toContain('200');
+  });
+
+  it('advances past a malformed event: batch of five still processes the other four and quarantines the bad one', async () => {
+    // One malformed LoanApproved event alongside four valid LoanRepaid events.
+    const events = [
+      makeRawRepaidEvent('good-1'),
+      makeRawRepaidEvent('good-2'),
+      makeRawMalformedLoanApprvEvent('malformed-1'),
+      makeRawRepaidEvent('good-3'),
+      makeRawRepaidEvent('good-4'),
+    ];
+
+    const insertCalls: unknown[][] = [];
+    const quarantineCalls: unknown[] = [];
+
+    const mockClient: MockClient = {
+      query: jest.fn<any>().mockImplementation(async (sql: string, params: unknown[]) => {
+        if (String(sql).includes('INSERT INTO contract_events')) {
+          insertCalls.push(params);
+          return { rowCount: 1, rows: [{ event_id: params?.[0] }] };
+        }
+        return { rowCount: 0, rows: [] };
+      }),
+    };
+    stubWithTransaction(mockClient);
+
+    // The pool-level query() (mock here) backs quarantine_events inserts.
+    const mockQuery = (await import('../../db/connection.js')).query as jest.Mock;
+
+    const result = await (makeIndexer().ingestRawEvents(events) as Promise<{
+      insertedCount: number;
+    }>);
+
+    // The malformed event must NOT stop the whole batch or throw.
+    expect(result.insertedCount).toBe(4);
+
+    // All four valid events were inserted; the malformed one was not.
+    expect(insertCalls).toHaveLength(4);
+    const insertedIds = insertCalls.map((params) => (params as unknown[])[0]);
+    expect(insertedIds).not.toContain('malformed-1');
+    expect(insertedIds).toEqual(expect.arrayContaining(['good-1', 'good-2', 'good-3', 'good-4']));
+
+    // The always-failing event was routed to the quarantine (dead-letter)
+    // table with its raw payload rather than freezing the cursor.
+    expect(
+      mockQuery.mock.calls.some(
+        ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO quarantine_events'),
+      ),
+    ).toBe(true);
+    quarantineCalls.push(
+      ...mockQuery.mock.calls.filter(
+        ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO quarantine_events'),
+      ),
+    );
+    expect(quarantineCalls).toHaveLength(1);
+    const quarantineParams = quarantineCalls[0]?.[1] as unknown[];
+    expect(quarantineParams[0]).toBe('malformed-1');
+
+    // Score aggregation still ran for the four valid LoanRepaid events.
+    expect(mockUpdateUserScoresBulk).toHaveBeenCalledTimes(1);
+    const [updates] = mockUpdateUserScoresBulk.mock.calls[0] as [Map<string, number>];
+    // 4 × repaymentDelta(10) for borrower "addr"
+    expect(updates.get('addr')).toBe(40);
   });
 });

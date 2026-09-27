@@ -405,6 +405,8 @@ export const swaggerSchemas = {
           'loan_defaulted',
           'loan_liquidated',
           'score_changed',
+          'dispute_opened',
+          'dispute_contested',
         ],
       },
       title: { type: 'string' },

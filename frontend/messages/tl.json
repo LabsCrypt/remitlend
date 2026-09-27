@@ -167,7 +167,9 @@
       "repayment_due": "Due na repayment",
       "repayment_confirmed": "Nakumpirmang repayment",
       "loan_defaulted": "Defaulted na loan",
-      "score_changed": "Nagbago ang score"
+      "score_changed": "Nagbago ang score",
+      "dispute_opened": "Nagsimula ang dispute",
+      "dispute_contested": "Kinontesta ang default"
     },
     "empty": {
       "title": "Walang notification",

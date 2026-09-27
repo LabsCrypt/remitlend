@@ -50,15 +50,28 @@ export const getPoolStats = asyncHandler(async (_req: Request, res: Response) =>
       WHERE event_type IN ('Deposit', 'Withdraw')
     `),
     query(`
+      WITH loan_balances AS (
+        SELECT
+          loan_id,
+          MAX(CASE WHEN event_type = 'LoanApproved' THEN amount::numeric ELSE 0 END) AS principal,
+          COALESCE(SUM(CASE WHEN event_type = 'LoanRepaid' THEN amount::numeric ELSE 0 END), 0) AS repaid,
+          BOOL_OR(event_type = 'LoanRepaid') AS is_repaid,
+          BOOL_OR(event_type = 'LoanDefaulted') AS is_defaulted
+        FROM contract_events
+        WHERE loan_id IS NOT NULL
+          AND event_type IN ('LoanApproved', 'LoanRepaid', 'LoanDefaulted')
+        GROUP BY loan_id
+      )
       SELECT
-        COALESCE(COUNT(DISTINCT loan_id) FILTER (
-          WHERE event_type = 'LoanApproved'
-        ), 0) AS active_loans_count,
-        COALESCE(SUM(CASE WHEN event_type = 'LoanApproved' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
-          - COALESCE(SUM(CASE WHEN event_type = 'LoanRepaid' THEN CAST(amount AS NUMERIC) ELSE 0 END), 0)
-        AS total_outstanding
-      FROM contract_events
-      WHERE event_type IN ('LoanApproved', 'LoanRepaid')
+        COUNT(*) FILTER (WHERE NOT is_repaid AND NOT is_defaulted) AS active_loans_count,
+        COALESCE(SUM(
+          CASE
+            WHEN NOT is_repaid AND NOT is_defaulted
+              THEN GREATEST(0, principal - LEAST(principal, repaid))
+            ELSE 0
+          END
+        ), 0) AS total_outstanding
+      FROM loan_balances
     `),
     sorobanService.getWithdrawalCooldownLedgers().catch(() => 0),
   ]);
@@ -194,21 +207,31 @@ export const getDepositorYieldHistory = asyncHandler(async (req: Request, res: R
  * Build an unsigned LendingPool deposit transaction.
  */
 export const depositToPool = asyncHandler(async (req: Request, res: Response) => {
-  const { depositorPublicKey, token, amount } = req.body as {
+  const { depositorPublicKey, token, amount, minSharesOut } = req.body as {
     depositorPublicKey: string;
     token: string;
     amount: number;
+    minSharesOut: number;
   };
 
   if (!depositorPublicKey || !token || !amount || amount === 0) {
     throw AppError.badRequest('depositorPublicKey, token, and a positive amount are required');
   }
 
+  if (minSharesOut === undefined || minSharesOut < 0) {
+    throw AppError.badRequest('minSharesOut is required and must be non-negative');
+  }
+
   if (depositorPublicKey !== req.user?.publicKey) {
     throw AppError.forbidden('depositorPublicKey must match your authenticated wallet');
   }
 
-  const result = await sorobanService.buildDepositTx(depositorPublicKey, token, amount);
+  const result = await sorobanService.buildDepositTx(
+    depositorPublicKey,
+    token,
+    amount,
+    minSharesOut,
+  );
 
   // Invalidate stale pool stats cache now that a deposit has been initiated
   await invalidateOnDeposit(depositorPublicKey);

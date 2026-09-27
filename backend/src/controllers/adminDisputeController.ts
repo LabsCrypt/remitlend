@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { query } from '../db/connection.js';
 import { AppError } from '../errors/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -175,17 +176,22 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
     [resolution, adminNote || null, disputeId],
   );
 
+  // These are synthetic, admin-generated events (no real on-chain ledger/tx
+  // behind them), but event_id, ledger, tx_hash, and contract_id are all
+  // NOT NULL on contract_events with no default — omitting or nulling them
+  // violates those constraints and crashes the insert.
+  const contractId = process.env.LOAN_MANAGER_CONTRACT_ID || 'admin-action';
   if (action === 'confirm') {
     // Leave loan as defaulted, optionally log event
     await query(
-      `INSERT INTO contract_events (loan_id, address, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultConfirmed', NULL, NULL, NOW())`,
-      [dispute.loan_id, dispute.borrower],
+      `INSERT INTO contract_events (event_id, loan_id, address, event_type, amount, ledger, ledger_closed_at, tx_hash, contract_id) VALUES ($1, $2, $3, 'DefaultConfirmed', NULL, 0, NOW(), $4, $5)`,
+      [randomUUID(), dispute.loan_id, dispute.borrower, `admin-dispute:${disputeId}`, contractId],
     );
   } else if (action === 'reverse') {
     // Insert event to mark loan as active again
     await query(
-      `INSERT INTO contract_events (loan_id, address, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'DefaultReversed', NULL, NULL, NOW())`,
-      [dispute.loan_id, dispute.borrower],
+      `INSERT INTO contract_events (event_id, loan_id, address, event_type, amount, ledger, ledger_closed_at, tx_hash, contract_id) VALUES ($1, $2, $3, 'DefaultReversed', NULL, 0, NOW(), $4, $5)`,
+      [randomUUID(), dispute.loan_id, dispute.borrower, `admin-dispute:${disputeId}`, contractId],
     );
   }
 

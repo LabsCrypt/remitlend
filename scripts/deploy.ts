@@ -234,8 +234,9 @@ async function main() {
     //   c. LendingPool has no dependency on NFT or LoanManager at init time.
     //   d. LoanManager.initialize takes (nft, pool, token, admin) so both NFT and
     //      Pool addresses must be known first.
-    //   e. Governance.initialize takes (admin, target_contract). We point it at
-    //      LoanManager as the primary governed contract.
+    //   e. Governance.initialize takes (admin, targets). It governs every
+    //      contract with an admin role, so each one proposes Governance as its
+    //      admin and Governance.accept_target_admins completes the handover.
     //
     console.log('\n[3/4] Initializing contracts…');
 
@@ -262,14 +263,29 @@ async function main() {
         passphrase,
     );
 
-    // Governance — target is LoanManager (the core protocol contract).
-    console.log('  Governance.initialize(target=LoanManager)');
-    await invoke(server, govContractId, 'initialize', [adminAddr, managerContractId], account, passphrase);
+    // Governance — targets every RemitLend contract with an admin role.
+    const governedContractIds = [poolContractId, managerContractId, nftContractId];
+    console.log('  Governance.initialize(targets=LendingPool,LoanManager,RemittanceNFT)');
+    await invoke(
+        server,
+        govContractId,
+        'initialize',
+        [adminAddr, governedContractIds.map(id => Address.fromString(id))],
+        account,
+        passphrase,
+    );
+
+    for (const contractId of governedContractIds) {
+        console.log(`  ${contractId}.propose_admin(Governance)`);
+        await invoke(server, contractId, 'propose_admin', [Address.fromString(govContractId)], account, passphrase);
+    }
+    console.log('  Governance.accept_target_admins');
+    await invoke(server, govContractId, 'accept_target_admins', [], account, passphrase);
 
     // ── 4. Persist contract IDs ─────────────────────────────────────────────────
     console.log('\n[4/4] Writing contract addresses to .env files…');
 
-    const envBlock = [
+    const frontendEnvBlock = [
         ``,
         `# RemitLend contracts — ${network} — ${new Date().toISOString()}`,
         `NEXT_PUBLIC_NFT_CONTRACT_ID=${nftContractId}`,
@@ -278,8 +294,17 @@ async function main() {
         `NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID=${govContractId}`,
     ].join('\n');
 
-    await fs.appendFile(path.join(__dirname, '../frontend/.env.local'), envBlock);
-    await fs.appendFile(path.join(__dirname, '../backend/.env'), envBlock);
+    const backendEnvBlock = [
+        ``,
+        `# RemitLend contracts — ${network} — ${new Date().toISOString()}`,
+        `REMITTANCE_NFT_CONTRACT_ID=${nftContractId}`,
+        `LENDING_POOL_CONTRACT_ID=${poolContractId}`,
+        `LOAN_MANAGER_CONTRACT_ID=${managerContractId}`,
+        `MULTISIG_GOVERNANCE_CONTRACT_ID=${govContractId}`,
+    ].join('\n');
+
+    await fs.appendFile(path.join(__dirname, '../frontend/.env.local'), frontendEnvBlock);
+    await fs.appendFile(path.join(__dirname, '../backend/.env'), backendEnvBlock);
 
     console.log('\nDeployment complete.');
     console.log(`  RemittanceNFT  : ${nftContractId}`);

@@ -188,6 +188,7 @@ export const contestDefault = asyncHandler(
 
     // Notify admins via email, SSE, and optional webhook
     await notificationService.notifyAdmins({
+      type: 'dispute_contested',
       title: 'Loan Default Contested',
       message: `Borrower ${borrower} has contested the default on loan #${loanId}. Reason: ${reason}`,
       loanId: Number(loanId),
@@ -573,6 +574,7 @@ export const getLoanDetails = asyncHandler(async (req: Request, res: Response) =
         termLedgers,
       });
   const accruedInterest = Number(accruedInterestStroops);
+  // Issue #1369: Owed amount must add accrued interest to remaining principal (not subtract).
   // remaining principal + interest accrued on it == principal + accrued - totalRepaid
   const totalOwed = Number(
     remainingPrincipal(principalStroops, totalRepaidStroops) + accruedInterestStroops,
@@ -670,10 +672,13 @@ export const getLoanAmortizationSchedule = asyncHandler(async (req: Request, res
  * POST /api/loans/request
  */
 export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
-  const { amount, borrowerPublicKey } = req.body as {
+  const { amount, borrowerPublicKey, term } = req.body as {
     amount: number;
     borrowerPublicKey: string;
+    term?: number;
   };
+
+  const termLedgers = term ?? DEFAULT_TERM_LEDGERS;
 
   if (borrowerPublicKey !== req.user?.publicKey) {
     throw AppError.forbidden(
@@ -699,8 +704,8 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
-  // Idempotency: return existing unsigned tx if recently built for this borrower/amount
-  const cacheKey = `pending_loan_tx:${borrowerPublicKey}:${amount}`;
+  // Idempotency: return existing unsigned tx if recently built for this borrower/amount/term
+  const cacheKey = `pending_loan_tx:${borrowerPublicKey}:${amount}:${termLedgers}`;
   const cachedTx = await cacheService.get<{
     unsignedTxXdr: string;
     networkPassphrase: string;
@@ -710,6 +715,7 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
     logger.withContext().info('Returning cached unsigned loan request tx', {
       borrower: borrowerPublicKey,
       amount,
+      termLedgers,
     });
     res.json({
       success: true,
@@ -719,7 +725,7 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const result = await sorobanService.buildRequestLoanTx(borrowerPublicKey, amount);
+  const result = await sorobanService.buildRequestLoanTx(borrowerPublicKey, amount, termLedgers);
 
   // Cache for 60 seconds to prevent sequence number collisions from rapid requests
   await cacheService.set(cacheKey, result, 60);
@@ -730,6 +736,7 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
   logger.withContext().info('Loan request transaction built', {
     borrower: borrowerPublicKey,
     amount,
+    termLedgers,
   });
 
   res.json({

@@ -28,7 +28,9 @@ const MAX_TIMELOCK_SECONDS: u64 = PROPOSAL_TTL_SECONDS - 1;
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
 const KEY_VERSION: Symbol = symbol_short!("VERSION");
 const KEY_PENDING: Symbol = symbol_short!("PENDING");
+/// Legacy single-target key, read only as a fallback for pre-#1776 deployments.
 const KEY_TARGET: Symbol = symbol_short!("TARGET");
+const KEY_TARGETS: Symbol = symbol_short!("TARGETS");
 const KEY_LAST_CANCELLED_AT: Symbol = symbol_short!("CANCEL_AT");
 const KEY_PROPOSAL_COUNT: Symbol = symbol_short!("COUNT");
 
@@ -162,19 +164,23 @@ impl GovernanceContract {
     // ── Initialization ────────────────────────────────────────────────────────
 
     /// Initialize the governance contract.
-    /// `admin`           — current RemitLend admin.
-    /// `target_contract` — the RemitLend contract whose admin will be updated
-    ///                     when finalize_admin_transfer is called.
+    /// `admin`   — current RemitLend admin.
+    /// `targets` — the RemitLend contracts (LendingPool, LoanManager,
+    ///             RemittanceNFT) whose admin is handed over when
+    ///             finalize_admin_transfer is called. Must be non-empty.
     pub fn initialize(
         env: Env,
         admin: Address,
-        target_contract: Address,
+        targets: Vec<Address>,
     ) -> Result<(), GovernanceError> {
         if env.storage().instance().has(&KEY_ADMIN) {
             return Err(GovernanceError::AlreadyInitialized);
         }
+        if targets.is_empty() {
+            return Err(GovernanceError::TargetNotSet);
+        }
         env.storage().instance().set(&KEY_ADMIN, &admin);
-        env.storage().instance().set(&KEY_TARGET, &target_contract);
+        env.storage().instance().set(&KEY_TARGETS, &targets);
         env.storage().instance().set(&KEY_VERSION, &CURRENT_VERSION);
         env.storage().instance().set(&KEY_PROPOSAL_COUNT, &0u32);
         Ok(())
@@ -367,10 +373,11 @@ impl GovernanceContract {
     ///   1. now >= executable_after   (timelock elapsed)
     ///   2. approval_count >= threshold
     ///
-    /// Calls set_admin on the target RemitLend contract via cross-contract
-    /// invocation. The target must expose:
-    ///   pub fn set_admin(env: Env, new_admin: Address)
-    /// and must verify the caller is this governance contract address.
+    /// Calls propose_admin on every target RemitLend contract via
+    /// cross-contract invocation. Each target must expose:
+    ///   pub fn propose_admin(env: Env, new_admin: Address)
+    /// and have this governance contract as its current admin. The new admin
+    /// then completes the handover by calling accept_admin on each target.
     pub fn finalize_admin_transfer(env: Env, caller: Address) -> Result<(), GovernanceError> {
         caller.require_auth();
 
@@ -384,12 +391,8 @@ impl GovernanceContract {
             return Err(GovernanceError::ProposalNotActive);
         }
 
-        // Get target early to prevent archiving issues in tests
-        let target: Address = env
-            .storage()
-            .instance()
-            .get(&KEY_TARGET)
-            .ok_or(GovernanceError::TargetNotSet)?;
+        // Get targets early to prevent archiving issues in tests
+        let targets = Self::read_targets(&env)?;
 
         let now = env.ledger().timestamp();
 
@@ -412,14 +415,17 @@ impl GovernanceContract {
 
         let new_admin = pending.proposed_admin.clone();
 
-        // 1. Interactions: Cross-contract call to update global admin in the RemitLend protocol contract.
-        // If this call fails (panics/traps), the entire transaction will rollback by default in Soroban.
-        // We call this FIRST to ensure the remote state change is attempted before committing local changes.
-        env.invoke_contract::<()>(
-            &target,
-            &symbol_short!("set_admin"),
-            soroban_sdk::vec![&env, new_admin.clone().into_val(&env)],
-        );
+        // 1. Interactions: propose the new admin on every RemitLend protocol contract.
+        // If any call fails (panics/traps), the entire transaction will rollback by default in Soroban.
+        // We call these FIRST to ensure the remote state changes are attempted before committing local changes.
+        let propose_fn = Symbol::new(&env, "propose_admin");
+        for target in targets.iter() {
+            env.invoke_contract::<()>(
+                &target,
+                &propose_fn,
+                soroban_sdk::vec![&env, new_admin.clone().into_val(&env)],
+            );
+        }
 
         // 2. Effects: Clear pending transfer and update local admin state only after successful interaction.
         env.storage().instance().remove(&KEY_PENDING);
@@ -437,6 +443,22 @@ impl GovernanceContract {
                 timestamp: now,
             },
         );
+        Ok(())
+    }
+
+    /// Complete the handover of every target's admin role *to* this contract.
+    ///
+    /// Each target's current admin must first call
+    /// `propose_admin(<this contract>)`; the targets' `accept_admin` then
+    /// requires this contract's auth, which only it can provide by invoking
+    /// the call itself.
+    pub fn accept_target_admins(env: Env) -> Result<(), GovernanceError> {
+        Self::read_admin(&env)?.require_auth();
+
+        let accept_fn = Symbol::new(&env, "accept_admin");
+        for target in Self::read_targets(&env)?.iter() {
+            env.invoke_contract::<()>(&target, &accept_fn, Vec::new(&env));
+        }
         Ok(())
     }
 
@@ -568,11 +590,8 @@ impl GovernanceContract {
         Self::read_admin(&env)
     }
 
-    pub fn get_target(env: Env) -> Result<Address, GovernanceError> {
-        env.storage()
-            .instance()
-            .get(&KEY_TARGET)
-            .ok_or(GovernanceError::TargetNotSet)
+    pub fn get_targets(env: Env) -> Result<Vec<Address>, GovernanceError> {
+        Self::read_targets(&env)
     }
 
     pub fn get_pending_transfer(env: Env) -> Result<PendingTransfer, GovernanceError> {
@@ -662,6 +681,17 @@ impl GovernanceContract {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    fn read_targets(env: &Env) -> Result<Vec<Address>, GovernanceError> {
+        let storage = env.storage().instance();
+        if let Some(targets) = storage.get(&KEY_TARGETS) {
+            return Ok(targets);
+        }
+        storage
+            .get::<Symbol, Address>(&KEY_TARGET)
+            .map(|target| soroban_sdk::vec![env, target])
+            .ok_or(GovernanceError::TargetNotSet)
+    }
 
     fn read_admin(env: &Env) -> Result<Address, GovernanceError> {
         env.storage()

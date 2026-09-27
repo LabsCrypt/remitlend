@@ -101,7 +101,7 @@ describe("RepayLoanPage network-aware signer (issue #1073)", () => {
     buildMock.mockClear();
     signMock.mockClear();
     toastError.mockClear();
-    process.env.NEXT_PUBLIC_LOAN_MANAGER_CONTRACT_ID = "CAAA";
+    process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID = "CAAA";
   });
 
   it("blocks repayment on an unsupported wallet network without building or signing", async () => {

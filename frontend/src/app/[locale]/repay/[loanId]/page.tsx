@@ -101,7 +101,7 @@ export default function RepayLoanPage() {
     try {
       setIsSubmitting(true);
 
-      const contractId = process.env.NEXT_PUBLIC_LOAN_MANAGER_CONTRACT_ID;
+      const contractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
       if (!contractId) {
         throw new Error("Contract configuration missing");
       }

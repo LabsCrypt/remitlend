@@ -411,12 +411,7 @@ impl LendingPool {
             return Err(PoolError::InsufficientLiquidity);
         }
 
-        TokenClient::new(env, token).transfer(
-            &env.current_contract_address(),
-            provider,
-            &assets_to_return,
-        );
-
+        // CEI: update all state (Effects) before the external transfer (Interaction).
         let share_key = DataKey::Shares(provider.clone(), token.clone());
         let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
         let remaining = cur_shares.checked_sub(shares).expect("share underflow");
@@ -462,6 +457,13 @@ impl LendingPool {
             .checked_sub(assets_to_return)
             .expect("total managed assets underflow");
         Self::set_total_managed_assets(env, token, new_total_managed);
+
+        // Interaction: external token transfer happens after all state is updated.
+        TokenClient::new(env, token).transfer(
+            &env.current_contract_address(),
+            provider,
+            &assets_to_return,
+        );
 
         Self::bump_instance_ttl(env);
         // Emitted before the Withdraw event so existing event-order
@@ -671,12 +673,38 @@ impl LendingPool {
         let share_key = DataKey::Shares(provider.clone(), token.clone());
         env.storage().persistent().set(&share_key, &new_shares);
         Self::bump_persistent_ttl(&env, &share_key);
-        let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
-        let current_ledger = env.ledger().sequence();
-        env.storage()
-            .persistent()
-            .set(&deposit_key, &current_ledger);
-        Self::bump_persistent_ttl(&env, &deposit_key);
+        // Update the cooldown timestamp.  On the first deposit we simply
+        // record the current ledger.  On subsequent top-ups we compute a
+        // share-weighted average of the existing and new timestamps so that
+        // large fresh deposits cannot piggy-back on a stale, already-matured
+        // timestamp (prevents the 1-stroop dust-deposit cooldown bypass).
+        {
+            let deposit_key = DataKey::DepositTimestamp(provider.clone(), token.clone());
+            let current_ledger = env.ledger().sequence();
+            if existing_shares == 0 {
+                env.storage()
+                    .persistent()
+                    .set(&deposit_key, &current_ledger);
+            } else {
+                let old_ts = Self::read_deposit_timestamp(&env, &provider, &token)
+                    .unwrap_or(current_ledger);
+                // weighted_ts = (old_ts * existing_shares + current_ledger * new_shares)
+                //             / (existing_shares + new_shares)
+                let weighted_ts = (old_ts as i128)
+                    .checked_mul(existing_shares)
+                    .and_then(|a| {
+                        (current_ledger as i128)
+                            .checked_mul(shares_to_mint)
+                            .and_then(|b| a.checked_add(b))
+                    })
+                    .and_then(|num| num.checked_div(new_shares))
+                    .expect("weighted cooldown overflow") as u32;
+                env.storage()
+                    .persistent()
+                    .set(&deposit_key, &weighted_ts);
+            }
+            Self::bump_persistent_ttl(&env, &deposit_key);
+        }
 
         let new_total_shares = cur_total_shares
             .checked_add(shares_to_mint)
