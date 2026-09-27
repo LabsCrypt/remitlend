@@ -31,8 +31,30 @@ import { requestLogger } from './middleware/requestLogger.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import { pauseGuard } from './middleware/pauseGuard.js';
 import { asyncHandler } from './utils/asyncHandler.js';
-import { AppError } from './errors/AppError.js';
 const app = express();
+
+// Configure Express 'trust proxy' so req.ip and rate-limiting resolve real client IPs
+// behind reverse proxies / load balancers (issue #1069).
+const trustProxyConfig = process.env.TRUST_PROXY?.trim();
+if (trustProxyConfig !== undefined && trustProxyConfig !== '') {
+  if (trustProxyConfig.toLowerCase() === 'true') {
+    app.set('trust proxy', true);
+  } else if (trustProxyConfig.toLowerCase() === 'false') {
+    app.set('trust proxy', false);
+  } else if (!isNaN(Number(trustProxyConfig))) {
+    app.set('trust proxy', Number(trustProxyConfig));
+  } else {
+    // Comma-separated list of IPs, subnets or trust options (e.g. 'loopback, linklocal')
+    const proxies = trustProxyConfig.split(',').map((p) => p.trim()).filter(Boolean);
+    app.set('trust proxy', proxies.length === 1 ? proxies[0] : proxies);
+  }
+} else if (process.env.NODE_ENV === 'production') {
+  // In production default to 1 proxy hop (e.g. Nginx, ALB, Cloud Run)
+  app.set('trust proxy', 1);
+} else {
+  // Safe default in local dev and testing (do not trust arbitrary spoofed headers)
+  app.set('trust proxy', false);
+}
 
 const isProduction = process.env.NODE_ENV === 'production';
 const configuredFrontendUrl = process.env.FRONTEND_URL?.trim();

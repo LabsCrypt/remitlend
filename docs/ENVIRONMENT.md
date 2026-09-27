@@ -39,6 +39,7 @@ stricter rate limit (10 requests/minute/IP) to prevent abuse.
 | `CORS_ALLOWED_ORIGINS` | ✓ | ✓ | ✓ | `http://localhost:3000,http://localhost:3001` | Comma-separated origins allowed by CORS | `backend/src/config/index.ts` |
 | `FRONTEND_URL` | ✓ | ✓ | ✓ | `http://localhost:3000` | Frontend base URL used for links | `backend/src/config/index.ts` |
 | `PORT` | ✓ | ✓ | ✓ | `3001` | HTTP port the API listens on | `backend/src/index.ts` |
+| `TRUST_PROXY` | — | ✓ | ✓ | `false` (dev) / `1` (prod) | Express `trust proxy` setting (e.g. `1`, `true`, `false`, or comma-separated IP subnets) for resolving client IPs behind reverse proxies / load balancers | `backend/src/app.ts` |
 | `DATABASE_URL` | ✓ | ✓ | ✓ | `postgres://postgres:postgres@db:5432/remitlend` | PostgreSQL connection string | `backend/src/db/connection.js` |
 | `DB_CONN_TIMEOUT_MS` | — | ✓ | ✓ | `10000` | Pool connection timeout in ms; pool.connect() rejects instead of hanging | `backend/src/db/connection.ts` |
 | `DB_STATEMENT_TIMEOUT_MS` | — | ✓ | ✓ | `30000` | Per-query statement_timeout in ms; a stuck query never holds a connection indefinitely | `backend/src/db/connection.ts` |
