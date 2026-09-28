@@ -119,9 +119,8 @@ app.use(requestIdMiddleware);
 app.use(requestLogger);
 app.use(metricsMiddleware);
 
-// Pause guard: reject state-mutating requests when contracts are paused
-// Issue #1381: Cross-layer emergency pause coordination
-app.use(pauseGuard);
+// Pause guard is scoped directly to on-chain contract mutating routes
+// (loans, pool, remittances, transactions) rather than mounted globally (Issue #1866).
 
 app.get('/', (_req: Request, res: Response) => {
   res.send('RemitLend Backend is running');
@@ -291,26 +290,26 @@ app.use('/', statusRouter);
 // Legacy routes (deprecated, maintained for backward compatibility)
 app.use('/api', simulationRoutes);
 app.use('/api/score', scoreRoutes);
-app.use('/api/loans', loanRoutes);
-app.use('/api/pool', poolRoutes);
+app.use('/api/loans', pauseGuard, loanRoutes);
+app.use('/api/pool', pauseGuard, poolRoutes);
 app.use('/api/indexer', indexerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/events', eventRoutes);
-app.use('/api/remittances', remittanceRoutes);
-app.use('/api/transactions', transactionRoutes);
+app.use('/api/remittances', pauseGuard, remittanceRoutes);
+app.use('/api/transactions', pauseGuard, transactionRoutes);
 
 // Versioned API routes (v1 - current)
 app.use('/api/v1', simulationRoutes);
 app.use('/api/v1/score', scoreRoutes);
-app.use('/api/v1/loans', loanRoutes);
+app.use('/api/v1/loans', pauseGuard, loanRoutes);
 app.use('/api/v1/indexer', indexerRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/remittances', remittanceRoutes);
-app.use('/api/v1/transactions', transactionRoutes);
-app.use('/api/v1/pool', poolRoutes);
+app.use('/api/v1/remittances', pauseGuard, remittanceRoutes);
+app.use('/api/v1/transactions', pauseGuard, transactionRoutes);
+app.use('/api/v1/pool', pauseGuard, poolRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/events', eventRoutes);
 app.use('/user', userRoutes);
