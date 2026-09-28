@@ -16,6 +16,16 @@ export function formatDate(dateString: string): string {
   });
 }
 
-export function getDaysUntilDeadline(deadline: string): number {
-  return Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+export function getDaysUntilDeadline(deadline: string, now: number | Date = Date.now()): number {
+  const deadlineMs = new Date(deadline).getTime();
+  if (Number.isNaN(deadlineMs)) {
+    return 0;
+  }
+  const nowMs = typeof now === "number" ? now : now.getTime();
+  const diffMs = deadlineMs - nowMs;
+
+  if (diffMs < 0) {
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
