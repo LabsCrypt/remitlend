@@ -12,6 +12,11 @@ import {
   selectWalletAddress,
   useWalletStore,
 } from "../../stores/useWalletStore";
+import { useTransactionPreview } from "../../hooks/useTransactionPreview";
+import {
+  TransactionPreviewModal,
+  type TransactionPreviewData,
+} from "../transaction/TransactionPreviewModal";
 
 interface ExtensionLoanModalProps {
   isOpen: boolean;
@@ -54,6 +59,7 @@ export function ExtensionLoanModal({
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const walletAddress = useWalletStore(selectWalletAddress);
   const toast = useContractToast();
+  const txPreview = useTransactionPreview();
 
   const [extraLedgers, setExtraLedgers] = useState(17280);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,9 +70,7 @@ export function ExtensionLoanModal({
     [currentDueDate, extraLedgers],
   );
 
-  async function handleSubmit() {
-    let toastId: string | number | null = null;
-
+  function handleSubmit() {
     if (!walletAddress) {
       toast.error("Wallet not connected", "Connect your wallet before requesting an extension.");
       return;
@@ -76,6 +80,28 @@ export function ExtensionLoanModal({
       return;
     }
 
+    const previewData: TransactionPreviewData = {
+      operations: [
+        {
+          type: "extend_loan",
+          description: `Extend loan #${loanId} by ${Math.round(extraLedgers)} ledgers`,
+          details: {
+            "Loan ID": loanId,
+            "Extra Ledgers": Math.round(extraLedgers),
+            ...(currentDueDate ? { "Current Due Date": currentDueDate } : {}),
+            ...(predictedDueDate !== "—" ? { "New Due Date": predictedDueDate } : {}),
+          },
+        },
+      ],
+      balanceChanges: [],
+      network: "Stellar Testnet",
+    };
+
+    txPreview.show(previewData, executeExtension);
+  }
+
+  async function executeExtension() {
+    let toastId: string | number | null = null;
     try {
       setIsSubmitting(true);
       toastId = toast.showPending("Preparing extension request...");
@@ -115,49 +141,62 @@ export function ExtensionLoanModal({
       } else {
         toast.error("Extension request failed", message);
       }
+      throw error;
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} className="max-w-xl">
-      <div className="space-y-5">
-        <Input
-          label={ledgersLabel}
-          type="number"
-          min={1}
-          step={1}
-          value={Number.isFinite(extraLedgers) ? extraLedgers : ""}
-          onChange={(event) => setExtraLedgers(Number(event.target.value))}
-          disabled={disabled}
-        />
+    <>
+      <Modal isOpen={isOpen} onClose={onClose} title={title} className="max-w-xl">
+        <div className="space-y-5">
+          <Input
+            label={ledgersLabel}
+            type="number"
+            min={1}
+            step={1}
+            value={Number.isFinite(extraLedgers) ? extraLedgers : ""}
+            onChange={(event) => setExtraLedgers(Number(event.target.value))}
+            disabled={disabled}
+          />
 
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            {newDueDateLabel}
-          </p>
-          <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            {predictedDueDate}
-          </p>
-        </div>
-
-        {isSubmitting && (
-          <div className="space-y-2 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <div className="h-4 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
-            <div className="h-10 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900" />
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              {newDueDateLabel}
+            </p>
+            <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {predictedDueDate}
+            </p>
           </div>
-        )}
 
-        <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
-            {cancelLabel}
-          </Button>
-          <Button onClick={handleSubmit} isLoading={isSubmitting} disabled={disabled}>
-            {isSubmitting ? busyLabel : submitLabel}
-          </Button>
+          {isSubmitting && (
+            <div className="space-y-2 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <div className="h-4 w-32 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+              <div className="h-10 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900" />
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
+              {cancelLabel}
+            </Button>
+            <Button onClick={handleSubmit} isLoading={isSubmitting} disabled={disabled}>
+              {isSubmitting ? busyLabel : submitLabel}
+            </Button>
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+
+      {isOpen && txPreview.data && (
+        <TransactionPreviewModal
+          isOpen={txPreview.isOpen}
+          onClose={txPreview.close}
+          onConfirm={txPreview.confirm}
+          data={txPreview.data}
+          isLoading={txPreview.isLoading || isSubmitting}
+        />
+      )}
+    </>
   );
 }
