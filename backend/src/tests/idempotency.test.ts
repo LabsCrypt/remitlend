@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { idempotencyMiddleware, computeFingerprint } from '../middleware/idempotency.js';
 import { cacheService } from '../services/cacheService.js';
-import { jest } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 // Helper to cast to jest.Mock
 const asMock = (fn: unknown) => fn as jest.Mock;
@@ -62,7 +62,7 @@ describe('Idempotency Middleware', () => {
 
     await idempotencyMiddleware(req as Request, res as Response, next);
 
-    expect(cacheService.get).toHaveBeenCalledWith(`idemp:${key}`);
+    expect(cacheService.get).toHaveBeenCalledWith(`idemp:anon:${key}`);
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.set).toHaveBeenCalledWith('X-Idempotency-Cache', 'HIT');
     expect(res.json).toHaveBeenCalledWith(cachedResponse.body);
@@ -169,9 +169,9 @@ describe('Idempotency Middleware', () => {
     (res.json as unknown as (b: unknown) => void)({ success: true });
     await finishHandler();
 
-    expect(cacheService.delete).toHaveBeenCalledWith(`idemp:${key}:lock`);
+    expect(cacheService.delete).toHaveBeenCalledWith(`idemp:anon:${key}:lock`);
     const setCall = (cacheService.set as jest.Mock).mock.calls[0];
-    expect(setCall[0]).toBe(`idemp:${key}`);
+    expect(setCall[0]).toBe(`idemp:anon:${key}`);
     const stored = setCall[1] as { fingerprint: string; body: unknown };
     expect(stored.body).toEqual({ success: true });
     expect(stored.fingerprint).toBe(computeFingerprint(req as Request).fingerprint);
@@ -187,5 +187,81 @@ describe('Idempotency Middleware', () => {
 
     expect(res.status).toHaveBeenCalledWith(409);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('caches and replays a falsy boolean response body (res.json(false)) (#1869)', async () => {
+    const key = 'falsy-false-key';
+    asMock(req.header).mockReturnValue(key);
+    (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+    (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(true);
+
+    let finishHandler: () => void = () => {};
+    (res.on as jest.Mock).mockImplementation((_: string, cb: () => void) => {
+      finishHandler = cb;
+      return res;
+    });
+
+    await idempotencyMiddleware(req as Request, res as Response, next);
+
+    // Initial response writes `false`
+    (res.json as unknown as (b: unknown) => void)(false);
+    await finishHandler();
+
+    expect(cacheService.delete).toHaveBeenCalledWith(`idemp:anon:${key}:lock`);
+    expect(cacheService.set).toHaveBeenCalledTimes(1);
+    const setCall = (cacheService.set as jest.Mock).mock.calls[0];
+    expect(setCall[0]).toBe(`idemp:anon:${key}`);
+    const stored = setCall[1] as { status: number; body: unknown; fingerprint: string };
+    expect(stored.status).toBe(201);
+    expect(stored.body).toBe(false);
+    expect(stored.fingerprint).toBe(computeFingerprint(req as Request).fingerprint);
+
+    // Replay request with same key
+    const replayReq = { ...req };
+    const replayRes = {
+      status: jest.fn().mockReturnThis() as unknown as Response['status'],
+      set: jest.fn().mockReturnThis() as unknown as Response['set'],
+      json: jest.fn().mockReturnThis() as unknown as Response['json'],
+    };
+    const replayNext = jest.fn();
+    (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(stored);
+
+    await idempotencyMiddleware(replayReq as Request, replayRes as unknown as Response, replayNext);
+
+    expect(replayRes.status).toHaveBeenCalledWith(201);
+    expect(replayRes.set).toHaveBeenCalledWith('X-Idempotent-Replayed', 'true');
+    expect(replayRes.set).toHaveBeenCalledWith('X-Idempotency-Cache', 'HIT');
+    expect(replayRes.json).toHaveBeenCalledWith(false);
+    expect(replayNext).not.toHaveBeenCalled();
+  });
+
+  it('caches falsy bodies: null, 0, and empty string (#1869)', async () => {
+    const falsyValues = [null, 0, ''];
+
+    for (let i = 0; i < falsyValues.length; i++) {
+      const val = falsyValues[i];
+      const key = `falsy-val-${i}`;
+      jest.clearAllMocks();
+
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+      (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(true);
+
+      let finishHandler: () => void = () => {};
+      (res.on as jest.Mock).mockImplementation((_: string, cb: () => void) => {
+        finishHandler = cb;
+        return res;
+      });
+
+      await idempotencyMiddleware(req as Request, res as Response, next);
+
+      (res.json as unknown as (b: unknown) => void)(val);
+      await finishHandler();
+
+      expect(cacheService.set).toHaveBeenCalledTimes(1);
+      const setCall = (cacheService.set as jest.Mock).mock.calls[0];
+      const stored = setCall[1] as { body: unknown };
+      expect(stored.body).toBe(val);
+    }
   });
 });
