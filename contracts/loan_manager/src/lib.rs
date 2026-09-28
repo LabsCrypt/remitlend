@@ -1792,12 +1792,8 @@ impl LoanManager {
             let underwater_bonus = collateral_amount
                 .checked_mul(Self::MIN_UNDERWATER_BONUS_BPS as i128)
                 .and_then(|v| {
-                    money::round_div(
-                        v,
-                        Self::MAX_RATIO_BPS as i128,
-                        money::RoundingMode::Floor,
-                    )
-                    .ok()
+                    money::round_div(v, Self::MAX_RATIO_BPS as i128, money::RoundingMode::Floor)
+                        .ok()
                 })
                 .unwrap_or(0);
             let debt_portion = collateral_amount
