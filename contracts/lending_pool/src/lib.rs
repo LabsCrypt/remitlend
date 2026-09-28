@@ -686,8 +686,8 @@ impl LendingPool {
                     .persistent()
                     .set(&deposit_key, &current_ledger);
             } else {
-                let old_ts = Self::read_deposit_timestamp(&env, &provider, &token)
-                    .unwrap_or(current_ledger);
+                let old_ts =
+                    Self::read_deposit_timestamp(&env, &provider, &token).unwrap_or(current_ledger);
                 // weighted_ts = (old_ts * existing_shares + current_ledger * new_shares)
                 //             / (existing_shares + new_shares)
                 let weighted_ts = (old_ts as i128)
@@ -699,9 +699,7 @@ impl LendingPool {
                     })
                     .and_then(|num| num.checked_div(new_shares))
                     .expect("weighted cooldown overflow") as u32;
-                env.storage()
-                    .persistent()
-                    .set(&deposit_key, &weighted_ts);
+                env.storage().persistent().set(&deposit_key, &weighted_ts);
             }
             Self::bump_persistent_ttl(&env, &deposit_key);
         }
