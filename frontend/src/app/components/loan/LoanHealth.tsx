@@ -9,6 +9,8 @@ export interface LoanHealthData {
   healthFactor?: number;
   liquidationThreshold?: number;
   healthSource?: "contract" | "backend";
+  /** Explicit unit indicator: "percentage" (e.g. 150 meaning 150%) or "decimal" (e.g. 1.5 or 12.0 meaning 1200%). Defaults to "decimal". */
+  ratioUnit?: "percentage" | "decimal";
 }
 
 interface LoanHealthLabels {
@@ -43,15 +45,34 @@ interface LoanHealthProps {
   labels: LoanHealthLabels;
 }
 
-const DEFAULT_LIQUIDATION_THRESHOLD = 1.25;
-const SAFETY_MARGIN = 0.15;
+export const DEFAULT_LIQUIDATION_THRESHOLD = 1.25;
+export const SAFETY_MARGIN = 0.15;
 
-function normalizeRatio(value: number | undefined): number | null {
+export type LoanHealthState = "healthy" | "watch" | "atRisk";
+
+export function normalizeRatio(
+  value: number | undefined,
+  unit?: "percentage" | "decimal",
+): number | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return null;
   }
 
-  return value > 10 ? value / 100 : value;
+  // If unit is explicitly percentage, convert to decimal (divide by 100).
+  // Otherwise, default to decimal representation without guessing via magnitude.
+  if (unit === "percentage") {
+    return value / 100;
+  }
+
+  return value;
+}
+
+export function getLoanHealthState(
+  ratio: number,
+  threshold: number = DEFAULT_LIQUIDATION_THRESHOLD,
+): LoanHealthState {
+  const dangerLine = threshold + SAFETY_MARGIN;
+  return ratio <= threshold ? "atRisk" : ratio <= dangerLine ? "watch" : "healthy";
 }
 
 function formatCurrency(value: number) {
@@ -75,11 +96,12 @@ export function LoanHealth({ loan, isLoading, isError, topUpHref, labels }: Loan
 
   const collateral = loan?.collateralLocked ?? 0;
   const totalDebt = loan?.totalOwed ?? 0;
-  const backendRatio = normalizeRatio(loan?.collateralRatio);
-  const backendHealthFactor = normalizeRatio(loan?.healthFactor);
+  const backendRatio = normalizeRatio(loan?.collateralRatio, loan?.ratioUnit);
+  const backendHealthFactor = normalizeRatio(loan?.healthFactor, loan?.ratioUnit);
   const derivedRatio = collateral > 0 && totalDebt > 0 ? collateral / totalDebt : null;
   const ratio = backendHealthFactor ?? backendRatio ?? derivedRatio;
-  const threshold = normalizeRatio(loan?.liquidationThreshold) ?? DEFAULT_LIQUIDATION_THRESHOLD;
+  const threshold =
+    normalizeRatio(loan?.liquidationThreshold, loan?.ratioUnit) ?? DEFAULT_LIQUIDATION_THRESHOLD;
 
   if (isError || !ratio || totalDebt <= 0) {
     return (
@@ -93,8 +115,7 @@ export function LoanHealth({ loan, isLoading, isError, topUpHref, labels }: Loan
     );
   }
 
-  const dangerLine = threshold + SAFETY_MARGIN;
-  const state = ratio <= threshold ? "atRisk" : ratio <= dangerLine ? "watch" : "healthy";
+  const state = getLoanHealthState(ratio, threshold);
   const tone =
     state === "atRisk"
       ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200"
