@@ -76,6 +76,8 @@ pub enum PoolError {
     MinAssetsNotMet = 13,
     /// The computed share/asset amount for an operation rounded down to zero, so no value would actually move.
     ZeroShares = 14,
+    /// The provider's withdrawal cooldown has not elapsed yet.
+    WithdrawalCooldownActive = 15,
 }
 
 /// Storage keys.
@@ -353,20 +355,26 @@ impl LendingPool {
             .expect("share redeem overflow")
     }
 
-    fn assert_withdrawal_cooldown_elapsed(env: &Env, provider: &Address, token: &Address) {
+    fn assert_withdrawal_cooldown_elapsed(
+        env: &Env,
+        provider: &Address,
+        token: &Address,
+    ) -> Result<(), PoolError> {
         let cooldown = Self::withdrawal_cooldown(env);
         if cooldown == 0 {
-            return;
+            return Ok(());
         }
 
         let Some(deposit_ledger) = Self::read_deposit_timestamp(env, provider, token) else {
-            return;
+            return Ok(());
         };
 
         let current_ledger = env.ledger().sequence();
         if current_ledger < deposit_ledger.saturating_add(cooldown) {
-            panic!("withdrawal_cooldown_active");
+            return Err(PoolError::WithdrawalCooldownActive);
         }
+
+        Ok(())
     }
 
     fn redeem_shares(
@@ -904,7 +912,7 @@ impl LendingPool {
     ) -> Result<(), PoolError> {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
-        Self::assert_withdrawal_cooldown_elapsed(&env, &provider, &token);
+        Self::assert_withdrawal_cooldown_elapsed(&env, &provider, &token)?;
         Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)
     }
 
