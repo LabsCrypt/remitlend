@@ -205,6 +205,24 @@ export function NotificationDropdown() {
     return () => document.removeEventListener("keydown", handleKey);
   }, [open]);
 
+  const prevOpenRef = useRef(false);
+
+  // Focus management: move focus into panel on open, restore to bell trigger on close
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      if (panelRef.current) {
+        panelRef.current.focus();
+      } else {
+        requestAnimationFrame(() => {
+          panelRef.current?.focus();
+        });
+      }
+    } else if (!open && prevOpenRef.current) {
+      buttonRef.current?.focus();
+    }
+    prevOpenRef.current = open;
+  }, [open]);
+
   const handleBellClick = () => {
     setOpen((v: boolean) => !v);
   };
@@ -259,11 +277,12 @@ export function NotificationDropdown() {
           <motion.div
             ref={panelRef}
             key="panel"
+            tabIndex={-1}
             initial={{ opacity: 0, y: -8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-2 w-80 sm:w-96 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900 z-50"
+            className="absolute right-0 top-full mt-2 w-80 sm:w-96 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900 z-50 focus:outline-none"
             role="dialog"
             aria-label="Notifications panel"
           >
