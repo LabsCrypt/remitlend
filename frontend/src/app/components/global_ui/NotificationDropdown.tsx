@@ -15,6 +15,7 @@ import {
   type NotificationType,
 } from "../../hooks/useApi";
 import { useNotificationStream } from "../../hooks/useNotificationStream";
+import { useToastStore } from "../../stores/useToastStore";
 import { StatusIndicator } from "../ui/StatusIndicator";
 
 function cn(...inputs: ClassValue[]) {
@@ -209,12 +210,30 @@ export function NotificationDropdown() {
     setOpen((v: boolean) => !v);
   };
 
+  const addToast = useToastStore((state) => state.addToast);
+
   const handleReadOne = (id: number) => {
-    markRead.mutate([id]);
+    markRead.mutate([id], {
+      onError: (err) => {
+        addToast({
+          type: "error",
+          title: "Failed to mark notification as read",
+          description: err?.message || "Please try again.",
+        });
+      },
+    });
   };
 
   const handleMarkAllRead = () => {
-    markAllRead.mutate();
+    markAllRead.mutate(undefined, {
+      onError: (err) => {
+        addToast({
+          type: "error",
+          title: "Failed to mark all notifications as read",
+          description: err?.message || "Please try again.",
+        });
+      },
+    });
   };
 
   const handleNavigate = (path: string) => {
