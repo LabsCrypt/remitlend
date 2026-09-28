@@ -15,7 +15,7 @@ export const ASSET_DECIMALS: Record<string, number> = {
 };
 
 export function getAssetDecimals(asset: string): number {
-  return ASSET_DECIMALS[asset] ?? STROOP_DECIMALS;
+  return ASSET_DECIMALS[asset?.toUpperCase()] ?? STROOP_DECIMALS;
 }
 
 export function sanitizeAmountInput(value: string): string {
