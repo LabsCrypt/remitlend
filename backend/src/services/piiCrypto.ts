@@ -15,8 +15,9 @@ interface EncryptedField {
 }
 
 async function unwrapDek(dekWrapped: Buffer, kekId: string): Promise<Buffer> {
-  if (KMS_ENDPOINT) {
-    const resp = await fetch(`${KMS_ENDPOINT}/decrypt`, {
+  const kmsEndpoint = process.env.PII_KMS_ENDPOINT ?? KMS_ENDPOINT;
+  if (kmsEndpoint) {
+    const resp = await fetch(`${kmsEndpoint}/decrypt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kek_id: kekId, wrapped_key: dekWrapped.toString('base64') }),
@@ -35,11 +36,13 @@ async function unwrapDek(dekWrapped: Buffer, kekId: string): Promise<Buffer> {
 }
 
 async function wrapDek(dek: Buffer): Promise<Buffer> {
-  if (KMS_ENDPOINT) {
-    const resp = await fetch(`${KMS_ENDPOINT}/encrypt`, {
+  const kmsEndpoint = process.env.PII_KMS_ENDPOINT ?? KMS_ENDPOINT;
+  const kekId = process.env.PII_KEK_ID ?? KEK_ID;
+  if (kmsEndpoint) {
+    const resp = await fetch(`${kmsEndpoint}/encrypt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kek_id: KEK_ID, plaintext: dek.toString('base64') }),
+      body: JSON.stringify({ kek_id: kekId, plaintext: dek.toString('base64') }),
     });
     if (!resp.ok) throw new Error(`KMS wrap failed: ${resp.status}`);
     const { wrapped_key } = (await resp.json()) as { wrapped_key: string };
@@ -63,7 +66,8 @@ export async function encryptField(plaintext: string): Promise<EncryptedField> {
   const tag = cipher.getAuthTag();
   const ciphertext = Buffer.concat([encrypted, tag]);
   const dekWrapped = await wrapDek(dek);
-  return { ciphertext, gcm_nonce: iv, dek_wrapped: dekWrapped, dek_kek_id: KEK_ID };
+  const kekId = process.env.PII_KEK_ID ?? KEK_ID;
+  return { ciphertext, gcm_nonce: iv, dek_wrapped: dekWrapped, dek_kek_id: kekId };
 }
 
 export async function decryptField(
