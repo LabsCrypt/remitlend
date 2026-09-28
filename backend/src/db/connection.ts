@@ -107,6 +107,7 @@ export async function withTransaction<T>(
 
   while (true) {
     const client = await getClient();
+    let releaseError: Error | undefined;
     try {
       await client.query('BEGIN');
       const result = await fn(client);
@@ -117,6 +118,8 @@ export async function withTransaction<T>(
         await client.query('ROLLBACK');
       } catch (rollbackError) {
         logger.error('Failed to rollback transaction', { rollbackError });
+        releaseError =
+          rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
       }
 
       const isTransient = TRANSIENT_ERROR_CODES.has((error as { code: string }).code);
@@ -133,7 +136,11 @@ export async function withTransaction<T>(
 
       throw error;
     } finally {
-      client.release();
+      if (releaseError) {
+        client.release(releaseError);
+      } else {
+        client.release();
+      }
     }
   }
 }
