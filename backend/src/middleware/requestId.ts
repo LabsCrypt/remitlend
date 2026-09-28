@@ -7,22 +7,25 @@ declare module 'express' {
   }
 }
 
+export const MAX_REQUEST_ID_LENGTH = 64;
+export const REQUEST_ID_REGEX = /^[a-zA-Z0-9_.-]{1,64}$/;
+
+export function isValidRequestId(header: unknown): header is string {
+  if (typeof header !== 'string') return false;
+  const trimmed = header.trim();
+  return (
+    trimmed.length > 0 && trimmed.length <= MAX_REQUEST_ID_LENGTH && REQUEST_ID_REGEX.test(trimmed)
+  );
+}
+
 export const requestIdMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const incomingHeader = req.header('x-request-id');
-  // ID generation strategy (#1522): createRequestId() (see
-  // ../utils/requestContext.ts) delegates to Node's crypto.randomUUID(),
-  // a cryptographically-random RFC 4122 v4 UUID drawn from the OS CSPRNG
-  // on every call. Each call is independent — there is no shared counter,
-  // timestamp, or other mutable state to coordinate across concurrent
-  // requests — so uniqueness holds under concurrency by construction, not
-  // by locking or sequencing. The collision probability across billions
-  // of generated IDs remains astronomically small (~2^-122 birthday bound
-  // per pair). See __tests__/requestId.test.ts for empirical concurrent
-  // uniqueness coverage.
-  const requestId =
-    typeof incomingHeader === 'string' && incomingHeader.trim().length > 0
-      ? incomingHeader.trim()
-      : createRequestId();
+  // ID generation strategy (#1522, #1872):
+  // Validate incoming client x-request-id headers against a length cap (64 chars)
+  // and an allowed character set ([a-zA-Z0-9_.-]) to prevent log injection and
+  // unbounded storage consumption. Any missing, malformed, or oversized header
+  // falls back to a cryptographically random RFC 4122 v4 UUID from createRequestId().
+  const requestId = isValidRequestId(incomingHeader) ? incomingHeader.trim() : createRequestId();
 
   req.requestId = requestId;
   res.setHeader('x-request-id', requestId);

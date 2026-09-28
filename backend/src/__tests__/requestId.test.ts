@@ -1,29 +1,79 @@
 import request from 'supertest';
-import app from '../app.js';
 import logger from '../utils/logger.js';
-import { jest } from '@jest/globals';
-
+import { jest, describe, it, expect } from '@jest/globals';
 import express from 'express';
-import { requestIdMiddleware } from '../middleware/requestId.js';
+import {
+  requestIdMiddleware,
+  isValidRequestId,
+  MAX_REQUEST_ID_LENGTH,
+} from '../middleware/requestId.js';
 
 describe('Request ID middleware', () => {
+  const createTestApp = () => {
+    const testApp = express();
+    testApp.use(requestIdMiddleware);
+    testApp.get('/', (_req, res) => res.sendStatus(200));
+    return testApp;
+  };
+
   it('adds x-request-id when missing', async () => {
-    const response = await request(app).get('/');
+    const testApp = createTestApp();
+    const response = await request(testApp).get('/');
     const requestId = response.headers['x-request-id'] as string | undefined;
 
     expect(response.status).toBe(200);
     expect(requestId).toBeDefined();
     expect(typeof requestId).toBe('string');
     expect((requestId ?? '').length).toBeGreaterThan(0);
+    expect(isValidRequestId(requestId)).toBe(true);
   });
 
-  it('preserves client x-request-id', async () => {
-    const requestId = 'test-request-id-123';
+  it('preserves client x-request-id when valid', async () => {
+    const testApp = createTestApp();
+    const validId = 'test-request-id-123';
 
-    const response = await request(app).get('/').set('x-request-id', requestId);
+    const response = await request(testApp).get('/').set('x-request-id', validId);
 
     expect(response.status).toBe(200);
-    expect(response.headers['x-request-id']).toBe(requestId);
+    expect(response.headers['x-request-id']).toBe(validId);
+  });
+
+  it('replaces oversized client x-request-id (> 64 chars) with server-generated ID', async () => {
+    const testApp = createTestApp();
+    const oversizedId = 'a'.repeat(MAX_REQUEST_ID_LENGTH + 1);
+
+    const response = await request(testApp).get('/').set('x-request-id', oversizedId);
+
+    expect(response.status).toBe(200);
+    const requestId = response.headers['x-request-id'] as string;
+    expect(requestId).toBeDefined();
+    expect(requestId).not.toBe(oversizedId);
+    expect(requestId.length).toBeLessThanOrEqual(MAX_REQUEST_ID_LENGTH);
+    expect(isValidRequestId(requestId)).toBe(true);
+  });
+
+  it('replaces malformed client x-request-id with server-generated ID', async () => {
+    const testApp = createTestApp();
+    const malformedIds = [
+      'id with spaces',
+      '<script>alert(1)</script>',
+      'DROP TABLE users;--',
+      'invalid@char!',
+      'id:colon',
+      'id/slash',
+      'id=equals',
+      '   ',
+    ];
+
+    for (const malformedId of malformedIds) {
+      const response = await request(testApp).get('/').set('x-request-id', malformedId);
+
+      expect(response.status).toBe(200);
+      const requestId = response.headers['x-request-id'] as string;
+      expect(requestId).toBeDefined();
+      expect(requestId).not.toBe(malformedId.trim());
+      expect(isValidRequestId(requestId)).toBe(true);
+    }
   });
 
   it('correlates logger requestId with x-request-id via withContext', async () => {
@@ -102,5 +152,49 @@ describe('Request ID middleware', () => {
     // through the async-local-storage context).
     bodyIds.forEach((id, i) => expect(id).toBe(headerIds[i]));
     expect(new Set(bodyIds).size).toBe(CONCURRENCY);
+  });
+});
+
+describe('isValidRequestId', () => {
+  it('accepts standard RFC 4122 UUIDs', () => {
+    expect(isValidRequestId('c9bf9e57-1685-4c89-bafb-ff5af830be8a')).toBe(true);
+    expect(isValidRequestId('123e4567-e89b-12d3-a456-426614174000')).toBe(true);
+  });
+
+  it('accepts alphanumeric characters, hyphens, dots, and underscores up to 64 chars', () => {
+    expect(isValidRequestId('req-123_abc.XYZ')).toBe(true);
+    expect(isValidRequestId('a'.repeat(MAX_REQUEST_ID_LENGTH))).toBe(true);
+    expect(isValidRequestId('1')).toBe(true);
+  });
+
+  it('rejects strings longer than 64 characters', () => {
+    expect(isValidRequestId('a'.repeat(MAX_REQUEST_ID_LENGTH + 1))).toBe(false);
+    expect(isValidRequestId('a'.repeat(100))).toBe(false);
+  });
+
+  it('rejects empty strings or whitespace-only strings', () => {
+    expect(isValidRequestId('')).toBe(false);
+    expect(isValidRequestId('   ')).toBe(false);
+    expect(isValidRequestId('\t\n')).toBe(false);
+  });
+
+  it('rejects non-string inputs', () => {
+    expect(isValidRequestId(undefined)).toBe(false);
+    expect(isValidRequestId(null)).toBe(false);
+    expect(isValidRequestId(12345)).toBe(false);
+    expect(isValidRequestId({})).toBe(false);
+    expect(isValidRequestId([])).toBe(false);
+  });
+
+  it('rejects strings containing invalid characters', () => {
+    expect(isValidRequestId('id with spaces')).toBe(false);
+    expect(isValidRequestId('id\nwith\nnewlines')).toBe(false);
+    expect(isValidRequestId('id\rwith\rcarriage')).toBe(false);
+    expect(isValidRequestId('<script>alert(1)</script>')).toBe(false);
+    expect(isValidRequestId('id;DROP TABLE users;')).toBe(false);
+    expect(isValidRequestId('id@domain.com')).toBe(false);
+    expect(isValidRequestId('id$variable')).toBe(false);
+    expect(isValidRequestId('id/slash')).toBe(false);
+    expect(isValidRequestId('id\\backslash')).toBe(false);
   });
 });
