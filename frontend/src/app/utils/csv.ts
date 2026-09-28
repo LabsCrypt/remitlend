@@ -1,10 +1,19 @@
 export type CsvRow = Record<string, string | number | boolean | null | undefined>;
 
 function escapeCsvValue(value: string): string {
-  if (value.includes('"') || value.includes(",") || value.includes("\n") || value.includes("\r")) {
-    return `"${value.replace(/"/g, '""')}"`;
+  let sanitized = value;
+  if (/^[=+\-@]/.test(sanitized)) {
+    sanitized = `'${sanitized}`;
   }
-  return value;
+  if (
+    sanitized.includes('"') ||
+    sanitized.includes(",") ||
+    sanitized.includes("\n") ||
+    sanitized.includes("\r")
+  ) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
+  }
+  return sanitized;
 }
 
 export function rowsToCsv(rows: CsvRow[], headers?: string[]): string {
