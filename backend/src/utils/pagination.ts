@@ -181,7 +181,7 @@ function parsePositiveInteger(value: unknown, fallback: number, max?: number): n
   return parsed;
 }
 
-function parseDateRange(value: unknown): { start: Date; end: Date } | null {
+export function parseDateRange(value: unknown): { start: Date; end: Date } | null {
   if (typeof value !== 'string') {
     return null;
   }
@@ -201,7 +201,7 @@ function parseDateRange(value: unknown): { start: Date; end: Date } | null {
   return start <= end ? { start, end } : { start: end, end: start };
 }
 
-function parseAmountRange(value: unknown): { min: number; max: number } | null {
+export function parseAmountRange(value: unknown): { min: number; max: number } | null {
   if (typeof value !== 'string') {
     return null;
   }
