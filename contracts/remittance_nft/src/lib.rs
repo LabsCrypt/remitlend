@@ -783,10 +783,9 @@ impl RemittanceNFT {
             Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         // Simple logic: 1 point per 100 tokens of repayment (scaled for stroops).
+        // MIN_SCORE_UPDATE_REPAYMENT guarantees repayment_amount >= POINTS_DENOMINATOR,
+        // so points_i128 is always >= 1 from here on.
         let points_i128 = repayment_amount / Self::POINTS_DENOMINATOR;
-        if points_i128 == 0 {
-            return Ok(());
-        }
         let points = if points_i128 > (Self::MAX_SCORE as i128) {
             Self::MAX_SCORE
         } else {

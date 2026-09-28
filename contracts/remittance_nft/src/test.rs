@@ -434,6 +434,33 @@ fn test_small_repayment_does_not_write_score_change() {
 }
 
 #[test]
+fn test_update_score_at_min_repayment_floor_awards_one_point() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 1),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    // Exactly at the floor (100 tokens) is accepted and awards exactly 1 point.
+    client.update_score(&user, &RemittanceNFT::MIN_SCORE_UPDATE_REPAYMENT, &None);
+
+    assert_eq!(client.get_score(&user), 501);
+}
+
+#[test]
 #[should_panic]
 fn test_update_score_rejects_non_positive_repayment() {
     let env = Env::default();
