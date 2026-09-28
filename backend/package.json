@@ -5,10 +5,10 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon --watch src --ext ts --exec tsx src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "dev": "node api.js && nodemon --watch src --ext ts --exec tsx src/index.ts",
+    "build": "node api.js && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "start": "node dist/index.js",
+    "start": "node api.js && node dist/index.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -18,7 +18,7 @@
     "migrate:create": "node-pg-migrate create",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
-    "_migrations_note": "Single source of truth: backend/migrations/*.js (node-pg-migrate). Do NOT add .sql files to src/db/ — they are not executed by any script.",
+    "_migrations_note": "Single source of truth: backend/migrations/*.js (node-pg-migrate). Do NOT add .sql files to src/db/ \u2014 they are not executed by any script.",
     "seed": "npm run seed:dev",
     "seed:dev": "tsx src/seed/index.ts",
     "seed:reset": "tsx src/seed/index.ts --reset"

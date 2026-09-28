@@ -2856,6 +2856,13 @@ impl LoanManager {
             return Err(LoanError::LoanNotActive);
         }
 
+        // Re-check the borrower hasn't been seized since loan approval
+        let nft_contract = Self::nft_contract(&env);
+        let nft_client = NftClient::new(&env, &nft_contract);
+        if nft_client.is_seized(&loan.borrower) {
+            return Err(LoanError::SeizedBorrower);
+        }
+
         // Check if loan is past due (in default window)
         let current_ledger = env.ledger().sequence();
         let default_ends = loan
