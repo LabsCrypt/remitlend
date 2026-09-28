@@ -1,4 +1,5 @@
 import { truncateDecimals, getAssetPrecision } from "./precision";
+import { getAssetDecimals, ASSET_DECIMALS } from "./amount";
 
 describe("truncateDecimals (#1304)", () => {
   it("keeps exactly N decimals when the input has more", () => {
@@ -42,5 +43,23 @@ describe("getAssetPrecision", () => {
 
   it("falls back to 7 for unknown assets", () => {
     expect(getAssetPrecision("UNKNOWN")).toBe(7);
+  });
+
+  it("mirrors getAssetDecimals identically across all assets", () => {
+    const testAssets = ["XLM", "USDC", "EURC", "PHP", "xlm", "usdc", "eurc", "php", "UNKNOWN", ""];
+    for (const asset of testAssets) {
+      expect(getAssetPrecision(asset)).toBe(getAssetDecimals(asset));
+    }
+  });
+
+  it("reflects updates to ASSET_DECIMALS dynamically", () => {
+    try {
+      ASSET_DECIMALS["TEST_COIN"] = 4;
+      expect(getAssetPrecision("TEST_COIN")).toBe(4);
+      expect(getAssetDecimals("TEST_COIN")).toBe(4);
+      expect(getAssetPrecision("test_coin")).toBe(4);
+    } finally {
+      delete ASSET_DECIMALS["TEST_COIN"];
+    }
   });
 });

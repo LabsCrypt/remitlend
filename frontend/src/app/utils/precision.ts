@@ -1,3 +1,5 @@
+import { getAssetDecimals } from "./amount";
+
 /**
  * Truncates a number string to a specified number of decimal places.
  * This is used to enforce precision limits on amount inputs.
@@ -25,19 +27,11 @@ export function truncateDecimals(value: string, decimals: number): string {
 
 /**
  * Gets the allowed decimal precision for a given asset.
+ * Delegates to getAssetDecimals in amount.ts as the single source of truth.
  *
  * @param assetCode The asset code (e.g., 'XLM', 'USDC')
  * @returns The number of decimal places allowed
  */
 export function getAssetPrecision(assetCode: string): number {
-  switch (assetCode?.toUpperCase()) {
-    case "XLM":
-      return 7;
-    case "USDC":
-    case "EURC":
-    case "PHP": // Assuming others are 2 for consistency unless specified
-      return 2;
-    default:
-      return 7; // Default to maximum Stellar precision if unknown
-  }
+  return getAssetDecimals(assetCode);
 }
