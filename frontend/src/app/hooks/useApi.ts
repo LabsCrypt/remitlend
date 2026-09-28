@@ -318,7 +318,7 @@ export interface LiquidatableLoan {
   source: "contract" | "backend";
 }
 
-type RawLiquidatableLoan = Record<string, unknown>;
+export type RawLiquidatableLoan = Record<string, unknown>;
 
 export interface AdminDisputeLoanSummary {
   loanId: number;
@@ -599,17 +599,28 @@ function normalizePaginatedList<T>(response: RawPaginatedResponse<T[]>): Paginat
   };
 }
 
-function normalizeLiquidatableLoan(row: RawLiquidatableLoan): LiquidatableLoan {
-  const healthFactor = numberFrom(row.healthFactor ?? row.health_factor ?? row.health);
-  const collateralRatio = numberFrom(row.collateralRatio ?? row.collateral_ratio ?? row.ratio);
+export function normalizeLiquidatableLoan(row: RawLiquidatableLoan): LiquidatableLoan {
+  const rawHealth = row.healthFactor ?? row.health_factor ?? row.health;
+  const rawRatio = row.collateralRatio ?? row.collateral_ratio ?? row.ratio;
+
+  const parsedHealth =
+    rawHealth !== undefined && rawHealth !== null && rawHealth !== "" ? Number(rawHealth) : NaN;
+  const parsedRatio =
+    rawRatio !== undefined && rawRatio !== null && rawRatio !== "" ? Number(rawRatio) : NaN;
+
+  const hasHealth = Number.isFinite(parsedHealth);
+  const hasRatio = Number.isFinite(parsedRatio);
+
+  const healthFactor = hasHealth ? parsedHealth : hasRatio ? parsedRatio : 0;
+  const collateralRatio = hasRatio ? parsedRatio : hasHealth ? parsedHealth : 0;
 
   return {
     loanId: numberFrom(row.loanId ?? row.loan_id ?? row.id),
     borrower: stringFrom(row.borrower ?? row.borrowerAddress ?? row.borrower_address) ?? "",
     collateral: numberFrom(row.collateral ?? row.collateralLocked ?? row.collateral_locked),
     totalDebt: numberFrom(row.totalDebt ?? row.total_debt ?? row.totalOwed ?? row.total_owed),
-    healthFactor: healthFactor || collateralRatio,
-    collateralRatio: collateralRatio || healthFactor,
+    healthFactor,
+    collateralRatio,
     liquidationThreshold: numberFrom(
       row.liquidationThreshold ?? row.liquidation_threshold ?? row.threshold,
     ),
