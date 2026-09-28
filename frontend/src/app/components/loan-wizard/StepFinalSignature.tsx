@@ -23,7 +23,15 @@ import {
 } from "../../utils/transactionErrors";
 import type { LoanWizardData } from "./LoanApplicationWizard";
 
-const ANNUAL_RATE_PERCENT = 12;
+export const ANNUAL_RATE_PERCENT = 12;
+
+export function calculateEstimatedInterest(principal: number, termDays: number): number {
+  return (principal * ANNUAL_RATE_PERCENT * termDays) / (365 * 100);
+}
+
+export function calculateTotalRepayment(principal: number, termDays: number): number {
+  return principal + calculateEstimatedInterest(principal, termDays);
+}
 
 function formatMoney(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -71,8 +79,8 @@ export function StepFinalSignature({
   const toast = useContractToast();
 
   const principal = Number(data.amount || "0");
-  const estimatedInterest = (principal * ANNUAL_RATE_PERCENT * data.termDays) / (365 * 100);
-  const totalRepayment = principal + estimatedInterest;
+  const estimatedInterest = calculateEstimatedInterest(principal, data.termDays);
+  const totalRepayment = calculateTotalRepayment(principal, data.termDays);
   const dueDate = addDays(new Date(), data.termDays);
 
   // Pre-build the XDR so the user can see it in the summary.
