@@ -120,4 +120,64 @@ describe("useSSE", () => {
     // fetch should never be called when url is null
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("periodically re-attempts SSE while in polling mode and stops polling on reconnect (closes #1891)", async () => {
+    let sseAttempts = 0;
+    const pollCallback = jest.fn();
+    const onOpen = jest.fn();
+
+    // First 3 calls reject to exhaust maxReconnectAttempts and force polling.
+    // 4th call (during periodic recovery) succeeds!
+    global.fetch = jest.fn().mockImplementation(() => {
+      sseAttempts += 1;
+      if (sseAttempts <= 3) {
+        return Promise.reject(new Error("SSE connection error"));
+      }
+      return Promise.resolve({
+        ok: true,
+        body: {
+          getReader() {
+            return {
+              read() {
+                // Keep stream connection open
+                return new Promise(() => {});
+              },
+            };
+          },
+        },
+      });
+    });
+
+    const { result } = renderHook(() =>
+      useSSE({
+        url: "http://localhost:3001/api/events/stream",
+        onMessage: jest.fn(),
+        onOpen,
+        onFallbackPoll: pollCallback,
+        pollingInterval: 10_000,
+        sseRecoveryInterval: 20_000,
+      }),
+    );
+
+    // Advance through the initial retry sequence to reach max attempts and enter polling
+    await act(() => jest.advanceTimersByTimeAsync(1500));
+    await act(() => jest.advanceTimersByTimeAsync(2500));
+    await act(() => jest.advanceTimersByTimeAsync(5000));
+
+    expect(result.current).toBe("polling");
+    expect(pollCallback).toHaveBeenCalled();
+    const pollCountBeforeRecovery = pollCallback.mock.calls.length;
+
+    // Advance for sseRecoveryInterval (20s) to trigger periodic recovery connect()
+    await act(() => jest.advanceTimersByTimeAsync(20000));
+
+    // Recovery succeeded: status should be connected and onOpen invoked
+    expect(result.current).toBe("connected");
+    expect(onOpen).toHaveBeenCalled();
+
+    // Verify polling has stopped by advancing further
+    const pollCountAfterRecovery = pollCallback.mock.calls.length;
+    await act(() => jest.advanceTimersByTimeAsync(30000));
+    expect(pollCallback.mock.calls.length).toBe(pollCountAfterRecovery);
+  });
 });

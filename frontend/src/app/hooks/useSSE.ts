@@ -19,12 +19,15 @@ interface UseSSEOptions<T> {
   onFallbackPoll?: () => void | Promise<void>;
   /** Polling interval in milliseconds when in fallback mode. Default: 30000 (30s) */
   pollingInterval?: number;
+  /** Interval in milliseconds to periodically re-attempt SSE connection while polling. Default: pollingInterval */
+  sseRecoveryInterval?: number;
 }
 
 /**
  * Generic SSE hook with exponential backoff reconnection using fetch + ReadableStream.
  * Supports custom Authorization header which the native EventSource API does not.
  * Falls back to polling when SSE fails with configurable interval.
+ * Automatically recovers from polling back to SSE once the endpoint becomes available.
  */
 export function useSSE<T = unknown>({
   url,
@@ -33,6 +36,7 @@ export function useSSE<T = unknown>({
   onError,
   onFallbackPoll,
   pollingInterval = 30_000,
+  sseRecoveryInterval = pollingInterval,
 }: UseSSEOptions<T>): RealtimeStatus {
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
   const token = useUserStore((s) => s.authToken);
@@ -40,6 +44,7 @@ export function useSSE<T = unknown>({
   const abortControllerRef = useRef<AbortController | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 3;
 
@@ -65,18 +70,37 @@ export function useSSE<T = unknown>({
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current);
+        recoveryTimeoutRef.current = null;
+      }
+    };
+
+    const scheduleSSERecovery = () => {
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current);
+      }
+      recoveryTimeoutRef.current = setTimeout(() => {
+        if (!cancelled && pollingIntervalRef.current) {
+          void connect();
+        }
+      }, sseRecoveryInterval);
     };
 
     const startPolling = () => {
-      if (pollingIntervalRef.current || !onFallbackPollRef.current) {
+      if (!onFallbackPollRef.current) {
         return;
       }
 
-      setStatus("polling");
-      void onFallbackPollRef.current();
-      pollingIntervalRef.current = setInterval(() => {
-        void onFallbackPollRef.current?.();
-      }, pollingInterval);
+      if (!pollingIntervalRef.current) {
+        setStatus("polling");
+        void onFallbackPollRef.current();
+        pollingIntervalRef.current = setInterval(() => {
+          void onFallbackPollRef.current?.();
+        }, pollingInterval);
+      }
+
+      scheduleSSERecovery();
     };
 
     async function connect() {
@@ -86,7 +110,9 @@ export function useSSE<T = unknown>({
         abortControllerRef.current.abort();
       }
 
-      setStatus("connecting");
+      if (!pollingIntervalRef.current) {
+        setStatus("connecting");
+      }
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
@@ -196,7 +222,7 @@ export function useSSE<T = unknown>({
       }
       stopPolling();
     };
-  }, [url, token, pollingInterval]);
+  }, [url, token, pollingInterval, sseRecoveryInterval]);
 
   return status;
 }
