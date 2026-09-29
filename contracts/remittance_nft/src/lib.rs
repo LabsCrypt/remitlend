@@ -810,15 +810,34 @@ impl RemittanceNFT {
         Ok(())
     }
 
+    /// Update the minimum repayment amount accepted by `update_score`.
+    ///
+    /// Emits a `MinRepaymentUpdated` event carrying both the previous and the
+    /// new amount (#1146) so this risk-parameter change is observable off-chain
+    /// by the indexer and by audit trails.
     pub fn set_min_repayment_amount(env: Env, amount: i128) {
-        Self::admin(&env).require_auth();
+        // Hoisted so the already-read admin can be reused as the event's actor
+        // topic. Evaluation order is unchanged: `admin()` is read before
+        // `require_auth()`, exactly as it was when inlined.
+        let admin = Self::admin(&env);
+        admin.require_auth();
         if amount < 0 {
             panic!("negative amount");
         }
+        // Capture the outgoing value before the overwrite so the event reports
+        // the full old -> new transition rather than just the new value.
+        let old_amount = Self::min_repayment_amount(&env);
         env.storage()
             .instance()
             .set(&DataKey::MinRepaymentAmount, &amount);
         Self::bump_instance_ttl(&env);
+        // Topics `(event, admin)` and data `(old, new)` follow the admin
+        // config-update convention used by loan_manager/lending_pool so the
+        // existing indexer decoding of `MinRepaymentUpdated` applies as-is.
+        env.events().publish(
+            (Symbol::new(&env, "MinRepaymentUpdated"), admin),
+            (old_amount, amount),
+        );
     }
 
     pub fn get_min_repayment_amount(env: Env) -> i128 {
@@ -1208,17 +1227,36 @@ impl RemittanceNFT {
         Ok(())
     }
 
+    /// Update the number of defaults after which an NFT is auto-burned.
+    ///
+    /// Emits a `DefaultBurnThresholdUpdated` event carrying both the previous
+    /// and the new threshold (#1146) so this risk-parameter change is
+    /// observable off-chain by the indexer and by audit trails.
     pub fn set_default_burn_threshold(env: Env, threshold: u32) -> Result<(), NftError> {
         if threshold == 0 || threshold > Self::MAX_ALLOWED_BURN_THRESHOLD {
             return Err(NftError::InvalidThreshold);
         }
-        Self::admin(&env).require_auth();
+        // Hoisted so the already-read admin can be reused as the event's actor
+        // topic. Evaluation order is unchanged: `admin()` is read before
+        // `require_auth()`, exactly as it was when inlined.
+        let admin = Self::admin(&env);
+        admin.require_auth();
         Self::assert_not_paused(&env)?;
 
+        // Capture the outgoing value before the overwrite so the event reports
+        // the full old -> new transition rather than just the new value.
+        let old_threshold = Self::default_burn_threshold(&env);
         env.storage()
             .instance()
             .set(&Self::burn_threshold_key(), &threshold);
         Self::bump_instance_ttl(&env);
+
+        // Topics `(event, admin)` and data `(old, new)` follow the admin
+        // config-update convention used by loan_manager/lending_pool.
+        env.events().publish(
+            (Symbol::new(&env, "DefaultBurnThresholdUpdated"), admin),
+            (old_threshold, threshold),
+        );
 
         Ok(())
     }
