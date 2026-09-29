@@ -1227,7 +1227,7 @@ fn test_transfer_rejects_destination_with_existing_state() {
 }
 
 #[test]
-fn test_transfer_rejects_burned_destination() {
+fn test_transfer_rejects_auto_burned_destination() {
     // Regression test: transfer only checked has_any_remittance_state(to),
     // which looks at Metadata/Score only. burn_internal() removes those two
     // keys but leaves Burned(to) set, so a burned destination previously
@@ -2879,4 +2879,239 @@ fn test_burn_removes_all_per_user_keys() {
         client.try_get_recipient_commitment(&user),
         Err(Ok(NftError::CommitmentMissing))
     );
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1145: validate_metadata_uri must enforce the documented ipfs:// /
+// https:// prefix instead of only checking a length floor. "aaaaaaaa" is the
+// example from the issue: exactly 8 bytes, so it satisfied the old
+// `uri.len() < 8` check and used to mint successfully.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_mint_rejects_metadata_uri_without_accepted_prefix() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let result = client.try_mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 1),
+        &String::from_str(&env, "aaaaaaaa"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    assert_eq!(result, Err(Ok(NftError::InvalidMetadataUri)));
+
+    // The rejected mint wrote nothing for the user.
+    assert!(client.get_metadata(&user).is_none());
+    assert_eq!(client.get_score(&user), 0);
+}
+
+#[test]
+fn test_mint_accepts_ipfs_and_https_metadata_uris() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let ipfs_uri = String::from_str(&env, "ipfs://QmTest123");
+    let ipfs_user = Address::generate(&env);
+    client.mint(
+        &ipfs_user,
+        &500,
+        &create_test_hash(&env, 2),
+        &ipfs_uri,
+        &create_test_commitment(&env, 2),
+        &None,
+    );
+    assert_eq!(client.get_metadata_uri(&ipfs_user), Some(ipfs_uri));
+
+    let https_uri = String::from_str(&env, "https://example.com/metadata/1.json");
+    let https_user = Address::generate(&env);
+    client.mint(
+        &https_user,
+        &500,
+        &create_test_hash(&env, 3),
+        &https_uri,
+        &create_test_commitment(&env, 3),
+        &None,
+    );
+    assert_eq!(client.get_metadata_uri(&https_user), Some(https_uri));
+}
+
+#[test]
+fn test_mint_rejects_metadata_uri_prefix_lookalikes() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    // Every one of these is 8+ bytes, so all of them were accepted before the
+    // prefix check existed.
+    let rejected = [
+        "IPFS://QmTest123",    // scheme comparison is case-sensitive
+        "HTTPS://example.com", // uppercase scheme
+        "ipfs:/QmTest123",     // one slash short
+        "ipfs/QmTest123",      // no scheme separator
+        "https:/example.com",  // one slash short
+        "http://example.com",  // wrong scheme
+        "ftp://example.com",   // wrong scheme
+        " ipfs://QmTest123",   // leading whitespace before the scheme
+        "metadata.json",       // no scheme at all
+    ];
+
+    for candidate in rejected {
+        let user = Address::generate(&env);
+        let result = client.try_mint(
+            &user,
+            &500,
+            &create_test_hash(&env, 4),
+            &String::from_str(&env, candidate),
+            &create_test_commitment(&env, 4),
+            &None,
+        );
+        assert_eq!(
+            result,
+            Err(Ok(NftError::InvalidMetadataUri)),
+            "expected {candidate} to be rejected"
+        );
+    }
+}
+
+#[test]
+fn test_mint_enforces_metadata_uri_minimum_length() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    // A bare "ipfs://" is 7 bytes: the only URI the kept length floor rejects
+    // that the prefix check on its own would accept, so pin the behaviour.
+    let bare_ipfs_user = Address::generate(&env);
+    let result = client.try_mint(
+        &bare_ipfs_user,
+        &500,
+        &create_test_hash(&env, 5),
+        &String::from_str(&env, "ipfs://"),
+        &create_test_commitment(&env, 5),
+        &None,
+    );
+    assert_eq!(result, Err(Ok(NftError::InvalidMetadataUri)));
+
+    // "https://" is the longest accepted prefix (8 bytes) and therefore the
+    // shortest URI that clears both checks.
+    let bare_https_user = Address::generate(&env);
+    let result = client.try_mint(
+        &bare_https_user,
+        &500,
+        &create_test_hash(&env, 6),
+        &String::from_str(&env, "https://"),
+        &create_test_commitment(&env, 6),
+        &None,
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_admin_remint_enforces_metadata_uri_prefix() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    // Only a burned account with an outstanding approval can be reminted.
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 7),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 7),
+        &None,
+    );
+    client.burn(&user, &None);
+    client.approve_remint(&user);
+
+    let result = client.try_admin_remint(
+        &user,
+        &500,
+        &create_test_hash(&env, 8),
+        &String::from_str(&env, "aaaaaaaa"),
+        &create_test_commitment(&env, 8),
+    );
+    assert_eq!(result, Err(Ok(NftError::InvalidMetadataUri)));
+
+    // The rejection is side-effect free: the one-time approval is not consumed,
+    // so the admin can retry with an accepted URI.
+    assert!(client.is_remint_approved(&user));
+    assert!(client.get_metadata(&user).is_none());
+
+    client.admin_remint(
+        &user,
+        &500,
+        &create_test_hash(&env, 8),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 8),
+    );
+    assert_eq!(client.get_metadata_uri(&user), Some(create_test_uri(&env)));
+}
+
+#[test]
+fn test_update_metadata_uri_enforces_metadata_uri_prefix() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 9),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 9),
+        &None,
+    );
+
+    let original = client.get_metadata_uri(&user).unwrap();
+
+    let result = client.try_update_metadata_uri(&user, &String::from_str(&env, "aaaaaaaa"), &None);
+    assert_eq!(result, Err(Ok(NftError::InvalidMetadataUri)));
+
+    // A rejected update must leave the stored URI exactly as it was.
+    assert_eq!(client.get_metadata_uri(&user), Some(original));
+
+    let replacement = String::from_str(&env, "https://example.com/metadata/2.json");
+    client.update_metadata_uri(&user, &replacement, &None);
+    assert_eq!(client.get_metadata_uri(&user), Some(replacement));
 }

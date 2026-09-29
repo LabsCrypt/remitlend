@@ -17,11 +17,12 @@ const PAGE_ROWS = [
   { id: '298', created_at: '2026-03-01T00:00:00.000Z' },
 ];
 
-/** Last call to query() — always the SELECT page statement. */
+/** Most recent SELECT page statement issued by getAuditLogs. */
 const pageQuery = () => {
-  const call = mockQuery.mock.calls.find(
+  const pageCalls = mockQuery.mock.calls.filter(
     ([text]) => typeof text === 'string' && text.includes('SELECT * FROM audit_logs'),
   );
+  const call = pageCalls[pageCalls.length - 1];
   return { text: String(call?.[0]), values: (call?.[1] as unknown[]) ?? [] };
 };
 
@@ -48,7 +49,8 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     });
 
     it('pages with a (created_at, id) row comparison, not id alone', async () => {
-      await getAuditLogs({ limit: 2 });
+      // Resume from the composite cursor the previous page ended on.
+      await getAuditLogs({ limit: 2, cursor: '2026-03-02T00:00:00.000Z:298' });
 
       const { text, values } = pageQuery();
       expect(text).toMatch(/\(created_at, id\)\s*<\s*\(\$\d+, \$\d+\)/);
@@ -67,11 +69,13 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const result = await getAuditLogs({ limit: 2 });
 
       expect(result.nextCursor).not.toBeNull();
-      // The cursor carries the timestamp *and* the id it is paging from.
-      expect(result.nextCursor).toContain(':');
-      const [createdAt, id] = String(result.nextCursor).split(':');
-      expect(createdAt).toBe('2026-03-02T00:00:00.000Z');
-      expect(id).toBe('299');
+      // The cursor carries the timestamp *and* the id it is paging from. An ISO
+      // timestamp contains ':' itself, so read it back from the *last*
+      // separator — exactly how decodeCursor parses it.
+      const cursor = String(result.nextCursor);
+      const separatorAt = cursor.lastIndexOf(':');
+      expect(cursor.slice(0, separatorAt)).toBe('2026-03-02T00:00:00.000Z');
+      expect(cursor.slice(separatorAt + 1)).toBe('299');
     });
 
     it('returns a null cursor on the last page', async () => {
@@ -100,9 +104,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     it('omits the count query unless withTotal is set', async () => {
       await getAuditLogs({ limit: 2 });
 
-      const countCalls = mockQuery.mock.calls.filter(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCalls = mockQuery.mock.calls.filter(([text]) => String(text).includes('COUNT(*)'));
       expect(countCalls).toHaveLength(0);
     });
 
@@ -122,9 +124,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
         limit: 2,
       });
 
-      const countCall = mockQuery.mock.calls.find(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCall = mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'));
       const countSql = String(countCall?.[0]);
       const countValues = (countCall?.[1] as unknown[]) ?? [];
 
@@ -171,7 +171,10 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const countSql = String(
         mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'))?.[0],
       );
-      expect(countSql).toBe('SELECT COUNT(*) as count FROM audit_logs');
+      // No filters → no WHERE clause. The builder interpolates an empty clause,
+      // so compare the trimmed statement instead of its trailing space.
+      expect(countSql).not.toContain('WHERE');
+      expect(countSql.trim()).toBe('SELECT COUNT(*) as count FROM audit_logs');
     });
   });
 
@@ -203,6 +206,16 @@ describe('AuditLogFilters shape (#1808)', () => {
       limit: 1,
       withTotal: true,
     };
-    expect(Object.keys(filters)).toHaveLength(8);
+    // Exactly the 7 query parameters documented for GET /admin/audit-logs
+    // (src/swagger/adminSwagger.ts).
+    expect(Object.keys(filters).sort()).toEqual([
+      'action',
+      'actor',
+      'cursor',
+      'from',
+      'limit',
+      'to',
+      'withTotal',
+    ]);
   });
 });

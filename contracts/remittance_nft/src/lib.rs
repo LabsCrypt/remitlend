@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
-    String, Symbol, Vec,
+    EnvBase, String, Symbol, Val, Vec,
 };
 
 #[contracterror]
@@ -115,6 +115,10 @@ impl RemittanceNFT {
     /// events, enabling spam attacks. This floor rejects such calls early with
     /// InvalidRepaymentAmount (error 7).
     pub const MIN_SCORE_UPDATE_REPAYMENT: i128 = Self::POINTS_DENOMINATOR;
+    /// Length of the longest accepted metadata URI prefix (`"https://"`).
+    /// Doubles as the minimum accepted URI length and as the size of the stack
+    /// buffer `validate_metadata_uri` inspects the start of a URI in.
+    const LONGEST_URI_PREFIX_LEN: usize = 8;
 
     fn admin_key() -> soroban_sdk::Symbol {
         symbol_short!("ADMIN")
@@ -250,19 +254,49 @@ impl RemittanceNFT {
             .publish((symbol_short!("MntAuth"), minter.clone()), ());
     }
 
-    fn validate_metadata_uri(env: &Env, uri: &String) -> Result<(), NftError> {
-        // Check if URI starts with "ipfs://" or "https://"
-        let _ipfs_prefix = String::from_str(env, "ipfs://");
-        let _https_prefix = String::from_str(env, "https://");
+    /// True when `uri` begins with `"ipfs://"` or `"https://"`.
+    ///
+    /// `String` cannot be sliced, and `String::copy_into_slice` insists on a
+    /// buffer matching the *whole* string, so the leading bytes are read with the
+    /// very host call `copy_into_slice` delegates to -
+    /// `EnvBase::string_copy_to_slice`, which fills the destination slice from a
+    /// given offset. `read_len` never exceeds `uri.len()`, so the copy cannot trap.
+    fn has_accepted_metadata_uri_prefix(env: &Env, uri: &String) -> bool {
+        const IPFS_PREFIX: &[u8] = b"ipfs://";
+        const HTTPS_PREFIX: &[u8] = b"https://";
 
-        // Simple validation: check if the URI has a reasonable length and starts with valid prefix
-        // We can't do complex string operations in no_std, so we do basic checks
-        if uri.len() < 8 {
+        let uri_len = uri.len() as usize;
+        if uri_len < IPFS_PREFIX.len() {
+            return false;
+        }
+
+        let read_len = core::cmp::min(uri_len, Self::LONGEST_URI_PREFIX_LEN);
+        let mut buf = [0u8; Self::LONGEST_URI_PREFIX_LEN];
+        let _ = env.string_copy_to_slice(uri.to_object(), Val::U32_ZERO, &mut buf[..read_len]);
+
+        let head = &buf[..read_len];
+        head.starts_with(IPFS_PREFIX) || head.starts_with(HTTPS_PREFIX)
+    }
+
+    /// Validate the metadata URI of a user's NFT.
+    ///
+    /// The URI must start with `"ipfs://"` or `"https://"`; anything else is
+    /// rejected with `InvalidMetadataUri`, however long it is. Full RFC 3986
+    /// parsing, content addressing and CID validation are deliberately out of
+    /// scope: the scheme prefix *is* the acceptance rule, applied uniformly to
+    /// every caller (`mint`, `admin_remint`, `update_metadata_uri`).
+    fn validate_metadata_uri(env: &Env, uri: &String) -> Result<(), NftError> {
+        // A bare scheme such as "ipfs://" names no content, and anything shorter
+        // cannot carry a scheme at all; both were rejected before the prefix check
+        // existed, so keep rejecting them.
+        if uri.len() < Self::LONGEST_URI_PREFIX_LEN as u32 {
             return Err(NftError::InvalidMetadataUri);
         }
 
-        // For now, we accept any non-empty URI with reasonable length
-        // More sophisticated validation would require string comparison which is limited in no_std
+        if !Self::has_accepted_metadata_uri_prefix(env, uri) {
+            return Err(NftError::InvalidMetadataUri);
+        }
+
         Ok(())
     }
 
