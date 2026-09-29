@@ -1,17 +1,18 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
+type TransactionCallback = (client: { query: typeof mockQuery }) => Promise<unknown>;
 
 const mockQuery: jest.MockedFunction<
   (text: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
+const mockWithTransaction: jest.MockedFunction<(fn: TransactionCallback) => Promise<unknown>> =
+  jest.fn(async (fn) => fn({ query: mockQuery }));
 
 jest.unstable_mockModule('../../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
-  withTransaction: jest.fn(async (fn: (client: { query: typeof mockQuery }) => Promise<unknown>) =>
-    fn({ query: mockQuery }),
-  ),
+  withTransaction: mockWithTransaction,
   getClient: jest.fn(),
   closePool: jest.fn(),
 }));
@@ -63,11 +64,22 @@ function deliveryRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function queueRetryBatch(rows: unknown[], outcomeCount = rows.length): void {
+  mockQuery.mockResolvedValueOnce({ rows });
+  if (rows.length > 0) {
+    mockQuery.mockResolvedValueOnce({ rows: [], rowCount: rows.length });
+    for (let index = 0; index < outcomeCount; index++) {
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    }
+  }
+}
+
 describe('WebhookRetryProcessor', () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWithTransaction.mockImplementation(async (fn) => fn({ query: mockQuery }));
     global.fetch = originalFetch;
   });
 
@@ -86,6 +98,9 @@ describe('WebhookRetryProcessor', () => {
         expect.stringContaining('FOR UPDATE OF wd SKIP LOCKED'),
         expect.any(Array),
       );
+      expect(mockQuery.mock.calls[0]?.[0]).toContain('wd.delivered_at IS NULL');
+      expect(mockQuery.mock.calls[0]?.[0]).toContain('wd.next_retry_at <= $1');
+      expect(mockQuery.mock.calls[0]?.[0]).toContain('wd.attempt_count < $2');
     });
 
     it('retries a pending delivery successfully', async () => {
@@ -96,9 +111,7 @@ describe('WebhookRetryProcessor', () => {
       global.fetch = fetchMock as unknown as typeof fetch;
 
       const row = deliveryRow({ attempt_count: 1 });
-      mockQuery
-        .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      queueRetryBatch([row]);
 
       await WebhookService.processRetries();
 
@@ -108,7 +121,10 @@ describe('WebhookRetryProcessor', () => {
         expect.objectContaining({ method: 'POST' }),
       );
 
-      const updateCall = mockQuery.mock.calls[1] as [string, unknown[]];
+      const claimCall = mockQuery.mock.calls[1] as [string, unknown[]];
+      expect(claimCall[0]).toContain('SET next_retry_at = $1');
+      expect(claimCall[1]?.[2]).toEqual([row.id]);
+      const updateCall = mockQuery.mock.calls[2] as [string, unknown[]];
       expect(updateCall[0]).toContain('UPDATE webhook_deliveries');
       expect(updateCall[1]?.[0]).toBe(2); // attempt_count = 1 + 1
       expect(updateCall[1]?.[1]).toBe(200); // last_status_code
@@ -126,19 +142,181 @@ describe('WebhookRetryProcessor', () => {
       const now = 1_700_000_000_000;
       jest.spyOn(Date, 'now').mockReturnValue(now);
 
-      mockQuery
-        .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      queueRetryBatch([row]);
 
       await WebhookService.processRetries();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const updateCall = mockQuery.mock.calls[1] as [string, unknown[]];
+      const updateCall = mockQuery.mock.calls[2] as [string, unknown[]];
       expect(updateCall[0]).toContain('UPDATE webhook_deliveries');
       expect(updateCall[1]?.[0]).toBe(1); // attempt_count
       expect(updateCall[1]?.[1]).toBe(503); // last_status_code
       expect(updateCall[1]?.[2]).toBe('Webhook returned status 503');
       expect(updateCall[1]?.[3]).toEqual(new Date(now + getRetryDelayMs(1))); // next_retry_at
+    });
+
+    it('does not dispatch a claimed delivery from another worker before the first HTTP completes', async () => {
+      const row = deliveryRow({ attempt_count: 1 });
+      const timeline: string[] = [];
+      let claimed = false;
+      let httpStarted: (() => void) | undefined;
+      let finishHttp: ((response: { ok: boolean; status: number }) => void) | undefined;
+      const httpStartedPromise = new Promise<void>((resolve) => {
+        httpStarted = resolve;
+      });
+
+      global.fetch = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            timeline.push('http');
+            httpStarted?.();
+            finishHttp = resolve;
+          }),
+      ) as unknown as typeof fetch;
+
+      mockWithTransaction.mockImplementation(async (fn) => {
+        let pendingClaim = false;
+        const txQuery: typeof mockQuery = jest.fn(async (text, params) => {
+          if (text.includes('SELECT wd.id')) {
+            timeline.push('select');
+            return { rows: claimed ? [] : [row] };
+          }
+          if (text.includes('UPDATE webhook_deliveries')) {
+            timeline.push('claim');
+            expect(params?.[0]).toBeInstanceOf(Date);
+            pendingClaim = true;
+            return { rows: [], rowCount: 1 };
+          }
+          return { rows: [] };
+        });
+        const result = await fn({ query: txQuery });
+        if (pendingClaim) {
+          claimed = true;
+          timeline.push('commit');
+        }
+        return result;
+      });
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const workerA = WebhookService.processRetries();
+      await httpStartedPromise;
+      await WebhookService.processRetries();
+
+      expect(timeline.slice(0, 3)).toEqual(['select', 'claim', 'commit']);
+      expect(timeline[3]).toBe('http');
+      expect(timeline.filter((event) => event === 'select')).toHaveLength(2);
+      expect(timeline.filter((event) => event === 'claim')).toHaveLength(1);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      finishHttp?.({ ok: true, status: 200 });
+      await workerA;
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows a second worker to claim a different row while the first row is locked', async () => {
+      const firstRow = deliveryRow({ id: 1, attempt_count: 1 });
+      const secondRow = deliveryRow({
+        id: 2,
+        attempt_count: 1,
+        callback_url: 'https://other.example.com/callback',
+      });
+      const lockedIds = new Set<number>();
+      const queries: string[] = [];
+      let releaseFirstSelect: (() => void) | undefined;
+      let firstSelectEntered: (() => void) | undefined;
+      const firstSelectPromise = new Promise<void>((resolve) => {
+        firstSelectEntered = resolve;
+      });
+      const firstSelectGate = new Promise<void>((resolve) => {
+        releaseFirstSelect = resolve;
+      });
+      let transactionCount = 0;
+      global.fetch = jest.fn(async () => ({ ok: true, status: 200 })) as unknown as typeof fetch;
+
+      mockWithTransaction.mockImplementation(async (fn) => {
+        const workerId = ++transactionCount;
+        let claimedIds: number[] = [];
+        const txQuery: typeof mockQuery = jest.fn(async (text, params) => {
+          queries.push(text);
+          if (text.includes('SELECT wd.id')) {
+            if (workerId === 1) {
+              lockedIds.add(firstRow.id);
+              firstSelectEntered?.();
+              await firstSelectGate;
+              return { rows: [firstRow] };
+            }
+            return { rows: lockedIds.has(firstRow.id) ? [secondRow] : [firstRow] };
+          }
+          if (text.includes('UPDATE webhook_deliveries')) {
+            claimedIds = params?.[2] as number[];
+            return { rows: [], rowCount: claimedIds.length };
+          }
+          return { rows: [] };
+        });
+        const result = await fn({ query: txQuery });
+        for (const id of claimedIds) lockedIds.add(id);
+        return result;
+      });
+      mockQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+
+      const workerA = WebhookService.processRetries();
+      await firstSelectPromise;
+      await WebhookService.processRetries();
+      expect(global.fetch).toHaveBeenCalledWith(
+        secondRow.callback_url,
+        expect.objectContaining({ method: 'POST' }),
+      );
+
+      releaseFirstSelect?.();
+      await workerA;
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(
+        queries
+          .filter((text) => text.includes('SELECT wd.id'))
+          .every((text) => text.includes('FOR UPDATE OF wd SKIP LOCKED')),
+      ).toBe(true);
+    });
+
+    it('makes a claimed delivery eligible again after its lease expires', async () => {
+      const circularPayload: Record<string, unknown> = {};
+      circularPayload.self = circularPayload;
+      const row = deliveryRow({ payload: circularPayload });
+      const selectedLeaseDates: Date[] = [];
+      let leaseUntil: Date | undefined;
+      const fetchMock = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+      global.fetch = fetchMock as unknown as typeof fetch;
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-29T00:00:00.000Z'));
+
+      mockWithTransaction.mockImplementation(async (fn) => {
+        let pendingLease: Date | undefined;
+        const txQuery: typeof mockQuery = jest.fn(async (text, params) => {
+          if (text.includes('SELECT wd.id')) {
+            const now = params?.[0] as Date;
+            selectedLeaseDates.push(now);
+            return { rows: !leaseUntil || leaseUntil <= now ? [row] : [] };
+          }
+          if (text.includes('UPDATE webhook_deliveries')) {
+            pendingLease = params?.[0] as Date;
+            return { rows: [], rowCount: 1 };
+          }
+          return { rows: [] };
+        });
+        const result = await fn({ query: txQuery });
+        if (pendingLease) leaseUntil = pendingLease;
+        return result;
+      });
+
+      try {
+        await WebhookService.processRetries();
+        expect(leaseUntil).toBeInstanceOf(Date);
+        jest.setSystemTime(new Date(leaseUntil!.getTime() + 1));
+        await WebhookService.processRetries();
+
+        expect(selectedLeaseDates).toHaveLength(2);
+        expect(fetchMock).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('sets next_retry_at with progressive backoff on multiple failures', async () => {
@@ -152,13 +330,11 @@ describe('WebhookRetryProcessor', () => {
       jest.spyOn(Date, 'now').mockReturnValue(now);
 
       const row = deliveryRow({ attempt_count: 2 });
-      mockQuery
-        .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      queueRetryBatch([row]);
 
       await WebhookService.processRetries();
 
-      const updateCall = mockQuery.mock.calls[1] as [string, unknown[]];
+      const updateCall = mockQuery.mock.calls[2] as [string, unknown[]];
       expect(updateCall[1]?.[0]).toBe(3); // attempt_count = 2 + 1
       expect(updateCall[1]?.[3]).toEqual(new Date(now + getRetryDelayMs(3)));
 
@@ -182,14 +358,12 @@ describe('WebhookRetryProcessor', () => {
 
       // attempt_count = MAX_RETRY_ATTEMPTS - 1 means next attempt will hit the limit
       const row = deliveryRow({ attempt_count: MAX_RETRY_ATTEMPTS - 1 });
-      mockQuery
-        .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      queueRetryBatch([row]);
 
       await WebhookService.processRetries();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const updateCall = mockQuery.mock.calls[1] as [string, unknown[]];
+      const updateCall = mockQuery.mock.calls[2] as [string, unknown[]];
       expect(updateCall[1]?.[0]).toBe(MAX_RETRY_ATTEMPTS); // attempt_count = MAX
       expect(updateCall[1]?.[1]).toBe(500); // last_status_code
       // next_retry_at should be null (permanently failed)
@@ -204,13 +378,12 @@ describe('WebhookRetryProcessor', () => {
       global.fetch = fetchMock as unknown as typeof fetch;
 
       // attempt_count >= MAX_RETRY_ATTEMPTS should be filtered out by the query
-      mockQuery.mockResolvedValueOnce({
-        rows: [deliveryRow({ attempt_count: MAX_RETRY_ATTEMPTS })],
-      });
+      queueRetryBatch([]);
 
       await WebhookService.processRetries();
 
       expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockQuery.mock.calls[0]?.[0]).toContain('wd.attempt_count < $2');
     });
   });
 
@@ -242,10 +415,7 @@ describe('WebhookRetryProcessor', () => {
       const now = 1_700_000_000_000;
       jest.spyOn(Date, 'now').mockReturnValue(now);
 
-      mockQuery
-        .mockResolvedValueOnce({ rows: [row1, row2] })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      queueRetryBatch([row1, row2], 2);
 
       await WebhookService.processRetries();
 
@@ -254,9 +424,11 @@ describe('WebhookRetryProcessor', () => {
       expect(fetchMock.mock.calls[1]?.[0]).toBe('https://healthy.example.com/callback');
 
       // Both deliveries should have been processed (one failed, one succeeded)
-      expect(mockQuery).toHaveBeenCalledTimes(3);
-      const updateCalls = mockQuery.mock.calls.filter((call) =>
-        (call[0] as string).includes('UPDATE webhook_deliveries'),
+      expect(mockQuery).toHaveBeenCalledTimes(4);
+      const updateCalls = mockQuery.mock.calls.filter(
+        (call) =>
+          (call[0] as string).includes('UPDATE webhook_deliveries') &&
+          (call[0] as string).includes('SET attempt_count'),
       );
       expect(updateCalls).toHaveLength(2);
     });
@@ -288,18 +460,17 @@ describe('WebhookRetryProcessor', () => {
       const now = 1_700_000_000_000;
       jest.spyOn(Date, 'now').mockReturnValue(now);
 
-      mockQuery
-        .mockResolvedValueOnce({ rows: [row1, row2] })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
-        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      queueRetryBatch([row1, row2], 2);
 
       await WebhookService.processRetries();
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
 
       // Both deliveries should have been updated in DB
-      const updateCalls = mockQuery.mock.calls.filter((call) =>
-        (call[0] as string).includes('UPDATE webhook_deliveries'),
+      const updateCalls = mockQuery.mock.calls.filter(
+        (call) =>
+          (call[0] as string).includes('UPDATE webhook_deliveries') &&
+          (call[0] as string).includes('SET attempt_count'),
       );
       expect(updateCalls).toHaveLength(2);
     });
