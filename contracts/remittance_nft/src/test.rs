@@ -1227,7 +1227,7 @@ fn test_transfer_rejects_destination_with_existing_state() {
 }
 
 #[test]
-fn test_transfer_rejects_burned_destination() {
+fn test_transfer_rejects_auto_burned_destination() {
     // Regression test: transfer only checked has_any_remittance_state(to),
     // which looks at Metadata/Score only. burn_internal() removes those two
     // keys but leaves Burned(to) set, so a burned destination previously
@@ -2879,4 +2879,113 @@ fn test_burn_removes_all_per_user_keys() {
         client.try_get_recipient_commitment(&user),
         Err(Ok(NftError::CommitmentMissing))
     );
+}
+
+#[test]
+fn test_get_score_history_limit_u32_max_does_not_trap() {
+    // Regression test for #1144: `get_score_history` computed
+    // `let end = (offset + limit).min(len);`. With `overflow-checks = true` in
+    // the release profile (contracts/Cargo.toml) a plain `+` traps the whole
+    // call whenever `offset + limit` exceeds u32::MAX, e.g. limit = u32::MAX
+    // with offset = 1. The saturating value must still be clamped down to the
+    // real available length, so valid offsets keep returning the tail.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 31),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    // 5 history entries, ledgers 1..=5.
+    for sequence in 1..=5u32 {
+        env.ledger().set_sequence_number(sequence);
+        client.update_score(&user, &1_000_000_000, &None);
+    }
+
+    // offset = 0: `0 + u32::MAX` does not overflow by itself, but the saturated
+    // end must still be clamped to `len` rather than used as a range bound.
+    let all = client.get_score_history(&user, &0, &u32::MAX);
+    assert_eq!(all.len(), 5);
+    assert_eq!(all.get(0).unwrap().ledger, 1);
+    assert_eq!(all.get(4).unwrap().ledger, 5);
+
+    // offset = 1: `1 + u32::MAX` overflows u32 and trapped before this fix.
+    // It must return the remaining 4 entries, in order.
+    let tail = client.get_score_history(&user, &1, &u32::MAX);
+    assert_eq!(tail.len(), 4);
+    assert_eq!(tail.get(0).unwrap().ledger, 2);
+    assert_eq!(tail.get(3).unwrap().ledger, 5);
+
+    // The last valid offset still yields exactly one entry.
+    let last = client.get_score_history(&user, &4, &u32::MAX);
+    assert_eq!(last.len(), 1);
+    assert_eq!(last.get(0).unwrap().ledger, 5);
+
+    // offset >= len stays an empty page, even with a saturated limit.
+    assert_eq!(client.get_score_history(&user, &5, &u32::MAX).len(), 0);
+}
+
+#[test]
+fn test_get_score_history_saturating_add_preserves_valid_pagination() {
+    // #1144 ordering check: `.min(len)` must be applied *after*
+    // `saturating_add`. Clamping first (or using the saturated value directly
+    // as the range bound) would run the loop past `len`, and
+    // `history.get(idx).unwrap()` would panic instead of returning a tail.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 32),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    // 10 history entries, ledgers 1..=10.
+    for sequence in 1..=10u32 {
+        env.ledger().set_sequence_number(sequence);
+        client.update_score(&user, &1_000_000_000, &None);
+    }
+
+    // A plain, non-saturating page is unchanged by the fix.
+    let page = client.get_score_history(&user, &3, &1_000);
+    assert_eq!(page.len(), 7);
+    assert_eq!(page.get(0).unwrap().ledger, 4);
+    assert_eq!(page.get(6).unwrap().ledger, 10);
+
+    // limit = u32::MAX - 1 only overflows once the offset is added; the
+    // saturated result still clamps to the available tail.
+    let saturated = client.get_score_history(&user, &3, &(u32::MAX - 1));
+    assert_eq!(saturated.len(), 7);
+    assert_eq!(saturated.get(0).unwrap().ledger, 4);
+    assert_eq!(saturated.get(6).unwrap().ledger, 10);
+
+    // limit = 0 still returns an empty page (empty range, no underflow).
+    assert_eq!(client.get_score_history(&user, &3, &0).len(), 0);
+
+    // offset = 0 with a fully saturated limit returns everything available.
+    let everything = client.get_score_history(&user, &0, &u32::MAX);
+    assert_eq!(everything.len(), 10);
+    assert_eq!(everything.get(9).unwrap().ledger, 10);
 }
