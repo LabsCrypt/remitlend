@@ -9,7 +9,7 @@ jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
 }));
 
-const { getAuditLogs } = await import('../auditLogService.js');
+const { decodeCursor, getAuditLogs } = await import('../auditLogService.js');
 
 const PAGE_ROWS = [
   { id: '300', created_at: '2026-03-03T00:00:00.000Z' },
@@ -19,9 +19,9 @@ const PAGE_ROWS = [
 
 /** Last call to query() — always the SELECT page statement. */
 const pageQuery = () => {
-  const call = mockQuery.mock.calls.find(
-    ([text]) => typeof text === 'string' && text.includes('SELECT * FROM audit_logs'),
-  );
+  const call = [...mockQuery.mock.calls]
+    .reverse()
+    .find(([text]) => typeof text === 'string' && text.includes('SELECT * FROM audit_logs'));
   return { text: String(call?.[0]), values: (call?.[1] as unknown[]) ?? [] };
 };
 
@@ -48,7 +48,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     });
 
     it('pages with a (created_at, id) row comparison, not id alone', async () => {
-      await getAuditLogs({ limit: 2 });
+      await getAuditLogs({ limit: 2, cursor: '2026-03-02T00:00:00.000Z:298' });
 
       const { text, values } = pageQuery();
       expect(text).toMatch(/\(created_at, id\)\s*<\s*\(\$\d+, \$\d+\)/);
@@ -69,9 +69,10 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       expect(result.nextCursor).not.toBeNull();
       // The cursor carries the timestamp *and* the id it is paging from.
       expect(result.nextCursor).toContain(':');
-      const [createdAt, id] = String(result.nextCursor).split(':');
-      expect(createdAt).toBe('2026-03-02T00:00:00.000Z');
-      expect(id).toBe('299');
+      expect(decodeCursor(result.nextCursor ?? undefined)).toEqual({
+        createdAt: '2026-03-02T00:00:00.000Z',
+        id: '299',
+      });
     });
 
     it('returns a null cursor on the last page', async () => {
@@ -199,6 +200,6 @@ describe('AuditLogFilters shape (#1808)', () => {
       limit: 1,
       withTotal: true,
     };
-    expect(Object.keys(filters)).toHaveLength(8);
+    expect(Object.keys(filters)).toHaveLength(7);
   });
 });
