@@ -37,9 +37,10 @@ jest.unstable_mockModule('../services/notificationService.js', () => ({
 }));
 
 jest.unstable_mockModule('../utils/stellarEnvelope.js', () => ({
-  parseAndValidateSignedEnvelope: jest
-    .fn()
-    .mockReturnValue({ source: 'GCWEPACYJLN7S3ZUXSVMXZBFKYXSHRGZ6O326HDDPDKBKZPXD45XNHC3', signatureCount: 1 }),
+  parseAndValidateSignedEnvelope: jest.fn().mockReturnValue({
+    source: 'GCWEPACYJLN7S3ZUXSVMXZBFKYXSHRGZ6O326HDDPDKBKZPXD45XNHC3',
+    signatureCount: 1,
+  }),
 }));
 
 const mockQuery = jest.fn();
