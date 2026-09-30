@@ -349,3 +349,97 @@ describe('remittanceService.getRemittances with filters', () => {
     ).rejects.toThrow("Invalid 'from' date format");
   });
 });
+
+describe('remittanceService.updateRemittanceStatus status transitions (#1850)', () => {
+  const row = (status: string) => {
+    const now = new Date('2024-03-01T00:00:00.000Z');
+    return {
+      id: 'remit-1',
+      sender_id: SENDER,
+      recipient_address: RECIPIENT,
+      amount: '25',
+      from_currency: 'USDC',
+      to_currency: 'USDC',
+      memo: null,
+      status,
+      transaction_hash: null,
+      error_message: null,
+      xdr: 'xdr123',
+      created_at: now,
+      updated_at: now,
+    };
+  };
+
+  const emptyResult = {
+    rows: [],
+    rowCount: 0,
+    command: 'UPDATE',
+    oid: 0,
+    fields: [],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('claims `processing` with a single UPDATE conditioned on the current status', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [row('processing')],
+      rowCount: 1,
+      command: 'UPDATE',
+      oid: 0,
+      fields: [],
+    });
+
+    const updated = await remittanceService.updateRemittanceStatus('remit-1', 'processing');
+
+    expect(updated?.status).toBe('processing');
+
+    const [text] = mockQuery.mock.calls[0]! as [string, unknown[]];
+    expect(text.replace(/\s+/g, ' ').trim()).toBe(
+      `UPDATE remittances SET status = $1, transaction_hash = $2, error_message = $3, updated_at = $4 WHERE id = $5 AND status = 'pending' RETURNING *`,
+    );
+  });
+
+  it('resolves null when the guarded claim matched no row (a concurrent request won)', async () => {
+    mockQuery
+      .mockResolvedValueOnce(emptyResult) // guard did not match: row not pending
+      .mockResolvedValueOnce({
+        rows: [{ id: 'remit-1' }], // ...but the row itself still exists
+        rowCount: 1,
+        command: 'SELECT',
+        oid: 0,
+        fields: [],
+      });
+
+    await expect(
+      remittanceService.updateRemittanceStatus('remit-1', 'processing'),
+    ).resolves.toBeNull();
+  });
+
+  it('still throws 404 when the row does not exist at all', async () => {
+    mockQuery
+      .mockResolvedValueOnce(emptyResult)
+      .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] });
+
+    await expect(remittanceService.updateRemittanceStatus('remit-1', 'processing')).rejects.toThrow(
+      'Remittance not found',
+    );
+  });
+
+  it('keeps terminal transitions unguarded for the request that owns the claim', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [row('completed')],
+      rowCount: 1,
+      command: 'UPDATE',
+      oid: 0,
+      fields: [],
+    });
+
+    const updated = await remittanceService.updateRemittanceStatus('remit-1', 'completed', 'tx1');
+
+    expect(updated?.status).toBe('completed');
+    const [text] = mockQuery.mock.calls[0]! as [string, unknown[]];
+    expect(text).not.toContain(`status = 'pending'`);
+  });
+});
