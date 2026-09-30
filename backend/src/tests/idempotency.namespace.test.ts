@@ -87,30 +87,40 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     });
 
     it('does not replay another wallet’s cached response', async () => {
-      // Bob's response is already cached under his namespace…
-      asMock(cacheService.get).mockResolvedValue({
-        status: 201,
-        body: { id: 'bob-loan' },
-        fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
-      });
+      asMock(cacheService.get).mockImplementation((cacheKey: unknown) =>
+        Promise.resolve(
+          cacheKey === `idemp:${BOB}:shared-key`
+            ? {
+                status: 201,
+                body: { id: 'bob-loan' },
+                fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
+              }
+            : null,
+        ),
+      );
+      const originalJson = res.json;
 
       // …so Alice sending the identical key, path and body gets a cache miss
       // and runs the handler instead of receiving Bob's response.
       await idempotencyMiddleware(req as Request, res as Response, next);
 
-      expect(cacheKeysRead()[0]).not.toContain('bob-loan');
-      expect(res.json).not.toHaveBeenCalledWith({ id: 'bob-loan' });
+      expect(cacheService.get).toHaveBeenCalledWith(`idemp:${ALICE}:shared-key`);
+      expect(next).toHaveBeenCalled();
+      expect(asMock(originalJson)).not.toHaveBeenCalledWith({ id: 'bob-loan' });
     });
 
     it('does not reject a user with 409 because another user holds the key', async () => {
       // Bob's in-flight lock is held under his namespace.
       asMock(cacheService.get).mockResolvedValue(null);
-      asMock(cacheService.setNotExists).mockResolvedValue(false);
+      asMock(cacheService.setNotExists).mockImplementation((lockKey: unknown) =>
+        Promise.resolve(lockKey !== `idemp:${BOB}:shared-key:lock`),
+      );
 
       await idempotencyMiddleware(req as Request, res as Response, next);
 
       // Alice is unaffected by Bob's lock: the handler still runs.
       expect(asMock(res.status)).not.toHaveBeenCalledWith(409);
+      expect(next).toHaveBeenCalled();
     });
 
     it('namespaces the lock key as well as the cache key', async () => {
