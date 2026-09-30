@@ -97,6 +97,7 @@ in-app `/api/notifications` REST API — the two are separate systems.
 | `LoanCancelled`            | A loan request was cancelled                                |
 | `LoanRejected`             | A loan request was rejected                                 |
 | `LoanRefinanced`           | A loan was refinanced                                       |
+| `LoanPurged`               | A settled or cancelled loan record was purged               |
 | `InterestRateUpdated`      | The interest rate configuration changed                      |
 | `DefaultTermUpdated`       | The default-term configuration changed                        |
 | `TermLimitsUpdated`        | Loan term limits configuration changed                        |
@@ -109,6 +110,8 @@ in-app `/api/notifications` REST API — the two are separate systems.
 | `MinRateBpsUpdated`        | The minimum interest rate (bps) configuration changed              |
 | `MaxRateBpsUpdated`        | The maximum interest rate (bps) configuration changed               |
 | `RateOracleUpdated`        | The rate oracle configuration changed                                |
+| `LiquidationThresholdUpdated` | The liquidation threshold configuration changed                 |
+| `LiquidationBonusUpdated`  | The liquidation bonus configuration changed                          |
 | `MinScoreUpdated`          | The minimum credit score configuration changed                        |
 | `Deposit`                  | A pool deposit occurred                                                |
 | `Withdraw`                 | A pool withdrawal occurred                                              |
@@ -124,6 +127,8 @@ in-app `/api/notifications` REST API — the two are separate systems.
 | `ProposalApproved`         | A governance proposal was approved                                                        |
 | `ProposalFinalized`        | A governance proposal was finalized                                                          |
 | `ProposalCancelled`        | A governance proposal was cancelled                                                             |
+| `AdminProposed`            | A proposed contract administrator was recorded                     |
+| `AdminTransferred`         | Contract administrator authority was transferred                    |
 | `ColDep`                   | Collateral was deposited against a loan (short form of `CollateralDeposited`)                     |
 | `ColRel`                   | Collateral was released back to the borrower (short form of `CollateralReleased`)                   |
 | `LoanApprv`                | A borrower's loan has been approved (short contract event name)                                      |

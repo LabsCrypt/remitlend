@@ -5,7 +5,9 @@ jest.setTimeout(30000);
 
 const mockQuery =
   jest.fn<(sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>>();
-const mockDispatch = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockDispatch = jest
+  .fn<(event: { eventType: string }) => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockBroadcast = jest.fn();
 const mockCreateNotification = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 const mockGetScoreConfig = jest.fn(() => ({
@@ -27,6 +29,7 @@ const supportedWebhookEventTypes = [
   'LoanApproved',
   'LoanRepaid',
   'LoanDefaulted',
+  'LoanPurged',
   'CollateralLiquidated',
   'LoanLiquidated',
   'Deposit',
@@ -64,6 +67,10 @@ const supportedWebhookEventTypes = [
   'MinRateBpsUpdated',
   'MaxRateBpsUpdated',
   'RateOracleUpdated',
+  'LiquidationThresholdUpdated',
+  'LiquidationBonusUpdated',
+  'AdminProposed',
+  'AdminTransferred',
   'PoolPaused',
   'PoolUnpaused',
 ] as const;
@@ -183,6 +190,19 @@ function makeRawEvent(params: {
     default:
       throw new Error(`Unsupported event type: ${params.type}`);
   }
+}
+
+function makeRawGenericEvent(params: { id: string; ledger: number; type: string }) {
+  return {
+    id: params.id,
+    pagingToken: `${params.ledger}`,
+    ledger: params.ledger,
+    ledgerClosedAt: '2026-03-29T00:00:00.000Z',
+    txHash: `tx-${params.id}`,
+    contractId: 'CINDEXERTEST',
+    topic: [scSymbol(params.type)],
+    value: scU32(1),
+  };
 }
 
 function makeAliasedEvent(params: {
@@ -525,6 +545,56 @@ describe('EventIndexer', () => {
     expect(mockDispatch).toHaveBeenCalledTimes(9);
     expect(mockBroadcast).toHaveBeenCalledTimes(9);
     expect(mockCreateNotification).not.toHaveBeenCalled();
+  });
+
+  it('indexes and dispatches the newly supported contract events, while rejecting unknown symbols', async () => {
+    const eventTypes = [
+      'LoanPurged',
+      'LiquidationThresholdUpdated',
+      'LiquidationBonusUpdated',
+      'AdminProposed',
+      'AdminTransferred',
+    ];
+    const insertedEventTypes: string[] = [];
+
+    mockQuery.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') {
+        return { rows: [], rowCount: 0 };
+      }
+
+      if (sql.includes('INSERT INTO contract_events')) {
+        insertedEventTypes.push(String(params[1]));
+        return { rows: [{ event_id: params[0] }], rowCount: 1 };
+      }
+
+      return { rows: [], rowCount: 0 };
+    });
+
+    const indexer = new EventIndexer({
+      rpcUrl: 'https://rpc.test',
+      contractId: 'CINDEXERTEST',
+    });
+
+    (indexer as unknown as { rpc: { getEvents: unknown } }).rpc = {
+      getEvents: async () => ({
+        events: [
+          ...eventTypes.map((type, index) =>
+            makeRawGenericEvent({
+              id: `evt-new-${index}`,
+              ledger: 60 + index,
+              type,
+            }),
+          ),
+          makeRawGenericEvent({ id: 'evt-unknown', ledger: 65, type: 'UnknownContractEvent' }),
+        ],
+      }),
+    };
+
+    await indexer.processEvents(60, 65);
+
+    expect(insertedEventTypes).toEqual(eventTypes);
+    expect(mockDispatch).toHaveBeenCalledTimes(eventTypes.length);
+    expect(mockDispatch.mock.calls.map(([event]) => event.eventType)).toEqual(eventTypes);
   });
 
   it('deduplicates repeated events and only triggers side effects for inserted rows', async () => {
