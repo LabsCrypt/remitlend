@@ -146,7 +146,7 @@ describe('listLoanDisputes pagination', () => {
 
     // Verify the data-fetch query includes the status filter
     const dataCall = mockQuery.mock.calls.find(
-      (call) => call[0].includes('SELECT * FROM loan_disputes') && !call[0].includes('COUNT'),
+      (call) => calj[0].includes('SELECT * FROM loan_disputes') && !call[0].includes('COUNT'),
     );
     expect(dataCall?.[0]).toContain('WHERE status = $1');
     expect(dataCall?.[1]).toEqual(expect.arrayContaining(['resolved']));
