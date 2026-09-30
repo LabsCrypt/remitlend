@@ -118,6 +118,7 @@ in-app `/api/notifications` REST API — the two are separate systems.
 | `WithdrawalCooldownUpdated`| The withdrawal cooldown configuration changed                                   |
 | `NFTMinted`                | A borrower/score NFT was minted                                                  |
 | `ScoreUpdated`             | A borrower's credit score changed                                                  |
+| `ScoreDecreased`           | A borrower's credit score decreased                                               |
 | `NFTSeized`                | A borrower/score NFT was seized                                                     |
 | `NFTBurned`                | A borrower/score NFT was burned                                                       |
 | `ProposalCreated`          | A governance proposal was created                                                       |
@@ -150,7 +151,7 @@ current event names listed above where an equivalent exists.
 | `GovCncl`         | Legacy alias — resolves to `ProposalCancelled`                                          |
 | `GovEmerg`        | Legacy alias — resolves to `ProposalCancelled`                                             |
 | `GovExp`          | Legacy alias — resolves to `ProposalCancelled`                                               |
-| `ScoreDecr`       | Legacy event type for a score decrease — not currently aliased to another event type            |
+| `ScoreDecr`       | Legacy alias — resolves to `ScoreDecreased`                                   |
 | `HashUpd`         | Legacy event type for a content-hash update — not currently aliased to another event type          |
 | `Transfer`        | Legacy event type for an NFT/asset transfer — not currently aliased to another event type            |
 | `MntAuth`         | Legacy event type for a minting-authority change — not currently aliased to another event type         |

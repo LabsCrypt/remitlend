@@ -123,6 +123,26 @@ describe('crossContractReconciler.run', () => {
     expect(result.halfAppliedCount).toBe(0);
   });
 
+  it('reconciles a default row when the canonical ScoreDecreased event matches', async () => {
+    routeQueries({
+      unresolved: [
+        row({
+          operation: 'default',
+          expected_score_delta: -50,
+          disbursement_tx_hash: 'tx-default-score-decrease',
+        }),
+      ],
+      matchByTxHash: { 'tx-default-score-decrease': 1000 },
+    });
+
+    const result = await crossContractReconciler.run();
+    const matchCall = mockQuery.mock.calls.find(([sql]) => sql.includes('/* match-score */'));
+
+    expect(result.reconciledCount).toBe(1);
+    expect(result.halfAppliedCount).toBe(0);
+    expect(matchCall?.[1]?.[1]).toContain('ScoreDecreased');
+  });
+
   it('does not match unrelated subsequent score events on different tx_hashes', async () => {
     routeQueries({
       unresolved: [

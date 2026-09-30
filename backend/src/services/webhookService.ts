@@ -44,6 +44,7 @@ export const SUPPORTED_WEBHOOK_EVENT_TYPES = [
   'WithdrawalCooldownUpdated',
   'NFTMinted',
   'ScoreUpdated',
+  'ScoreDecreased',
   'NFTSeized',
   'NFTBurned',
   'ProposalCreated',

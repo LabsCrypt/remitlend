@@ -234,6 +234,34 @@ function makeRawLoanLiquidatedEvent(id = 'liq-001'): Record<string, unknown> {
   };
 }
 
+function makeRawScoreEvent(
+  rawType: 'ScoreDecr' | 'ScoreUpd' | 'UnsupportedScoreEvent',
+  id = 'score-evt-001',
+): Record<string, unknown> {
+  const makeSym = (name: string) => ({
+    sym: () => ({ toString: () => name }),
+    toXDR: (_enc: string) => `xdr:${name}`,
+  });
+  const value = rawType === 'ScoreDecr' ? [680n, 640n, 'PEN'] : 640n;
+
+  return {
+    id,
+    pagingToken: id,
+    topic: [makeSym(rawType), { _val: 'GBORROWER123', toXDR: () => 'xdr:borrower' }],
+    value: {
+      _val: value,
+      sym: () => {
+        throw new Error('not a sym');
+      },
+      toXDR: () => 'xdr:score-value',
+    },
+    ledger: 300,
+    ledgerClosedAt: new Date().toISOString(),
+    txHash: 'txhash-score-001',
+    contractId: { toString: () => 'CONTRACT001' },
+  };
+}
+
 /** Run the withTransaction callback immediately using the provided mock client. */
 function stubWithTransaction(mockClient: MockClient): void {
   (mockWithTransaction as jest.Mock<any>).mockImplementation(async (fn: TxCallback) =>
@@ -293,6 +321,7 @@ beforeAll(async () => {
       'EmergencyWithdraw',
       'NFTMinted',
       'ScoreUpdated',
+      'ScoreDecreased',
       'NFTSeized',
       'NFTBurned',
       'ProposalCreated',
@@ -409,6 +438,46 @@ function makeIndexer() {
 // --------------------------------------------------------------------------
 
 describe('EventIndexer – transaction atomicity via ingestRawEvents', () => {
+  it('normalizes and stores a raw ScoreDecr event as ScoreDecreased', async () => {
+    const mockClient: MockClient = {
+      query: jest.fn().mockResolvedValue({
+        rowCount: 1,
+        rows: [{ event_id: 'score-evt-001' }],
+      } as never),
+    };
+    stubWithTransaction(mockClient);
+
+    const result = await makeIndexer().ingestRawEvents([makeRawScoreEvent('ScoreDecr')]);
+
+    expect(result.insertedCount).toBe(1);
+    const insertCall = mockClient.query.mock.calls[0] as [string, unknown[]];
+    expect(insertCall[0]).toContain('INSERT INTO contract_events');
+    expect(insertCall[1][1]).toBe('ScoreDecreased');
+    expect(insertCall[1][3]).toBe('GBORROWER123');
+    expect(mockWebhookDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'ScoreDecreased', address: 'GBORROWER123' }),
+    );
+  });
+
+  it('keeps ScoreUpd normalization and rejects unsupported event topics', async () => {
+    const mockClient: MockClient = {
+      query: jest
+        .fn()
+        .mockResolvedValue({ rowCount: 1, rows: [{ event_id: 'score-evt-001' }] } as never),
+    };
+    stubWithTransaction(mockClient);
+
+    const scoreUpdateResult = await makeIndexer().ingestRawEvents([makeRawScoreEvent('ScoreUpd')]);
+    expect(scoreUpdateResult.insertedCount).toBe(1);
+    expect((mockClient.query.mock.calls[0] as [string, unknown[]])[1][1]).toBe('ScoreUpdated');
+
+    const unsupportedResult = await makeIndexer().ingestRawEvents([
+      makeRawScoreEvent('UnsupportedScoreEvent'),
+    ]);
+    expect(unsupportedResult.insertedCount).toBe(0);
+    expect(mockClient.query).toHaveBeenCalledTimes(1);
+  });
+
   it('happy path: event insert succeeds and score update is called with the pinned client', async () => {
     const mockClient: MockClient = {
       query: jest.fn().mockResolvedValue({
