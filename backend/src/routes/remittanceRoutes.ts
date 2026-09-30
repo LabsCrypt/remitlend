@@ -24,6 +24,10 @@ const router = Router();
  *     description: >
  *       Creates a new remittance record and generates an unsigned XDR transaction
  *       for the user to sign with their Stellar wallet (Freighter).
+ *       Cross-currency remittances are not supported: no conversion is performed,
+ *       so `toCurrency` must equal `fromCurrency` and the amount is sent as-is
+ *       in `fromCurrency`. Requests with `fromCurrency !== toCurrency` are
+ *       rejected with 400 VALIDATION_ERROR.
  *     tags: [Remittances]
  *     security:
  *       - BearerAuth: []
@@ -44,13 +48,18 @@ const router = Router();
  *                 description: Recipient Stellar public key (56 chars, starts with G)
  *               amount:
  *                 type: number
- *                 description: Amount to send (in units)
+ *                 description: Amount to send (in units, sent as-is in `fromCurrency` with no conversion)
  *               fromCurrency:
  *                 type: string
  *                 enum: [USDC, EURC, PHP]
+ *                 description: Source (and destination) currency
  *               toCurrency:
  *                 type: string
  *                 enum: [USDC, EURC, PHP]
+ *                 description: >
+ *                   Destination currency. Must currently equal `fromCurrency` —
+ *                   currency conversion is not implemented and mismatched
+ *                   requests are rejected with 400.
  *               memo:
  *                 type: string
  *                 description: Optional transaction memo (max 28 chars)
@@ -67,7 +76,10 @@ const router = Router();
  *                 data:
  *                   $ref: '#/components/schemas/Remittance'
  *       400:
- *         description: Invalid input data
+ *         description: >
+ *           Invalid input data, including a cross-currency request
+ *           (`fromCurrency !== toCurrency`), which is rejected because no
+ *           currency conversion is performed
  *       401:
  *         description: Missing or invalid Bearer token
  */

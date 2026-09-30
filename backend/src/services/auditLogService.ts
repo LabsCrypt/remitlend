@@ -24,8 +24,7 @@ export function encodeCursor(row: Record<string, unknown> | undefined): string |
   const id = row.id;
   const createdAt = row.created_at;
   if (id === undefined || id === null || !createdAt) return null;
-  const createdAtIso =
-    createdAt instanceof Date ? createdAt.toISOString() : String(createdAt);
+  const createdAtIso = createdAt instanceof Date ? createdAt.toISOString() : String(createdAt);
   return `${createdAtIso}${CURSOR_SEPARATOR}${String(id)}`;
 }
 

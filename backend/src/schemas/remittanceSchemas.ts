@@ -4,25 +4,37 @@ import { z } from 'zod';
 const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{55}$/;
 
 // Schema for POST /remittances
+//
+// Cross-currency remittances are rejected at the schema level: the payment
+// path does not perform any currency conversion (see remittanceService), so
+// accepting `fromCurrency !== toCurrency` would silently diverge from the
+// API contract. This guard must be removed together with a real conversion
+// implementation (e.g. Stellar path payment strict-send).
 export const createRemittanceSchema = z.object({
-  body: z.object({
-    recipientAddress: z
-      .string()
-      .regex(STELLAR_ADDRESS_REGEX, 'Invalid Stellar address format')
-      .describe("Recipient's Stellar public key"),
-    amount: z
-      .number()
-      .positive('Amount must be greater than 0')
-      .max(1_000_000, 'Amount exceeds maximum limit')
-      .describe('Amount to send'),
-    fromCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Source currency'),
-    toCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Destination currency'),
-    memo: z
-      .string()
-      .max(28, 'Memo must be 28 characters or less')
-      .optional()
-      .describe('Optional transaction memo'),
-  }),
+  body: z
+    .object({
+      recipientAddress: z
+        .string()
+        .regex(STELLAR_ADDRESS_REGEX, 'Invalid Stellar address format')
+        .describe("Recipient's Stellar public key"),
+      amount: z
+        .number()
+        .positive('Amount must be greater than 0')
+        .max(1_000_000, 'Amount exceeds maximum limit')
+        .describe('Amount to send'),
+      fromCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Source currency'),
+      toCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Destination currency'),
+      memo: z
+        .string()
+        .max(28, 'Memo must be 28 characters or less')
+        .optional()
+        .describe('Optional transaction memo'),
+    })
+    .refine((data) => data.fromCurrency === data.toCurrency, {
+      message:
+        'Cross-currency remittances are not supported yet: the amount is sent as-is in fromCurrency with no conversion. Set toCurrency equal to fromCurrency, or wait until conversion is implemented.',
+      path: ['toCurrency'],
+    }),
 });
 
 // ISO date string validation

@@ -79,13 +79,46 @@ describe('remittanceService.createRemittance', () => {
     mockRemittanceInsert();
   });
 
+  it('rejects cross-currency remittances because no conversion is performed', async () => {
+    // No issuer env needed: the mismatch is rejected before asset resolution.
+    await expect(
+      remittanceService.createRemittance({
+        recipientAddress: RECIPIENT,
+        amount: 25,
+        fromCurrency: 'USDC',
+        toCurrency: 'PHP',
+        memo: 'test',
+        senderAddress: SENDER,
+      }),
+    ).rejects.toThrow(
+      'Cross-currency remittances are not supported yet: the amount is sent as-is in USDC with no conversion, so toCurrency must equal fromCurrency',
+    );
+
+    // Rejected before any DB write or account fetch.
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+    expect(mockGetAccount).not.toHaveBeenCalled();
+  });
+
+  it('rejects mismatched currencies that only differ after normalization', async () => {
+    await expect(
+      remittanceService.createRemittance({
+        recipientAddress: RECIPIENT,
+        amount: 25,
+        fromCurrency: 'usdc',
+        toCurrency: 'PHP',
+        memo: 'test',
+        senderAddress: SENDER,
+      }),
+    ).rejects.toThrow('Cross-currency remittances are not supported yet');
+  });
+
   it('rejects unsupported source currencies', async () => {
     await expect(
       remittanceService.createRemittance({
         recipientAddress: RECIPIENT,
         amount: 25,
         fromCurrency: 'DOGE',
-        toCurrency: 'USDC',
+        toCurrency: 'DOGE',
         memo: 'test',
         senderAddress: SENDER,
       }),

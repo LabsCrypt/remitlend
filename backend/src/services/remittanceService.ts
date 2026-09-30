@@ -80,9 +80,23 @@ export const remittanceService = {
       throw AppError.badRequest('Invalid Stellar sender address (must be 56 chars, start with G)');
     }
 
-    const paymentAsset = getCurrencyAsset(payload.fromCurrency);
     const normalizedFromCurrency = normalizeCurrency(payload.fromCurrency);
     const normalizedToCurrency = normalizeCurrency(payload.toCurrency);
+
+    // Currency-mismatch guard: the payment built below sends `payload.amount`
+    // in `paymentAsset` verbatim — there is no conversion step. Accepting a
+    // toCurrency that differs from fromCurrency would silently deliver the
+    // fromCurrency amount while the API contract promises toCurrency, so such
+    // requests are rejected until a real conversion path (e.g. Stellar path
+    // payment strict-send) is implemented.
+    if (normalizedFromCurrency !== normalizedToCurrency) {
+      throw AppError.validation(
+        `Cross-currency remittances are not supported yet: the amount is sent as-is in ${normalizedFromCurrency} with no conversion, so toCurrency must equal fromCurrency`,
+        'toCurrency',
+      );
+    }
+
+    const paymentAsset = getCurrencyAsset(normalizedFromCurrency);
 
     try {
       const networkPassphrase = getStellarNetworkPassphrase();

@@ -9,7 +9,7 @@ jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
 }));
 
-const { getAuditLogs } = await import('../auditLogService.js');
+const { getAuditLogs, decodeCursor } = await import('../auditLogService.js');
 
 const PAGE_ROWS = [
   { id: '300', created_at: '2026-03-03T00:00:00.000Z' },
@@ -17,11 +17,13 @@ const PAGE_ROWS = [
   { id: '298', created_at: '2026-03-01T00:00:00.000Z' },
 ];
 
-/** Last call to query() — always the SELECT page statement. */
+/** Last SELECT page statement issued — `find` would return an earlier
+ * invocation's SQL when a test calls getAuditLogs more than once. */
 const pageQuery = () => {
-  const call = mockQuery.mock.calls.find(
+  const calls = mockQuery.mock.calls.filter(
     ([text]) => typeof text === 'string' && text.includes('SELECT * FROM audit_logs'),
   );
+  const call = calls[calls.length - 1];
   return { text: String(call?.[0]), values: (call?.[1] as unknown[]) ?? [] };
 };
 
@@ -48,7 +50,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     });
 
     it('pages with a (created_at, id) row comparison, not id alone', async () => {
-      await getAuditLogs({ limit: 2 });
+      await getAuditLogs({ limit: 2, cursor: '2026-03-02T00:00:00.000Z:298' });
 
       const { text, values } = pageQuery();
       expect(text).toMatch(/\(created_at, id\)\s*<\s*\(\$\d+, \$\d+\)/);
@@ -67,11 +69,14 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const result = await getAuditLogs({ limit: 2 });
 
       expect(result.nextCursor).not.toBeNull();
-      // The cursor carries the timestamp *and* the id it is paging from.
+      // The cursor carries the timestamp *and* the id it is paging from. The
+      // ISO timestamp itself contains ':', so parse it with decodeCursor
+      // rather than a naive split.
       expect(result.nextCursor).toContain(':');
-      const [createdAt, id] = String(result.nextCursor).split(':');
-      expect(createdAt).toBe('2026-03-02T00:00:00.000Z');
-      expect(id).toBe('299');
+      const decoded = decodeCursor(String(result.nextCursor));
+      expect(decoded).not.toBeNull();
+      expect(decoded?.createdAt).toBe('2026-03-02T00:00:00.000Z');
+      expect(decoded?.id).toBe('299');
     });
 
     it('returns a null cursor on the last page', async () => {
@@ -100,9 +105,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     it('omits the count query unless withTotal is set', async () => {
       await getAuditLogs({ limit: 2 });
 
-      const countCalls = mockQuery.mock.calls.filter(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCalls = mockQuery.mock.calls.filter(([text]) => String(text).includes('COUNT(*)'));
       expect(countCalls).toHaveLength(0);
     });
 
@@ -122,9 +125,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
         limit: 2,
       });
 
-      const countCall = mockQuery.mock.calls.find(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCall = mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'));
       const countSql = String(countCall?.[0]);
       const countValues = (countCall?.[1] as unknown[]) ?? [];
 
@@ -171,7 +172,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const countSql = String(
         mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'))?.[0],
       );
-      expect(countSql).toBe('SELECT COUNT(*) as count FROM audit_logs');
+      expect(countSql.trim()).toBe('SELECT COUNT(*) as count FROM audit_logs');
     });
   });
 
@@ -203,6 +204,7 @@ describe('AuditLogFilters shape (#1808)', () => {
       limit: 1,
       withTotal: true,
     };
-    expect(Object.keys(filters)).toHaveLength(8);
+    // actor, action, from, to, cursor, limit, withTotal
+    expect(Object.keys(filters)).toHaveLength(7);
   });
 });
