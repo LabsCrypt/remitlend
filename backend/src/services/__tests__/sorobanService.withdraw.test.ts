@@ -50,7 +50,7 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
 
   describe('buildWithdrawTx', () => {
     it('passes 4 arguments (provider, token, shares, min_assets_out) to withdraw invocation with default minAssetsOut=0', async () => {
-      const result = await sorobanService.buildWithdrawTx(providerAddress, tokenAddress, 1000);
+      const result = await sorobanService.buildWithdrawTx(providerAddress, tokenAddress, 10);
 
       expect(result).toHaveProperty('unsignedTxXdr');
       expect(result).toHaveProperty('networkPassphrase');
@@ -69,7 +69,7 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
 
       expect(functionName).toBe('withdraw');
       expect(args.length).toBe(4);
-      expect(scValToNative(args[2])).toBe(1000n);
+      expect(scValToNative(args[2])).toBe(100_000_000n);
       expect(scValToNative(args[3])).toBe(0n);
     });
 
@@ -86,8 +86,20 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
       expect(invokeContractArgs.functionName().toString()).toBe('withdraw');
       const args = invokeContractArgs.args();
       expect(args.length).toBe(4);
-      expect(scValToNative(args[2])).toBe(1000n);
+      expect(scValToNative(args[2])).toBe(10_000_000_000n);
       expect(scValToNative(args[3])).toBe(9_500_000_000n);
+    });
+
+    it.each([
+      [1, 10_000_000n],
+      [0.5, 5_000_000n],
+    ])('encodes %s share(s) as %s stroops', async (shares, expectedStroops) => {
+      await sorobanService.buildWithdrawTx(providerAddress, tokenAddress, shares);
+
+      const passedTx = mockPrepareTransaction.mock.calls[0][0];
+      const args = passedTx.operations[0].func.invokeContract().args();
+
+      expect(scValToNative(args[2])).toBe(expectedStroops);
     });
   });
 
@@ -96,7 +108,7 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
       const result = await sorobanService.buildEmergencyWithdrawTx(
         providerAddress,
         tokenAddress,
-        500,
+        10,
       );
 
       expect(result).toHaveProperty('unsignedTxXdr');
@@ -110,7 +122,7 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
       expect(invokeContractArgs.functionName().toString()).toBe('emergency_withdraw');
       const args = invokeContractArgs.args();
       expect(args.length).toBe(4);
-      expect(scValToNative(args[2])).toBe(500n);
+      expect(scValToNative(args[2])).toBe(100_000_000n);
       expect(scValToNative(args[3])).toBe(0n);
     });
 
@@ -132,8 +144,20 @@ describe('SorobanService withdraw & emergency_withdraw', () => {
       expect(invokeContractArgs.functionName().toString()).toBe('emergency_withdraw');
       const args = invokeContractArgs.args();
       expect(args.length).toBe(4);
-      expect(scValToNative(args[2])).toBe(500n);
+      expect(scValToNative(args[2])).toBe(5_000_000_000n);
       expect(scValToNative(args[3])).toBe(4_800_000_000n);
+    });
+
+    it.each([
+      [1, 10_000_000n],
+      [0.5, 5_000_000n],
+    ])('encodes %s share(s) as %s stroops', async (shares, expectedStroops) => {
+      await sorobanService.buildEmergencyWithdrawTx(providerAddress, tokenAddress, shares);
+
+      const passedTx = mockPrepareTransaction.mock.calls[0][0];
+      const args = passedTx.operations[0].func.invokeContract().args();
+
+      expect(scValToNative(args[2])).toBe(expectedStroops);
     });
   });
 });

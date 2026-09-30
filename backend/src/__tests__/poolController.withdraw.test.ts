@@ -57,7 +57,7 @@ describe('withdrawFromPool', () => {
       body: {
         depositorPublicKey: 'GDEPOSITOR123',
         token: 'GTOKEN456',
-        amount: 500,
+        amount: 10,
       },
       user: { publicKey: 'GDEPOSITOR123' },
     } as unknown as Request;
@@ -67,7 +67,7 @@ describe('withdrawFromPool', () => {
     withdrawFromPool(req, res, next as unknown as NextFunction);
     await flushAsync();
 
-    expect(mockBuildWithdrawTx).toHaveBeenCalledWith('GDEPOSITOR123', 'GTOKEN456', 500, 0);
+    expect(mockBuildWithdrawTx).toHaveBeenCalledWith('GDEPOSITOR123', 'GTOKEN456', 10, 0);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
       unsignedTxXdr: 'AAAAAgAAAAt3aXRoZHJhdw==',
