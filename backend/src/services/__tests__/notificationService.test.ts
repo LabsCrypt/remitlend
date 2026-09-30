@@ -11,8 +11,10 @@ jest.unstable_mockModule('twilio', () => ({
   default: jest.fn(() => ({ messages: { create: jest.fn() } })),
 }));
 
+const mockSendGridSend = jest.fn();
+
 jest.unstable_mockModule('@sendgrid/mail', () => ({
-  default: { setApiKey: jest.fn(), send: jest.fn() },
+  default: { setApiKey: jest.fn(), send: mockSendGridSend },
 }));
 
 const { notificationService } = await import('../notificationService.js');
@@ -148,6 +150,117 @@ describe('notificationService', () => {
       });
 
       expect(notification.actionUrl).toBeUndefined();
+    });
+  });
+
+  describe('email HTML escaping', () => {
+    const originalFromEmail = process.env.FROM_EMAIL;
+    const originalSendGridKey = process.env.SENDGRID_API_KEY;
+
+    beforeEach(() => {
+      process.env.FROM_EMAIL = 'noreply@remitlend.com';
+      process.env.SENDGRID_API_KEY = 'test-key';
+    });
+
+    afterEach(() => {
+      if (originalFromEmail === undefined) {
+        delete process.env.FROM_EMAIL;
+      } else {
+        process.env.FROM_EMAIL = originalFromEmail;
+      }
+      if (originalSendGridKey === undefined) {
+        delete process.env.SENDGRID_API_KEY;
+      } else {
+        process.env.SENDGRID_API_KEY = originalSendGridKey;
+      }
+    });
+
+    it('escapes HTML in message before embedding in email body', async () => {
+      const maliciousMessage =
+        'Your dispute has been resolved: <script>alert("xss")</script><img src=x onerror=alert(1)>';
+
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 1,
+              user_id: 'user1',
+              type: 'loan_defaulted',
+              title: 'Dispute resolved',
+              message: maliciousMessage,
+              loan_id: 42,
+              action_url: '/loans/42',
+              read: false,
+              status: 'unread',
+              created_at: new Date('2026-05-28T12:00:00.000Z'),
+            },
+          ],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              email: 'borrower@example.com',
+              phone: null,
+              email_enabled: true,
+              sms_enabled: false,
+            },
+          ],
+          rowCount: 1,
+        });
+
+      await notificationService.createNotification({
+        userId: 'user1',
+        type: 'loan_defaulted',
+        title: 'Dispute resolved',
+        message: maliciousMessage,
+        loanId: 42,
+      });
+
+      expect(mockSendGridSend).toHaveBeenCalledTimes(1);
+      const sendArg = mockSendGridSend.mock.calls[0]?.[0] as { html: string };
+      expect(sendArg.html).not.toContain('<script>');
+      expect(sendArg.html).not.toContain('<img');
+      expect(sendArg.html).toContain('&lt;script&gt;');
+      expect(sendArg.html).toContain('&lt;img');
+    });
+
+    it('escapes HTML in notifyAdmins email', async () => {
+      process.env.ADMIN_EMAIL = 'admin@remitlend.com';
+      delete process.env.ADMIN_WALLETS;
+
+      const maliciousMessage =
+        'Dispute resolved: <b>confirmed</b><a href="http://evil.com">click</a>';
+
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 1,
+            user_id: 'admin1',
+            type: 'dispute_contested',
+            title: 'Loan Default Contested',
+            message: maliciousMessage,
+            loan_id: null,
+            action_url: null,
+            read: false,
+            status: 'unread',
+            created_at: new Date('2026-05-28T12:00:00.000Z'),
+          },
+        ],
+        rowCount: 1,
+      });
+
+      await notificationService.notifyAdmins({
+        title: 'Loan Default',
+        message: maliciousMessage,
+      });
+
+      expect(mockSendGridSend).toHaveBeenCalledTimes(1);
+      const sendArg = mockSendGridSend.mock.calls[0]?.[0] as { html: string };
+      expect(sendArg.html).not.toContain('<b>');
+      expect(sendArg.html).not.toContain('<a ');
+      expect(sendArg.html).toContain('&lt;b&gt;');
+      expect(sendArg.html).toContain('&lt;a ');
     });
   });
 
