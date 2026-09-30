@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/errorCodes.js';
+import { ContractErrorCode, decodeContractError } from '../errors/contractErrorCodes.js';
 import logger from '../utils/logger.js';
 import { Sentry } from '../config/sentry.js';
 
@@ -91,6 +92,28 @@ export const errorHandler = (
     }
 
     res.status(err.statusCode).json(errorResponse);
+    return;
+  }
+
+  // ── Contract Error Codes (namespaced per contract) ───────────
+  // Raw numeric contracterror codes are ambiguous across the four
+  // contracts (e.g. code 7 means different things in RemittanceNFT,
+  // LoanManager, and LendingPool). See contracts/ERROR_CODES.md.
+  // Decoded codes are namespaced using per-contract base offsets
+  // following the MultisigGovernance pattern (4001+).
+  if (err instanceof ContractErrorCode) {
+    const decoded = decodeContractError(err.contract, err.code);
+    res.status(400).json({
+      success: false,
+      message: decoded.message,
+      error: {
+        code: decoded.namespacedCode,
+        message: decoded.message,
+        contract: decoded.contract,
+        contractCode: decoded.code,
+        variant: decoded.variant,
+      },
+    });
     return;
   }
 

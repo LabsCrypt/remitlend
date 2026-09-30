@@ -7,6 +7,13 @@
  * - Display user-friendly error messages
  *
  * Format: CATEGORY_ERROR_NAME
+ *
+ * On-chain contract error codes are not globally unique: each contract numbers
+ * its `contracterror` enum from 1 independently, so the same numeric code
+ * means different things across contracts. See `contracts/ERROR_CODES.md`
+ * for the full cross-contract reference. When decoding a raw numeric code
+ * from a contract, always include the contract of origin (e.g. `LoanManager:42`)
+ * so the code is unambiguous.
  */
 
 export enum ErrorCode {
@@ -164,7 +171,7 @@ export const ERROR_CODE_REGISTRY: Record<ErrorCode, ErrorCodeMetadata> = {
     suggestedAction: 'Contact support if you believe this is an error',
   },
   [ErrorCode.BORROWER_MISMATCH]: {
-    code: ErrorCode.BORROWER_MISMATCH,
+    code: ErrorCode.BORROWER_MISMATCD,
     message: 'Borrower public key must match your authenticated wallet',
     httpStatus: 403,
     description: 'The borrower public key does not match the authenticated user',
