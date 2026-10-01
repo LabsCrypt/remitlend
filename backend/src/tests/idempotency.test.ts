@@ -11,6 +11,8 @@ describe('Idempotency Middleware', () => {
   let res: Partial<Response>;
   let next: NextFunction;
 
+  const TEST_WALLET = 'GBD_TEST_WALLET';
+
   beforeEach(() => {
     req = {
       header: jest.fn() as unknown as Request['header'],
@@ -19,6 +21,7 @@ describe('Idempotency Middleware', () => {
       path: '/api/loans/request',
       baseUrl: '',
       body: { amount: 100, borrowerPublicKey: 'GBD' },
+      user: { publicKey: TEST_WALLET },
     };
     res = {
       status: jest.fn().mockReturnThis() as unknown as Response['status'],
@@ -62,7 +65,7 @@ describe('Idempotency Middleware', () => {
 
     await idempotencyMiddleware(req as Request, res as Response, next);
 
-    expect(cacheService.get).toHaveBeenCalledWith(`idemp:${key}`);
+    expect(cacheService.get).toHaveBeenCalledWith(`idemp:${TEST_WALLET}:${key}`);
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.set).toHaveBeenCalledWith('X-Idempotency-Cache', 'HIT');
     expect(res.json).toHaveBeenCalledWith(cachedResponse.body);
@@ -169,9 +172,9 @@ describe('Idempotency Middleware', () => {
     (res.json as unknown as (b: unknown) => void)({ success: true });
     await finishHandler();
 
-    expect(cacheService.delete).toHaveBeenCalledWith(`idemp:${key}:lock`);
+    expect(cacheService.delete).toHaveBeenCalledWith(`idemp:${TEST_WALLET}:${key}:lock`);
     const setCall = (cacheService.set as jest.Mock).mock.calls[0];
-    expect(setCall[0]).toBe(`idemp:${key}`);
+    expect(setCall[0]).toBe(`idemp:${TEST_WALLET}:${key}`);
     const stored = setCall[1] as { fingerprint: string; body: unknown };
     expect(stored.body).toEqual({ success: true });
     expect(stored.fingerprint).toBe(computeFingerprint(req as Request).fingerprint);

@@ -259,7 +259,7 @@ export async function buildDepositorYieldHistory(
     }
 
     const depositedValue = depositorState.costBasis;
-    const netYield = Math.max(0, currentValue - depositedValue);
+    const netYield = currentValue - depositedValue;
 
     points.push({
       timestamp: bucketEnd.toISOString(),

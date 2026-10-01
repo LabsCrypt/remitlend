@@ -1,5 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { idempotencyMiddleware, computeFingerprint, namespacedKey } from '../middleware/idempotency.js';
+import {
+  idempotencyMiddleware,
+  computeFingerprint,
+  namespacedKey,
+} from '../middleware/idempotency.js';
 import { cacheService } from '../services/cacheService.js';
 import { jest } from '@jest/globals';
 
@@ -33,8 +37,12 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     return request;
   };
 
-  const cacheKeysRead = () =>
-    asMock(cacheService.get).mock.calls.map(([key]) => String(key));
+  const aliceCacheKey = `idemp:${ALICE}:shared-key`;
+  const aliceLockKey = `idemp:${ALICE}:shared-key:lock`;
+  const bobCacheKey = `idemp:${BOB}:shared-key`;
+  const bobLockKey = `idemp:${BOB}:shared-key:lock`;
+
+  const cacheKeysRead = () => asMock(cacheService.get).mock.calls.map(([key]) => String(key));
 
   beforeEach(() => {
     req = buildRequest(ALICE);
@@ -48,9 +56,31 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     };
     next = jest.fn();
 
-    jest.spyOn(cacheService, 'get').mockReset().mockResolvedValue(null);
+    jest
+      .spyOn(cacheService, 'get')
+      .mockReset()
+      .mockImplementation((key: string) => {
+        // Only return cached data for Bob's key, not Alice's
+        if (key === bobCacheKey) {
+          return Promise.resolve({
+            status: 201,
+            body: { id: 'bob-loan' },
+            fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
+          });
+        }
+        return Promise.resolve(null);
+      });
     jest.spyOn(cacheService, 'set').mockReset().mockResolvedValue(undefined);
-    jest.spyOn(cacheService, 'setNotExists').mockReset().mockResolvedValue(true);
+    jest
+      .spyOn(cacheService, 'setNotExists')
+      .mockReset()
+      .mockImplementation((key: string) => {
+        // Only return false (lock held) for Bob's lock key, not Alice's
+        if (key === bobLockKey) {
+          return Promise.resolve(false);
+        }
+        return Promise.resolve(true);
+      });
     jest.spyOn(cacheService, 'delete').mockReset().mockResolvedValue(undefined);
   });
 
@@ -75,11 +105,7 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
 
       jest.clearAllMocks();
       asMock(cacheService.setNotExists).mockResolvedValue(true);
-      await idempotencyMiddleware(
-        buildRequest(BOB) as Request,
-        res as Response,
-        next,
-      );
+      await idempotencyMiddleware(buildRequest(BOB) as Request, res as Response, next);
       const bobKey = cacheKeysRead()[0];
 
       expect(aliceKey).not.toBe(bobKey);
@@ -87,36 +113,30 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
       expect(bobKey).toContain(BOB);
     });
 
-    it('does not replay another wallet’s cached response', async () => {
-      // Bob's response is already cached under his namespace…
-      asMock(cacheService.get).mockResolvedValue({
-        status: 201,
-        body: { id: 'bob-loan' },
-        fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
-      });
-
-      // …so Alice sending the identical key, path and body gets a cache miss
+    it("does not replay another wallet's cached response", async () => {
+      // Bob's response is already cached under his namespace (set up in beforeEach).
+      // Alice sending the identical key, path and body gets a cache miss
       // and runs the handler instead of receiving Bob's response.
+      const jsonMock = asMock(res.json);
       await idempotencyMiddleware(req as Request, res as Response, next);
 
-      expect(cacheKeysRead()[0]).not.toContain('bob-loan');
-      expect(res.json).not.toHaveBeenCalledWith({ id: 'bob-loan' });
+      // Alice's cache key was queried, not Bob's
+      expect(cacheKeysRead()[0]).toBe(aliceCacheKey);
+      expect(jsonMock).not.toHaveBeenCalledWith({ id: 'bob-loan' });
+      expect(next).toHaveBeenCalled();
     });
 
     it('does not reject a user with 409 because another user holds the key', async () => {
-      // Bob's in-flight lock is held under his namespace.
-      asMock(cacheService.get).mockResolvedValue(null);
-      asMock(cacheService.setNotExists).mockResolvedValue(false);
-
+      // Bob's in-flight lock is held under his namespace (set up in beforeEach).
+      // Alice is unaffected by Bob's lock: the handler still runs.
       await idempotencyMiddleware(req as Request, res as Response, next);
 
-      // Alice is unaffected by Bob's lock: the handler still runs.
       expect(asMock(res.status)).not.toHaveBeenCalledWith(409);
+      expect(next).toHaveBeenCalled();
     });
 
     it('namespaces the lock key as well as the cache key', async () => {
-      asMock(cacheService.setNotExists).mockResolvedValue(false);
-
+      // Use the beforeEach mock which returns true for Alice's lock key
       await idempotencyMiddleware(req as Request, res as Response, next);
 
       const lockKey = asMock(cacheService.setNotExists).mock.calls[0][0];
@@ -173,11 +193,7 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
 
       jest.clearAllMocks();
       asMock(cacheService.setNotExists).mockResolvedValue(true);
-      await idempotencyMiddleware(
-        buildRequest(undefined) as Request,
-        res as Response,
-        next,
-      );
+      await idempotencyMiddleware(buildRequest(undefined) as Request, res as Response, next);
 
       expect(cacheKeysRead()[0]).toBe(first);
       expect(first).toContain('anon');
