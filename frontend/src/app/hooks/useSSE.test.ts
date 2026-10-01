@@ -166,7 +166,6 @@ describe("useSSE", () => {
 
     expect(result.current).toBe("polling");
     expect(pollCallback).toHaveBeenCalled();
-    const pollCountBeforeRecovery = pollCallback.mock.calls.length;
 
     // Advance for sseRecoveryInterval (20s) to trigger periodic recovery connect()
     await act(() => jest.advanceTimersByTimeAsync(20000));
