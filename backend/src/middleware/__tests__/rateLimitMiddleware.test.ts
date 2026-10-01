@@ -26,7 +26,6 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const { createRateLimitMiddleware, scoreUpdateRateLimit, createIpRateLimitMiddleware } =
   await import('../rateLimitMiddleware.js');
 const { rateLimitService } = await import('../../services/rateLimitService.js');
-const { AppError } = await import('../../errors/AppError.js');
 const { ErrorCode } = await import('../../errors/errorCodes.js');
 const mockRateLimitService = rateLimitService as jest.Mocked<typeof rateLimitService>;
 
