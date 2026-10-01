@@ -272,6 +272,7 @@ export interface BorrowerLoan {
   id: number;
   principal: number;
   accruedInterest: number;
+  accruedLateFee: number;
   totalOwed: number;
   totalRepaid: number;
   nextPaymentDeadline: string;
