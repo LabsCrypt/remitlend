@@ -598,6 +598,8 @@ export const getLoanDetails = asyncHandler(async (req: Request, res: Response) =
   const totalOwed = Number(
     remainingPrincipal(principalStroops, totalRepaidStroops) + accruedInterestStroops,
   );
+  const extensionFeeStroops =
+    (remainingPrincipal(principalStroops, totalRepaidStroops) * 100n) / 10_000n;
 
   res.json({
     success: true,
@@ -619,6 +621,7 @@ export const getLoanDetails = asyncHandler(async (req: Request, res: Response) =
             : 'repaid',
       requestedAt: requestEvent?.ledger_closed_at,
       approvedAt: approvalEvent?.ledger_closed_at,
+      extensionFee: Number(extensionFeeStroops) / 10_000_000,
       events: events.map((event: Record<string, unknown>) => ({
         type: event.event_type,
         amount: event.amount,

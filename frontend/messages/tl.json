@@ -303,8 +303,10 @@
     },
     "extension": {
       "title": "Humiling ng extension",
-      "extraLedgers": "Dagdag na ledgers",
+      "days": "Tagal ng extension (araw)",
       "newDueDate": "Bagong due date",
+      "fee": "Bayad sa extension",
+      "feeDisclosure": "Naniningil ang kontrata ng 1% ng natitirang principal.",
       "submit": "I-build, Pirmahan at Isumite"
     }
   },
