@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, renderHook, act } from "@testing-library/react";
+import { render, screen, renderHook, act } from "@testing-library/react";
 import { useConfirmedMutation } from "./useConfirmedMutation";
 import ConfirmTransactionDialog from "../components/ui/ConfirmTransactionDialog";
 import { useToastStore } from "../stores/useToastStore";
