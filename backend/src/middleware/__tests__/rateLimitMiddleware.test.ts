@@ -23,9 +23,10 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   },
 }));
 
-const { createRateLimitMiddleware, scoreUpdateRateLimit } =
+const { createRateLimitMiddleware, scoreUpdateRateLimit, createIpRateLimitMiddleware } =
   await import('../rateLimitMiddleware.js');
 const { rateLimitService } = await import('../../services/rateLimitService.js');
+const { ErrorCode } = await import('../../errors/errorCodes.js');
 const mockRateLimitService = rateLimitService as jest.Mocked<typeof rateLimitService>;
 
 describe('Rate Limit Middleware', () => {
@@ -159,13 +160,76 @@ describe('Rate Limit Middleware', () => {
       expect(mockNext).toHaveBeenCalledWith();
     });
 
-    it('should handle missing userId gracefully', async () => {
+    it('should reject request when default userId is missing instead of failing open', async () => {
       mockRequest.body = {};
 
       const middleware = createRateLimitMiddleware();
       await middleware(mockRequest as Request, mockResponse as Response, mockNext);
 
-      // Middleware fails open when getIdentifier throws
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          errorCode: ErrorCode.MISSING_FIELD,
+          message: 'Rate limiting middleware requires userId in request body',
+        }),
+      );
+      expect(mockRateLimitService.checkRateLimit).not.toHaveBeenCalled();
+    });
+
+    it('should reject request when custom getIdentifier throws an error', async () => {
+      const middleware = createRateLimitMiddleware({
+        getIdentifier: () => {
+          throw new Error('API key header is missing');
+        },
+      });
+
+      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          errorCode: ErrorCode.VALIDATION_ERROR,
+          message: 'API key header is missing',
+        }),
+      );
+      expect(mockRateLimitService.checkRateLimit).not.toHaveBeenCalled();
+    });
+
+    it('should reject request when getIdentifier returns an empty or whitespace string', async () => {
+      const middleware = createRateLimitMiddleware({
+        getIdentifier: () => '   ',
+      });
+
+      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          errorCode: ErrorCode.MISSING_FIELD,
+          message: 'Rate limiting identifier is required',
+        }),
+      );
+      expect(mockRateLimitService.checkRateLimit).not.toHaveBeenCalled();
+    });
+
+    it('should support async getIdentifier functions', async () => {
+      mockRateLimitService.checkRateLimit.mockResolvedValue({
+        allowed: true,
+        remaining: 4,
+        resetTime: new Date(Date.now() + 86400 * 1000),
+        currentCount: 1,
+      });
+
+      const middleware = createRateLimitMiddleware({
+        getIdentifier: async () => 'async-user-456',
+      });
+
+      await middleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockRateLimitService.checkRateLimit).toHaveBeenCalledWith(
+        'async-user-456',
+        expect.any(Object),
+      );
       expect(mockNext).toHaveBeenCalledWith();
     });
 
@@ -230,6 +294,64 @@ describe('Rate Limit Middleware', () => {
           message: 'Too many score updates. Maximum 5 updates allowed per user per day.',
         }),
       );
+    });
+  });
+
+  describe('createIpRateLimitMiddleware', () => {
+    it('should rate limit using client IP address', async () => {
+      mockRateLimitService.checkRateLimit.mockResolvedValue({
+        allowed: true,
+        remaining: 99,
+        resetTime: new Date(Date.now() + 3600 * 1000),
+        currentCount: 1,
+      });
+
+      const ipMiddleware = createIpRateLimitMiddleware(100, 3600);
+      await ipMiddleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockRateLimitService.checkRateLimit).toHaveBeenCalledWith('ip:127.0.0.1', {
+        maxRequests: 100,
+        windowSeconds: 3600,
+      });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should fallback to socket.remoteAddress if req.ip is not available', async () => {
+      mockRateLimitService.checkRateLimit.mockResolvedValue({
+        allowed: true,
+        remaining: 99,
+        resetTime: new Date(Date.now() + 3600 * 1000),
+        currentCount: 1,
+      });
+
+      delete mockRequest.ip;
+      (mockRequest as any).socket = { remoteAddress: '192.168.1.1' };
+
+      const ipMiddleware = createIpRateLimitMiddleware(100, 3600);
+      await ipMiddleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockRateLimitService.checkRateLimit).toHaveBeenCalledWith('ip:192.168.1.1', {
+        maxRequests: 100,
+        windowSeconds: 3600,
+      });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should reject request when IP address cannot be determined', async () => {
+      delete mockRequest.ip;
+      (mockRequest as any).socket = undefined;
+
+      const ipMiddleware = createIpRateLimitMiddleware(100, 3600);
+      await ipMiddleware(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          errorCode: ErrorCode.VALIDATION_ERROR,
+          message: 'Unable to determine client IP address for rate limiting',
+        }),
+      );
+      expect(mockRateLimitService.checkRateLimit).not.toHaveBeenCalled();
     });
   });
 });

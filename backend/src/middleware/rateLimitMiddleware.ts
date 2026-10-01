@@ -12,7 +12,7 @@ interface RateLimitMiddlewareOptions {
    * Function to extract the identifier from the request
    * Defaults to using userId from request body
    */
-  getIdentifier?: (req: Request) => string;
+  getIdentifier?: (req: Request) => string | Promise<string>;
   /**
    * Custom rate limit configuration
    * Defaults to SCORE_UPDATE_RATE_LIMIT
@@ -45,7 +45,10 @@ export const createRateLimitMiddleware = (options: RateLimitMiddlewareOptions = 
       // Default: extract userId from request body for score updates
       const body = req.body as { userId?: string } | undefined;
       if (!body?.userId) {
-        throw new Error('Rate limiting middleware requires userId in request body');
+        throw AppError.badRequest(
+          'Rate limiting middleware requires userId in request body',
+          ErrorCode.MISSING_FIELD,
+        );
       }
       return body.userId;
     },
@@ -62,7 +65,22 @@ export const createRateLimitMiddleware = (options: RateLimitMiddlewareOptions = 
       }
 
       // Extract identifier for rate limiting
-      const identifier = getIdentifier(req);
+      let identifier: string;
+      try {
+        identifier = await Promise.resolve(getIdentifier(req));
+      } catch (idError) {
+        if (idError instanceof AppError) {
+          throw idError;
+        }
+        throw AppError.badRequest(
+          idError instanceof Error ? idError.message : 'Invalid rate limiting identifier',
+          ErrorCode.VALIDATION_ERROR,
+        );
+      }
+
+      if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
+        throw AppError.badRequest('Rate limiting identifier is required', ErrorCode.MISSING_FIELD);
+      }
 
       // Check rate limit
       const result = await rateLimitService.checkRateLimit(identifier, config);
@@ -140,9 +158,12 @@ export const createIpRateLimitMiddleware = (
 ) =>
   createRateLimitMiddleware({
     getIdentifier: (req: Request) => {
-      const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+      const ip = req.ip || req.socket?.remoteAddress;
       if (!ip) {
-        throw new Error('Unable to determine client IP address for rate limiting');
+        throw AppError.badRequest(
+          'Unable to determine client IP address for rate limiting',
+          ErrorCode.VALIDATION_ERROR,
+        );
       }
       return `ip:${ip}`;
     },
