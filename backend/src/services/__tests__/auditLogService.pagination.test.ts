@@ -17,11 +17,14 @@ const PAGE_ROWS = [
   { id: '298', created_at: '2026-03-01T00:00:00.000Z' },
 ];
 
-/** Last call to query() — always the SELECT page statement. */
+/**
+ * Last call to query() — getAuditLogs issues the page SELECT after any COUNT,
+ * so the most recent call is always the page statement under test.
+ */
 const pageQuery = () => {
-  const call = mockQuery.mock.calls.find(
-    ([text]) => typeof text === 'string' && text.includes('SELECT * FROM audit_logs'),
-  );
+  const call = [...mockQuery.mock.calls]
+    .reverse()
+    .find(([text]) => typeof text === 'string' && text.includes('SELECT * FROM audit_logs'));
   return { text: String(call?.[0]), values: (call?.[1] as unknown[]) ?? [] };
 };
 
@@ -48,12 +51,12 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     });
 
     it('pages with a (created_at, id) row comparison, not id alone', async () => {
-      await getAuditLogs({ limit: 2 });
+      await getAuditLogs({ limit: 2, cursor: '2026-03-02T00:00:00.000Z:299' });
 
       const { text, values } = pageQuery();
       expect(text).toMatch(/\(created_at, id\)\s*<\s*\(\$\d+, \$\d+\)/);
       // The cursor must be both parts, never just the id.
-      expect(values).toEqual(expect.arrayContaining(['2026-03-02T00:00:00.000Z', '298']));
+      expect(values).toEqual(expect.arrayContaining(['2026-03-02T00:00:00.000Z', '299']));
       expect(text).not.toMatch(/id\s*<\s*\$\d+\s*\n?\s*AND/);
     });
 
@@ -67,9 +70,12 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const result = await getAuditLogs({ limit: 2 });
 
       expect(result.nextCursor).not.toBeNull();
-      // The cursor carries the timestamp *and* the id it is paging from.
+      // The cursor carries the timestamp *and* the id it is paging from. It
+      // must split on the LAST ':' — ISO timestamps contain colons.
       expect(result.nextCursor).toContain(':');
-      const [createdAt, id] = String(result.nextCursor).split(':');
+      const lastColon = String(result.nextCursor).lastIndexOf(':');
+      const createdAt = String(result.nextCursor).slice(0, lastColon);
+      const id = String(result.nextCursor).slice(lastColon + 1);
       expect(createdAt).toBe('2026-03-02T00:00:00.000Z');
       expect(id).toBe('299');
     });
@@ -100,9 +106,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
     it('omits the count query unless withTotal is set', async () => {
       await getAuditLogs({ limit: 2 });
 
-      const countCalls = mockQuery.mock.calls.filter(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCalls = mockQuery.mock.calls.filter(([text]) => String(text).includes('COUNT(*)'));
       expect(countCalls).toHaveLength(0);
     });
 
@@ -122,9 +126,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
         limit: 2,
       });
 
-      const countCall = mockQuery.mock.calls.find(([text]) =>
-        String(text).includes('COUNT(*)'),
-      );
+      const countCall = mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'));
       const countSql = String(countCall?.[0]);
       const countValues = (countCall?.[1] as unknown[]) ?? [];
 
@@ -171,7 +173,9 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const countSql = String(
         mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'))?.[0],
       );
-      expect(countSql).toBe('SELECT COUNT(*) as count FROM audit_logs');
+      // The real query is built by template interpolation and carries a
+      // trailing space after the table name — compare trimmed.
+      expect(countSql.trim()).toBe('SELECT COUNT(*) as count FROM audit_logs');
     });
   });
 
@@ -203,6 +207,8 @@ describe('AuditLogFilters shape (#1808)', () => {
       limit: 1,
       withTotal: true,
     };
-    expect(Object.keys(filters)).toHaveLength(8);
+    // AuditLogFilters declares exactly 7 fields: actor, action, from, to,
+    // cursor, limit, withTotal (auditLogService.ts:3-11).
+    expect(Object.keys(filters)).toHaveLength(7);
   });
 });
