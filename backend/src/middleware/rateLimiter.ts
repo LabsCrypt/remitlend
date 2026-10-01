@@ -1,6 +1,7 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import { createClient } from 'redis';
+import logger from '../utils/logger.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 let redisClient: ReturnType<typeof createClient> | undefined;
@@ -8,7 +9,13 @@ let redisClient: ReturnType<typeof createClient> | undefined;
 function getRedisClient() {
   if (!redisClient) {
     redisClient = createClient({ url: REDIS_URL });
-    redisClient.on('error', () => {});
+    redisClient.on('error', (error) => {
+      // With passOnStoreError: true the limiters fail open, so this log is the
+      // only signal that rate limiting has silently degraded.
+      if (process.env.NODE_ENV !== 'test') {
+        logger.withContext().error('Rate limiter Redis client error', { error });
+      }
+    });
   }
   return redisClient;
 }

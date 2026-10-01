@@ -1,5 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { idempotencyMiddleware, computeFingerprint, namespacedKey } from '../middleware/idempotency.js';
+import {
+  idempotencyMiddleware,
+  computeFingerprint,
+  namespacedKey,
+} from '../middleware/idempotency.js';
 import { cacheService } from '../services/cacheService.js';
 import { jest } from '@jest/globals';
 
@@ -33,8 +37,7 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     return request;
   };
 
-  const cacheKeysRead = () =>
-    asMock(cacheService.get).mock.calls.map(([key]) => String(key));
+  const cacheKeysRead = () => asMock(cacheService.get).mock.calls.map(([key]) => String(key));
 
   beforeEach(() => {
     req = buildRequest(ALICE);
@@ -75,11 +78,7 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
 
       jest.clearAllMocks();
       asMock(cacheService.setNotExists).mockResolvedValue(true);
-      await idempotencyMiddleware(
-        buildRequest(BOB) as Request,
-        res as Response,
-        next,
-      );
+      await idempotencyMiddleware(buildRequest(BOB) as Request, res as Response, next);
       const bobKey = cacheKeysRead()[0];
 
       expect(aliceKey).not.toBe(bobKey);
@@ -88,25 +87,39 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     });
 
     it('does not replay another wallet’s cached response', async () => {
-      // Bob's response is already cached under his namespace…
-      asMock(cacheService.get).mockResolvedValue({
-        status: 201,
-        body: { id: 'bob-loan' },
-        fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
-      });
+      // Bob's response is cached under his namespace. The mock honours the
+      // cache key like a real (namespaced) store would — returning the entry
+      // for every key would model the shared-key behaviour #1809 removed.
+      const bobCacheKey = `idemp:${namespacedKey(BOB, 'shared-key')}`;
+      asMock(cacheService.get).mockImplementation(async (key: unknown) =>
+        String(key) === bobCacheKey
+          ? {
+              status: 201,
+              body: { id: 'bob-loan' },
+              fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
+            }
+          : null,
+      );
 
       // …so Alice sending the identical key, path and body gets a cache miss
       // and runs the handler instead of receiving Bob's response.
+      // The middleware wraps res.json on the handler path, so assert on the
+      // original mock captured before it is replaced.
+      const jsonMock = asMock(res.json);
       await idempotencyMiddleware(req as Request, res as Response, next);
 
       expect(cacheKeysRead()[0]).not.toContain('bob-loan');
-      expect(res.json).not.toHaveBeenCalledWith({ id: 'bob-loan' });
+      expect(jsonMock).not.toHaveBeenCalledWith({ id: 'bob-loan' });
     });
 
     it('does not reject a user with 409 because another user holds the key', async () => {
-      // Bob's in-flight lock is held under his namespace.
+      // Bob's in-flight lock is held under his namespace; the mock must grant
+      // locks for any other key, as a real namespaced store would.
+      const bobLockKey = `idemp:${namespacedKey(BOB, 'shared-key')}:lock`;
       asMock(cacheService.get).mockResolvedValue(null);
-      asMock(cacheService.setNotExists).mockResolvedValue(false);
+      asMock(cacheService.setNotExists).mockImplementation(
+        async (key: unknown) => String(key) !== bobLockKey,
+      );
 
       await idempotencyMiddleware(req as Request, res as Response, next);
 
@@ -173,11 +186,7 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
 
       jest.clearAllMocks();
       asMock(cacheService.setNotExists).mockResolvedValue(true);
-      await idempotencyMiddleware(
-        buildRequest(undefined) as Request,
-        res as Response,
-        next,
-      );
+      await idempotencyMiddleware(buildRequest(undefined) as Request, res as Response, next);
 
       expect(cacheKeysRead()[0]).toBe(first);
       expect(first).toContain('anon');
