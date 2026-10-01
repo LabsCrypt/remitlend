@@ -130,12 +130,16 @@ export function LendPageClient() {
 
   const cooldownLedgers = poolStats?.withdrawalCooldownLedgers ?? 0;
   const cooldownSeconds = Math.max(0, cooldownLedgers) * 5;
-  const lastDepositTimestamp = depositor?.lastDepositAt
-    ? new Date(depositor.lastDepositAt).getTime()
+  const firstDepositTimestamp = depositor?.firstDepositAt
+    ? new Date(depositor.firstDepositAt).getTime()
     : null;
 
   useEffect(() => {
-    if (!lastDepositTimestamp || cooldownSeconds <= 0) {
+    if (
+      firstDepositTimestamp === null ||
+      !Number.isFinite(firstDepositTimestamp) ||
+      cooldownSeconds <= 0
+    ) {
       // Reset the displayed countdown when there is no active cooldown.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCooldownRemainingSeconds(0);
@@ -143,7 +147,7 @@ export function LendPageClient() {
     }
 
     const updateRemaining = () => {
-      const elapsed = Math.floor((Date.now() - lastDepositTimestamp) / 1000);
+      const elapsed = Math.floor((Date.now() - firstDepositTimestamp) / 1000);
       const remaining = Math.max(0, cooldownSeconds - elapsed);
       setCooldownRemainingSeconds(remaining);
     };
@@ -151,7 +155,7 @@ export function LendPageClient() {
     updateRemaining();
     const intervalId = window.setInterval(updateRemaining, 1000);
     return () => window.clearInterval(intervalId);
-  }, [lastDepositTimestamp, cooldownSeconds]);
+  }, [firstDepositTimestamp, cooldownSeconds]);
 
   const isWithdrawCooldownActive = cooldownRemainingSeconds > 0;
   const cooldownMinutes = Math.ceil(cooldownRemainingSeconds / 60);
