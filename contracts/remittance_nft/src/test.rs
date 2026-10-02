@@ -858,6 +858,40 @@ fn test_score_history_tracks_and_caps_recent_updates() {
 }
 
 #[test]
+fn test_get_score_history_overflow_safe_with_max_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 7),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    env.ledger().set_sequence_number(1);
+    client.update_score(&user, &1_000_000_000, &None);
+    env.ledger().set_sequence_number(2);
+    client.update_score(&user, &1_000_000_000, &None);
+
+    // Calling with limit = u32::MAX should not panic/overflow and should return remaining entries
+    let history_tail = client.get_score_history(&user, &1, &u32::MAX);
+    assert_eq!(history_tail.len(), 1);
+
+    let history_all = client.get_score_history(&user, &0, &u32::MAX);
+    assert_eq!(history_all.len(), 2);
+}
+
+#[test]
 #[should_panic]
 fn test_burn_blocks_authorized_remint_without_admin_approval() {
     let env = Env::default();
@@ -1324,7 +1358,7 @@ fn test_transfer_rejects_unauthorized_minter() {
 }
 
 #[test]
-fn test_transfer_rejects_burned_destination() {
+fn test_transfer_rejects_manually_burned_destination() {
     let env = Env::default();
     env.mock_all_auths();
 
