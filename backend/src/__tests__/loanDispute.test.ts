@@ -133,13 +133,13 @@ describe('Loan Dispute/Appeal Mechanism', () => {
      *   [1] SELECT address FROM contract_events WHERE loan_id = 42  → TEST_PUBLIC_KEY ✓
      *
      *   contestDefault:
-     *   [2] SELECT contract_events WHERE event_type='LoanDefaulted'  → found
+     *   [2] SELECT contract_events WHERE event_type='LoanDefaulted'  → found (address = borrower)
      *   [3] INSERT loan_disputes RETURNING id                    → disputeId
      *   [4] INSERT contract_events LoanDisputed
      */
     mockQuery
       .mockResolvedValueOnce(dbRows([{ address: TEST_PUBLIC_KEY }])) // [1] loanAccess
-      .mockResolvedValueOnce(dbRows([{ loan_id: LOAN_ID }])) // [2] defaulted check
+      .mockResolvedValueOnce(dbRows([{ loan_id: LOAN_ID, address: TEST_PUBLIC_KEY }])) // [2] defaulted + ownership check
       .mockResolvedValueOnce(dbRows([{ id: DISPUTE_ID }])) // [3] dispute INSERT
       .mockResolvedValueOnce(dbOk()); // [4] LoanDisputed event
 
@@ -152,6 +152,28 @@ describe('Loan Dispute/Appeal Mechanism', () => {
     expect(res.body.success).toBe(true);
 
     disputeId = res.body.disputeId ?? disputeId;
+  });
+
+  it('should reject a contest when the defaulted loan belongs to another borrower', async () => {
+    /**
+     * POST /api/loans/42/contest-default
+     *   requireLoanOwner:
+     *   [1] SELECT address FROM loan_events WHERE loan_id = 42  → TEST_PUBLIC_KEY (middleware passes)
+     *
+     *   contestDefault:
+     *   [2] SELECT contract_events WHERE event_type='LoanDefaulted'  → address = OTHER borrower → 403
+     */
+    const OTHER_PUBLIC_KEY = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
+    mockQuery
+      .mockResolvedValueOnce(dbRows([{ address: TEST_PUBLIC_KEY }])) // [1] loanOwner
+      .mockResolvedValueOnce(dbRows([{ loan_id: LOAN_ID, address: OTHER_PUBLIC_KEY }])); // [2] defaulted event owned by another borrower
+
+    const res = await request(app)
+      .post(`/api/loans/${defaultedLoanId}/contest-default`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ reason: 'Attempting to hijack another borrower default.' });
+
+    expect(res.status).toBe(403);
   });
 
   it('should freeze penalty accrual during dispute', async () => {

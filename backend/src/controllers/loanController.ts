@@ -164,11 +164,20 @@ export const contestDefault = asyncHandler(
 
     // Check loan exists and is defaulted
     const loanResult = await query(
-      `SELECT loan_id FROM contract_events WHERE loan_id = $1 AND event_type = 'LoanDefaulted' LIMIT 1`,
+      `SELECT address FROM contract_events WHERE loan_id = $1 AND event_type = 'LoanDefaulted' LIMIT 1`,
       [loanId],
     );
     if (loanResult.rows.length === 0) {
       throw AppError.badRequest('Loan is not defaulted or does not exist');
+    }
+
+    // Ownership check (BOLA/IDOR): the `address` on the LoanDefaulted event is
+    // the loan's borrower, so only that wallet may contest the default. The
+    // route also runs `requireLoanOwner`; keeping the assertion here makes the
+    // handler safe wherever it is mounted.
+    const loanBorrower = loanResult.rows[0].address as string | undefined;
+    if (loanBorrower !== borrower) {
+      throw AppError.forbidden('You are not the borrower of this loan');
     }
 
     // Insert dispute record and return disputeId
