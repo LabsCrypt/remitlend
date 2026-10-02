@@ -90,6 +90,9 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
 
     it('resumes correctly from a cursor it previously issued', async () => {
       const first = await getAuditLogs({ limit: 2 });
+
+      // Only inspect the query issued for the second (cursor) page.
+      mockQuery.mockClear();
       await getAuditLogs({ limit: 2, cursor: first.nextCursor });
 
       const { text, values } = pageQuery();
