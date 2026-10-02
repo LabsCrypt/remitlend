@@ -82,6 +82,23 @@ describe('DefaultChecker', () => {
     );
   });
 
+  it('uses per-loan terms and extension dates without treating partial repayment as terminal', async () => {
+    mockSetNotExists.mockResolvedValue(true);
+
+    const checker = new DefaultChecker();
+    await checker.checkOverdueLoans();
+
+    const candidateQuery = mockQuery.mock.calls
+      .map(([sql]) => String(sql))
+      .find((sql) => sql.includes('SELECT loan_id') && sql.includes('FROM overdue'));
+
+    expect(candidateQuery).toBeDefined();
+    expect(candidateQuery).toContain('approved_term_ledgers');
+    expect(candidateQuery).toContain('extended_due_ledger');
+    expect(candidateQuery).toContain("e.event_type = 'LoanDefaulted'");
+    expect(candidateQuery).not.toContain("e.event_type IN ('LoanRepaid', 'LoanDefaulted')");
+  });
+
   describe('suspect ledger range gate (#1376)', () => {
     it('skips the run without submitting when the indexer has an unresolved ledger gap', async () => {
       mockSetNotExists.mockResolvedValue(true);
