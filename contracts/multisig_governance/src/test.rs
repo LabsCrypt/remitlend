@@ -1,4 +1,5 @@
 use super::*;
+use soroban_sdk::testutils::storage::Instance as _;
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::{Address, BytesN, Env, Vec};
 #[allow(deprecated)]
@@ -993,4 +994,59 @@ fn max_delay_finalize_window_is_one_second() {
     set_ts(&env, 2000 + MAX_TIMELOCK_SECONDS);
     client.finalize_admin_transfer(&admin);
     assert_eq!(client.get_current_admin(), proposed);
+}
+
+// ── Instance TTL durability (#1143) ───────────────────────────────────────────
+
+/// The contract never used to extend its instance TTL, so an idle contract
+/// could have its admin and a pending proposal archived. This test starts the
+/// instance with a tiny TTL, advances the ledger well past it, and asserts the
+/// state survives because every entrypoint/view now extends the instance.
+#[test]
+fn instance_ttl_survives_idle_proposal_period() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Configure the ledger *before* the contract is initialized so the
+    // instance starts with a short TTL: without the fix, it would be archived
+    // long before the idle period ends.
+    env.ledger().set_min_persistent_entry_ttl(100);
+    env.ledger().set_max_entry_ttl(10_000_000);
+    env.ledger().set_timestamp(1_000);
+    env.ledger().set_sequence_number(1_000);
+
+    let id = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &id);
+    let admin = Address::generate(&env);
+    let targets = soroban_sdk::vec![&env, env.register(MockTarget, ())];
+    client.initialize(&admin, &targets);
+
+    let proposed = Address::generate(&env);
+    let signer = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&signer));
+    client.propose_admin_transfer(&proposed, &signers, &1, &MIN_TIMELOCK_SECONDS);
+
+    // The instance TTL now covers the documented bump (which itself covers the
+    // 7-day proposal TTL), and stays within the network max.
+    let ttl_after_propose = env.as_contract(&id, || env.storage().instance().get_ttl());
+    assert!(
+        ttl_after_propose >= INSTANCE_TTL_BUMP,
+        "instance TTL {ttl_after_propose} should cover INSTANCE_TTL_BUMP"
+    );
+    assert!(ttl_after_propose <= 10_000_000);
+
+    // A proposal can sit untouched for its full TTL (7 days = 120_960
+    // ledgers); advance far past the tiny initial TTL of 100 ledgers.
+    let idle_ledgers: u32 = 400_000;
+    env.ledger().set_sequence_number(1_000 + idle_ledgers);
+
+    // Admin + pending proposal survive: the instance was never archived.
+    let ttl_after_idle = env.as_contract(&id, || env.storage().instance().get_ttl());
+    assert!(
+        ttl_after_idle > 0,
+        "instance was archived during the idle period"
+    );
+    assert_eq!(client.get_current_admin(), admin);
+    assert!(client.has_pending_transfer());
+    assert_eq!(client.get_pending().unwrap().proposed_admin, proposed);
 }

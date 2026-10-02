@@ -19,6 +19,28 @@ pub fn withdraw(env: &Env, provider: Address, token: Address, amount: i128, shar
     env.events().publish(topics, (amount, shares_burned));
 }
 
+/// Emitted *in addition to* `Withdraw` when a provider exits through the
+/// emergency path (`emergency_withdraw`), which deliberately bypasses both the
+/// pause flag and the withdrawal cooldown.
+///
+/// The normal `Withdraw` event is still emitted by `redeem_shares` so that
+/// existing indexers keep seeing the exit; this extra signal lets monitoring
+/// and indexers distinguish an emergency exit — one that happened while paused
+/// or before the cooldown elapsed — from an ordinary withdrawal (#1142).
+///
+/// **Topics**: `(EmergencyWithdraw, provider, token)`
+/// **Data**: `(amount, shares_burned)`
+pub fn emergency_withdraw(
+    env: &Env,
+    provider: Address,
+    token: Address,
+    amount: i128,
+    shares_burned: i128,
+) {
+    let topics = (Symbol::new(env, "EmergencyWithdraw"), provider, token);
+    env.events().publish(topics, (amount, shares_burned));
+}
+
 /// Emitted when yield is explicitly distributed to the pool, increasing the share price.
 ///
 /// **Topics**: `(YieldDistributed, token)`

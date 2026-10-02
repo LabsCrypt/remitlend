@@ -846,7 +846,13 @@ impl RemittanceNFT {
 
         let old_score = metadata.score;
         let decreased = old_score.saturating_sub(penalty_points);
-        let new_score = decreased.max(Self::MIN_CREDIT_SCORE);
+        // Apply the MIN_CREDIT_SCORE floor only to scores that are already at
+        // or above it, then clamp to `old_score` so a penalty can never raise
+        // a score. Without the `.min(old_score)`, a user sitting below the
+        // floor (reachable via `apply_score_delta`/legacy state) would be
+        // bumped *up* to 300 by a penalty — laundering a low score upward and
+        // improving their lending eligibility (#1141).
+        let new_score = decreased.max(Self::MIN_CREDIT_SCORE).min(old_score);
         if new_score == old_score {
             return;
         }

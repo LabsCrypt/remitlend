@@ -149,8 +149,9 @@ pub struct LendingPool;
 impl LendingPool {
     const INSTANCE_TTL_THRESHOLD: u32 = 17280;
     const INSTANCE_TTL_BUMP: u32 = 518400;
+    /// Threshold (in ledgers) below which the per-lender persistent entries
+    /// (`Shares`, `DepositTimestamp`) are re-extended on access.
     const PERSISTENT_TTL_THRESHOLD: u32 = 17280;
-    const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 3;
     const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
     const SHARE_PRICE_SCALE: i128 = 1_000_000;
@@ -173,11 +174,23 @@ impl LendingPool {
             .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_BUMP);
     }
 
+    /// Extend the TTL of a per-lender persistent entry (`Shares` /
+    /// `DepositTimestamp`) to the network's maximum entry TTL.
+    ///
+    /// Unlike the instance entry, which is touched by almost every call,
+    /// these keys are bumped only when their owner transacts — or when
+    /// somebody reads their balance. A passive lender who deposits and then
+    /// leaves the pool alone would otherwise fall below the old fixed
+    /// ~30-day bump, be archived, and be forced through a `RestoreFootprint`
+    /// (and its extra fee) before they could withdraw. Extending to
+    /// `env.storage().max_ttl()` keeps the position alive for the longest
+    /// window the network permits (`max_entry_ttl`), so it can never exceed
+    /// the ledger limit (#1140).
     fn bump_persistent_ttl(env: &Env, key: &DataKey) {
         env.storage().persistent().extend_ttl(
             key,
             Self::PERSISTENT_TTL_THRESHOLD,
-            Self::PERSISTENT_TTL_BUMP,
+            env.storage().max_ttl(),
         );
     }
 
@@ -372,13 +385,18 @@ impl LendingPool {
         }
     }
 
+    /// Burn `shares` and transfer the proportional underlying assets to
+    /// `provider`, returning the number of assets paid out so callers can
+    /// emit path-specific events. Emits the ordinary `Withdraw` event;
+    /// callers that need a distinct signal (see `emergency_withdraw`) emit it
+    /// themselves after this returns.
     fn redeem_shares(
         env: &Env,
         provider: &Address,
         token: &Address,
         shares: i128,
         min_assets_out: i128,
-    ) -> Result<(), PoolError> {
+    ) -> Result<i128, PoolError> {
         if shares <= 0 {
             return Err(PoolError::InvalidAmount);
         }
@@ -485,7 +503,7 @@ impl LendingPool {
             assets_to_return,
             shares,
         );
-        Ok(())
+        Ok(assets_to_return)
     }
 
     // ── Admin / lifecycle ─────────────────────────────────────────────────
@@ -689,8 +707,8 @@ impl LendingPool {
                     .persistent()
                     .set(&deposit_key, &current_ledger);
             } else {
-                let old_ts = Self::read_deposit_timestamp(&env, &provider, &token)
-                    .unwrap_or(current_ledger);
+                let old_ts =
+                    Self::read_deposit_timestamp(&env, &provider, &token).unwrap_or(current_ledger);
                 // weighted_ts = (old_ts * existing_shares + current_ledger * new_shares)
                 //             / (existing_shares + new_shares)
                 let weighted_ts = (old_ts as i128)
@@ -702,9 +720,7 @@ impl LendingPool {
                     })
                     .and_then(|num| num.checked_div(new_shares))
                     .expect("weighted cooldown overflow") as u32;
-                env.storage()
-                    .persistent()
-                    .set(&deposit_key, &weighted_ts);
+                env.storage().persistent().set(&deposit_key, &weighted_ts);
             }
             Self::bump_persistent_ttl(&env, &deposit_key);
         }
@@ -908,11 +924,18 @@ impl LendingPool {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
         Self::assert_withdrawal_cooldown_elapsed(&env, &provider, &token);
-        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)
+        // Discard the returned asset amount: the normal path signals only via
+        // the ordinary `Withdraw` event emitted inside `redeem_shares`.
+        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)?;
+        Ok(())
     }
 
     /// Same as `withdraw` but bypasses the pause flag and cooldown. Still
     /// enforces `min_assets_out`.
+    ///
+    /// On top of the ordinary `Withdraw` event, this emits a distinct
+    /// `EmergencyWithdraw` event so that indexers and monitoring can tell an
+    /// emergency exit apart from a regular withdrawal (#1142).
     pub fn emergency_withdraw(
         env: Env,
         provider: Address,
@@ -921,7 +944,15 @@ impl LendingPool {
         min_assets_out: i128,
     ) -> Result<(), PoolError> {
         provider.require_auth();
-        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)
+        let assets_returned = Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)?;
+        emergency_withdraw(
+            &env,
+            provider.clone(),
+            token.clone(),
+            assets_returned,
+            shares,
+        );
+        Ok(())
     }
 
     // ── Cooldown views ────────────────────────────────────────────────────
