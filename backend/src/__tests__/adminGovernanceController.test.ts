@@ -125,4 +125,110 @@ describe('adminGovernanceController - getPendingGovernance', () => {
       }),
     );
   });
+
+  it('returns ProposalIdMismatch when emergency_cancel_proposal is called with a non-matching proposal_id', async () => {
+    const req = {
+      body: { proposalId: 'prop-wrong' },
+      params: { proposalId: 'prop-1' },
+    } as unknown as Request;
+    const res = createMockResponse();
+
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          proposal_id: 'prop-1',
+          proposed_admin: 'GNEW_ADMIN_1',
+          approval_count: 1,
+          threshold: 2,
+          executable_at: null,
+          expires_at: null,
+          signer_address: 'GSIGNER_1',
+          approved: true,
+        },
+      ],
+      rowCount: 1,
+    });
+
+    getPendingGovernance(req, res, () => {});
+    await flushAsync();
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'ProposalIdMismatch',
+        code: 4018,
+      }),
+    );
+  });
+
+  it('returns ProposalNotActive when expire_proposal is called on an already-cancelled proposal', async () => {
+    const req = {
+      body: { proposalId: 'prop-cancelled' },
+      params: { proposalId: 'prop-cancelled' },
+    } as unknown as Request;
+    const res = createMockResponse();
+
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          proposal_id: 'prop-cancelled',
+          proposed_admin: 'GNEW_ADMIN_1',
+          approval_count: 0,
+          threshold: 2,
+          executable_at: null,
+          expires_at: null,
+          signer_address: 'GSIGNER_1',
+          approved: false,
+          cancelled: true,
+        },
+      ],
+      rowCount: 1,
+    });
+
+    getPendingGovernance(req, res, () => {});
+    await flushAsync();
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'ProposalNotActive',
+        code: 4019,
+      }),
+    );
+  });
+
+  it('is idempotent when emergency_cancel_proposal is called twice on an already-cancelled proposal', async () => {
+    const req = {
+      body: { proposalId: 'prop-1' },
+      params: { proposalId: 'prop-1' },
+    } as unknown as Request;
+    const res = createMockResponse();
+
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          proposal_id: 'prop-1',
+          proposed_admin: 'GNEW_ADMIN_1',
+          approval_count: 0,
+          threshold: 2,
+          executable_at: null,
+          expires_at: null,
+          signer_address: 'GSIGNER_1',
+          approved: false,
+          cancelled: true,
+        },
+      ],
+      rowCount: 1,
+    });
+
+    getPendingGovernance(req, res, () => {});
+    await flushAsync();
+
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+      }),
+    );
+  });
 });
