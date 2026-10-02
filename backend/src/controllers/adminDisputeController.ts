@@ -3,7 +3,9 @@ import { query } from '../db/connection.js';
 import { AppError } from '../errors/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { notificationService, type NotificationType } from '../services/notificationService.js';
+import { defaultChecker } from '../services/defaultChecker.js';
 import { encodeCursor, decodeCursor, parseKeysetParams } from '../utils/pagination.js';
+import logger from '../utils/logger.js';
 
 /**
  * List all loan disputes for admin review with cursor-based pagination.
@@ -170,28 +172,65 @@ export const resolveLoanDispute = asyncHandler(async (req, res) => {
   }
   const dispute = disputeResult.rows[0];
 
+  // event_id, ledger, tx_hash, and contract_id are all NOT NULL on
+  // contract_events with no default — omitting or nulling them violates those
+  // constraints and crashes the insert.
+  const contractId = process.env.LOAN_MANAGER_CONTRACT_ID || 'admin-action';
+
+  // The on-chain leg runs FIRST, before anything is written (#1803).
+  //
+  // `reverse_default` is what actually moves the ledger: it puts the loan back
+  // to Approved, refunds the collateral seized into the pool, and repairs the
+  // borrower's NFT credit record. Recording the resolution before submitting
+  // (as this used to) left a disputed default as a database-only fiction when
+  // the call failed — the admin row said 'resolved' while the ledger kept the
+  // loan defaulted and the score still slashed.
+  let reversal: { txHash?: string; ledger?: number; error?: string } | null = null;
+  if (action === 'reverse') {
+    reversal = await defaultChecker.reverseDefault(Number(dispute.loan_id));
+    if (reversal.error || !reversal.txHash) {
+      // Nothing was written: the dispute stays open and can be retried once the
+      // on-chain failure is fixed (pool liquidity, indexer lag, RPC).
+      logger.withContext().error('On-chain default reversal failed', {
+        disputeId,
+        loanId: dispute.loan_id,
+        error: reversal.error ?? 'no transaction hash returned',
+      });
+      throw AppError.serviceUnavailable(
+        `Could not reverse the default on-chain for loan ${dispute.loan_id}: ${
+          reversal.error ?? 'no transaction hash returned'
+        }`,
+      );
+    }
+  }
+
   // Mark dispute as resolved with admin note
   await query(
     `UPDATE loan_disputes SET status = 'resolved', resolution = $1, admin_note = $2, resolved_at = NOW() WHERE id = $3`,
     [resolution, adminNote || null, disputeId],
   );
 
-  // These are synthetic, admin-generated events (no real on-chain ledger/tx
-  // behind them), but event_id, ledger, tx_hash, and contract_id are all
-  // NOT NULL on contract_events with no default — omitting or nulling them
-  // violates those constraints and crashes the insert.
-  const contractId = process.env.LOAN_MANAGER_CONTRACT_ID || 'admin-action';
   if (action === 'confirm') {
-    // Leave loan as defaulted, optionally log event
+    // Leave loan as defaulted, optionally log event. This one is a synthetic
+    // admin-generated marker: confirming a default has no on-chain effect, so
+    // there is no real tx behind it.
     await query(
       `INSERT INTO contract_events (event_id, loan_id, address, event_type, amount, ledger, ledger_closed_at, tx_hash, contract_id) VALUES ($1, $2, $3, 'DefaultConfirmed', NULL, 0, NOW(), $4, $5)`,
       [randomUUID(), dispute.loan_id, dispute.borrower, `admin-dispute:${disputeId}`, contractId],
     );
-  } else if (action === 'reverse') {
-    // Insert event to mark loan as active again
+  } else if (action === 'reverse' && reversal?.txHash) {
+    // A real `reverse_default` transaction landed, so the row carries its real
+    // tx hash and ledger instead of a synthetic `admin-dispute:<id>` marker.
     await query(
-      `INSERT INTO contract_events (event_id, loan_id, address, event_type, amount, ledger, ledger_closed_at, tx_hash, contract_id) VALUES ($1, $2, $3, 'DefaultReversed', NULL, 0, NOW(), $4, $5)`,
-      [randomUUID(), dispute.loan_id, dispute.borrower, `admin-dispute:${disputeId}`, contractId],
+      `INSERT INTO contract_events (event_id, loan_id, address, event_type, amount, ledger, ledger_closed_at, tx_hash, contract_id) VALUES ($1, $2, $3, 'DefaultReversed', NULL, $4, NOW(), $5, $6)`,
+      [
+        randomUUID(),
+        dispute.loan_id,
+        dispute.borrower,
+        reversal.ledger ?? 0,
+        reversal.txHash,
+        contractId,
+      ],
     );
   }
 

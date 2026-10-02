@@ -1,5 +1,5 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { Account, Keypair, StrKey } from '@stellar/stellar-sdk';
+import { Account, Keypair, Operation, StrKey, Transaction } from '@stellar/stellar-sdk';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
 
@@ -348,6 +348,75 @@ describe('DefaultChecker', () => {
       // With the fix: getAccount is called exactly once (for initial fetch)
       expect(fakeServer.getAccount).toHaveBeenCalledTimes(1);
       // Without the fix it would be called 3 times (once per batch)
+    });
+  });
+
+  describe('reverseDefault (#1803)', () => {
+    beforeEach(() => {
+      fakeServer.sendTransaction.mockResolvedValue({ hash: 'revhash', status: 'PENDING' });
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'SUCCESS', ledger: 4321 });
+    });
+
+    it('submits reverse_default(loan_id) to the loan manager and returns the confirmed hash', async () => {
+      const preparedTxns: unknown[] = [];
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => {
+        preparedTxns.push(tx);
+        return tx;
+      });
+
+      const checker = new DefaultChecker();
+      const result = await checker.reverseDefault(42);
+
+      expect(result.error).toBeUndefined();
+      expect(result.txHash).toBe('revhash');
+      expect(result.txStatus).toBe('SUCCESS');
+      expect(result.ledger).toBe(4321);
+      expect(fakeServer.getAccount).toHaveBeenCalledTimes(1);
+
+      // The submitted transaction really is a `reverse_default` call for the
+      // loan under dispute — not a `check_defaults` batch.
+      const tx = preparedTxns[0] as Transaction;
+      const op = tx.operations[0] as Operation.InvokeHostFunction;
+      const invoke = op.func.invokeContract();
+      expect(invoke.functionName().toString()).toBe('reverse_default');
+      expect(invoke.args()[0]!.u32()).toBe(42);
+    });
+
+    it('reports an error and no usable hash when the transaction fails on-chain', async () => {
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => tx);
+      fakeServer.pollTransaction.mockResolvedValue({ status: 'FAILED' });
+
+      const checker = new DefaultChecker();
+      const result = await checker.reverseDefault(42);
+
+      expect(result.txHash).toBe('revhash');
+      expect(result.txStatus).toBe('FAILED');
+      expect(result.error).toContain('did not succeed on-chain');
+      // A FAILED tx must never be reported as a completed reversal, which is
+      // what the controller keys off when deciding whether to record it.
+      expect(result.error).toBeTruthy();
+    });
+
+    it('reports an error when the transaction cannot be confirmed', async () => {
+      fakeServer.prepareTransaction.mockImplementation(async (tx: unknown) => tx);
+      fakeServer.pollTransaction.mockRejectedValue(new Error('rpc timeout'));
+
+      const checker = new DefaultChecker();
+      const result = await checker.reverseDefault(42);
+
+      expect(result.error).toContain('could not confirm reverse_default on-chain');
+      expect(result.error).toContain('revhash');
+    });
+
+    it('reports prepareTransaction failures without throwing', async () => {
+      fakeServer.prepareTransaction.mockRejectedValue(new Error('bad sequence'));
+
+      const checker = new DefaultChecker();
+      const result = await checker.reverseDefault(42);
+
+      expect(result.txHash).toBeUndefined();
+      expect(result.error).toContain('prepareTransaction failed: bad sequence');
+      expect(fakeServer.sendTransaction).not.toHaveBeenCalled();
     });
   });
 });

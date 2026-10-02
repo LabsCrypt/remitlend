@@ -1324,7 +1324,7 @@ fn test_transfer_rejects_unauthorized_minter() {
 }
 
 #[test]
-fn test_transfer_rejects_burned_destination() {
+fn test_transfer_rejects_explicitly_burned_destination() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -2879,4 +2879,140 @@ fn test_burn_removes_all_per_user_keys() {
         client.try_get_recipient_commitment(&user),
         Err(Ok(NftError::CommitmentMissing))
     );
+}
+
+// ── clear_default (#1803 — administrative reversal of a default) ─────────────
+
+#[test]
+fn test_clear_default_decrements_count_and_lifts_seize() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 40),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    // Two recorded defaults, so the decrement is observable without the
+    // count collapsing straight to a missing key.
+    client.record_default(&user, &None);
+    client.record_default(&user, &None);
+    assert_eq!(client.get_default_count(&user), 2);
+    assert!(client.is_seized(&user));
+
+    client.clear_default(&user, &None);
+
+    assert_eq!(client.get_default_count(&user), 1);
+    assert!(!client.is_seized(&user));
+    // Reversal repairs the default record; it never mints or restores metadata.
+    assert!(client.get_metadata(&user).is_some());
+}
+
+#[test]
+fn test_clear_default_on_last_default_removes_the_recorded_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 41),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    client.record_default(&user, &None);
+    assert_eq!(client.get_default_count(&user), 1);
+
+    client.clear_default(&user, &None);
+
+    // Zero is reported for a missing key, matching burn_internal.
+    assert_eq!(client.get_default_count(&user), 0);
+
+    // A cleared record must not re-arm the burn threshold: a later default
+    // still starts counting from zero rather than reusing the cleared entry.
+    client.record_default(&user, &None);
+    assert_eq!(client.get_default_count(&user), 1);
+    assert!(client.get_metadata(&user).is_some());
+}
+
+#[test]
+fn test_clear_default_is_a_noop_for_a_burned_account() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.set_default_burn_threshold(&1);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 42),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    client.record_default(&user, &None);
+    assert!(client.get_metadata(&user).is_none());
+
+    // A reversal that arrives after the burn cannot resurrect the record; the
+    // sanctioned path back is approve_remint + admin_remint.
+    client.clear_default(&user, &None);
+
+    assert!(client.get_metadata(&user).is_none());
+    assert_eq!(client.get_default_count(&user), 0);
+    assert!(!client.is_seized(&user));
+    assert_eq!(client.get_score(&user), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_clear_default_requires_authorized_minter() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let unauthorized_minter = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(&env, 43),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    client.record_default(&user, &None);
+
+    client.clear_default(&user, &Some(unauthorized_minter));
 }

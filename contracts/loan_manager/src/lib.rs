@@ -13,6 +13,7 @@ pub trait RemittanceNftInterface {
     fn seize_collateral(env: Env, user: Address, minter: Option<Address>);
     fn is_seized(env: Env, user: Address) -> bool;
     fn record_default(env: Env, user: Address, minter: Option<Address>);
+    fn clear_default(env: Env, user: Address, minter: Option<Address>);
     fn is_authorized_minter(env: Env, minter: Address) -> bool;
     fn is_paused(env: Env) -> bool;
 }
@@ -63,6 +64,9 @@ pub enum LoanError {
     InsufficientCollateral = 26,
     LoanNotLiquidatable = 27,
     LoanNotPurgable = 28,
+    /// Raised by `reverse_default` when the loan is not in `Defaulted` state
+    /// (only a default can be reversed — #1803).
+    LoanNotDefaulted = 29,
 }
 
 #[contracttype]
@@ -134,6 +138,11 @@ pub enum DataKey {
     MinRateBps,
     MaxRateBps,
     MigratedVersion,
+    /// Amount of collateral moved to the lending pool when a loan was marked
+    /// defaulted. `Loan::collateral_amount` is zeroed by the seize, so without
+    /// this the amount would be unrecoverable and an administrative reversal
+    /// could not refund it (#1803).
+    SeizedCollateral(u32),
 }
 
 #[contract]
@@ -885,6 +894,13 @@ impl LoanManager {
         loan.collateral_amount = 0;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(env, &loan_key);
+
+        // Remember what was seized before zeroing it off the loan record:
+        // `reverse_default` (#1803) needs the amount to refund the borrower
+        // when a default is administratively overturned.
+        let seized_key = DataKey::SeizedCollateral(loan_id);
+        env.storage().persistent().set(&seized_key, &collateral);
+        Self::bump_persistent_ttl(env, &seized_key);
 
         let token: Address = env
             .storage()
@@ -2821,6 +2837,138 @@ impl LoanManager {
         nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
 
         events::loan_defaulted(&env, loan_id, loan.borrower.clone());
+        Ok(())
+    }
+
+    /// Reverse a default that an administrative dispute process has overturned
+    /// (#1803).
+    ///
+    /// Admin-only, and the counterpart of [`Self::check_default`]: it is the
+    /// only path back out of [`LoanStatus::Defaulted`]. Without it
+    /// `adminDisputeController.resolveLoanDispute('reverse')` was a
+    /// database-only fiction — the ledger kept the loan, the seized collateral
+    /// and the borrower's credit record defaulted for good.
+    ///
+    /// What it restores, in one atomic call:
+    ///
+    /// - `status` returns to [`LoanStatus::Approved`] and the outstanding
+    ///   principal that `check_default` removed is added back.
+    /// - The borrower's active-loan slot, freed by `check_default`, is reused.
+    /// - `due_date` is pushed out by the loan's own term (falling back to the
+    ///   configured default term) and the interest/late-fee clocks restart, so
+    ///   the reinstated loan is neither instantly re-defaultable nor charged
+    ///   interest for the window in which it was wrongly defaulted. Debt
+    ///   accrued up to the default is untouched — this reverses the default, not
+    ///   the debt.
+    /// - The collateral seized into the lending pool is transferred back to the
+    ///   borrower, reinstated on the loan, and the `SeizedCollateral` record is
+    ///   cleared.
+    /// - The NFT credit record is repaired: the default count is decremented,
+    ///   the seized flag cleared, and the score penalty refunded.
+    ///
+    /// Two deliberate asymmetries with `check_default`:
+    ///
+    /// - Pausing does **not** block a reversal. An emergency pause freezes new
+    ///   activity; it must not freeze remediation of a wrongful default.
+    /// - [`LoanStatus::Liquidated`] loans are rejected. Their collateral has
+    ///   already been auctioned to a third party and cannot be unwound.
+    ///
+    /// Returns [`LoanError::LoanNotFound`] for an unknown loan,
+    /// [`LoanError::LoanNotDefaulted`] when the loan is not `Defaulted`, and
+    /// [`LoanError::InsufficientPoolLiquidity`] when the pool no longer holds
+    /// enough of the token to refund the seized collateral. Nothing is mutated
+    /// in any of those cases, so a failed reversal leaves the default exactly as
+    /// it was and can be retried once the pool is funded.
+    pub fn reverse_default(env: Env, loan_id: u32) -> Result<(), LoanError> {
+        use soroban_sdk::token::TokenClient;
+
+        Self::admin(&env).require_auth();
+
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        if loan.status != LoanStatus::Defaulted {
+            return Err(LoanError::LoanNotDefaulted);
+        }
+
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+
+        let seized_key = DataKey::SeizedCollateral(loan_id);
+        let seized: i128 = env
+            .storage()
+            .persistent()
+            .get(&seized_key)
+            .unwrap_or(0);
+
+        // ── CHECKS ──────────────────────────────────────────────────────────
+        // Fail before mutating anything if the refund cannot be covered: a
+        // half-applied reversal would be worse than the default it corrects.
+        if seized > 0 {
+            let pool_client = PoolClient::new(&env, &lending_pool);
+            if pool_client.pool_balance(&token) < seized {
+                return Err(LoanError::InsufficientPoolLiquidity);
+            }
+        }
+
+        // ── EFFECTS (all state mutations before any external call) ──────────
+        let borrower = loan.borrower.clone();
+        let restored_principal = Self::remaining_principal(&loan);
+        let term = if loan.term_ledgers > 0 {
+            loan.term_ledgers
+        } else {
+            Self::read_default_term(&env)
+        };
+        let reinstated_at = env.ledger().sequence();
+        let due_date = reinstated_at
+            .checked_add(term)
+            .expect("reinstated due date overflow");
+
+        loan.status = LoanStatus::Approved;
+        loan.due_date = due_date;
+        loan.last_interest_ledger = reinstated_at;
+        loan.last_late_fee_ledger = due_date
+            .checked_add(Self::grace_period_ledgers(&env))
+            .expect("grace period overflow");
+        loan.collateral_amount = seized;
+
+        Self::adjust_total_outstanding(&env, &token, restored_principal);
+        Self::increment_borrower_loan_count(&env, &borrower);
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        // ── INTERACTIONS (external calls last) ──────────────────────────────
+        if seized > 0 {
+            let token_client = TokenClient::new(&env, &token);
+            token_client.transfer(&lending_pool, &borrower, &seized);
+
+            env.storage().persistent().remove(&seized_key);
+            events::collateral_returned(&env, borrower.clone(), loan_id, seized);
+        }
+
+        let nft_client = NftClient::new(&env, &Self::nft_contract(&env));
+        nft_client.apply_score_delta(
+            &borrower,
+            &(Self::DEFAULT_SCORE_PENALTY_POINTS as i32),
+            &Some(env.current_contract_address()),
+        );
+        nft_client.clear_default(&borrower, &Some(env.current_contract_address()));
+
+        events::loan_default_reversed(&env, loan_id, borrower);
         Ok(())
     }
 

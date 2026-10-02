@@ -5562,6 +5562,272 @@ fn test_uncollateralized_loan_follows_default_path_after_default_window() {
     assert!(nft_client.is_seized(&borrower));
 }
 
+// ── reverse_default (#1803 — administrative reversal of a default) ───────────
+
+#[test]
+fn test_reverse_default_restores_loan_state_score_and_collateral() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_400);
+    stellar_token.mint(&borrower, &1_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+    manager.deposit_collateral(&loan_id, &400);
+
+    let borrower_balance_before_default = token_client.balance(&borrower);
+    let pool_balance_before_default = token_client.balance(&pool_address);
+    assert_eq!(manager.get_collateral(&loan_id), 400);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+
+    manager.check_default(&loan_id);
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
+    assert_eq!(nft_client.get_score(&borrower), 550);
+    assert_eq!(nft_client.get_default_count(&borrower), 1);
+    assert!(nft_client.is_seized(&borrower));
+    // The seize moved the collateral out of the loan and into the pool.
+    assert_eq!(manager.get_collateral(&loan_id), 0);
+    assert_eq!(
+        token_client.balance(&pool_address),
+        pool_balance_before_default + 400
+    );
+    assert_eq!(manager.get_total_outstanding(&token_id), 0);
+
+    manager.reverse_default(&loan_id);
+
+    // Loan is live again, with its collateral claim and accounting restored.
+    let reinstated = manager.get_loan(&loan_id);
+    assert_eq!(reinstated.status, LoanStatus::Approved);
+    assert_eq!(reinstated.collateral_amount, 400);
+    assert_eq!(manager.get_total_outstanding(&token_id), 1_000);
+    assert_eq!(manager.get_borrower_loan_count(&borrower), 1);
+    // The reinstated loan must not be instantly re-defaultable: its due date is
+    // pushed one full term past the reversal.
+    assert_eq!(reinstated.due_date, env.ledger().sequence() + 17_280);
+
+    // Collateral came back out of the pool to the borrower.
+    assert_eq!(token_client.balance(&borrower), borrower_balance_before_default + 400);
+    assert_eq!(token_client.balance(&pool_address), pool_balance_before_default);
+
+    // Credit record repaired: penalty refunded, default count cleared, seize lifted.
+    assert_eq!(nft_client.get_score(&borrower), 600);
+    assert_eq!(nft_client.get_default_count(&borrower), 0);
+    assert!(!nft_client.is_seized(&borrower));
+}
+
+#[test]
+fn test_reverse_default_rejects_loan_that_is_not_defaulted() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    // Only a default can be reversed — an active loan is rejected outright.
+    assert_eq!(
+        manager.try_reverse_default(&loan_id),
+        Err(Ok(LoanError::LoanNotDefaulted))
+    );
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
+
+    // ... and so is a rejected (terminal) loan.
+    let rejected_loan_id = manager.request_loan(&borrower, &500, &17_280);
+    manager.reject_loan(&rejected_loan_id, &String::from_str(&env, "no collateral"));
+    assert_eq!(
+        manager.get_loan(&rejected_loan_id).status,
+        LoanStatus::Rejected
+    );
+    assert_eq!(
+        manager.try_reverse_default(&rejected_loan_id),
+        Err(Ok(LoanError::LoanNotDefaulted))
+    );
+}
+
+#[test]
+fn test_reverse_default_without_collateral_reinstates_the_loan() {
+    // Uncapped-collateral loan: nothing was seized, so the reversal must still
+    // repair state and credit record without touching token balances.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    let pool_balance_before_default = token_client.balance(&pool_address);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+    manager.check_default(&loan_id);
+
+    manager.reverse_default(&loan_id);
+
+    let reinstated = manager.get_loan(&loan_id);
+    assert_eq!(reinstated.status, LoanStatus::Approved);
+    assert_eq!(reinstated.collateral_amount, 0);
+    assert_eq!(token_client.balance(&pool_address), pool_balance_before_default);
+    assert_eq!(nft_client.get_score(&borrower), 600);
+    assert_eq!(nft_client.get_default_count(&borrower), 0);
+    assert!(!nft_client.is_seized(&borrower));
+}
+
+#[test]
+fn test_reverse_default_fails_when_pool_cannot_refund_the_seized_collateral() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let other_borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    for b in [&borrower, &other_borrower] {
+        nft_client.mint(
+            b,
+            &600,
+            &history_hash,
+            &String::from_str(&env, "ipfs://QmTest"),
+            &create_test_commitment(&env, 1),
+            &None,
+        );
+    }
+
+    let token_client = TokenClient::new(&env, &token_id);
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_400);
+    stellar_token.mint(&borrower, &1_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+    manager.deposit_collateral(&loan_id, &400);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+    manager.check_default(&loan_id);
+
+    // Drain the pool below the 400 the reversal has to refund.
+    let big_loan_id = manager.request_loan(&other_borrower, &9_750, &17_280);
+    manager.approve_loan(&big_loan_id);
+    assert!(token_client.balance(&pool_address) < 400);
+
+    assert_eq!(
+        manager.try_reverse_default(&loan_id),
+        Err(Ok(LoanError::InsufficientPoolLiquidity))
+    );
+
+    // Nothing moved: the default is left exactly as it was, so the reversal can
+    // be retried once the pool is funded again.
+    let still_defaulted = manager.get_loan(&loan_id);
+    assert_eq!(still_defaulted.status, LoanStatus::Defaulted);
+    assert_eq!(still_defaulted.collateral_amount, 0);
+    assert_eq!(nft_client.get_score(&borrower), 550);
+    assert_eq!(nft_client.get_default_count(&borrower), 1);
+    assert!(nft_client.is_seized(&borrower));
+
+    // Fund the pool and the same call now succeeds.
+    stellar_token.mint(&pool_address, &400);
+    manager.reverse_default(&loan_id);
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
+    assert_eq!(nft_client.get_default_count(&borrower), 0);
+}
+
+#[test]
+fn test_reverse_default_is_allowed_while_paused() {
+    // A pause freezes new activity; it must not freeze remediation of a
+    // wrongful default (documented asymmetry with check_default).
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_address, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    let due_date = manager.get_loan(&loan_id).due_date;
+    let default_window = manager.get_default_window_ledgers();
+    env.ledger()
+        .set_sequence_number(due_date + default_window + 1);
+    manager.check_default(&loan_id);
+
+    manager.pause();
+    assert!(manager.is_paused());
+
+    manager.reverse_default(&loan_id);
+
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Approved);
+    assert_eq!(nft_client.get_default_count(&borrower), 0);
+}
+
 // ─── Tests for Issue #1875: LoanManager::get_loan_status discriminant mapping ───
 
 /// Asserts get_loan_status returns 0/1/2/3/4/5/6 for Pending/Approved/Repaid/Defaulted/Liquidated/Cancelled/Rejected
@@ -5778,4 +6044,3 @@ fn test_extend_loan_rejects_seized_borrower() {
     let res = manager.try_extend_loan(&borrower, &loan_2_id, &100);
     assert_eq!(res, Err(Ok(LoanError::SeizedBorrower)));
 }
-

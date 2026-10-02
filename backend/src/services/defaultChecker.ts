@@ -672,6 +672,126 @@ export class DefaultChecker {
       await this.releaseLock();
     }
   }
+
+  /**
+   * Submits `reverse_default(loan_id)` to the LoanManager contract (#1803).
+   *
+   * The on-chain counterpart of `check_defaults`, signed with the same
+   * `LOAN_MANAGER_ADMIN_SECRET` key the checker already uses, and the only way
+   * a disputed default stops being a database-only fiction:
+   * `adminDisputeController.resolveLoanDispute('reverse')` calls this and
+   * refuses to record the resolution unless it comes back with a tx hash.
+   *
+   * Unlike `checkOverdueLoans` this takes no distributed lock and is not
+   * batched — it runs inside an admin HTTP request, for a single loan, and the
+   * caller reports the outcome to an operator who must see the failure rather
+   * than a best-effort batch summary.
+   *
+   * A returned `error` means nothing reached the ledger. The caller must not
+   * treat the reversal as done in that case; the dispute stays open in the
+   * database so it can be retried.
+   */
+  async reverseDefault(loanId: number): Promise<{
+    loanId: number;
+    txHash?: string;
+    ledger?: number;
+    submitStatus?: string;
+    txStatus?: string;
+    error?: string;
+  }> {
+    const { signer, server, passphrase } = this.assertConfigured();
+
+    const tx = new TransactionBuilder(await server.getAccount(signer.publicKey()), {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: this.contractId,
+          function: 'reverse_default',
+          args: [nativeToScVal(loanId, { type: 'u32' })],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    let prepared;
+    try {
+      prepared = await server.prepareTransaction(tx);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { loanId, error: `prepareTransaction failed: ${message}` };
+    }
+
+    prepared.sign(signer);
+
+    let send;
+    try {
+      send = await server.sendTransaction(prepared);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { loanId, error: `sendTransaction failed: ${message}` };
+    }
+
+    const txHash = send.hash;
+    if (!txHash) {
+      return {
+        loanId,
+        ...(send.status !== undefined ? { submitStatus: send.status } : {}),
+        error: 'sendTransaction returned no hash',
+      };
+    }
+
+    let txStatus: string | undefined;
+    let ledger: number | undefined;
+    try {
+      const polled = await server.pollTransaction(txHash, {
+        attempts: this.pollAttempts,
+        sleepStrategy: (_attempt: number) => this.pollSleepMs,
+      });
+      txStatus = polled.status;
+      const polledLedger = (polled as { ledger?: unknown }).ledger;
+      if (typeof polledLedger === 'number') {
+        ledger = polledLedger;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.withContext().warn('Default reversal transaction polling failed', {
+        loanId,
+        txHash,
+        message,
+      });
+      // Submitted but unconfirmed: the reversal may or may not have landed, so
+      // it is reported as an error with the hash for the operator to check. The
+      // database must never claim a reversal the ledger has not confirmed.
+      return {
+        loanId,
+        txHash,
+        error: `could not confirm reverse_default on-chain (tx ${txHash}): ${message}`,
+      };
+    }
+
+    // A submitted-but-not-confirmed transaction is not a reversal: the ledger
+    // may still reject it (e.g. LoanNotDefaulted, InsufficientPoolLiquidity).
+    // Only SUCCESS is reported as a usable hash so the caller never records a
+    // resolution that did not land.
+    if (txStatus !== 'SUCCESS') {
+      return {
+        loanId,
+        txHash,
+        ...(txStatus !== undefined ? { txStatus } : {}),
+        error: `reverse_default did not succeed on-chain (status: ${txStatus ?? 'unknown'})`,
+      };
+    }
+
+    return {
+      loanId,
+      txHash,
+      ...(ledger !== undefined ? { ledger } : {}),
+      ...(send.status !== undefined ? { submitStatus: send.status } : {}),
+      txStatus,
+    };
+  }
 }
 
 export const defaultChecker = new DefaultChecker();

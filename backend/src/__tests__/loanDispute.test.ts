@@ -18,6 +18,17 @@ jest.unstable_mockModule('../db/transaction.js', () => ({
   withStellarAndDbTransaction: jest.fn(),
 }));
 
+// The on-chain leg of a dispute reversal (#1803) is submitted through
+// `defaultChecker.reverseDefault`; mocking it keeps the suite off the network
+// and lets the tests drive both the success and the failure path.
+const mockReverseDefault = jest.fn<(...args: unknown[]) => Promise<unknown>>();
+jest.unstable_mockModule('../services/defaultChecker.js', () => ({
+  defaultChecker: { reverseDefault: mockReverseDefault },
+  DefaultChecker: class {},
+  startDefaultCheckerScheduler: jest.fn(),
+  stopDefaultCheckerScheduler: jest.fn(),
+}));
+
 let request: typeof import('supertest');
 let jwt: typeof import('jsonwebtoken');
 let app: any;
@@ -104,6 +115,10 @@ beforeAll(async () => {
 
 afterAll(() => {
   jest.restoreAllMocks();
+});
+
+beforeEach(() => {
+  mockReverseDefault.mockReset();
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -246,10 +261,18 @@ describe('Loan Dispute/Appeal Mechanism', () => {
   it('should allow admin to resolve dispute as reverse', async () => {
     /**
      * resolveLoanDispute:
+     *   [0] defaultChecker.reverseDefault(loanId)  → on-chain tx (mocked)
      *   [1] SELECT loan_disputes WHERE id = disputeId AND status='open'  → found
      *   [2] UPDATE loan_disputes SET status='resolved'
      *   [3] INSERT contract_events DefaultReversed  (action = 'reverse')
      */
+    mockReverseDefault.mockResolvedValueOnce({
+      loanId: LOAN_ID,
+      txHash: 'c0ffee1234',
+      ledger: 4321,
+      txStatus: 'SUCCESS',
+    });
+
     mockQuery
       .mockResolvedValueOnce(
         dbRows([
@@ -271,5 +294,57 @@ describe('Loan Dispute/Appeal Mechanism', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(mockReverseDefault).toHaveBeenCalledWith(LOAN_ID);
+
+    // The recorded event must carry the real on-chain tx hash, not the
+    // synthetic `admin-dispute:<id>` marker this used to write (#1803).
+    const insertCall = mockQuery.mock.calls.find(
+      (call) => typeof call[0] === 'string' && (call[0] as string).includes('DefaultReversed'),
+    );
+    expect(insertCall).toBeDefined();
+    const insertParams = insertCall![1] as unknown[];
+    expect(insertParams).toContain('c0ffee1234');
+    expect(insertParams.some((p) => typeof p === 'string' && p.startsWith('admin-dispute:'))).toBe(
+      false,
+    );
+  });
+
+  it('should not resolve a dispute when the on-chain reversal fails', async () => {
+    /**
+     * resolveLoanDispute with action='reverse', on-chain call fails:
+     *   [1] SELECT loan_disputes WHERE id = disputeId AND status='open'  → found
+     *   → throws 503 before any UPDATE or contract_events INSERT, so the dispute
+     *     stays open instead of being recorded as resolved.
+     */
+    mockReverseDefault.mockResolvedValueOnce({
+      loanId: LOAN_ID,
+      error: 'prepareTransaction failed: pool liquidity unavailable',
+    });
+
+    // Scope the call count to this test: earlier tests in the file share the
+    // same `mockQuery` instance.
+    mockQuery.mockClear();
+    mockQuery.mockResolvedValueOnce(
+      dbRows([
+        {
+          id: disputeId,
+          loan_id: LOAN_ID,
+          borrower: TEST_PUBLIC_KEY,
+          status: 'open',
+        },
+      ]),
+    );
+
+    const res = await request(app)
+      .post(`/api/admin/loan-disputes/${disputeId}/resolve`)
+      .set('x-api-key', ADMIN_API_KEY)
+      .send({ action: 'reverse', resolution: 'Default was incorrect.' });
+
+    expect(res.status).toBe(503);
+    // Only the dispute lookup ran — nothing was marked resolved or logged.
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const statements = mockQuery.mock.calls.map((call) => String(call[0]));
+    expect(statements.some((sql) => sql.includes('UPDATE loan_disputes'))).toBe(false);
+    expect(statements.some((sql) => sql.includes('DefaultReversed'))).toBe(false);
   });
 });

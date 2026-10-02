@@ -24,6 +24,16 @@ jest.unstable_mockModule('../../services/notificationService.js', () => ({
   },
 }));
 
+// The on-chain leg of a reversed default (#1803). Mocked so the flow can be
+// exercised without an RPC endpoint or an admin signing key.
+const mockReverseDefault = jest.fn<(...args: unknown[]) => Promise<unknown>>();
+jest.unstable_mockModule('../../services/defaultChecker.js', () => ({
+  defaultChecker: { reverseDefault: mockReverseDefault },
+  DefaultChecker: class {},
+  startDefaultCheckerScheduler: jest.fn(),
+  stopDefaultCheckerScheduler: jest.fn(),
+}));
+
 let request: typeof import('supertest');
 let jwt: typeof import('jsonwebtoken');
 let app: any;
@@ -82,6 +92,7 @@ beforeEach(() => {
   mockQuery.mockReset();
   mockNotifyAdmins.mockReset();
   mockCreateNotification.mockReset();
+  mockReverseDefault.mockReset();
   mockNotifyAdmins.mockResolvedValue(undefined);
   mockCreateNotification.mockResolvedValue({
     id: 1,
@@ -201,6 +212,14 @@ describe('loan dispute resolution integration flow', () => {
     expect(contestRes.body.success).toBe(true);
     expect(mockNotifyAdmins).toHaveBeenCalledTimes(1);
 
+    // The reversal must reach the ledger before anything is written.
+    mockReverseDefault.mockResolvedValueOnce({
+      loanId: LOAN_ID,
+      txHash: 'reverse-tx-hash',
+      ledger: 777,
+      txStatus: 'SUCCESS',
+    });
+
     mockQuery
       .mockResolvedValueOnce(
         dbRows([
@@ -226,6 +245,7 @@ describe('loan dispute resolution integration flow', () => {
 
     expect(resolveRes.status).toBe(200);
     expect(resolveRes.body.success).toBe(true);
+    expect(mockReverseDefault).toHaveBeenCalledWith(LOAN_ID);
     expect(mockCreateNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: TEST_PUBLIC_KEY,
@@ -254,7 +274,8 @@ describe('loan dispute resolution integration flow', () => {
             expect.any(String),
             LOAN_ID,
             TEST_PUBLIC_KEY,
-            `admin-dispute:${DISPUTE_ID}`,
+            777,
+            'reverse-tx-hash',
             expect.any(String),
           ],
         ],

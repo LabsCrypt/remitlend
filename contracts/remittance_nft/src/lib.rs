@@ -1007,6 +1007,58 @@ impl RemittanceNFT {
         Ok(())
     }
 
+    /// Undo the record of a default that an administrative dispute process has
+    /// overturned (#1803).
+    ///
+    /// Admin or authorized-minter only; the counterpart of
+    /// [`Self::record_default`]. Decrements the user's default count
+    /// (saturating at zero) and lifts the seized flag so the borrower can
+    /// transfer and refinance again. The score points lost to the default
+    /// penalty are restored separately by the caller
+    /// (`LoanManager::reverse_default` -> `apply_score_delta`), because the
+    /// penalty size is loan-manager policy, not NFT policy.
+    ///
+    /// A burned account is not resurrected: once the default count reached the
+    /// burn threshold the record is gone, and returning `Ok(())` without
+    /// touching storage is the only honest outcome for a reversal that arrives
+    /// too late. Nothing here can be used to mint or restore a burned NFT.
+    pub fn clear_default(env: Env, user: Address, minter: Option<Address>) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
+
+        if !Self::has_active_nft(&env, &user) {
+            return Ok(());
+        }
+
+        let default_key = DataKey::DefaultCount(user.clone());
+        let recorded = env
+            .storage()
+            .persistent()
+            .get::<DataKey, u32>(&default_key)
+            .unwrap_or(0);
+        let remaining = recorded.saturating_sub(1);
+
+        if remaining == 0 {
+            // Matches `burn_internal`, which drops the key rather than storing
+            // a zero; `get_default_count` reports 0 for a missing key.
+            env.storage().persistent().remove(&default_key);
+        } else {
+            env.storage().persistent().set(&default_key, &remaining);
+            Self::bump_persistent_ttl(&env, &default_key);
+        }
+
+        let seized_key = DataKey::Seized(user.clone());
+        if env.storage().persistent().has(&seized_key) {
+            env.storage().persistent().remove(&seized_key);
+            env.events()
+                .publish((symbol_short!("Unseized"), user.clone()), ());
+        }
+
+        env.events()
+            .publish((symbol_short!("DefClr"), user), remaining);
+
+        Ok(())
+    }
+
     pub fn burn(env: Env, user: Address, minter: Option<Address>) -> Result<(), NftError> {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
