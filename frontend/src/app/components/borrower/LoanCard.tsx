@@ -81,8 +81,12 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
         : `${daysUntil} days remaining`;
 
   // ── Progress (detailed only) ───────────────────────────────────────────────
-  const totalForProgress = loan.principal + loan.accruedInterest;
-  const progress = totalForProgress > 0 ? (loan.totalRepaid / totalForProgress) * 100 : 0;
+  const totalForProgress =
+    loan.principal + loan.accruedInterest + (loan.accruedLateFee ?? 0);
+  const progress =
+    totalForProgress > 0
+      ? Math.min(100, Math.max(0, (loan.totalRepaid / totalForProgress) * 100))
+      : 0;
 
   return (
     <Card className="p-6 hover:shadow-lg transition-shadow">
@@ -121,7 +125,7 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
           >
             <div
               className="bg-blue-600 h-2 rounded-full"
-              style={{ width: `${Math.min(progress, 100)}%` }}
+              style={{ width: `${progress}%` }}
             />
           </div>
         </div>
