@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+const ALLOWED_FIELDS = ["email", "phone", "name"] as const;
+type AllowedField = (typeof ALLOWED_FIELDS)[number];
+
 interface RevealRequestBody {
-  field: "email" | "phone" | "name";
+  field: AllowedField;
   reason: string;
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get("session")?.value;
 
@@ -20,7 +26,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       `${process.env.API_URL ?? "http://localhost:3001"}/auth/session`,
       {
         headers: { Authorization: `Bearer ${sessionToken}` },
-      },
+      }
     );
     if (!sessionRes.ok) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -28,7 +34,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const session = (await sessionRes.json()) as { role?: string };
     role = session.role ?? null;
   } catch {
-    return NextResponse.json({ error: "Session validation failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Session validation failed" },
+      { status: 500 }
+    );
   }
 
   if (!role || !["admin", "operator"].includes(role)) {
@@ -36,10 +45,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const { id } = await params;
-  const body = (await request.json()) as RevealRequestBody;
 
-  if (!body.field || !body.reason) {
-    return NextResponse.json({ error: "field and reason are required" }, { status: 400 });
+  let body: RevealRequestBody;
+  try {
+    body = (await request.json()) as RevealRequestBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object" || !body.field || !body.reason) {
+    return NextResponse.json(
+      { error: "field and reason are required" },
+      { status: 400 }
+    );
+  }
+
+  if (!ALLOWED_FIELDS.includes(body.field)) {
+    return NextResponse.json(
+      {
+        error: `Invalid field requested. Allowed fields: ${ALLOWED_FIELDS.join(", ")}`,
+      },
+      { status: 400 }
+    );
   }
 
   const requestId = crypto.randomUUID();
@@ -60,12 +87,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           reason: body.reason,
           request_id: requestId,
         }),
-      },
+      }
     );
 
     if (!backendRes.ok) {
-      const error = await backendRes.text();
-      return NextResponse.json({ error }, { status: backendRes.status });
+      return NextResponse.json(
+        { error: "Backend decryption failed" },
+        { status: backendRes.status }
+      );
     }
 
     const data = (await backendRes.json()) as { plaintext: string };
