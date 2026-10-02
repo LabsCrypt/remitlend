@@ -78,7 +78,8 @@ export function useNotificationStream() {
 
               try {
                 const payload = JSON.parse(dataStr) as
-                  AppNotification | { type: "init"; notifications: AppNotification[] };
+                  | AppNotification
+                  | { type: "init"; notifications: AppNotification[] };
 
                 // Use partial-match setQueriesData so the write lands in every
                 // list cache entry readers subscribe to (e.g. the dropdown's
