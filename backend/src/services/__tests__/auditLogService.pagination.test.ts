@@ -68,6 +68,10 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const result = await getAuditLogs({ limit: 2 });
 
       expect(result.nextCursor).not.toBeNull();
+      // The cursor carries the timestamp *and* the id it is paging from.
+      const cursor = String(result.nextCursor);
+      expect(cursor).toContain(':');
+      // The ISO timestamp itself contains ':', so split on the last one.
       // The cursor carries the timestamp *and* the id it is paging from. The
       // ISO timestamp itself contains colons, so split on the final one.
       const cursor = String(result.nextCursor);
@@ -90,6 +94,9 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
 
     it('resumes correctly from a cursor it previously issued', async () => {
       const first = await getAuditLogs({ limit: 2 });
+
+      // Only inspect the query issued for the second (cursor) page.
+      mockQuery.mockClear();
       await getAuditLogs({ limit: 2, cursor: first.nextCursor });
 
       const { text, values } = pageQuery();

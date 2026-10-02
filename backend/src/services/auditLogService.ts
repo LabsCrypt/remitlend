@@ -103,6 +103,10 @@ export async function getAuditLogs(filters: AuditLogFilters) {
   if (withTotal === true) {
     // The total reflects the active filters but not the keyset cursor: a total
     // describes the whole filtered result set, not the remaining pages (#1808).
+    const countSql =
+      filterConditions.length > 0
+        ? `SELECT COUNT(*) as count FROM audit_logs WHERE ${filterConditions.join(' AND ')}`
+        : 'SELECT COUNT(*) as count FROM audit_logs';
     const filterClause =
       filterConditions.length > 0 ? `WHERE ${filterConditions.join(' AND ')}` : '';
     const countSql = filterClause

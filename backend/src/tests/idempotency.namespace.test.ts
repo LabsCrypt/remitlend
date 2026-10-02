@@ -87,6 +87,7 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     });
 
     it('does not replay another wallet’s cached response', async () => {
+      // Bob's response is already cached under his namespace…
       // Bob's response is cached under *his* namespace. The shared cache only
       // returns it for Bob's namespaced lookup; Alice's lookup is a miss.
       const bobCached = {
@@ -94,6 +95,13 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
         body: { id: 'bob-loan' },
         fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
       };
+      // The cache is keyed, so only Bob's namespaced key resolves to his entry.
+      asMock(cacheService.get).mockImplementation((cacheKey: unknown) =>
+        Promise.resolve(String(cacheKey).includes(BOB) ? bobCached : null),
+      );
+
+      // Capture the spy before the middleware wraps res.json on a cache miss.
+      const jsonSpy = res.json as unknown as jest.Mock;
       asMock(cacheService.get).mockImplementation(async (key: unknown) =>
         String(key).includes(BOB) ? bobCached : null,
       );
@@ -103,6 +111,17 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
 
       await idempotencyMiddleware(req as Request, res as Response, next);
 
+      expect(cacheKeysRead()[0]).not.toContain(BOB);
+      expect(next).toHaveBeenCalled();
+      expect(jsonSpy).not.toHaveBeenCalledWith({ id: 'bob-loan' });
+    });
+
+    it('does not reject a user with 409 because another user holds the key', async () => {
+      // Bob's in-flight lock is held under his namespace, so Alice's own lock
+      // key is still free.
+      asMock(cacheService.get).mockResolvedValue(null);
+      asMock(cacheService.setNotExists).mockImplementation((lockKey: unknown) =>
+        Promise.resolve(!String(lockKey).includes(BOB)),
       expect(cacheKeysRead()[0]).toContain(ALICE);
       expect(resJson).not.toHaveBeenCalledWith({ id: 'bob-loan' });
       expect(next).toHaveBeenCalled();

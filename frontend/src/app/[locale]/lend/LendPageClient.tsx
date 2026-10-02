@@ -63,7 +63,7 @@ export function LendPageClient() {
   const withdrawalOp = useWithdrawalOperation();
 
   const invalidatePoolStats = useInvalidatePoolStats();
-  const sseUrl = address ? `${API_URL}/pool/events` : null;
+  const sseUrl = address ? `${API_URL}/api/events/stream` : null;
   const sseStatus = useSSE<{ type: string }>({
     url: sseUrl,
     onMessage: (data) => {
