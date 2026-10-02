@@ -63,31 +63,31 @@ describeIf('Migrations', () => {
 
   it('should store and retrieve a score record', async () => {
     await query(
-      `INSERT INTO scores (borrower, score)
+      `INSERT INTO scores (user_id, current_score)
        VALUES ($1, $2)
-       ON CONFLICT (borrower) DO NOTHING`,
+       ON CONFLICT (user_id) DO NOTHING`,
       ['G_MIGRATION_TEST_SCORE', 700],
     );
 
-    const result = await query(`SELECT score FROM scores WHERE borrower = $1`, [
+    const result = await query(`SELECT current_score FROM scores WHERE user_id = $1`, [
       'G_MIGRATION_TEST_SCORE',
     ]);
-    expect(Number(result.rows[0]?.score ?? 0)).toBe(700);
+    expect(Number(result.rows[0]?.current_score ?? 0)).toBe(700);
 
-    await query(`DELETE FROM scores WHERE borrower = $1`, ['G_MIGRATION_TEST_SCORE']);
+    await query(`DELETE FROM scores WHERE user_id = $1`, ['G_MIGRATION_TEST_SCORE']);
   });
 
   it('should exercise updateUserScoresBulk against post-migration scores table', async () => {
     const testBorrower = 'G_MIGRATION_TEST_BULK_SCORE';
-    await query(`DELETE FROM scores WHERE borrower = $1`, [testBorrower]);
+    await query(`DELETE FROM scores WHERE user_id = $1`, [testBorrower]);
 
     const updates = new Map<string, number>([[testBorrower, 50]]);
     await updateUserScoresBulk(updates);
 
-    const result = await query(`SELECT score FROM scores WHERE borrower = $1`, [testBorrower]);
-    expect(Number(result.rows[0]?.score ?? 0)).toBe(550);
+    const result = await query(`SELECT current_score FROM scores WHERE user_id = $1`, [testBorrower]);
+    expect(Number(result.rows[0]?.current_score ?? 0)).toBe(550);
 
-    await query(`DELETE FROM scores WHERE borrower = $1`, [testBorrower]);
+    await query(`DELETE FROM scores WHERE user_id = $1`, [testBorrower]);
   });
 
   it('should have the indexer_state table after running up', async () => {

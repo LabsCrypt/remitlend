@@ -37,11 +37,11 @@ export async function updateUserScoresBulk(
   ).join(', ');
 
   const sql = `
-    INSERT INTO scores (borrower, score)
+    INSERT INTO scores (user_id, current_score)
     VALUES ${valuePlaceholders}
-    ON CONFLICT (borrower)
+    ON CONFLICT (user_id)
     DO UPDATE SET
-      score = LEAST(850, GREATEST(300, scores.score + EXCLUDED.score - 500)),
+      current_score = LEAST(850, GREATEST(300, scores.current_score + EXCLUDED.current_score - 500)),
       updated_at = CURRENT_TIMESTAMP`;
 
   try {
@@ -90,14 +90,14 @@ export async function setAbsoluteUserScoresBulk(scores: Map<string, number>): Pr
   // outside the normal 300..850 band (e.g. mid-migration during a contract
   // upgrade) still lands verbatim instead of being silently rewritten.
   const sql = `
-    WITH reconciled_scores (borrower, score) AS (
+    WITH reconciled_scores (user_id, current_score) AS (
       VALUES ${valuePlaceholders.join(',')}
     )
-    INSERT INTO scores (borrower, score)
-    SELECT borrower, score FROM reconciled_scores
-    ON CONFLICT (borrower)
+    INSERT INTO scores (user_id, current_score)
+    SELECT user_id, current_score FROM reconciled_scores
+    ON CONFLICT (user_id)
     DO UPDATE SET
-      score = EXCLUDED.score,
+      current_score = EXCLUDED.current_score,
       updated_at = CURRENT_TIMESTAMP
   `;
 
