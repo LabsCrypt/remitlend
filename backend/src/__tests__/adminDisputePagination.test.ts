@@ -215,4 +215,4 @@ describe('listLoanDisputes pagination', () => {
     );
     expect(dataCall?.[0]).toContain('ORDER BY created_at DESC');
   });
-});
+})
