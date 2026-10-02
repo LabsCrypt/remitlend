@@ -171,9 +171,9 @@ describe('notificationService', () => {
     const makeNotificationRow = (userId: string, loanId: number | null) => ({
       id: 1,
       user_id: userId,
-      type: 'loan_defaulted',
-      title: 'Loan Default',
-      message: 'A loan has defaulted',
+      type: 'dispute_contested',
+      title: 'Loan Default Contested',
+      message: 'A borrower has contested a loan default',
       loan_id: loanId,
       action_url: loanId != null ? `/loans/${loanId}` : null,
       read: false,
@@ -209,6 +209,8 @@ describe('notificationService', () => {
       const params1 = (mockQuery.mock.calls[1]?.[1] ?? []) as unknown[];
       expect(params0[0]).toBe('wallet1');
       expect(params1[0]).toBe('wallet2');
+      expect(params0[1]).toBe('dispute_contested');
+      expect(params1[1]).toBe('dispute_contested');
     });
 
     it('does nothing when ADMIN_WALLETS is unset', async () => {

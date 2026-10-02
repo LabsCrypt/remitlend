@@ -9,6 +9,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { DEFAULT_NETWORK_PASSPHRASE, getNetworkPassphrase } from "./networkPassphrase";
+import { STROOP_DECIMALS, toStroops } from "./amount";
 
 export { DEFAULT_NETWORK_PASSPHRASE, getNetworkPassphrase };
 

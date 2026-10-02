@@ -307,18 +307,16 @@ While deactivated:
 
 ## Verifying HMAC Signatures
 
-Each delivery includes an `X-RemitLend-Signature` header containing an
-HMAC-SHA256 signature of the **raw request body**.
+Deliveries with a configured subscription secret include an
+`X-RemitLend-Signature` header in this format:
 
-**Header format:**
 ```
-X-RemitLend-Signature: sha256=<hex-encoded-hmac>
+X-RemitLend-Signature: t=<unix-seconds>,v1=<hex-encoded-hmac>
 ```
 
-The value is `sha256=` followed by the lowercase hex-encoded HMAC-SHA256
-digest computed over the raw request body (no timestamp prefix).
-
-### Verification snippet (Node.js)
+The HMAC-SHA256 digest covers `${timestamp}.${rawBody}`. Reject timestamps
+outside a short tolerance window (five minutes is recommended), then compare
+the digest in constant time. Retries get a fresh timestamp and signature.
 
 ```typescript
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -327,32 +325,24 @@ function verifyWebhookSignature(
   rawBody: string,
   signatureHeader: string,
   secret: string,
+  now = Date.now(),
 ): boolean {
-  const expected =
-    "sha256=" +
-    createHmac("sha256", secret).update(rawBody).digest("hex");
-
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signatureHeader ?? "");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  const match = /^t=(\d+),v1=([a-f0-9]{64})$/.exec(signatureHeader ?? "");
+  if (!match) return false;
+  const [, timestamp, signature] = match;
+  const timestampMs = Number(timestamp) * 1000;
+  if (!Number.isSafeInteger(timestampMs) || Math.abs(now - timestampMs) > 5 * 60_000) {
+    return false;
+  }
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest();
+  const received = Buffer.from(signature, "hex");
+  return received.length === expected.length && timingSafeEqual(expected, received);
 }
 ```
 
-> ⚠️ **Important:** Always use `timingSafeEqual` (or your language's
-> constant-time comparison) when verifying the signature to prevent timing
-> attacks.
-
-### Obtaining your secret
-
-The signing secret is the **per-subscription secret** returned in the
-response when you register the webhook subscription (see
-[Creating a Subscription](#creating-a-subscription)). It is **not** a
-global environment variable. Store it securely on your server and use it
-to verify each incoming delivery.
-
-See also: [docs/wiki/webhook-signatures.md](wiki/webhook-signatures.md)
-for additional language examples.
+Capture the raw body and verify before JSON decoding. The signing secret is the
+per-subscription secret returned when registering the webhook. See
+[the full signature guide](wiki/webhook-signatures.md) for Python and Express examples.
 
 ---
 

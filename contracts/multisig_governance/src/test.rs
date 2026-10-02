@@ -7,10 +7,10 @@ pub struct MockTarget;
 
 #[contractimpl]
 impl MockTarget {
-    pub fn set_admin(env: Env, new_admin: Address) {
+    pub fn propose_admin(env: Env, new_admin: Address) {
         env.storage()
             .instance()
-            .set(&symbol_short!("admin"), &new_admin);
+            .set(&symbol_short!("pending"), &new_admin);
     }
     pub fn has_pending_transfer(env: Env) -> bool {
         if let Some(pending) = env
@@ -23,26 +23,51 @@ impl MockTarget {
             false
         }
     }
+    pub fn accept_admin(env: Env) {
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("pending"))
+            .unwrap();
+        pending.require_auth();
+        env.storage()
+            .instance()
+            .set(&symbol_short!("admin"), &pending);
+    }
     pub fn get_admin(env: Env) -> Address {
         env.storage()
             .instance()
             .get(&symbol_short!("admin"))
             .unwrap()
     }
+    pub fn get_pending_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&symbol_short!("pending"))
+            .unwrap()
+    }
 }
 
-fn setup() -> (Env, GovernanceContractClient<'static>, Address, Address) {
+fn setup() -> (
+    Env,
+    GovernanceContractClient<'static>,
+    Address,
+    Vec<Address>,
+) {
     let env = Env::default();
     env.mock_all_auths();
     let id = env.register(GovernanceContract, ());
     let client = GovernanceContractClient::new(&env, &id);
     let admin = Address::generate(&env);
 
-    let target_id = env.register(MockTarget, ());
-    let target = target_id.clone();
+    let targets = soroban_sdk::vec![
+        &env,
+        env.register(MockTarget, ()),
+        env.register(MockTarget, ())
+    ];
 
-    client.initialize(&admin, &target);
-    (env, client, admin, target)
+    client.initialize(&admin, &targets);
+    (env, client, admin, targets)
 }
 
 fn set_ts(env: &Env, ts: u64) {
@@ -78,7 +103,7 @@ fn upgrade_requires_admin_auth() {
 
 #[test]
 fn finalize_succeeds_and_updates_local_and_remote_state() {
-    let (env, client, admin, target) = setup();
+    let (env, client, admin, targets) = setup();
     let proposed = Address::generate(&env);
     let s = Address::generate(&env);
     let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
@@ -96,9 +121,13 @@ fn finalize_succeeds_and_updates_local_and_remote_state() {
     assert_eq!(client.get_current_admin(), proposed);
     assert!(!client.has_pending_transfer());
 
-    // 2. Remote state updated (MockTarget)
-    let target_client = MockTargetClient::new(&env, &target);
-    assert_eq!(target_client.get_admin(), proposed);
+    // 2. Remote state updated: new admin proposed on every target
+    for target in targets.iter() {
+        assert_eq!(
+            MockTargetClient::new(&env, &target).get_pending_admin(),
+            proposed
+        );
+    }
 }
 
 #[test]
@@ -109,13 +138,13 @@ fn initialize_sets_admin() {
 
 #[test]
 fn exposes_target_pending_admin_and_approval_queries() {
-    let (env, client, admin, target) = setup();
+    let (env, client, admin, targets) = setup();
     let proposed = Address::generate(&env);
     let signer = Address::generate(&env);
     let signers = Vec::from_slice(&env, core::slice::from_ref(&signer));
 
     assert_eq!(client.get_admin(), admin);
-    assert_eq!(client.get_target(), target);
+    assert_eq!(client.get_targets(), targets);
     assert!(client.get_pending().is_none());
 
     set_ts(&env, 1000);
@@ -130,8 +159,44 @@ fn exposes_target_pending_admin_and_approval_queries() {
 #[test]
 fn double_initialize_panics() {
     let (env, client, _, _) = setup();
-    let result = client.try_initialize(&Address::generate(&env), &Address::generate(&env));
+    let targets = soroban_sdk::vec![&env, Address::generate(&env)];
+    let result = client.try_initialize(&Address::generate(&env), &targets);
     assert_eq!(result, Err(Ok(GovernanceError::AlreadyInitialized)));
+}
+
+#[test]
+fn accept_target_admins_makes_governance_admin_of_every_target() {
+    let (env, client, _, targets) = setup();
+    for target in targets.iter() {
+        MockTargetClient::new(&env, &target).propose_admin(&client.address);
+    }
+
+    client.accept_target_admins();
+
+    for target in targets.iter() {
+        assert_eq!(
+            MockTargetClient::new(&env, &target).get_admin(),
+            client.address
+        );
+    }
+}
+
+#[test]
+fn initialize_rejects_empty_targets() {
+    let env = Env::default();
+    let client = GovernanceContractClient::new(&env, &env.register(GovernanceContract, ()));
+    let result = client.try_initialize(&Address::generate(&env), &Vec::new(&env));
+    assert_eq!(result, Err(Ok(GovernanceError::TargetNotSet)));
+}
+
+#[test]
+fn get_targets_falls_back_to_legacy_single_target() {
+    let env = Env::default();
+    let id = env.register(GovernanceContract, ());
+    let legacy = Address::generate(&env);
+    env.as_contract(&id, || env.storage().instance().set(&KEY_TARGET, &legacy));
+    let client = GovernanceContractClient::new(&env, &id);
+    assert_eq!(client.get_targets(), soroban_sdk::vec![&env, legacy]);
 }
 
 #[test]

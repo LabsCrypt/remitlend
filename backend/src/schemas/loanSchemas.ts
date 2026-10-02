@@ -10,7 +10,7 @@ export const rejectLoanSchema = z.object({
 
 export type RejectLoanInput = z.infer<typeof rejectLoanSchema>;
 
-export const positiveAmountSchema = z.number().int().positive('Amount must be a positive integer');
+export const positiveAmountSchema = z.number().positive('Amount must be positive');
 
 const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 

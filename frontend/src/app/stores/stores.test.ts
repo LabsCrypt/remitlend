@@ -405,4 +405,64 @@ describe("useGamificationStore", () => {
       expect(achievement?.unlockedAt).toBeDefined();
     });
   });
+
+  describe("persistence", () => {
+    it("persists only durable fields, excluding transient UI state", () => {
+      // Trigger a level-up: this sets showLevelUpModal, pendingLevelUp, and
+      // recentXPGain in memory, all of which must NOT be written to storage.
+      useGamificationStore.getState().addXP(100);
+
+      const stored = JSON.parse(window.localStorage.getItem("remitlend-gamification") || "{}");
+      const persisted = stored.state || {};
+
+      // Durable progression and settings survive.
+      expect(persisted.level).toBe(2);
+      expect(persisted.xp).toBe(100);
+      expect(persisted.kingdomTitle).toBe("Merchant");
+      expect(persisted.achievements).toBeDefined();
+      expect(persisted.soundEnabled).toBe(true);
+      expect(persisted.animationsEnabled).toBe(true);
+      expect(persisted.soundVolume).toBe(0.5);
+
+      // Transient UI flags are excluded.
+      expect(persisted.showLevelUpModal).toBeUndefined();
+      expect(persisted.pendingLevelUp).toBeUndefined();
+      expect(persisted.recentXPGain).toBeUndefined();
+    });
+
+    it("rehydrates durable progression without transient UI flags", async () => {
+      // Simulate a persisted payload written by the new partialize shape:
+      // durable fields only, no transient UI flags.
+      window.localStorage.setItem(
+        "remitlend-gamification",
+        JSON.stringify({
+          state: {
+            level: 3,
+            xp: 300,
+            kingdomTitle: "Knight",
+            achievements: [],
+            soundEnabled: false,
+            animationsEnabled: true,
+            soundVolume: 0.2,
+          },
+          version: 0,
+        }),
+      );
+
+      await useGamificationStore.persist.rehydrate();
+
+      const state = useGamificationStore.getState();
+      // Existing progression still hydrates.
+      expect(state.level).toBe(3);
+      expect(state.xp).toBe(300);
+      expect(state.kingdomTitle).toBe("Knight");
+      expect(state.soundEnabled).toBe(false);
+      expect(state.animationsEnabled).toBe(true);
+      expect(state.soundVolume).toBe(0.2);
+      // Transient UI flags stay at their defaults.
+      expect(state.showLevelUpModal).toBe(false);
+      expect(state.pendingLevelUp).toBeNull();
+      expect(state.recentXPGain).toBeNull();
+    });
+  });
 });

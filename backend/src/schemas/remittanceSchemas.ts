@@ -30,6 +30,26 @@ const isoDateString = z.string().refine((val) => !Number.isNaN(Date.parse(val)),
   message: 'Must be a valid ISO-8601 date string',
 });
 
+/**
+ * Query-string amount bound.
+ *
+ * Query params always arrive as strings, so the bound is validated as one.
+ * There is deliberately no `.transform()` here: `validate()` in
+ * src/middleware/validation.ts calls `schema.parse()` and discards the result
+ * without writing it back to `req.query`, so a transform would be dead code.
+ * The controller re-parses, which is what the sibling `from`/`to`/`q` filters
+ * already do for the same reason.
+ *
+ * `Number.isFinite(parseInt(...))` rather than truthiness, because `parseInt('')`
+ * is `NaN` while `parseInt('0')` is a legitimate `0` that must survive.
+ */
+const amountBoundString = z
+  .string()
+  .refine((val) => Number.isFinite(parseInt(val, 10)), {
+    message: 'Must be a number',
+  })
+  .describe('Amount bound in the source currency');
+
 // Schema for GET /remittances (list)
 export const getRemittancesSchema = z.object({
   query: z.object({
@@ -44,6 +64,8 @@ export const getRemittancesSchema = z.object({
     from: isoDateString.optional(),
     to: isoDateString.optional(),
     q: z.string().max(255).optional(),
+    minAmount: amountBoundString.optional(),
+    maxAmount: amountBoundString.optional(),
   }),
 });
 

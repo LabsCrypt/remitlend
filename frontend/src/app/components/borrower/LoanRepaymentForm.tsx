@@ -82,8 +82,16 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
       return false;
     }
 
-    if (minPayment > 0 && numAmount < minPayment) {
-      setError(`Minimum payment is ${formatCurrency(minPayment).replace("$", "")} USDC`);
+    // The protocol minimum only bounds an *instalment*. It must never be
+    // applied to a payoff: once the remaining balance drops below the minimum,
+    // requiring at least `minPayment` and also refusing anything above
+    // `totalOwed` left the borrower with no valid amount at all and trapped the
+    // loan open, accruing late penalties they could do nothing about (#1810).
+    // Paying off what is left is always allowed.
+    const effectiveMin = Math.min(minPayment, totalOwed);
+
+    if (effectiveMin > 0 && numAmount < effectiveMin) {
+      setError(`Minimum payment is ${formatCurrency(effectiveMin).replace("$", "")} USDC`);
       return false;
     }
 
@@ -145,9 +153,11 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
             </div>
             {minPayment > 0 && (
               <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-500 dark:text-zinc-500">Minimum Payment</span>
+                <span className="text-xs text-gray-500 dark:text-zinc-500">
+                  {totalOwed <= minPayment ? "Minimum Payment (payoff)" : "Minimum Payment"}
+                </span>
                 <span className="text-sm font-medium text-gray-700 dark:text-zinc-300">
-                  {formatCurrency(minPayment).replace("$", "")} USDC
+                  {formatCurrency(Math.min(minPayment, totalOwed)).replace("$", "")} USDC
                 </span>
               </div>
             )}

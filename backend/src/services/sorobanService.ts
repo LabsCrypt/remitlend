@@ -47,7 +47,7 @@ class SorobanService {
     const borrowerScVal = nativeToScVal(Address.fromString(borrower), {
       type: 'address',
     });
-    const loanIdScVal = nativeToScVal(loanId, { type: 'symbol' });
+    const loanIdScVal = nativeToScVal(Number(loanId), { type: 'u32' });
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -80,10 +80,7 @@ class SorobanService {
 
     const account = await server.getAccount(adminPublicKey);
 
-    const adminScVal = nativeToScVal(Address.fromString(adminPublicKey), {
-      type: 'address',
-    });
-    const loanIdScVal = nativeToScVal(loanId, { type: 'symbol' });
+    const loanIdScVal = nativeToScVal(Number(loanId), { type: 'u32' });
     const reasonScVal = nativeToScVal(reason, { type: 'string' });
 
     const tx = new TransactionBuilder(account, {
@@ -94,7 +91,7 @@ class SorobanService {
         Operation.invokeContractFunction({
           contract: contractId,
           function: 'reject_loan',
-          args: [adminScVal, loanIdScVal, reasonScVal],
+          args: [loanIdScVal, reasonScVal],
         }),
       )
       .setTimeout(30)

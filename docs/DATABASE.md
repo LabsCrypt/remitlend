@@ -240,7 +240,7 @@ inserted on first run (value 0).
 |---|---|---|---|
 | `id` | `serial` | `PRIMARY KEY` | |
 | `user_id` | `varchar(255)` | `NOT NULL` | |
-| `type` | `varchar(50)` | `NOT NULL` | e.g. `loan_approved`, `repayment_due`, `repayment_confirmed`, `loan_defaulted`, `score_changed` |
+| `type` | `varchar(50)` | `NOT NULL` | e.g. `loan_approved`, `repayment_due`, `repayment_confirmed`, `loan_defaulted`, `loan_liquidated`, `score_changed`, `dispute_opened`, `dispute_contested` |
 | `title` | `varchar(255)` | `NOT NULL` | |
 | `message` | `text` | `NOT NULL` | |
 | `loan_id` | `integer` | | |

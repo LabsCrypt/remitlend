@@ -33,7 +33,7 @@ export async function updateUserScoresBulk(
   // Clamped the initial raw value payload insertion step to prevent violating constraints on initial inserts
   const valuePlaceholders = Array.from(
     { length: params.length / 2 },
-    (_, i) => `($${i * 2 + 1}, LEAST(850, GREATEST(300, 500 - $${i * 2 + 2})))`,
+    (_, i) => `($${i * 2 + 1}, LEAST(850, GREATEST(300, 500 + $${i * 2 + 2})))`,
   ).join(', ');
 
   const sql = `

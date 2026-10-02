@@ -10,7 +10,9 @@ export type NotificationType =
   | 'repayment_confirmed'
   | 'loan_defaulted'
   | 'loan_liquidated'
-  | 'score_changed';
+  | 'score_changed'
+  | 'dispute_opened'
+  | 'dispute_contested';
 
 export type NotificationStatus = 'unread' | 'read' | 'archived';
 
@@ -104,6 +106,14 @@ function buildEmailTemplate(
       subject: 'Your credit score has changed — RemitLend',
       html: `<h2>Credit Score Update</h2><p>${message}</p><p>Log in to see your updated score and history.</p>`,
     },
+    dispute_opened: {
+      subject: 'Loan dispute opened — RemitLend',
+      html: `<h2>Loan Dispute Opened</h2><p>${message}</p><p>Log in to review the dispute.</p>`,
+    },
+    dispute_contested: {
+      subject: 'Loan default contested — RemitLend',
+      html: `<h2>Loan Default Contested</h2><p>${message}</p><p>Log in to review the borrower's dispute.</p>`,
+    },
   };
 
   return templates[type];
@@ -176,9 +186,12 @@ async function sendSMS(phone: string, message: string) {
 class NotificationService {
   async getNotificationPreferences(userId: string): Promise<NotificationPreferences> {
     const result = await query(
-      `SELECT email_enabled, sms_enabled, phone
-       FROM user_profiles
-       WHERE public_key = $1
+      `SELECT up.email_enabled, up.sms_enabled, up.phone,
+             unp.per_type_overrides
+       FROM user_profiles up
+       LEFT JOIN user_notification_preferences unp
+         ON unp.user_id = up.public_key
+       WHERE up.public_key = $1
        LIMIT 1`,
       [userId],
     );
@@ -197,13 +210,16 @@ class NotificationService {
       emailEnabled: Boolean(row.email_enabled),
       smsEnabled: Boolean(row.sms_enabled),
       phone: (row.phone as string | null) ?? null,
-      perTypeOverrides: {},
+      perTypeOverrides: (row.per_type_overrides as Record<string, boolean>) ?? {},
     };
   }
 
   async updateNotificationPreferences(
     userId: string,
-    payload: Pick<NotificationPreferences, 'emailEnabled' | 'smsEnabled' | 'phone'>,
+    payload: Pick<
+      NotificationPreferences,
+      'emailEnabled' | 'smsEnabled' | 'phone' | 'perTypeOverrides'
+    >,
   ): Promise<NotificationPreferences> {
     const result = await query(
       `UPDATE user_profiles
@@ -221,11 +237,21 @@ class NotificationService {
       phone: payload.phone,
     };
 
+    const perTypeOverrides = payload.perTypeOverrides ?? {};
+
+    // Upsert per-type overrides into user_notification_preferences
+    await query(
+      `INSERT INTO user_notification_preferences (user_id, per_type_overrides)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET per_type_overrides = $2`,
+      [userId, JSON.stringify(perTypeOverrides)],
+    );
+
     return {
       emailEnabled: Boolean(row.email_enabled),
       smsEnabled: Boolean(row.sms_enabled),
       phone: (row.phone as string | null) ?? null,
-      perTypeOverrides: {},
+      perTypeOverrides,
     };
   }
 
@@ -437,13 +463,18 @@ class NotificationService {
    * 2. In-app SSE push to each admin wallet currently subscribed
    * 3. Webhook POST to ADMIN_WEBHOOK_URL (if configured)
    */
-  async notifyAdmins(params: { title: string; message: string; loanId?: number }): Promise<void> {
-    const { title, message, loanId } = params;
+  async notifyAdmins(params: {
+    title: string;
+    message: string;
+    loanId?: number;
+    type?: Extract<NotificationType, 'dispute_opened' | 'dispute_contested'>;
+  }): Promise<void> {
+    const { title, message, loanId, type = 'dispute_contested' } = params;
 
     // 1. Email the configured admin address
     const adminEmail = process.env.ADMIN_EMAIL;
     if (adminEmail) {
-      await sendEmail(adminEmail, message);
+      await sendEmail(adminEmail, message, type);
     } else {
       logger.withContext().warn('[Admin] ADMIN_EMAIL not set — logging dispute only', {
         title,
@@ -462,9 +493,9 @@ class NotificationService {
         const actionUrl = loanId != null ? `/loans/${loanId}` : null;
         const result = await query(
           `INSERT INTO notifications (user_id, type, title, message, loan_id, action_url, status)
-           VALUES ($1, 'loan_defaulted', $2, $3, $4, $5, 'unread')
+           VALUES ($1, $2, $3, $4, $5, $6, 'unread')
            RETURNING id, user_id, type, title, message, loan_id, action_url, read, status, created_at`,
-          [adminId, title, message, loanId ?? null, actionUrl],
+          [adminId, type, title, message, loanId ?? null, actionUrl],
         );
         const notification = this.mapRow(result.rows[0]);
         this.broadcast(adminId, notification);

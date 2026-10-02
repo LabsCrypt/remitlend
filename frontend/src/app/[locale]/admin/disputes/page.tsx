@@ -6,14 +6,10 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, ArrowRight, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  queryKeys,
-  useAdminDisputes,
-  useVerifySession,
-  type AdminDispute,
-} from "../../../hooks/useApi";
+import { queryKeys, useAdminDisputes, type AdminDispute } from "../../../hooks/useApi";
 import { useSSE } from "../../../hooks/useSSE";
 import { useUserStore } from "../../../stores/useUserStore";
+import { useAdminGuard } from "../../../hooks/useAdminGuard";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -27,24 +23,6 @@ function formatDate(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function useAdminGuard() {
-  const router = useRouter();
-  const user = useUserStore((state) => state.user);
-  const token = useUserStore((state) => state.authToken);
-  const session = useVerifySession({ enabled: Boolean(token) });
-  const role = session.data?.role ?? user?.role;
-  const isChecking = Boolean(token) && !role && session.isLoading;
-  const isAdmin = role === "admin";
-
-  useEffect(() => {
-    if (!token || (!isChecking && !isAdmin)) {
-      router.replace("/");
-    }
-  }, [isAdmin, isChecking, router, token]);
-
-  return { isAdmin, isChecking };
 }
 
 function EmptyState({ title, description }: { title: string; description: string }) {

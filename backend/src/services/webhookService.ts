@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { query, withTransaction, type PoolClient } from '../db/connection.js';
 import logger from '../utils/logger.js';
+import { postWebhook, type WebhookHttpResponse } from './webhookHttp.js';
 
 // #1520 — this array is the single source of truth for which event types
 // external webhook subscribers can register for. docs/webhooks.md's
@@ -240,37 +241,17 @@ function prepareWebhookPayload(payload: Record<string, unknown>): PreparedWebhoo
   };
 }
 
-async function postWebhook(
-  callbackUrl: string,
-  body: string,
-  signature: string | undefined,
-): Promise<Response> {
-  const timeoutMs = getWebhookRequestTimeoutMs();
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
-  timeoutHandle.unref?.();
+function createWebhookHeaders(secret: string | undefined, body: string): Record<string, string> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (!secret) return headers;
 
-  try {
-    return await fetch(callbackUrl, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        // X-RemitLend-Signature uses the GitHub/Stripe-style "sha256=<hex>"
-        // format so subscribers can verify payload integrity (see
-        // docs/wiki/webhook-signatures.md for the verification recipe).
-        ...(signature && { 'x-remitlend-signature': `sha256=${signature}` }),
-      },
-      body,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Webhook request timed out after ${timeoutMs}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${body}`)
+    .digest('hex');
+  headers['x-remitlend-signature'] = `t=${timestamp},v1=${signature}`;
+  return headers;
 }
 
 // Retry configuration for webhook delivery.
@@ -368,14 +349,12 @@ export class WebhookService {
     const preparedPayload = prepareWebhookPayload(payload);
     const body = preparedPayload.body;
 
-    const signature = secret
-      ? crypto.createHmac('sha256', secret).update(body).digest('hex')
-      : undefined;
+    const headers = createWebhookHeaders(secret, body);
 
-    let response: Response | null = null;
+    let response: WebhookHttpResponse | null = null;
 
     try {
-      response = await postWebhook(callbackUrl, body, signature);
+      response = await postWebhook(callbackUrl, body, headers, getWebhookRequestTimeoutMs());
 
       const successful = response.ok;
       const newAttemptCount = attemptCount + 1;
@@ -576,12 +555,10 @@ export class WebhookService {
   ): Promise<void> {
     const body = payload.body;
 
-    const signature = secret
-      ? crypto.createHmac('sha256', secret).update(body).digest('hex')
-      : undefined;
+    const headers = createWebhookHeaders(secret, body);
 
     try {
-      const response = await postWebhook(callbackUrl, body, signature);
+      const response = await postWebhook(callbackUrl, body, headers, getWebhookRequestTimeoutMs());
 
       const successful = response.ok;
 

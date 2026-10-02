@@ -278,7 +278,6 @@ export function FinancialPerformanceDashboard({
       refetchYield();
     } else {
       setUseMockData(false);
-      setTimeout(() => setUseMockData(true), 100);
     }
   };
 

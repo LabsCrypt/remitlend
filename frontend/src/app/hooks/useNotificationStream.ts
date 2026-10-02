@@ -81,8 +81,14 @@ export function useNotificationStream() {
                   | AppNotification
                   | { type: "init"; notifications: AppNotification[] };
 
-                queryClient.setQueryData(
-                  queryKeys.notifications.all(),
+                // Use partial-match setQueriesData so the write lands in every
+                // list cache entry readers subscribe to (e.g. the dropdown's
+                // ["notifications", {}] and the inbox page's
+                // ["notifications", { limit, type, unread }]). setQueryData only
+                // matches an exact key, which would drop the update into a cache
+                // entry nothing reads until the 60s poll refetches. (#1071)
+                queryClient.setQueriesData(
+                  { queryKey: queryKeys.notifications.all() },
                   (prev: { notifications: AppNotification[]; unreadCount: number } | undefined) => {
                     const existing = prev ?? { notifications: [], unreadCount: 0 };
 

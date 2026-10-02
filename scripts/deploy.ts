@@ -234,8 +234,12 @@ async function main() {
     //   c. LendingPool has no dependency on NFT or LoanManager at init time.
     //   d. LoanManager.initialize takes (nft, pool, token, admin) so both NFT and
     //      Pool addresses must be known first.
-    //   e. Governance.initialize takes (admin, target_contract). We point it at
-    //      LoanManager as the primary governed contract.
+    //   e. Governance.initialize takes (admin, targets). It governs every
+    //      contract with an admin role, so each one proposes Governance as its
+    //      admin and Governance.accept_target_admins completes the handover.
+    //   f. set_loan_manager on NFT and Pool must run AFTER LoanManager exists
+    //      but BEFORE the governance handover, since both calls require the
+    //      current admin and post-handover only Governance can authorize them.
     //
     console.log('\n[3/4] Initializing contracts…');
 
@@ -262,9 +266,35 @@ async function main() {
         passphrase,
     );
 
-    // Governance — target is LoanManager (the core protocol contract).
-    console.log('  Governance.initialize(target=LoanManager)');
-    await invoke(server, govContractId, 'initialize', [adminAddr, managerContractId], account, passphrase);
+    // Register LoanManager on RemittanceNFT so the anti-credit-wash transfer
+    // guard is active. Without this, transfer() skips the active-loan check
+    // and defaulting borrowers can wash reputation to a clean address.
+    console.log('  NFT.set_loan_manager(LoanManager)');
+    await invoke(server, nftContractId, 'set_loan_manager', [managerContractId], account, passphrase);
+
+    // Register LoanManager on LendingPool so approve_loan / refinance_loan can
+    // disburse liquidity via the pool-authorized disburse_loan entrypoint.
+    console.log('  LendingPool.set_loan_manager(LoanManager)');
+    await invoke(server, poolContractId, 'set_loan_manager', [managerContractId], account, passphrase);
+
+    // Governance — targets every RemitLend contract with an admin role.
+    const governedContractIds = [poolContractId, managerContractId, nftContractId];
+    console.log('  Governance.initialize(targets=LendingPool,LoanManager,RemittanceNFT)');
+    await invoke(
+        server,
+        govContractId,
+        'initialize',
+        [adminAddr, governedContractIds.map(id => Address.fromString(id))],
+        account,
+        passphrase,
+    );
+
+    for (const contractId of governedContractIds) {
+        console.log(`  ${contractId}.propose_admin(Governance)`);
+        await invoke(server, contractId, 'propose_admin', [Address.fromString(govContractId)], account, passphrase);
+    }
+    console.log('  Governance.accept_target_admins');
+    await invoke(server, govContractId, 'accept_target_admins', [], account, passphrase);
 
     // ── 4. Persist contract IDs ─────────────────────────────────────────────────
     console.log('\n[4/4] Writing contract addresses to .env files…');

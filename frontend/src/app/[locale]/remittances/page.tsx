@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   SendHorizontal,
   Filter,
@@ -26,6 +26,7 @@ import { Spinner } from "../../components/global_ui/Spinner";
 import { PaginationControls } from "../../components/ui/PaginationControls";
 import Link from "next/link";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { hasActiveRemittanceFilters, withRemittanceFilters } from "../../lib/remittanceFilters";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -69,6 +70,9 @@ type StatusFilter = "all" | Remittance["status"];
 
 const PAGE_SIZE = 20;
 
+/** Idle time before a filter change is sent to the API (#1881). */
+const SEARCH_DEBOUNCE_MS = 300;
+
 function ConnectWalletPrompt() {
   return (
     <main className="flex min-h-[60vh] flex-col items-center justify-center gap-6 p-8">
@@ -99,18 +103,50 @@ export default function RemittancesPage() {
   const [maxAmount, setMaxAmount] = useState("");
 
   const statusParam = statusFilter === "all" ? undefined : statusFilter;
+
+  // Filters are debounced so a search does not fire a request per keystroke.
+  // The raw input state drives the inputs; this drives the request.
+  const [debouncedFilters, setDebouncedFilters] = useState({
+    searchQuery: "",
+    dateFrom: "",
+    dateTo: "",
+    minAmount: "",
+    maxAmount: "",
+  });
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedFilters({ searchQuery, dateFrom, dateTo, minAmount, maxAmount }),
+      SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [searchQuery, dateFrom, dateTo, minAmount, maxAmount]);
+
+  // Changing a filter invalidates the cached keyset cursors: page 3's cursor
+  // was computed against the previous result set and points at an arbitrary
+  // row once the filter changes. Without this, applying a filter while on
+  // page 3 lands on a confusing page of unrelated rows or an empty list.
+  useEffect(() => {
+    setPage(1);
+    setPageCursors({ 1: null });
+  }, [debouncedFilters, statusFilter]);
+
   const {
     data: remittancesPage,
     isLoading,
     isError,
   } = useRemittancesPage(
-    {
-      limit: PAGE_SIZE,
-      cursor: pageCursors[page] ?? null,
-      status: statusParam,
-    },
+    withRemittanceFilters(
+      {
+        limit: PAGE_SIZE,
+        cursor: pageCursors[page] ?? null,
+        status: statusParam,
+      },
+      debouncedFilters,
+    ),
     { enabled: isConnected },
   );
+
+  const filtersAreActive = hasActiveRemittanceFilters(debouncedFilters);
 
   const remittances = remittancesPage?.items ?? [];
   const totalPages = Math.max(
@@ -328,15 +364,25 @@ export default function RemittancesPage() {
             <EmptyState
               icon={SendHorizontal}
               title={
-                statusFilter !== "all" ? "No remittances match this status" : "No remittances yet"
+                filtersAreActive || statusFilter !== "all"
+                  ? "No remittances match your filters"
+                  : "No remittances yet"
               }
               description={
-                statusFilter !== "all"
-                  ? "Try a different filter to see more transfer history."
+                filtersAreActive || statusFilter !== "all"
+                  ? "Nothing matches the current search, date or amount range. Try widening or clearing the filters."
                   : "Your cross-border transfers will appear here once you send your first remittance."
               }
-              actionLabel={statusFilter !== "all" ? undefined : "Send your first remittance"}
-              actionHref={statusFilter !== "all" ? undefined : `/${locale}/send-remittance`}
+              actionLabel={
+                filtersAreActive || statusFilter !== "all"
+                  ? undefined
+                  : "Send your first remittance"
+              }
+              actionHref={
+                filtersAreActive || statusFilter !== "all"
+                  ? undefined
+                  : `/${locale}/send-remittance`
+              }
               actionIcon={<ArrowUpRight className="h-4 w-4" />}
             />
           ) : (

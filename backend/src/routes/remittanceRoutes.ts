@@ -87,7 +87,8 @@ router.post(
  *     summary: Get user's remittances
  *     description: >
  *       Returns a paginated list of remittances for the authenticated user.
- *       Supports filtering by status, date range, and search by recipient address or reference.
+ *       Supports filtering by status, date range, amount range, and search by
+ *       recipient address or reference.
  *     tags: [Remittances]
  *     security:
  *       - BearerAuth: []
@@ -127,6 +128,16 @@ router.post(
  *           type: string
  *           maxLength: 255
  *         description: Search by recipient address or reference
+ *       - in: query
+ *         name: minAmount
+ *         schema:
+ *           type: number
+ *         description: Filter by minimum amount in the source currency (inclusive)
+ *       - in: query
+ *         name: maxAmount
+ *         schema:
+ *           type: number
+ *         description: Filter by maximum amount in the source currency (inclusive)
  *     responses:
  *       200:
  *         description: Remittances retrieved successfully

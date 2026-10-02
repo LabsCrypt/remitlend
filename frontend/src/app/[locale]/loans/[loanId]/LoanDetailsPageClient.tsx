@@ -16,13 +16,6 @@ import { LoanTimeline } from "../../../components/ui/LoanTimeline";
 import { TxHashLink } from "../../../components/ui/TxHashLink";
 import { LoanHealth } from "../../../components/loan/LoanHealth";
 import { downloadCsv, rowsToCsv } from "../../../utils/csv";
-import { useDepositCollateral, useReleaseCollateral } from "@/app/hooks/useApi";
-
-import CollateralActionModal from "@/app/components/transaction/CollateralActionModal";
-
-import { useOptimisticUI } from "@/app/hooks/useOptimisticUI";
-
-import { useContractToast } from "@/app/hooks/useContractToast";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -444,16 +437,4 @@ export function LoanDetailsPageClient() {
       />
     </section>
   );
-
-  const [depositOpen, setDepositOpen] = useState(false);
-
-  const [releaseOpen, setReleaseOpen] = useState(false);
-
-  const depositCollateral = useDepositCollateral();
-
-  const releaseCollateral = useReleaseCollateral();
-
-  const optimisticUI = useOptimisticUI();
-
-  const toast = useContractToast();
 }
