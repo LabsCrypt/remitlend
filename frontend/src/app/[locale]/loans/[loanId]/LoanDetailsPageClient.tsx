@@ -431,8 +431,11 @@ export function LoanDetailsPageClient() {
         title={t("extension.title")}
         submitLabel={t("extension.submit")}
         cancelLabel={t("common.cancel")}
-        ledgersLabel={t("extension.extraLedgers")}
+        daysLabel={t("extension.days")}
         newDueDateLabel={t("extension.newDueDate")}
+        extensionFeeLabel={t("extension.fee")}
+        feeDisclosure={t("extension.feeDisclosure")}
+        extensionFee={loanData.extensionFee ?? 0}
         busyLabel={t("common.confirming")}
       />
     </section>
