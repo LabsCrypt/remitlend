@@ -42,25 +42,69 @@ const CURRENT_VERSION: u32 = 1;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GovernanceError {
+    /// Returned by `initialize` when the contract has already been initialized
+    /// (i.e. `KEY_ADMIN` is already present in instance storage).
     AlreadyInitialized = 4001,
+    /// Returned by any admin-gated entry point when the contract has not yet
+    /// been initialized (no admin stored under `KEY_ADMIN`).
     NotInitialized = 4002,
+    /// Returned by `initialize` when the supplied `targets` vector is empty,
+    /// and by `read_targets` when neither `KEY_TARGETS` nor the legacy
+    /// `KEY_TARGET` key holds a target address.
     TargetNotSet = 4003,
+    /// Returned when an operation requires a pending admin transfer but none
+    /// is stored under `KEY_PENDING` (e.g. `approve_transfer`,
+    /// `finalize_admin_transfer`, `cancel_admin_transfer`,
+    /// `emergency_cancel_proposal`, `expire_proposal`, and the pending-transfer
+    /// view helpers).
     NoPendingTransfer = 4004,
+    /// Returned by `propose_admin_transfer` when an existing proposal is still
+    /// `Active` and has not been cancelled, finalized, or expired.
     TransferAlreadyPending = 4005,
+    /// Returned by `propose_admin_transfer` when `threshold` exceeds
+    /// `signers.len()`.
     ThresholdExceedsSignerCount = 4006,
+    /// Returned by `propose_admin_transfer` when `threshold` is less than 1.
     ThresholdTooLow = 4007,
+    /// Returned by `propose_admin_transfer` when `signers.len()` exceeds
+    /// `MAX_SIGNERS` (20).
     TooManySigners = 4008,
+    /// Returned by `approve_transfer` when the caller is not one of the
+    /// proposal's designated signers.
     SignerNotAllowed = 4009,
+    /// Returned by `finalize_admin_transfer` when the current ledger timestamp
+    /// is still before the proposal's `executable_after` timelock.
     TimelockNotElapsed = 4010,
+    /// Returned by `finalize_admin_transfer` when the number of recorded
+    /// approvals is below the proposal's `threshold`.
     ThresholdNotMet = 4011,
+    /// Returned by `propose_admin_transfer` when `delay_seconds` is less than
+    /// `MIN_TIMELOCK_SECONDS` (86_400).
     DelayTooShort = 4012,
+    /// Returned by `propose_admin_transfer` when `delay_seconds` exceeds
+    /// `MAX_TIMELOCK_SECONDS` (`PROPOSAL_TTL_SECONDS - 1`).
     DelayTooLong = 4021,
+    /// Returned by `propose_admin_transfer` when the supplied `signers` vector
+    /// is empty.
     EmptySignerList = 4013,
+    /// Returned by `propose_admin_transfer` when the last cancellation was less
+    /// than `REPROPOSAL_COOLDOWN_SECONDS` (3600) ago.
     ReproposalCooldownActive = 4015,
+    /// Returned by `finalize_admin_transfer` when the current ledger timestamp
+    /// is at or past `proposed_at + PROPOSAL_TTL_SECONDS`.
     ProposalExpired = 4016,
+    /// Returned by `expire_proposal` when the proposal's TTL has not yet
+    /// elapsed.
     ProposalNotExpired = 4017,
+    /// Returned by `emergency_cancel_proposal` when the supplied `proposal_id`
+    /// does not match the stored pending proposal's `id`.
     ProposalIdMismatch = 4018,
+    /// Returned by `approve_transfer`, `finalize_admin_transfer`, and
+    /// `expire_proposal` when the stored proposal's status is not `Active`
+    /// (e.g. it has already been cancelled).
     ProposalNotActive = 4019,
+    /// Returned by `propose_admin_transfer` when the `signers` vector contains
+    /// the same address more than once.
     DuplicateSigner = 4020,
 }
 
