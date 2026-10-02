@@ -1,10 +1,9 @@
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import type { Request, Response } from 'express';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';import type { Request, Response } from 'express';
 
 type MockQueryResult = { rows: Record<string, unknown>[]; rowCount: number };
 
 const mockQuery: jest.MockedFunction<
-  (sql: string, params?: unknown[]) => Promise<MockQueryResult>
+(sql: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
 
 jest.unstable_mockModule('../db/connection.js', () => ({
@@ -36,6 +35,7 @@ describe('adminGovernanceController - getPendingGovernance', () => {
     delete process.env.GOVERNANCE_CURRENT_ADMIN;
     delete process.env.MULTISIG_GOVERNANCE_CONTRACT_ID;
     delete process.env.GOVERNANCE_THRESHOLD;
+    delete process.env.GOVERNANCE_SIGNERS;
   });
 
   it('filters signers so signers from older pending proposals are not mixed in', async () => {
@@ -43,7 +43,7 @@ describe('adminGovernanceController - getPendingGovernance', () => {
     const res = createMockResponse();
 
     // Database returns rows from multiple proposals (ordered by proposal_id DESC)
-    mockQuery.mockResolvedValueOnce({
+    mockQuery.mockResolvedOnce({
       rows: [
         {
           proposal_id: 'prop-2',
@@ -72,7 +72,7 @@ describe('adminGovernanceController - getPendingGovernance', () => {
           threshold: 2,
           executable_at: null,
           expires_at: null,
-          signer_address: 'GSIGNER_PROP1_ONLY',
+          signer_address: 'GSIGNER_PROP2_ONLY',
           approved: true,
         },
       ],
@@ -106,7 +106,7 @@ describe('adminGovernanceController - getPendingGovernance', () => {
     const req = {} as Request;
     const res = createMockResponse();
 
-    mockQuery.mockResolvedValueOnce({
+    mockQuery.mockResolvedOnce({
       rows: [],
       rowCount: 0,
     });
@@ -115,7 +115,7 @@ describe('adminGovernanceController - getPendingGovernance', () => {
     await flushAsync();
 
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
+      expect.objectContaining( {
         pendingProposal: null,
         signers: [
           { address: 'GSIGNER_1', approved: false },
