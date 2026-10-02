@@ -1,7 +1,6 @@
 import request from 'supertest';
 import { jest } from '@jest/globals';
 import { Keypair } from '@stellar/stellar-sdk';
-import { generateJwtToken } from '../services/authService.js';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
 
@@ -16,7 +15,8 @@ const mockCacheGet = jest.fn<() => Promise<unknown | null>>().mockResolvedValue(
 const mockCacheSet = jest.fn<() => Promise<void>>().mockResolvedValue();
 const mockCachePing = jest.fn<() => Promise<string>>().mockResolvedValue('ok');
 
-jest.unstable_mockModule('../db/connection.js', () => ({
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn(),
@@ -24,12 +24,25 @@ jest.unstable_mockModule('../db/connection.js', () => ({
   withTransaction: jest.fn(),
 }));
 
-jest.unstable_mockModule('../services/cacheService.js', () => ({
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
   cacheService: {
-    get: mockCacheGet,
-    set: mockCacheSet,
-    delete: jest.fn(),
-    invalidatePattern: jest.fn(),
+    get: jest.fn(async (key: string) => {
+      // Use the test's mockCacheGet for specific keys, otherwise use fakeCacheStore
+      if (key.startsWith('idemp:')) {
+        return mockCacheGet(key);
+      }
+      return fakeCacheStore.get(key) ?? null;
+    }),
+    set: jest.fn(async (key: string, value: unknown) => {
+      if (key.startsWith('idemp:')) {
+        return mockCacheSet(key, value);
+      }
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    invalidatePattern: jest.fn(async () => {}),
     ping: mockCachePing,
     close: jest.fn(),
   },
@@ -37,6 +50,7 @@ jest.unstable_mockModule('../services/cacheService.js', () => ({
 
 await import('../db/connection.js');
 const { default: app } = await import('../app.js');
+const { generateJwtToken } = await import('../services/authService.js');
 
 const borrower = Keypair.random().publicKey();
 
