@@ -61,7 +61,7 @@ export const getScore = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const result = await query('SELECT score FROM scores WHERE borrower = $1', [userId]);
+  const result = await query('SELECT current_score AS score FROM scores WHERE user_id = $1', [userId]);
 
   const score =
     result.rows.length > 0 ? (result.rows[0].score ?? result.rows[0].current_score) : 500;
@@ -99,7 +99,7 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
   };
 
   // Get old score first for the response
-  const oldResult = await query('SELECT score FROM scores WHERE borrower = $1', [userId]);
+  const oldResult = await query('SELECT current_score AS score FROM scores WHERE user_id = $1', [userId]);
   const oldScore =
     oldResult.rows.length > 0 ? (oldResult.rows[0].score ?? oldResult.rows[0].current_score) : 500;
 
@@ -107,13 +107,13 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
 
   // Use UPSERT: Get existing score or start at 500, then apply delta and clamp
   const result = await query(
-    `INSERT INTO scores (borrower, score)
+    `INSERT INTO scores (user_id, current_score)
      VALUES ($1, $2)
-     ON CONFLICT (borrower) 
-     DO UPDATE SET 
-       score = LEAST(850, GREATEST(300, scores.score + $3)),
+     ON CONFLICT (user_id)
+     DO UPDATE SET
+       current_score = LEAST(850, GREATEST(300, scores.current_score + $3)),
        updated_at = CURRENT_TIMESTAMP
-     RETURNING score`,
+     RETURNING current_score AS score`,
     [userId, 500 + delta, delta],
   );
 
@@ -167,9 +167,9 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
     `WITH 
        -- Current score from scores table
        current_score_cte AS (
-         SELECT COALESCE(score, 500) AS current_score
+         SELECT COALESCE(current_score, 500) AS current_score
          FROM scores
-         WHERE borrower = $1
+         WHERE user_id = $1
        ),
        -- All loan events for this borrower
        borrower_events AS (
