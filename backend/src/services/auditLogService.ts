@@ -105,10 +105,10 @@ export async function getAuditLogs(filters: AuditLogFilters) {
     // describes the whole filtered result set, not the remaining pages (#1808).
     const filterClause =
       filterConditions.length > 0 ? `WHERE ${filterConditions.join(' AND ')}` : '';
-    const countResult = await query(
-      `SELECT COUNT(*) as count FROM audit_logs${filterClause ? ` ${filterClause}` : ''}`,
-      filterValues,
-    );
+    const countSql = filterClause
+      ? `SELECT COUNT(*) as count FROM audit_logs ${filterClause}`
+      : 'SELECT COUNT(*) as count FROM audit_logs';
+    const countResult = await query(countSql, filterValues);
     total = Number((countResult.rows[0] as Record<string, unknown>)?.count ?? 0);
   }
 

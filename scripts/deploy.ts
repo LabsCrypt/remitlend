@@ -237,6 +237,9 @@ async function main() {
     //   e. Governance.initialize takes (admin, targets). It governs every
     //      contract with an admin role, so each one proposes Governance as its
     //      admin and Governance.accept_target_admins completes the handover.
+    //   f. set_loan_manager on NFT and Pool must run AFTER LoanManager exists
+    //      but BEFORE the governance handover, since both calls require the
+    //      current admin and post-handover only Governance can authorize them.
     //
     console.log('\n[3/4] Initializing contracts…');
 
@@ -262,6 +265,17 @@ async function main() {
         account,
         passphrase,
     );
+
+    // Register LoanManager on RemittanceNFT so the anti-credit-wash transfer
+    // guard is active. Without this, transfer() skips the active-loan check
+    // and defaulting borrowers can wash reputation to a clean address.
+    console.log('  NFT.set_loan_manager(LoanManager)');
+    await invoke(server, nftContractId, 'set_loan_manager', [managerContractId], account, passphrase);
+
+    // Register LoanManager on LendingPool so approve_loan / refinance_loan can
+    // disburse liquidity via the pool-authorized disburse_loan entrypoint.
+    console.log('  LendingPool.set_loan_manager(LoanManager)');
+    await invoke(server, poolContractId, 'set_loan_manager', [managerContractId], account, passphrase);
 
     // Governance — targets every RemitLend contract with an admin role.
     const governedContractIds = [poolContractId, managerContractId, nftContractId];

@@ -27,6 +27,7 @@ pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
     fn pool_balance(env: Env, token: Address) -> i128;
     fn get_total_outstanding(env: Env, token: Address) -> i128;
+    fn disburse_loan(env: Env, token: Address, borrower: Address, amount: i128);
 }
 
 mod events;
@@ -1202,8 +1203,6 @@ impl LoanManager {
     /// loan was requested; and [`LoanError::InsufficientPoolLiquidity`] when
     /// available pool liquidity is below the loan amount.
     pub fn approve_loan(env: Env, loan_id: u32) -> Result<(), LoanError> {
-        use soroban_sdk::token::TokenClient;
-
         // ── CHECKS ──────────────────────────────────────────────────────────
         let admin = Self::admin(&env);
         admin.require_auth();
@@ -1281,8 +1280,12 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
 
         // ── INTERACTIONS (external calls last) ──────────────────────────────
-        let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&lending_pool, &borrower, &transfer_amount);
+        // Disburse via the pool's authorized `disburse_loan` entrypoint: the
+        // pool transfers with its own authorization after verifying the caller
+        // is this LoanManager. A direct `token.transfer(pool, borrower, ...)`
+        // here would fail on-chain since the pool never authorized LoanManager
+        // to spend its tokens.
+        PoolClient::new(&env, &lending_pool).disburse_loan(&token, &borrower, &transfer_amount);
 
         events::loan_approved(
             &env,
@@ -1517,7 +1520,7 @@ impl LoanManager {
                         &Self::LATE_REPAYMENT_SCORE_PENALTY.unsigned_abs(),
                         &Some(env.current_contract_address()),
                     );
-                } else {
+                } else if !was_late {
                     // Use apply_score_delta rather than update_score so score adjustments
                     // work for any token denomination without hitting RemittanceNFT's
                     // anti-dust repayment floor (which assumes XLM stroops).
@@ -2195,11 +2198,13 @@ impl LoanManager {
 
         match new_amount.cmp(&remaining_principal) {
             core::cmp::Ordering::Greater => {
-                // Pool disburses the additional amount to the borrower.
+                // Pool disburses the additional amount to the borrower via its
+                // authorized `disburse_loan` entrypoint (see `approve_loan`).
                 let additional = new_amount
                     .checked_sub(remaining_principal)
                     .expect("underflow");
-                let pool_balance = token_client.balance(&lending_pool);
+                let pool_client = PoolClient::new(&env, &lending_pool);
+                let pool_balance = pool_client.pool_balance(&token);
                 // #1589: `pool_balance` is the live idle balance and already
                 // excludes disbursed principal, so it must not be reduced by
                 // outstanding debt (which would double-count it and could even
@@ -2207,7 +2212,7 @@ impl LoanManager {
                 if pool_balance < additional {
                     return Err(LoanError::InsufficientPoolLiquidity);
                 }
-                token_client.transfer(&lending_pool, &loan.borrower, &additional);
+                pool_client.disburse_loan(&token, &loan.borrower, &additional);
             }
             core::cmp::Ordering::Less => {
                 // Borrower returns the excess principal to the pool.
