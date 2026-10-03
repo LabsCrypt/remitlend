@@ -1201,3 +1201,42 @@ export const submitTransaction = asyncHandler(async (req: Request, res: Response
     ...(sr.resultXdr ? { resultXdr: sr.resultXdr } : {}),
   });
 });
+
+export const submitRefinanceTransaction = asyncHandler(async (req: Request, res: Response) => {
+  const borrower = req.user?.publicKey;
+  const loanId = Number.parseInt(req.params.loanId as string, 10);
+  const { signedTxXdr } = req.body as { signedTxXdr: string };
+  if (!borrower) throw AppError.unauthorized('Authentication required');
+  if (!signedTxXdr) {
+    throw AppError.badRequest('signedTxXdr is required', ErrorCode.MISSING_FIELD, 'signedTxXdr');
+  }
+  if (!Number.isSafeInteger(loanId) || loanId <= 0) {
+    throw AppError.badRequest('Invalid loan ID', ErrorCode.INVALID_LOAN_ID, 'loanId');
+  }
+
+  const adminSignedTxXdr = await sorobanService.signRefinanceAuthorization(
+    signedTxXdr,
+    borrower,
+    loanId,
+  );
+  const result = await withStellarAndDbTransaction(
+    async () => sorobanService.submitSignedTx(adminSignedTxXdr),
+    async (stellarResult: unknown, client) => {
+      const sr = stellarResult as { txHash: string; status: string };
+      await client.query(
+        `INSERT INTO transaction_submissions (tx_hash, status, submitted_at, submitted_by)
+           VALUES ($1, $2, NOW(), $3)
+           ON CONFLICT (tx_hash) DO UPDATE SET status = EXCLUDED.status, submitted_at = EXCLUDED.submitted_at`,
+        [sr.txHash, sr.status, borrower],
+      );
+      return { recorded: true };
+    },
+  );
+  const sr = result.stellarResult as { txHash: string; status: string; resultXdr?: string };
+  res.json({
+    success: true,
+    txHash: sr.txHash,
+    status: sr.status,
+    ...(sr.resultXdr ? { resultXdr: sr.resultXdr } : {}),
+  });
+});
