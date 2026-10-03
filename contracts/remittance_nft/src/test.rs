@@ -1324,7 +1324,7 @@ fn test_transfer_rejects_unauthorized_minter() {
 }
 
 #[test]
-fn test_transfer_rejects_burned_destination() {
+fn test_transfer_rejects_burned_destination_explicit_burn() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -2879,4 +2879,80 @@ fn test_burn_removes_all_per_user_keys() {
         client.try_get_recipient_commitment(&user),
         Err(Ok(NftError::CommitmentMissing))
     );
+}
+
+#[test]
+fn test_decrease_score_rejects_unauthorized_minter() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let unauthorized_minter = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let history_hash = create_test_hash(&env, 1);
+    client.mint(
+        &user,
+        &500,
+        &history_hash,
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let result = client.try_decrease_score(&user, &50, &Some(unauthorized_minter));
+    assert_eq!(result, Err(Ok(NftError::UnauthorizedMinter)));
+}
+
+#[test]
+fn test_decrease_score_rejects_missing_nft() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let result = client.try_decrease_score(&user, &50, &None);
+    assert_eq!(result, Err(Ok(NftError::NftNotFound)));
+}
+
+#[test]
+fn test_set_min_repayment_amount_rejects_negative_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let result = client.try_set_min_repayment_amount(&-1);
+    assert_eq!(result, Err(Ok(NftError::InvalidAmount)));
+}
+
+#[test]
+fn test_set_min_repayment_amount_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+
+    client.initialize(&admin);
+
+    let result = client.try_set_min_repayment_amount(&500);
+    assert_eq!(result, Ok(Ok(())));
+    assert_eq!(client.get_min_repayment_amount(), 500);
 }

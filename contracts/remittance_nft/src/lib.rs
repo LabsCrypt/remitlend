@@ -32,6 +32,7 @@ pub enum NftError {
     /// (Pending or Approved) in the registered LoanManager.  Borrowers must
     /// fully repay or cancel all loans before relocating their reputation NFT.
     ActiveLoanExists = 22,
+    InvalidAmount = 23,
 }
 
 #[contracttype]
@@ -810,15 +811,16 @@ impl RemittanceNFT {
         Ok(())
     }
 
-    pub fn set_min_repayment_amount(env: Env, amount: i128) {
+    pub fn set_min_repayment_amount(env: Env, amount: i128) -> Result<(), NftError> {
         Self::admin(&env).require_auth();
         if amount < 0 {
-            panic!("negative amount");
+            return Err(NftError::InvalidAmount);
         }
         env.storage()
             .instance()
             .set(&DataKey::MinRepaymentAmount, &amount);
         Self::bump_instance_ttl(&env);
+        Ok(())
     }
 
     pub fn get_min_repayment_amount(env: Env) -> i128 {
@@ -832,23 +834,27 @@ impl RemittanceNFT {
             .unwrap_or(Self::DEFAULT_MIN_REPAYMENT_AMOUNT)
     }
 
-    pub fn decrease_score(env: Env, user: Address, penalty_points: u32, minter: Option<Address>) {
-        Self::require_admin_or_authorized_minter(&env, minter)
-            .unwrap_or_else(|_| panic!("unauthorized minter"));
+    pub fn decrease_score(
+        env: Env,
+        user: Address,
+        penalty_points: u32,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
-            return;
+            return Err(NftError::NftNotFound);
         }
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
-            .unwrap_or_else(|| panic!("user does not have an NFT"));
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         let old_score = metadata.score;
         let decreased = old_score.saturating_sub(penalty_points);
         let new_score = decreased.max(Self::MIN_CREDIT_SCORE);
         if new_score == old_score {
-            return;
+            return Ok(());
         }
 
         metadata.score = new_score;
@@ -859,6 +865,8 @@ impl RemittanceNFT {
             (symbol_short!("ScoreDecr"), user),
             (old_score, new_score, symbol_short!("PEN")),
         );
+
+        Ok(())
     }
 
     /// Update the history hash for a user's NFT.
