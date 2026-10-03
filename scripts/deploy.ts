@@ -19,8 +19,64 @@ const CONFIG_PATH = path.join(__dirname, 'deploy-config.json');
 const POLL_INTERVAL_MS = 2000;
 
 // Compute the SHA-256 hash of WASM bytes — this is the on-chain upload key.
-function computeWasmHash(wasm: Buffer): Buffer {
+export function computeWasmHash(wasm: Buffer): Buffer {
     return createHash('sha256').update(wasm).digest();
+}
+
+/**
+ * Resolves the WASM artifact path.
+ * The canonical artifact produced by `scripts/build.sh` is `<name>.optimized.wasm`.
+ * If the configured artifact is `.optimized.wasm` but is not found (e.g. optimizer CLI was
+ * not available during build), falls back to the unoptimized `<name>.wasm` with a logged warning.
+ * If the configured artifact is `.wasm`, attempts to resolve the canonical `.optimized.wasm`
+ * first, or uses `.wasm` with a warning.
+ * Never fails silently or uploads empty data.
+ */
+export function resolveWasmPath(configuredPath: string, basePath: string = __dirname): string {
+    const absolutePath = path.isAbsolute(configuredPath)
+        ? configuredPath
+        : path.resolve(basePath, configuredPath);
+
+    if (absolutePath.endsWith('.optimized.wasm')) {
+        if (fs.existsSync(absolutePath)) {
+            return absolutePath;
+        }
+        const fallbackPath = absolutePath.replace(/\.optimized\.wasm$/, '.wasm');
+        if (fs.existsSync(fallbackPath)) {
+            console.warn(
+                `WARNING: Canonical optimized WASM not found at ${absolutePath}. ` +
+                `Falling back to unoptimized artifact: ${fallbackPath}. ` +
+                `Ensure stellar/soroban CLI is installed and ./scripts/build.sh was executed.`
+            );
+            return fallbackPath;
+        }
+        throw new Error(
+            `WASM binary not found: Neither canonical artifact '${absolutePath}' nor fallback '${fallbackPath}' exists. Run ./scripts/build.sh first.`
+        );
+    }
+
+    if (absolutePath.endsWith('.wasm')) {
+        const optimizedPath = absolutePath.replace(/\.wasm$/, '.optimized.wasm');
+        if (fs.existsSync(optimizedPath)) {
+            return optimizedPath;
+        }
+        if (fs.existsSync(absolutePath)) {
+            console.warn(
+                `WARNING: Canonical optimized WASM not found at ${optimizedPath}. ` +
+                `Using unoptimized artifact: ${absolutePath}. ` +
+                `Ensure stellar/soroban CLI is installed and ./scripts/build.sh was executed.`
+            );
+            return absolutePath;
+        }
+        throw new Error(
+            `WASM binary not found: Neither canonical artifact '${optimizedPath}' nor fallback '${absolutePath}' exists. Run ./scripts/build.sh first.`
+        );
+    }
+
+    if (fs.existsSync(absolutePath)) {
+        return absolutePath;
+    }
+    throw new Error(`WASM binary not found at '${absolutePath}'. Run ./scripts/build.sh first.`);
 }
 
 // Deterministic per-contract salt so re-runs don't stomp each other's addresses.
@@ -85,16 +141,17 @@ async function sendTx(
 // Upload WASM bytecode to the network and return its SHA-256 hash.
 // If the same WASM was uploaded before the hash is already indexed, but the
 // operation is idempotent and safe to repeat.
-async function uploadWasm(
+export async function uploadWasm(
     server: Rpc.Server,
     wasmPath: string,
     account: Keypair,
     networkPassphrase: string,
 ): Promise<Buffer> {
-    const wasm = await fs.readFile(wasmPath);
+    const resolvedPath = resolveWasmPath(wasmPath);
+    const wasm = await fs.readFile(resolvedPath);
     const wasmHash = computeWasmHash(wasm);
 
-    console.log(`  uploading ${path.basename(wasmPath)} (hash ${wasmHash.toString('hex').slice(0, 12)}…)`);
+    console.log(`  uploading ${path.basename(resolvedPath)} (hash ${wasmHash.toString('hex').slice(0, 12)}…)`);
 
     const source = await server.getAccount(account.publicKey());
     const tx = new TransactionBuilder(source, { fee: '100000', networkPassphrase })
@@ -327,7 +384,9 @@ async function main() {
     console.log(`  Governance     : ${govContractId}`);
 }
 
-main().catch(error => {
-    console.error('\nDeployment failed:', error instanceof Error ? error.message : error);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch(error => {
+        console.error('\nDeployment failed:', error instanceof Error ? error.message : error);
+        process.exit(1);
+    });
+}

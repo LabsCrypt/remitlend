@@ -143,13 +143,14 @@ cargo build -p lending_pool --target wasm32-unknown-unknown --release
 
 ### Build Output
 
-Compiled WASM files are located at:
-```
-target/wasm32-unknown-unknown/release/
-├── remittance_nft.wasm
-├── loan_manager.wasm
-└── lending_pool.wasm
-```
+Compiled WASM files are located at `target/wasm32-unknown-unknown/release/`.
+When built via `./scripts/build.sh` with the Stellar/Soroban CLI installed, each contract generates an optimized binary:
+- `remittance_nft.optimized.wasm` (canonical)
+- `loan_manager.optimized.wasm` (canonical)
+- `lending_pool.optimized.wasm` (canonical)
+- `multisig_governance.optimized.wasm` (canonical)
+
+Unoptimized artifacts (`<name>.wasm`) are retained as fallbacks if the optimization pass is skipped.
 
 ## Testing
 

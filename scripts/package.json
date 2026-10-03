@@ -9,6 +9,7 @@
     "gen:money": "ts-node gen-money.ts",
     "gen:money:check": "ts-node gen-money.ts --check",
     "test:env-docs": "node check-env-docs.test.mjs",
+    "test:deploy": "tsx deploy.test.ts",
     "money:property-test": "tsx money-property-test.ts"
   },
   "dependencies": {
