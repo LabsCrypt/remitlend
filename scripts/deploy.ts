@@ -159,6 +159,45 @@ async function invoke(
     await sendTx(server, tx, account);
 }
 
+export interface DeployedContracts {
+    nftContractId: string;
+    poolContractId: string;
+    managerContractId: string;
+    govContractId: string;
+    poolTokenAddress: string;
+}
+
+export function buildFrontendEnvBlock(
+    network: string,
+    contracts: Pick<DeployedContracts, 'nftContractId' | 'poolContractId' | 'managerContractId' | 'govContractId'>,
+    date: Date = new Date(),
+): string {
+    return [
+        ``,
+        `# RemitLend contracts — ${network} — ${date.toISOString()}`,
+        `NEXT_PUBLIC_NFT_CONTRACT_ID=${contracts.nftContractId}`,
+        `NEXT_PUBLIC_POOL_CONTRACT_ID=${contracts.poolContractId}`,
+        `NEXT_PUBLIC_MANAGER_CONTRACT_ID=${contracts.managerContractId}`,
+        `NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID=${contracts.govContractId}`,
+    ].join('\n');
+}
+
+export function buildBackendEnvBlock(
+    network: string,
+    contracts: DeployedContracts,
+    date: Date = new Date(),
+): string {
+    return [
+        ``,
+        `# RemitLend contracts — ${network} — ${date.toISOString()}`,
+        `LOAN_MANAGER_CONTRACT_ID=${contracts.managerContractId}`,
+        `LENDING_POOL_CONTRACT_ID=${contracts.poolContractId}`,
+        `REMITTANCE_NFT_CONTRACT_ID=${contracts.nftContractId}`,
+        `MULTISIG_GOVERNANCE_CONTRACT_ID=${contracts.govContractId}`,
+        `POOL_TOKEN_ADDRESS=${contracts.poolTokenAddress}`,
+    ].join('\n');
+}
+
 async function main() {
     const network = process.argv[2] || 'testnet';
     const config = (await fs.readJson(CONFIG_PATH))[network];
@@ -299,23 +338,16 @@ async function main() {
     // ── 4. Persist contract IDs ─────────────────────────────────────────────────
     console.log('\n[4/4] Writing contract addresses to .env files…');
 
-    const frontendEnvBlock = [
-        ``,
-        `# RemitLend contracts — ${network} — ${new Date().toISOString()}`,
-        `NEXT_PUBLIC_NFT_CONTRACT_ID=${nftContractId}`,
-        `NEXT_PUBLIC_POOL_CONTRACT_ID=${poolContractId}`,
-        `NEXT_PUBLIC_MANAGER_CONTRACT_ID=${managerContractId}`,
-        `NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID=${govContractId}`,
-    ].join('\n');
+    const contracts: DeployedContracts = {
+        nftContractId,
+        poolContractId,
+        managerContractId,
+        govContractId,
+        poolTokenAddress: config.token,
+    };
 
-    const backendEnvBlock = [
-        ``,
-        `# RemitLend contracts — ${network} — ${new Date().toISOString()}`,
-        `REMITTANCE_NFT_CONTRACT_ID=${nftContractId}`,
-        `LENDING_POOL_CONTRACT_ID=${poolContractId}`,
-        `LOAN_MANAGER_CONTRACT_ID=${managerContractId}`,
-        `MULTISIG_GOVERNANCE_CONTRACT_ID=${govContractId}`,
-    ].join('\n');
+    const frontendEnvBlock = buildFrontendEnvBlock(network, contracts);
+    const backendEnvBlock = buildBackendEnvBlock(network, contracts);
 
     await fs.appendFile(path.join(__dirname, '../frontend/.env.local'), frontendEnvBlock);
     await fs.appendFile(path.join(__dirname, '../backend/.env'), backendEnvBlock);
@@ -325,9 +357,14 @@ async function main() {
     console.log(`  LendingPool    : ${poolContractId}`);
     console.log(`  LoanManager    : ${managerContractId}`);
     console.log(`  Governance     : ${govContractId}`);
+    console.log(`  PoolToken      : ${config.token}`);
+    console.log('\nNote: Contract addresses and POOL_TOKEN_ADDRESS written to backend/.env satisfy backend/src/config/env.ts validation.');
 }
 
-main().catch(error => {
-    console.error('\nDeployment failed:', error instanceof Error ? error.message : error);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch(error => {
+        console.error('\nDeployment failed:', error instanceof Error ? error.message : error);
+        process.exit(1);
+    });
+}
+
