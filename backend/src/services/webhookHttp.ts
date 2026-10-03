@@ -21,7 +21,9 @@ export async function postWebhook(
   }
 
   // Resolve and validate immediately before every attempt, then pin the socket
-  // to that exact IP so the HTTP client cannot perform a second, rebound DNS lookup.
+  // to that exact IP so the HTTP client cannot perform a second, rebound DNS
+  // lookup. This runs on dispatch, retries and manual re-sends alike, so a
+  // record repointed at a private address after registration is still refused.
   const resolved = await resolvePublicAddress(url.hostname);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -52,6 +54,18 @@ export async function postWebhook(
         (response) => {
           response.resume();
           const status = response.statusCode ?? 0;
+          // Redirects are never followed (node's http/https client does not
+          // follow them; we make that explicit with the equivalent of
+          // `redirect: 'manual'`). A 3xx could point at a private address that
+          // was never validated, so refuse it instead of chasing it.
+          if (status >= 300 && status < 400) {
+            reject(
+              new Error(
+                `Webhook callback URL responded with a redirect (status ${status}); redirects are not followed`,
+              ),
+            );
+            return;
+          }
           resolve({ ok: status >= 200 && status < 300, status });
         },
       );

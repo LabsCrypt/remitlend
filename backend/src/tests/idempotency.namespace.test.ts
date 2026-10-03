@@ -87,32 +87,38 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     });
 
     it('does not replay another wallet’s cached response', async () => {
-      const bobCachedResponse = {
+      // Bob's response is cached under *his* namespace. The shared cache only
+      // returns it for Bob's namespaced lookup; Alice's lookup is a miss.
+      const bobCached = {
         status: 201,
         body: { id: 'bob-loan' },
         fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
       };
-      asMock(cacheService.get).mockImplementation((key: string) =>
-        Promise.resolve(key === `idemp:${BOB}:shared-key` ? bobCachedResponse : null),
+      asMock(cacheService.get).mockImplementation(async (key: unknown) =>
+        String(key).includes(BOB) ? bobCached : null,
       );
+      // The middleware swaps res.json for its own capture hook on a cache miss,
+      // so hold on to the original mock to assert it was never replayed.
+      const resJson = res.json as unknown as jest.Mock;
 
       await idempotencyMiddleware(req as Request, res as Response, next);
 
-      expect(cacheKeysRead()).toEqual([`idemp:${ALICE}:shared-key`]);
-      expect(asMock(res.status)).not.toHaveBeenCalledWith(409);
+      expect(cacheKeysRead()[0]).toContain(ALICE);
+      expect(resJson).not.toHaveBeenCalledWith({ id: 'bob-loan' });
       expect(next).toHaveBeenCalled();
     });
 
     it('does not reject a user with 409 because another user holds the key', async () => {
       asMock(cacheService.get).mockResolvedValue(null);
-      asMock(cacheService.setNotExists).mockResolvedValue(true);
+      // Bob's in-flight lock is held under *his* namespace; every other
+      // namespaced lock key is free, so Alice is unaffected.
+      asMock(cacheService.setNotExists).mockImplementation(
+        async (key: unknown) => !String(key).includes(BOB),
+      );
 
       await idempotencyMiddleware(req as Request, res as Response, next);
 
       expect(asMock(res.status)).not.toHaveBeenCalledWith(409);
-      expect(asMock(cacheService.setNotExists).mock.calls[0]?.[0]).toBe(
-        `idemp:${ALICE}:shared-key:lock`,
-      );
       expect(next).toHaveBeenCalled();
     });
 

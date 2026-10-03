@@ -62,6 +62,8 @@ describe('Idempotency Middleware', () => {
 
     await idempotencyMiddleware(req as Request, res as Response, next);
 
+    // Unauthenticated request: the key is namespaced under the shared 'anon'
+    // actor (#1809).
     expect(cacheService.get).toHaveBeenCalledWith(`idemp:anon:${key}`);
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.set).toHaveBeenCalledWith('X-Idempotency-Cache', 'HIT');
