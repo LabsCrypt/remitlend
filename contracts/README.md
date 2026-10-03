@@ -4,11 +4,21 @@ Soroban smart contracts for the RemitLend decentralized lending platform on Stel
 
 ## Overview
 
-RemitLend uses three core smart contracts:
+RemitLend uses four core smart contracts:
 
 1. **Remittance NFT** - Stores credit scores and remittance history as NFTs
 2. **Loan Manager** - Manages the complete loan lifecycle
 3. **Lending Pool** - Handles liquidity deposits and withdrawals
+4. **Multisig Governance** - Manages timelocked multi-signature administrative transitions across protocol contracts
+
+### Protocol Admin API
+
+All protocol contracts (`Remittance NFT`, `Loan Manager`, `Lending Pool`) implement a consistent administrative API:
+- `pub fn propose_admin(env: Env, new_admin: Address)`: Proposes a new administrator (gated by current admin auth).
+- `pub fn accept_admin(env: Env)`: Accepts the proposed administrator role (gated by proposed admin auth).
+- `pub fn set_admin(env: Env, new_admin: Address)`: Direct admin transfer (gated by current admin auth).
+
+When `MultisigGovernance::finalize_admin_transfer` executes, it cross-invokes `propose_admin(new_admin)` on all configured targets, enabling the incoming admin to call `accept_admin` to complete the transfer.
 
 ### `fix_args.py` (one-time migration helper)
 

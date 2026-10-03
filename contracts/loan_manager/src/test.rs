@@ -4,7 +4,7 @@ use remittance_nft::{RemittanceNFT, RemittanceNFTClient};
 use soroban_sdk::testutils::{Events, Ledger as _};
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
 use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, Address, BytesN, Env, FromVal, String,
+    contract, contractimpl, testutils::Address as _, Address, BytesN, Env, FromVal, IntoVal, String,
 };
 
 fn create_test_commitment(env: &Env, value: u8) -> BytesN<32> {
@@ -118,13 +118,66 @@ fn test_set_admin_updates_admin_immediately() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
 
-    let (manager, _nft_client, _pool, _token, _token_admin) = setup_test(&env);
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+    let new_admin = Address::generate(&env);
+
+    manager.set_admin(&new_admin);
+
+    assert_eq!(manager.get_admin(), new_admin);
+}
+
+#[test]
+fn test_propose_and_accept_admin() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
     let new_admin = Address::generate(&env);
 
     manager.propose_admin(&new_admin);
     manager.accept_admin();
 
     assert_eq!(manager.get_admin(), new_admin);
+}
+
+#[test]
+fn test_set_admin_clears_proposed_admin() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+    let proposed = Address::generate(&env);
+    let direct_admin = Address::generate(&env);
+
+    manager.propose_admin(&proposed);
+    manager.set_admin(&direct_admin);
+
+    assert_eq!(manager.get_admin(), direct_admin);
+    assert_eq!(
+        manager.try_accept_admin(),
+        Err(Ok(LoanError::NoProposedAdmin))
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_set_admin_requires_admin_auth() {
+    let env = Env::default();
+    let (manager, _nft_client, _pool, _token, _admin) = setup_test(&env);
+    let non_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &non_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &manager.address,
+            fn_name: "set_admin",
+            args: soroban_sdk::vec![&env, new_admin.into_val(&env)],
+            sub_invokes: &[],
+        },
+    }]);
+
+    manager.set_admin(&new_admin);
 }
 
 #[test]

@@ -1324,7 +1324,7 @@ fn test_transfer_rejects_unauthorized_minter() {
 }
 
 #[test]
-fn test_transfer_rejects_burned_destination() {
+fn test_transfer_rejects_explicitly_burned_destination() {
     let env = Env::default();
     env.mock_all_auths();
 

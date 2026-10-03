@@ -994,3 +994,100 @@ fn max_delay_finalize_window_is_one_second() {
     client.finalize_admin_transfer(&admin);
     assert_eq!(client.get_current_admin(), proposed);
 }
+
+#[test]
+fn test_governance_finalize_against_real_targets() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 1. Setup real contracts matching scripts/deploy.ts:
+    // Deploy RemittanceNFT
+    let admin = Address::generate(&env);
+    let nft_id = env.register(remittance_nft::RemittanceNFT, ());
+    let nft_client = remittance_nft::RemittanceNFTClient::new(&env, &nft_id);
+    nft_client.initialize(&admin);
+
+    // Deploy LendingPool
+    let pool_id = env.register(lending_pool::LendingPool, ());
+    let pool_client = lending_pool::LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    // Deploy test token for LoanManager
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = token_contract.address();
+
+    // Deploy LoanManager
+    let manager_id = env.register(loan_manager::LoanManager, ());
+    let manager_client = loan_manager::LoanManagerClient::new(&env, &manager_id);
+    nft_client.authorize_minter(&manager_id);
+    manager_client.initialize(&nft_id, &pool_id, &token_id, &admin);
+
+    // Deploy GovernanceContract
+    let gov_id = env.register(GovernanceContract, ());
+    let gov_client = GovernanceContractClient::new(&env, &gov_id);
+
+    // Initialize Governance with the 3 real governed targets
+    let targets = soroban_sdk::vec![&env, pool_id.clone(), manager_id.clone(), nft_id.clone()];
+    gov_client.initialize(&admin, &targets);
+
+    // Verify initial admins are deployer admin
+    assert_eq!(manager_client.get_admin(), admin);
+    assert_eq!(pool_client.get_admin(), admin);
+    assert_eq!(nft_client.get_admin(), admin);
+
+    // Handover target admin roles to governance:
+    // Each target's current admin calls propose_admin(Governance)
+    pool_client.propose_admin(&gov_id);
+    manager_client.propose_admin(&gov_id);
+    nft_client.propose_admin(&gov_id);
+
+    // Governance accepts target admins
+    gov_client.accept_target_admins();
+
+    // Now Governance is the admin of all 3 targets
+    assert_eq!(manager_client.get_admin(), gov_id);
+    assert_eq!(pool_client.get_admin(), gov_id);
+    assert_eq!(nft_client.get_admin(), gov_id);
+
+    // Propose an admin transfer on Governance
+    let new_admin = Address::generate(&env);
+    let signer = Address::generate(&env);
+    let signers = soroban_sdk::vec![&env, signer.clone()];
+
+    set_ts(&env, 1000);
+    gov_client.propose_admin_transfer(&new_admin, &signers, &1, &MIN_TIMELOCK_SECONDS);
+
+    // Signer approves
+    gov_client.approve_transfer(&signer);
+
+    // Advance time past timelock
+    set_ts(&env, 1000 + MIN_TIMELOCK_SECONDS + 1);
+
+    // Finalize admin transfer: cross-invokes propose_admin(new_admin) on all 3 real targets
+    let caller = Address::generate(&env);
+    gov_client.finalize_admin_transfer(&caller);
+
+    // Verify governance local admin is updated
+    assert_eq!(gov_client.get_current_admin(), new_admin);
+
+    // Verify each target has new_admin as proposed admin
+    assert_eq!(manager_client.get_proposed_admin(), Some(new_admin.clone()));
+    assert_eq!(pool_client.get_proposed_admin(), Some(new_admin.clone()));
+    assert_eq!(nft_client.get_proposed_admin(), Some(new_admin.clone()));
+
+    // new_admin accepts admin on all 3 targets
+    manager_client.accept_admin();
+    pool_client.accept_admin();
+    nft_client.accept_admin();
+
+    // Verify new_admin is now the admin of all 3 contracts
+    assert_eq!(manager_client.get_admin(), new_admin);
+    assert_eq!(pool_client.get_admin(), new_admin);
+    assert_eq!(nft_client.get_admin(), new_admin);
+
+    // Furthermore, verify LoanManager's set_admin works directly
+    let direct_admin = Address::generate(&env);
+    manager_client.set_admin(&direct_admin);
+    assert_eq!(manager_client.get_admin(), direct_admin);
+}
