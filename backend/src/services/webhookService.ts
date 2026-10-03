@@ -260,6 +260,8 @@ function createWebhookHeaders(secret: string | undefined, body: string): Record<
 const RETRY_DELAYS_MS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000] as const;
 
 const MAX_RETRY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
+const MAX_RETRY_BATCH_SIZE = 100;
+const RETRY_CLAIM_LEASE_BUFFER_MS = 60 * 1000;
 
 export const getRetryDelayMs = (attemptNumber: number): number => {
   const delayIndex = Math.max(0, Math.min(attemptNumber - 1, RETRY_DELAYS_MS.length - 1));
@@ -273,6 +275,11 @@ export class WebhookService {
 
     try {
       const now = new Date();
+      const leaseUntil = new Date(
+        now.getTime() +
+          MAX_RETRY_BATCH_SIZE * getWebhookRequestTimeoutMs() +
+          RETRY_CLAIM_LEASE_BUFFER_MS,
+      );
       const executeInTx =
         typeof withTransaction === 'function'
           ? withTransaction
@@ -289,10 +296,22 @@ export class WebhookService {
              AND wd.next_retry_at <= $1
              AND wd.attempt_count < $2
            ORDER BY wd.next_retry_at ASC
-           LIMIT 100
+           LIMIT $3
            FOR UPDATE OF wd SKIP LOCKED`,
-          [now, MAX_RETRY_ATTEMPTS],
+          [now, MAX_RETRY_ATTEMPTS, MAX_RETRY_BATCH_SIZE],
         );
+
+        if (result.rows.length > 0) {
+          const deliveryIds = result.rows.map((row) => (row as { id: number }).id);
+          await client.query(
+            `UPDATE webhook_deliveries
+             SET next_retry_at = $1,
+                 updated_at = $2
+             WHERE id = ANY($3::int[])`,
+            [leaseUntil, now, deliveryIds],
+          );
+        }
+
         return result.rows;
       })) as unknown[];
 

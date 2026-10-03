@@ -170,7 +170,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       const countSql = String(
         mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'))?.[0],
       );
-      expect(countSql).toBe('SELECT COUNT(*) as count FROM audit_logs');
+      expect(countSql.trim()).toBe('SELECT COUNT(*) as count FROM audit_logs');
     });
   });
 
