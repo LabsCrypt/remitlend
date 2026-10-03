@@ -4301,6 +4301,76 @@ fn test_refinance_loan_collects_late_fees_when_overdue() {
     );
 }
 
+#[test]
+fn test_refinance_loan_settlement_accrues_to_liquidity_providers() {
+    // Regression test for #1795: the accrued interest + late fees settled by
+    // refinance_loan must be recognized as pool yield (raising the share
+    // price), not left in the pool as an unaccounted bare transfer.
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_addr, token_id, _admin) = setup_test(&env);
+    let pool = LendingPoolClient::new(&env, &pool_addr);
+    let borrower = Address::generate(&env);
+    let provider = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &700,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    let token_client = TokenClient::new(&env, &token_id);
+    stellar_token.mint(&provider, &10_000);
+    stellar_token.mint(&borrower, &10_000);
+
+    // LP funds the pool through the accounted deposit path.
+    pool.deposit(&provider, &token_id, &10_000, &0);
+
+    env.ledger().set_sequence_number(1);
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    manager.approve_loan(&loan_id);
+
+    stellar_token.mint(&manager.address, &5_000);
+    env.as_contract(&manager.address, || {
+        let key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env.storage().persistent().get(&key).unwrap();
+        loan.collateral_amount = 5_000;
+        env.storage().persistent().set(&key, &loan);
+    });
+
+    // Past due_date + grace period (late fees accrue) but inside the default window.
+    env.ledger().set_sequence_number(25_000);
+
+    let pool_tokens_before = token_client.balance(&pool_addr);
+    let share_price_before = pool.get_share_price(&token_id);
+    assert_eq!(pool.get_deposit(&provider, &token_id), 10_000);
+
+    manager.refinance_loan(&loan_id, &1_000, &17_280);
+
+    let loan_after = manager.get_loan(&loan_id);
+    assert!(loan_after.interest_paid > 0);
+    assert!(loan_after.late_fee_paid > 0);
+    let settlement = loan_after.interest_paid + loan_after.late_fee_paid;
+
+    assert_eq!(
+        token_client.balance(&pool_addr),
+        pool_tokens_before + settlement
+    );
+    // The settlement must be recognized as yield, raising the share price.
+    assert!(pool.get_share_price(&token_id) > share_price_before);
+    // 10_000 shares * (10_000 + settlement + 1_000 virtual) / (10_000 + 1_000 virtual)
+    assert_eq!(
+        pool.get_deposit(&provider, &token_id),
+        10_000 * (10_000 + settlement + 1_000) / 11_000
+    );
+}
+
 // ── set_grace_period_ledgers tests ───────────────────────────────────────────
 
 #[test]
