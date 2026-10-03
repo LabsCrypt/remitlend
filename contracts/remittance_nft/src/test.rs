@@ -1324,7 +1324,7 @@ fn test_transfer_rejects_unauthorized_minter() {
 }
 
 #[test]
-fn test_transfer_rejects_burned_destination() {
+fn test_transfer_rejects_explicitly_burned_destination() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -2879,4 +2879,132 @@ fn test_burn_removes_all_per_user_keys() {
         client.try_get_recipient_commitment(&user),
         Err(Ok(NftError::CommitmentMissing))
     );
+}
+
+// ── Pause enforcement on lifecycle methods (#1792) ──────────────────────────
+
+fn setup_paused_with_minted_user(env: &Env) -> (RemittanceNFTClient<'_>, Address) {
+    let admin = Address::generate(env);
+    let user = Address::generate(env);
+
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(env, &contract_id);
+
+    client.initialize(&admin);
+    client.mint(
+        &user,
+        &500,
+        &create_test_hash(env, 1),
+        &create_test_uri(env),
+        &create_test_commitment(env, 1),
+        &None,
+    );
+    client.pause();
+    assert!(client.is_paused());
+
+    (client, user)
+}
+
+#[test]
+fn test_mint_rejected_while_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _user) = setup_paused_with_minted_user(&env);
+
+    let new_user = Address::generate(&env);
+    let result = client.try_mint(
+        &new_user,
+        &500,
+        &create_test_hash(&env, 2),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 2),
+        &None,
+    );
+    assert_eq!(result, Err(Ok(NftError::ContractPaused)));
+    assert!(client.get_metadata(&new_user).is_none());
+}
+
+#[test]
+fn test_burn_rejected_while_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, user) = setup_paused_with_minted_user(&env);
+
+    assert_eq!(
+        client.try_burn(&user, &None),
+        Err(Ok(NftError::ContractPaused))
+    );
+    assert!(client.get_metadata(&user).is_some());
+}
+
+#[test]
+fn test_update_score_rejected_while_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, user) = setup_paused_with_minted_user(&env);
+
+    assert_eq!(
+        client.try_update_score(&user, &5_000_000_000, &None),
+        Err(Ok(NftError::ContractPaused))
+    );
+    assert_eq!(client.get_score(&user), 500);
+}
+
+#[test]
+fn test_apply_score_delta_rejected_while_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, user) = setup_paused_with_minted_user(&env);
+
+    assert_eq!(
+        client.try_apply_score_delta(&user, &25, &None),
+        Err(Ok(NftError::ContractPaused))
+    );
+    assert_eq!(client.get_score(&user), 500);
+}
+
+#[test]
+fn test_transfer_rejected_while_paused() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, user) = setup_paused_with_minted_user(&env);
+
+    let new_wallet = Address::generate(&env);
+    assert_eq!(
+        client.try_transfer(&user, &new_wallet, &None),
+        Err(Ok(NftError::ContractPaused))
+    );
+    assert!(client.get_metadata(&user).is_some());
+    assert!(client.get_metadata(&new_wallet).is_none());
+}
+
+#[test]
+fn test_lifecycle_methods_resume_after_unpause() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, user) = setup_paused_with_minted_user(&env);
+
+    client.unpause();
+    assert!(!client.is_paused());
+
+    let second_user = Address::generate(&env);
+    client.mint(
+        &second_user,
+        &500,
+        &create_test_hash(&env, 2),
+        &create_test_uri(&env),
+        &create_test_commitment(&env, 2),
+        &None,
+    );
+    client.update_score(&user, &5_000_000_000, &None);
+    assert_eq!(client.get_score(&user), 505);
+    client.apply_score_delta(&user, &-5, &None);
+    assert_eq!(client.get_score(&user), 500);
+
+    let new_wallet = Address::generate(&env);
+    client.transfer(&user, &new_wallet, &None);
+    assert_eq!(client.get_score(&new_wallet), 500);
+
+    client.burn(&second_user, &None);
+    assert!(client.get_metadata(&second_user).is_none());
 }
