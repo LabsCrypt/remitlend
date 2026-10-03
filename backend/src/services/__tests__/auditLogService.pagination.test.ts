@@ -147,7 +147,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
 
       const countSql = String(
         mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'))?.[0],
-      );
+      ).trimEnd();
       expect(countSql).not.toContain('created_at, id');
     });
 
@@ -169,7 +169,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
 
       const countSql = String(
         mockQuery.mock.calls.find(([text]) => String(text).includes('COUNT(*)'))?.[0],
-      );
+      ).trimEnd();
       expect(countSql).toBe('SELECT COUNT(*) as count FROM audit_logs');
     });
   });
