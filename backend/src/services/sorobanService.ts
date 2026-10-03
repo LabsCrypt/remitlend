@@ -638,11 +638,7 @@ class SorobanService {
     const envelope = tx.toEnvelope();
     const innerTx = envelope.v1().tx();
     const operations = innerTx.operations();
-    if (
-      operations.length !== 1 ||
-      !('source' in tx) ||
-      tx.source !== borrowerPublicKey
-    ) {
+    if (operations.length !== 1 || !('source' in tx) || tx.source !== borrowerPublicKey) {
       throw AppError.badRequest(
         'Expected a single refinance transaction from the authenticated borrower',
       );
@@ -703,12 +699,7 @@ class SorobanService {
       if (!authEntry) {
         throw AppError.badRequest('Transaction contains an invalid admin authorization entry');
       }
-      authEntries[index] = await authorizeEntry(
-        authEntry,
-        admin,
-        validUntilLedger,
-        passphrase,
-      );
+      authEntries[index] = await authorizeEntry(authEntry, admin, validUntilLedger, passphrase);
     }
     invoke.auth(authEntries);
     return envelope.toXDR('base64');
