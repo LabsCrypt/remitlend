@@ -638,14 +638,18 @@ class SorobanService {
     const envelope = tx.toEnvelope();
     const innerTx = envelope.v1().tx();
     const operations = innerTx.operations();
-    if (operations.length !== 1 || tx.source !== borrowerPublicKey) {
+    if (
+      operations.length !== 1 ||
+      !('source' in tx) ||
+      tx.source !== borrowerPublicKey
+    ) {
       throw AppError.badRequest(
         'Expected a single refinance transaction from the authenticated borrower',
       );
     }
 
     const operation = operations[0];
-    if (operation.body().switch().name !== 'invokeHostFunction') {
+    if (!operation || operation.body().switch().name !== 'invokeHostFunction') {
       throw AppError.badRequest('Transaction is not a refinance contract call');
     }
     const invoke = operation.body().invokeHostFunctionOp();
@@ -656,11 +660,13 @@ class SorobanService {
     const invocation = hostFunction.invokeContract();
     const contractAddress = Address.fromScAddress(invocation.contractAddress()).toString();
     const args = invocation.args();
+    const loanIdArg = args[0];
     if (
       contractAddress !== this.getLoanManagerContractId() ||
       invocation.functionName() !== 'refinance_loan' ||
       args.length !== 3 ||
-      Number(scValToNative(args[0])) !== loanId
+      !loanIdArg ||
+      Number(scValToNative(loanIdArg)) !== loanId
     ) {
       throw AppError.badRequest('Transaction does not match the requested loan refinance');
     }
@@ -693,8 +699,12 @@ class SorobanService {
     const latestLedger = await this.getRpcServer().getLatestLedger();
     const validUntilLedger = latestLedger.sequence + 100;
     for (const index of adminEntryIndexes) {
+      const authEntry = authEntries[index];
+      if (!authEntry) {
+        throw AppError.badRequest('Transaction contains an invalid admin authorization entry');
+      }
       authEntries[index] = await authorizeEntry(
-        authEntries[index],
+        authEntry,
         admin,
         validUntilLedger,
         passphrase,
