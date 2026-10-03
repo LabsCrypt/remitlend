@@ -118,7 +118,6 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
 
       await idempotencyMiddleware(req as Request, res as Response, next);
 
-      // Alice is unaffected by Bob's lock: the handler still runs.
       expect(asMock(res.status)).not.toHaveBeenCalledWith(409);
       expect(next).toHaveBeenCalled();
     });

@@ -21,7 +21,8 @@ jest.unstable_mockModule('../services/webhookHttp.js', () => ({
     global.fetch(url, { method: 'POST', headers, body }),
 }));
 
-const { WebhookService, getRetryDelayMs } = await import('../services/webhookService.js');
+const { WebhookService, getRetryDelayMs, SUPPORTED_WEBHOOK_EVENT_TYPES } =
+  await import('../services/webhookService.js');
 const { default: logger } = await import('../utils/logger.js');
 
 describe('WebhookService', () => {
@@ -38,6 +39,13 @@ describe('WebhookService', () => {
     expect(getRetryDelayMs(2)).toBe(15 * 60 * 1000);
     expect(getRetryDelayMs(3)).toBe(45 * 60 * 1000);
     expect(getRetryDelayMs(4)).toBe(45 * 60 * 1000);
+  });
+
+  it('supports the canonical ScoreDecreased webhook event exactly once', () => {
+    expect(SUPPORTED_WEBHOOK_EVENT_TYPES).toContain('ScoreDecreased');
+    expect(SUPPORTED_WEBHOOK_EVENT_TYPES.filter((type) => type === 'ScoreDecreased')).toHaveLength(
+      1,
+    );
   });
 
   it('persists retry state when the initial delivery fails', async () => {

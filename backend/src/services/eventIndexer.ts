@@ -20,6 +20,7 @@ const EVENT_TYPE_ALIASES: Record<string, WebhookEventType> = {
   Mint: 'NFTMinted',
   AdmRemint: 'NFTMinted',
   ScoreUpd: 'ScoreUpdated',
+  ScoreDecr: 'ScoreDecreased',
   Seized: 'NFTSeized',
   NftBurned: 'NFTBurned',
   MinScore: 'MinScoreUpdated',
@@ -965,7 +966,7 @@ export class EventIndexer {
       if (type === 'CollateralDeposited') {
         amount = this.decodeAmount(event.value);
       }
-    } else if (type === 'ScoreDecr') {
+    } else if (type === 'ScoreDecreased') {
       // (old_score, new_score, symbol)
       if (!event.topic[1]) return null;
       address = this.decodeAddress(event.topic[1]);
