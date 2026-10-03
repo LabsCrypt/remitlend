@@ -40,6 +40,21 @@ describe('WebhookService', () => {
     expect(getRetryDelayMs(4)).toBe(45 * 60 * 1000);
   });
 
+  it('accepts the newly supported event types without accepting unknown types', () => {
+    for (const eventType of [
+      'LoanPurged',
+      'LiquidationThresholdUpdated',
+      'LiquidationBonusUpdated',
+      'AdminProposed',
+      'AdminTransferred',
+    ]) {
+      expect(WebhookService.isSupported(eventType)).toBe(true);
+    }
+
+    expect(WebhookService.isSupported('LoanApproved')).toBe(true);
+    expect(WebhookService.isSupported('UnknownContractEvent')).toBe(false);
+  });
+
   it('persists retry state when the initial delivery fails', async () => {
     const fetchMock = jest.fn<(...args: unknown[]) => Promise<{ ok: boolean; status: number }>>();
     fetchMock.mockResolvedValue({ ok: false, status: 503 });
