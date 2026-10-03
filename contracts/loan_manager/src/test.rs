@@ -2838,6 +2838,52 @@ fn test_extend_loan_charges_fee() {
 }
 
 #[test]
+fn test_extend_loan_fee_accrues_to_liquidity_providers() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_addr, token_id, _admin) = setup_test(&env);
+    let pool = LendingPoolClient::new(&env, &pool_addr);
+    let borrower = Address::generate(&env);
+    let provider = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&provider, &10_000);
+    stellar_token.mint(&borrower, &5_000);
+    let token_client = TokenClient::new(&env, &token_id);
+
+    // LP funds the pool through the accounted deposit path.
+    pool.deposit(&provider, &token_id, &10_000, &0);
+
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    manager.approve_loan(&loan_id);
+
+    let pool_tokens_before = token_client.balance(&pool_addr);
+    let share_price_before = pool.get_share_price(&token_id);
+    let lp_value_before = pool.get_deposit(&provider, &token_id);
+    assert_eq!(lp_value_before, 10_000);
+
+    // 1% of 1000 remaining principal = 10 fee.
+    manager.extend_loan(&borrower, &loan_id, &1000);
+
+    assert_eq!(token_client.balance(&pool_addr), pool_tokens_before + 10);
+    // The fee must be recognized as yield, raising the share price, rather
+    // than sitting in the pool as an unaccounted donation (#1794).
+    assert!(pool.get_share_price(&token_id) > share_price_before);
+    // 10_000 shares * (10_010 + 1_000 virtual) / (10_000 + 1_000 virtual)
+    assert_eq!(pool.get_deposit(&provider, &token_id), 10_009);
+}
+
+#[test]
 fn test_extend_loan_multiple_extensions() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();

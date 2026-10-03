@@ -27,6 +27,7 @@ pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
     fn pool_balance(env: Env, token: Address) -> i128;
     fn get_total_outstanding(env: Env, token: Address) -> i128;
+    fn distribute_yield(env: Env, from: Address, token: Address, amount: i128);
     fn disburse_loan(env: Env, token: Address, borrower: Address, amount: i128);
 }
 
@@ -2834,8 +2835,6 @@ impl LoanManager {
         loan_id: u32,
         extra_ledgers: u32,
     ) -> Result<(), LoanError> {
-        use soroban_sdk::token::TokenClient;
-
         borrower.require_auth();
         Self::require_not_paused(&env)?;
 
@@ -2891,7 +2890,10 @@ impl LoanManager {
             .and_then(|v| money::round_div(v, 10_000, money::RoundingMode::Floor).map_err(|_| ()))
             .expect("extension fee overflow");
 
-        // Collect extension fee from borrower if any
+        // Collect extension fee from borrower if any. Routed through
+        // `distribute_yield` so the fee is recognized in the pool's
+        // `total_managed_assets` (and share price); a bare transfer to the
+        // pool is ignored for pricing and would strand LP earnings (#1794).
         if extension_fee > 0 {
             let token: Address = env
                 .storage()
@@ -2903,8 +2905,11 @@ impl LoanManager {
                 .instance()
                 .get(&DataKey::LendingPool)
                 .expect("lending pool not set");
-            let token_client = TokenClient::new(&env, &token);
-            token_client.transfer(&borrower, &lending_pool, &extension_fee);
+            PoolClient::new(&env, &lending_pool).distribute_yield(
+                &borrower,
+                &token,
+                &extension_fee,
+            );
         }
 
         // Extend the due date
