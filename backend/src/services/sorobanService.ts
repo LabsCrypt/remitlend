@@ -639,7 +639,9 @@ class SorobanService {
     const innerTx = envelope.v1().tx();
     const operations = innerTx.operations();
     if (operations.length !== 1 || tx.source !== borrowerPublicKey) {
-      throw AppError.badRequest('Expected a single refinance transaction from the authenticated borrower');
+      throw AppError.badRequest(
+        'Expected a single refinance transaction from the authenticated borrower',
+      );
     }
 
     const operation = operations[0];
@@ -669,7 +671,9 @@ class SorobanService {
     const adminEntryIndexes: number[] = [];
     authEntries.forEach((entry, index) => {
       try {
-        const entryAddress = Address.fromScAddress(entry.credentials().address().address()).toString();
+        const entryAddress = Address.fromScAddress(
+          entry.credentials().address().address(),
+        ).toString();
         const rootFunction = entry.rootInvocation().function();
         if (
           entryAddress === adminAddress &&
