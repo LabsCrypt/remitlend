@@ -87,31 +87,33 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     });
 
     it('does not replay another wallet’s cached response', async () => {
-      const bobCacheKey = `idemp:${namespacedKey(BOB, 'shared-key')}`;
-      asMock(cacheService.get).mockImplementation((key: string) =>
-        Promise.resolve(
-          key === bobCacheKey
-            ? {
-                status: 201,
-                body: { id: 'bob-loan' },
-                fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
-              }
-            : null,
-        ),
+      // Bob's response is cached under *his* namespace. The shared cache only
+      // returns it for Bob's namespaced lookup; Alice's lookup is a miss.
+      const bobCached = {
+        status: 201,
+        body: { id: 'bob-loan' },
+        fingerprint: computeFingerprint(buildRequest(BOB) as Request).fingerprint,
+      };
+      asMock(cacheService.get).mockImplementation(async (key: unknown) =>
+        String(key).includes(BOB) ? bobCached : null,
       );
+      // The middleware swaps res.json for its own capture hook on a cache miss,
+      // so hold on to the original mock to assert it was never replayed.
+      const resJson = res.json as unknown as jest.Mock;
 
-      // …so Alice sending the identical key, path and body gets a cache miss
-      // and runs the handler instead of receiving Bob's response.
       await idempotencyMiddleware(req as Request, res as Response, next);
 
+      expect(cacheKeysRead()[0]).toContain(ALICE);
+      expect(resJson).not.toHaveBeenCalledWith({ id: 'bob-loan' });
       expect(next).toHaveBeenCalled();
     });
 
     it('does not reject a user with 409 because another user holds the key', async () => {
       asMock(cacheService.get).mockResolvedValue(null);
-      const bobLockKey = `idemp:${namespacedKey(BOB, 'shared-key')}:lock`;
-      asMock(cacheService.setNotExists).mockImplementation((key: string) =>
-        Promise.resolve(key !== bobLockKey),
+      // Bob's in-flight lock is held under *his* namespace; every other
+      // namespaced lock key is free, so Alice is unaffected.
+      asMock(cacheService.setNotExists).mockImplementation(
+        async (key: unknown) => !String(key).includes(BOB),
       );
 
       await idempotencyMiddleware(req as Request, res as Response, next);

@@ -101,6 +101,19 @@ pub fn admin_transferred(env: &Env, previous_admin: Address, new_admin: Address,
     env.events().publish(topics, (previous_admin, new_admin));
 }
 
+/// Emitted when pooled liquidity is disbursed to a borrower via `disburse_loan`.
+///
+/// **Topics**: `(LoanDisbursed, token, borrower)`
+/// **Data**: `amount`
+pub fn loan_disbursed(env: &Env, token: Address, borrower: Address, amount: i128) {
+    let topics = (
+        Symbol::new(env, "LoanDisbursed"),
+        token,
+        borrower,
+    );
+    env.events().publish(topics, amount);
+}
+
 /// Emitted on every mutation of a token pool's share-pricing state
 /// (`deposit`, `withdraw`/`emergency_withdraw`, `distribute_yield`) so that
 /// off-chain indexers can reconcile quoted prices against the last settled
