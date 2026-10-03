@@ -2891,7 +2891,25 @@ impl LoanManager {
             .and_then(|v| money::round_div(v, 10_000, money::RoundingMode::Floor).map_err(|_| ()))
             .expect("extension fee overflow");
 
-        // Collect extension fee from borrower if any
+        // Effects: extend the due date, bump the extension count and persist
+        // the loan before any cross-contract call (CEI).
+        let new_due_date = loan
+            .due_date
+            .checked_add(extra_ledgers)
+            .expect("due date overflow");
+        loan.due_date = new_due_date;
+
+        loan.extension_count = loan
+            .extension_count
+            .checked_add(1)
+            .expect("extension count overflow");
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        // Interactions: collect the extension fee from the borrower, if any.
+        // A failed transfer reverts the whole invocation, including the
+        // storage write above.
         if extension_fee > 0 {
             let token: Address = env
                 .storage()
@@ -2906,23 +2924,6 @@ impl LoanManager {
             let token_client = TokenClient::new(&env, &token);
             token_client.transfer(&borrower, &lending_pool, &extension_fee);
         }
-
-        // Extend the due date
-        let new_due_date = loan
-            .due_date
-            .checked_add(extra_ledgers)
-            .expect("due date overflow");
-        loan.due_date = new_due_date;
-
-        // Increment extension count
-        loan.extension_count = loan
-            .extension_count
-            .checked_add(1)
-            .expect("extension count overflow");
-
-        // Persist updated loan
-        env.storage().persistent().set(&loan_key, &loan);
-        Self::bump_persistent_ttl(&env, &loan_key);
 
         // Emit extension event
         events::loan_extended(

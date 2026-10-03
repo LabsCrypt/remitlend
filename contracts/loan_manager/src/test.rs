@@ -48,6 +48,44 @@ mod mock_panicking_rate_oracle {
 }
 use mock_panicking_rate_oracle::MockPanickingRateOracle;
 
+// Token that records the LoanManager's persisted loan state at the moment its
+// `transfer` is invoked, so tests can assert CEI ordering (#1793): effects
+// must already be in storage when the external call happens.
+mod mock_probe_token {
+    use crate::{DataKey, Loan};
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct MockProbeToken;
+
+    #[contractimpl]
+    impl MockProbeToken {
+        pub fn watch(env: Env, manager: Address, loan_id: u32) {
+            env.storage().instance().set(&"manager", &manager);
+            env.storage().instance().set(&"loan_id", &loan_id);
+        }
+
+        pub fn transfer(env: Env, _from: Address, _to: Address, _amount: i128) {
+            let manager: Address = env.storage().instance().get(&"manager").unwrap();
+            let loan_id: u32 = env.storage().instance().get(&"loan_id").unwrap();
+            let loan: Loan = env.as_contract(&manager, || {
+                env.storage()
+                    .persistent()
+                    .get(&DataKey::Loan(loan_id))
+                    .unwrap()
+            });
+            env.storage()
+                .instance()
+                .set(&"seen", &(loan.due_date, loan.extension_count));
+        }
+
+        pub fn seen(env: Env) -> Option<(u32, u32)> {
+            env.storage().instance().get(&"seen")
+        }
+    }
+}
+use mock_probe_token::{MockProbeToken, MockProbeTokenClient};
+
 fn setup_test<'a>(
     env: &Env,
 ) -> (
@@ -2889,6 +2927,83 @@ fn test_extend_loan_not_found() {
     // Try to extend non-existent loan
     let result = manager.try_extend_loan(&borrower, &999, &1000);
     assert_eq!(result, Err(Ok(LoanError::LoanNotFound)));
+}
+
+#[test]
+fn test_extend_loan_persists_state_before_fee_transfer() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    manager.approve_loan(&loan_id);
+    let original_due_date = manager.get_loan(&loan_id).due_date;
+
+    // Swap in the probe token so the fee transfer snapshots loan storage.
+    let probe_id = env.register(MockProbeToken, ());
+    let probe = MockProbeTokenClient::new(&env, &probe_id);
+    probe.watch(&manager.address, &loan_id);
+    env.as_contract(&manager.address, || {
+        env.storage().instance().set(&DataKey::Token, &probe_id);
+    });
+
+    manager.extend_loan(&borrower, &loan_id, &1000);
+
+    // The transfer ran (1% fee on 1000 > 0) and, when it did, the extended
+    // due date and incremented count were already persisted.
+    assert_eq!(probe.seen(), Some((original_due_date + 1000, 1)));
+}
+
+#[test]
+fn test_extend_loan_failed_fee_transfer_reverts_extension() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+
+    let history_hash = soroban_sdk::BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://QmTest"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    let stellar_token = StellarAssetClient::new(&env, &token_id);
+    stellar_token.mint(&pool_client, &10_000);
+    let token_client = TokenClient::new(&env, &token_id);
+
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    manager.approve_loan(&loan_id);
+
+    // Drain the borrower so the 10-unit extension fee cannot be paid.
+    let balance = token_client.balance(&borrower);
+    token_client.transfer(&borrower, &pool_client, &balance);
+
+    let loan_before = manager.get_loan(&loan_id);
+    let result = manager.try_extend_loan(&borrower, &loan_id, &1000);
+    assert!(result.is_err());
+
+    // The storage write made before the transfer is rolled back with it.
+    let loan_after = manager.get_loan(&loan_id);
+    assert_eq!(loan_after.due_date, loan_before.due_date);
+    assert_eq!(loan_after.extension_count, loan_before.extension_count);
 }
 
 // ── Oracle rate bounds tests ───────────────────────────────────────────────
