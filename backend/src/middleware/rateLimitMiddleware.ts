@@ -45,7 +45,10 @@ export const createRateLimitMiddleware = (options: RateLimitMiddlewareOptions = 
       // Default: extract userId from request body for score updates
       const body = req.body as { userId?: string } | undefined;
       if (!body?.userId) {
-        throw new Error('Rate limiting middleware requires userId in request body');
+        throw AppError.badRequest(
+          'Rate limiting middleware requires userId in request body',
+          ErrorCode.MISSING_FIELD,
+        );
       }
       return body.userId;
     },
@@ -142,7 +145,10 @@ export const createIpRateLimitMiddleware = (
     getIdentifier: (req: Request) => {
       const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
       if (!ip) {
-        throw new Error('Unable to determine client IP address for rate limiting');
+        throw AppError.badRequest(
+          'Unable to determine client IP address for rate limiting',
+          ErrorCode.MISSING_FIELD,
+        );
       }
       return `ip:${ip}`;
     },

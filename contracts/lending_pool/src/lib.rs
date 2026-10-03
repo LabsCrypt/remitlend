@@ -93,6 +93,9 @@ pub enum DataKey {
     Admin,
     Paused,
     WithdrawalCooldown,
+    /// Address of the authorized LoanManager contract permitted to disburse
+    /// pooled liquidity via `disburse_loan`.
+    LoanManager,
     /// token → max pool size cap (0 = unlimited)
     MaxPoolSize(Address),
     /// token → total LP shares outstanding across all providers
@@ -1071,6 +1074,91 @@ impl LendingPool {
 
     pub fn get_total_outstanding(env: Env, token: Address) -> i128 {
         Self::read_total_outstanding(&env, &token)
+    }
+
+    /// Register (or replace) the LoanManager contract authorized to disburse
+    /// pooled liquidity via `disburse_loan`.
+    ///
+    /// Must be called by the admin.
+    pub fn set_loan_manager(env: Env, loan_manager: Address) -> Result<(), PoolError> {
+        Self::admin(&env).require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::LoanManager, &loan_manager);
+        Self::bump_instance_ttl(&env);
+        env.events()
+            .publish((Symbol::new(&env, "LoanMgrSet"),), loan_manager);
+        Ok(())
+    }
+
+    /// Return the currently registered LoanManager contract address, or
+    /// `None` if no address has been set.
+    pub fn get_loan_manager(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::LoanManager)
+    }
+
+    /// Disburse `amount` of `token` to `borrower`.
+    ///
+    /// Only the registered LoanManager contract may call this function. The
+    /// caller is verified via `loan_manager.require_auth()`: when LoanManager
+    /// invokes this cross-contract, its authorization is implicit; any direct
+    /// caller cannot forge it on a live network.
+    ///
+    /// The transfer is executed with the pool's own authorization
+    /// (`transfer(pool, borrower, amount)`), so LoanManager must never attempt
+    /// `token.transfer(pool, borrower, ...)` itself — that would fail with a
+    /// Soroban authorization error since the pool never authorized LoanManager
+    /// to spend its tokens.
+    ///
+    /// Accounting: `TotalOutstanding` grows by `amount` (principal now deployed
+    /// in a loan) while `TotalManagedAssets` is unchanged (idle → outstanding
+    /// does not change total value under management), so share pricing is
+    /// unaffected.
+    pub fn disburse_loan(
+        env: Env,
+        token: Address,
+        borrower: Address,
+        amount: i128,
+    ) -> Result<(), PoolError> {
+        let loan_manager: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LoanManager)
+            .ok_or(PoolError::NotInitialized)?;
+        // Only the registered LoanManager may disburse. Panics with an auth
+        // error for any other caller.
+        loan_manager.require_auth();
+        Self::assert_not_paused(&env)?;
+
+        if amount <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        let idle_balance = Self::read_pool_balance(&env, &token);
+        if idle_balance < amount {
+            return Err(PoolError::InsufficientLiquidity);
+        }
+
+        // Track deployed principal for utilization stats. TotalManagedAssets
+        // is intentionally untouched (see `total_managed_assets` docs).
+        let key = DataKey::TotalOutstanding(token.clone());
+        let current = Self::read_total_outstanding(&env, &token);
+        let updated = current
+            .checked_add(amount)
+            .expect("total outstanding overflow");
+        env.storage().instance().set(&key, &updated);
+
+        // Interaction: pool authorizes its own outflow.
+        TokenClient::new(&env, &token).transfer(
+            &env.current_contract_address(),
+            &borrower,
+            &amount,
+        );
+
+        Self::bump_instance_ttl(&env);
+        loan_disbursed(&env, token, borrower, amount);
+        Ok(())
     }
 
     pub fn adjust_outstanding(env: Env, token: Address, delta: i128) {

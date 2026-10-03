@@ -18,7 +18,13 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: mockLogger,
 }));
 
-const { pauseGuard, setPauseState, getCurrentPauseState } = await import('../pauseGuard.js');
+const {
+  pauseGuard,
+  setPauseState,
+  getCurrentPauseState,
+  updatePauseStateFromDatabase,
+  getPauseState,
+} = await import('../pauseGuard.js');
 const { AppError } = await import('../../errors/AppError.js');
 
 describe('pauseGuard middleware (#1521)', () => {
@@ -147,6 +153,72 @@ describe('pauseGuard middleware (#1521)', () => {
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO pause_state'),
         expect.arrayContaining([true, expect.any(Date), 'Upgrade in progress']),
+      );
+    });
+  });
+
+  describe('updatePauseStateFromDatabase', () => {
+    it('refreshes in-memory state from a mocked query result', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [
+          {
+            is_paused: true,
+            paused_at: new Date('2025-01-01T00:00:00Z'),
+            reason: 'DB maintenance',
+            contracts: ['CONTRACT_DB'],
+          },
+        ],
+      });
+
+      await updatePauseStateFromDatabase();
+
+      const state = getCurrentPauseState();
+      expect(state.isPaused).toBe(true);
+      expect(state.reason).toBe('DB maintenance');
+      expect(state.contracts).toEqual(['CONTRACT_DB']);
+    });
+
+    it('fails open (does not throw) when the DB query errors', async () => {
+      mockQuery.mockRejectedValue(new Error('connection refused'));
+
+      await expect(updatePauseStateFromDatabase()).resolves.not.toThrow();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to update pause state from database',
+        expect.objectContaining({ error: expect.any(Error) }),
+      );
+    });
+  });
+
+  describe('getPauseState', () => {
+    it('returns the current pause state with expected shape', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [
+          {
+            is_paused: false,
+            paused_at: null,
+            reason: null,
+            contracts: [],
+          },
+        ],
+      });
+
+      const mockJson = jest.fn();
+      const req = {} as Request;
+      const res = { json: mockJson } as unknown as Response;
+      const next = jest.fn() as NextFunction;
+
+      await getPauseState(req, res, next);
+
+      expect(mockJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            isPaused: expect.any(Boolean),
+            contracts: expect.any(Array),
+            timestamp: expect.any(Date),
+          }),
+        }),
       );
     });
   });
