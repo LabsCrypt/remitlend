@@ -351,6 +351,7 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
           MAX(CASE WHEN event_type = 'LoanApproved' THEN interest_rate_bps END) as rate_bps,
           MAX(CASE WHEN event_type = 'LoanApproved' THEN term_ledgers END) as term_ledgers,
           SUM(CASE WHEN event_type = 'LoanRepaid' THEN amount::numeric ELSE 0 END) as total_repaid,
+          SUM(CASE WHEN event_type = 'LateFeeCharged' THEN amount::numeric ELSE 0 END) as accrued_late_fee,
           MAX(CASE WHEN event_type = 'LoanDefaulted' THEN 1 ELSE 0 END) as is_defaulted,
           (
             ARRAY_AGG(
@@ -451,6 +452,7 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
       accruedInterest: isPending
         ? null
         : Number.parseFloat((row.accrued_interest as string) || '0'),
+      accruedLateFee: Number.parseFloat((row.accrued_late_fee as string) || '0'),
       totalRepaid: Number.parseFloat((row.total_repaid as string) || '0'),
       totalOwed: isPending ? null : Number.parseFloat((row.total_owed as string) || '0'),
       nextPaymentDeadline: new Date(row.next_payment_deadline as string).toISOString(),
