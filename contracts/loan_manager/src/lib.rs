@@ -26,7 +26,9 @@ pub trait RateOracleInterface {
 pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
     fn pool_balance(env: Env, token: Address) -> i128;
-    fn get_total_outstanding(env: Env, token: Address) -> i128;
+    fn adjust_outstanding(env: Env, token: Address, delta: i128);
+    fn distribute_yield(env: Env, from: Address, token: Address, amount: i128);
+    fn disburse_loan(env: Env, token: Address, borrower: Address, amount: i128);
 }
 
 mod events;
@@ -579,6 +581,15 @@ impl LoanManager {
 
         env.storage().instance().set(&key, &updated);
         Self::bump_instance_ttl(env);
+
+        if let Some(lending_pool) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::LendingPool)
+        {
+            let pool_client = PoolClient::new(env, &lending_pool);
+            pool_client.adjust_outstanding(token, &delta);
+        }
     }
 
     fn borrower_loan_count(env: &Env, borrower: &Address) -> u32 {
@@ -1202,8 +1213,6 @@ impl LoanManager {
     /// loan was requested; and [`LoanError::InsufficientPoolLiquidity`] when
     /// available pool liquidity is below the loan amount.
     pub fn approve_loan(env: Env, loan_id: u32) -> Result<(), LoanError> {
-        use soroban_sdk::token::TokenClient;
-
         // ── CHECKS ──────────────────────────────────────────────────────────
         let admin = Self::admin(&env);
         admin.require_auth();
@@ -1281,8 +1290,12 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
 
         // ── INTERACTIONS (external calls last) ──────────────────────────────
-        let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&lending_pool, &borrower, &transfer_amount);
+        // Disburse via the pool's authorized `disburse_loan` entrypoint: the
+        // pool transfers with its own authorization after verifying the caller
+        // is this LoanManager. A direct `token.transfer(pool, borrower, ...)`
+        // here would fail on-chain since the pool never authorized LoanManager
+        // to spend its tokens.
+        PoolClient::new(&env, &lending_pool).disburse_loan(&token, &borrower, &transfer_amount);
 
         events::loan_approved(
             &env,
@@ -1517,7 +1530,7 @@ impl LoanManager {
                         &Self::LATE_REPAYMENT_SCORE_PENALTY.unsigned_abs(),
                         &Some(env.current_contract_address()),
                     );
-                } else {
+                } else if !was_late {
                     // Use apply_score_delta rather than update_score so score adjustments
                     // work for any token denomination without hitting RemittanceNFT's
                     // anti-dust repayment floor (which assumes XLM stroops).
@@ -1792,12 +1805,8 @@ impl LoanManager {
             let underwater_bonus = collateral_amount
                 .checked_mul(Self::MIN_UNDERWATER_BONUS_BPS as i128)
                 .and_then(|v| {
-                    money::round_div(
-                        v,
-                        Self::MAX_RATIO_BPS as i128,
-                        money::RoundingMode::Floor,
-                    )
-                    .ok()
+                    money::round_div(v, Self::MAX_RATIO_BPS as i128, money::RoundingMode::Floor)
+                        .ok()
                 })
                 .unwrap_or(0);
             let debt_portion = collateral_amount
@@ -2169,13 +2178,20 @@ impl LoanManager {
             .expect("lending pool not set");
         let token_client = TokenClient::new(&env, &token);
 
-        // Transfer accrued interest + late fees from borrower to lending pool before resetting.
+        // Collect accrued interest + late fees from borrower before resetting.
+        // Routed through `distribute_yield` so the settlement is recognized in
+        // the pool's `total_managed_assets` (and share price); a bare transfer
+        // to the pool is ignored for pricing and would strand LP earnings (#1795).
         let accrued_settlement = loan
             .accrued_interest
             .checked_add(loan.accrued_late_fee)
             .expect("overflow");
         if accrued_settlement > 0 {
-            token_client.transfer(&loan.borrower, &lending_pool, &accrued_settlement);
+            PoolClient::new(&env, &lending_pool).distribute_yield(
+                &loan.borrower,
+                &token,
+                &accrued_settlement,
+            );
         }
 
         loan.interest_paid = loan
@@ -2195,11 +2211,13 @@ impl LoanManager {
 
         match new_amount.cmp(&remaining_principal) {
             core::cmp::Ordering::Greater => {
-                // Pool disburses the additional amount to the borrower.
+                // Pool disburses the additional amount to the borrower via its
+                // authorized `disburse_loan` entrypoint (see `approve_loan`).
                 let additional = new_amount
                     .checked_sub(remaining_principal)
                     .expect("underflow");
-                let pool_balance = token_client.balance(&lending_pool);
+                let pool_client = PoolClient::new(&env, &lending_pool);
+                let pool_balance = pool_client.pool_balance(&token);
                 // #1589: `pool_balance` is the live idle balance and already
                 // excludes disbursed principal, so it must not be reduced by
                 // outstanding debt (which would double-count it and could even
@@ -2207,7 +2225,7 @@ impl LoanManager {
                 if pool_balance < additional {
                     return Err(LoanError::InsufficientPoolLiquidity);
                 }
-                token_client.transfer(&lending_pool, &loan.borrower, &additional);
+                pool_client.disburse_loan(&token, &loan.borrower, &additional);
             }
             core::cmp::Ordering::Less => {
                 // Borrower returns the excess principal to the pool.
@@ -2728,6 +2746,17 @@ impl LoanManager {
         Ok(())
     }
 
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+        env.events()
+            .publish((Symbol::new(&env, "AdminTransferred"),), new_admin);
+    }
+
     pub fn pause(env: Env) {
         Self::admin(&env).require_auth();
         let paused_at_ledger = env.ledger().sequence();
@@ -2829,8 +2858,6 @@ impl LoanManager {
         loan_id: u32,
         extra_ledgers: u32,
     ) -> Result<(), LoanError> {
-        use soroban_sdk::token::TokenClient;
-
         borrower.require_auth();
         Self::require_not_paused(&env)?;
 
@@ -2886,7 +2913,28 @@ impl LoanManager {
             .and_then(|v| money::round_div(v, 10_000, money::RoundingMode::Floor).map_err(|_| ()))
             .expect("extension fee overflow");
 
-        // Collect extension fee from borrower if any
+        // Effects: extend the due date, bump the extension count and persist
+        // the loan before any cross-contract call (CEI).
+        let new_due_date = loan
+            .due_date
+            .checked_add(extra_ledgers)
+            .expect("due date overflow");
+        loan.due_date = new_due_date;
+
+        loan.extension_count = loan
+            .extension_count
+            .checked_add(1)
+            .expect("extension count overflow");
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        // Interactions: collect the extension fee from the borrower, if any.
+        // Routed through `distribute_yield` so the fee is recognized in the
+        // pool's `total_managed_assets` (and share price); a bare transfer to
+        // the pool is ignored for pricing and would strand LP earnings (#1794).
+        // A failed transfer reverts the whole invocation, including the
+        // storage write above.
         if extension_fee > 0 {
             let token: Address = env
                 .storage()
@@ -2898,26 +2946,12 @@ impl LoanManager {
                 .instance()
                 .get(&DataKey::LendingPool)
                 .expect("lending pool not set");
-            let token_client = TokenClient::new(&env, &token);
-            token_client.transfer(&borrower, &lending_pool, &extension_fee);
+            PoolClient::new(&env, &lending_pool).distribute_yield(
+                &borrower,
+                &token,
+                &extension_fee,
+            );
         }
-
-        // Extend the due date
-        let new_due_date = loan
-            .due_date
-            .checked_add(extra_ledgers)
-            .expect("due date overflow");
-        loan.due_date = new_due_date;
-
-        // Increment extension count
-        loan.extension_count = loan
-            .extension_count
-            .checked_add(1)
-            .expect("extension count overflow");
-
-        // Persist updated loan
-        env.storage().persistent().set(&loan_key, &loan);
-        Self::bump_persistent_ttl(&env, &loan_key);
 
         // Emit extension event
         events::loan_extended(

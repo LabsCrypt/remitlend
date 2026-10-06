@@ -211,16 +211,29 @@ export async function revokeToken(jti: string, exp: number): Promise<void> {
 
 const REVOCATION_CHECK_TIMEOUT_MS = 250;
 
+/**
+ * Checks if a token's JTI has been revoked.
+ *
+ * Fail-closed: on Redis error, timeout, or any other failure, the token is
+ * treated as revoked (returns true). This prevents a revoked token from being
+ * accepted due to transient Redis issues or slow cache lookups.
+ */
 export async function isTokenRevoked(jti: string): Promise<boolean> {
   try {
     const revoked = await Promise.race([
       cacheService.get<boolean>(`${REVOKED_JTI_PREFIX}${jti}`),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), REVOCATION_CHECK_TIMEOUT_MS)),
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error('Revocation check timeout')),
+          REVOCATION_CHECK_TIMEOUT_MS,
+        ),
+      ),
     ]);
 
     return revoked === true;
   } catch {
-    return false;
+    // Fail closed: treat any error or timeout as revoked
+    return true;
   }
 }
 

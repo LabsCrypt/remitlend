@@ -8,6 +8,11 @@ const mockQuery = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockNotifyAdmins = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockCreateNotification = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 
+jest.unstable_mockModule('../../db/connection.ts', () => ({
+  query: mockQuery,
+  default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
+  withTransaction: jest.fn(),
+}));
 jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },

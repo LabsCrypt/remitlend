@@ -1,7 +1,22 @@
 import { describe, it, expect, beforeAll, jest } from '@jest/globals';
 import request from 'supertest';
-import app from '../app.js';
 import { Keypair } from '@stellar/stellar-sdk';
+
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
+  cacheService: {
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
+  },
+}));
+
+const { default: app } = await import('../app.js');
 
 describe('Auth API', () => {
   beforeAll(() => {

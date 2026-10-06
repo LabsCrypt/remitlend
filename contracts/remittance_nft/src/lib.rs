@@ -32,6 +32,7 @@ pub enum NftError {
     /// (Pending or Approved) in the registered LoanManager.  Borrowers must
     /// fully repay or cancel all loans before relocating their reputation NFT.
     ActiveLoanExists = 22,
+    InvalidAmount = 23,
 }
 
 #[contracttype]
@@ -568,6 +569,7 @@ impl RemittanceNFT {
         recipient_commitment: BytesN<32>,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
+        Self::assert_not_paused(&env)?;
         let _admin_direct_mint = minter.is_none();
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
@@ -762,6 +764,7 @@ impl RemittanceNFT {
         repayment_amount: i128,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
+        Self::assert_not_paused(&env)?;
         if repayment_amount <= 0 {
             return Err(NftError::InvalidRepaymentAmount);
         }
@@ -810,15 +813,16 @@ impl RemittanceNFT {
         Ok(())
     }
 
-    pub fn set_min_repayment_amount(env: Env, amount: i128) {
+    pub fn set_min_repayment_amount(env: Env, amount: i128) -> Result<(), NftError> {
         Self::admin(&env).require_auth();
         if amount < 0 {
-            panic!("negative amount");
+            return Err(NftError::InvalidAmount);
         }
         env.storage()
             .instance()
             .set(&DataKey::MinRepaymentAmount, &amount);
         Self::bump_instance_ttl(&env);
+        Ok(())
     }
 
     pub fn get_min_repayment_amount(env: Env) -> i128 {
@@ -832,23 +836,33 @@ impl RemittanceNFT {
             .unwrap_or(Self::DEFAULT_MIN_REPAYMENT_AMOUNT)
     }
 
-    pub fn decrease_score(env: Env, user: Address, penalty_points: u32, minter: Option<Address>) {
-        Self::require_admin_or_authorized_minter(&env, minter)
-            .unwrap_or_else(|_| panic!("unauthorized minter"));
+    pub fn decrease_score(
+        env: Env,
+        user: Address,
+        penalty_points: u32,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
+        Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
-            return;
+            return Err(NftError::NftNotFound);
         }
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
-            .unwrap_or_else(|| panic!("user does not have an NFT"));
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         let old_score = metadata.score;
         let decreased = old_score.saturating_sub(penalty_points);
-        let new_score = decreased.max(Self::MIN_CREDIT_SCORE);
+        // Apply the MIN_CREDIT_SCORE floor only to scores that are already at
+        // or above it, then clamp to `old_score` so a penalty can never raise
+        // a score. Without the `.min(old_score)`, a user sitting below the
+        // floor (reachable via `apply_score_delta`/legacy state) would be
+        // bumped *up* to 300 by a penalty — laundering a low score upward and
+        // improving their lending eligibility (#1141).
+        let new_score = decreased.max(Self::MIN_CREDIT_SCORE).min(old_score);
         if new_score == old_score {
-            return;
+            return Ok(());
         }
 
         metadata.score = new_score;
@@ -859,6 +873,8 @@ impl RemittanceNFT {
             (symbol_short!("ScoreDecr"), user),
             (old_score, new_score, symbol_short!("PEN")),
         );
+
+        Ok(())
     }
 
     /// Update the history hash for a user's NFT.
@@ -868,6 +884,7 @@ impl RemittanceNFT {
         delta: i32,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
+        Self::assert_not_paused(&env)?;
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
@@ -1008,6 +1025,7 @@ impl RemittanceNFT {
     }
 
     pub fn burn(env: Env, user: Address, minter: Option<Address>) -> Result<(), NftError> {
+        Self::assert_not_paused(&env)?;
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
@@ -1025,6 +1043,7 @@ impl RemittanceNFT {
         to: Address,
         minter: Option<Address>,
     ) -> Result<(), NftError> {
+        Self::assert_not_paused(&env)?;
         if from == to {
             return Err(NftError::SelfTransfer);
         }

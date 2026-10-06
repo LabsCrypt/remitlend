@@ -128,6 +128,29 @@ describe('Remittance Routes JWT Authentication & Authorization', () => {
         senderAddress: SENDER,
       });
     });
+
+    it('returns 400 when fromCurrency differs from toCurrency (no conversion is performed)', async () => {
+      const token = createAuthToken(SENDER);
+
+      const res = await request(app)
+        .post('/api/remittances')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...validBody,
+          fromCurrency: 'USDC',
+          toCurrency: 'PHP',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+      expect(res.body.errors[0].path).toBe('body.toCurrency');
+      expect(res.body.errors[0].message).toContain('Cross-currency remittances are not supported');
+
+      // The service must never be reached for a request it would silently
+      // mis-handle.
+      expect(mockCreateRemittance).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /api/remittances', () => {

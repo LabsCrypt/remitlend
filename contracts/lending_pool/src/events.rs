@@ -19,6 +19,28 @@ pub fn withdraw(env: &Env, provider: Address, token: Address, amount: i128, shar
     env.events().publish(topics, (amount, shares_burned));
 }
 
+/// Emitted *in addition to* `Withdraw` when a provider exits through the
+/// emergency path (`emergency_withdraw`), which deliberately bypasses both the
+/// pause flag and the withdrawal cooldown.
+///
+/// The normal `Withdraw` event is still emitted by `redeem_shares` so that
+/// existing indexers keep seeing the exit; this extra signal lets monitoring
+/// and indexers distinguish an emergency exit — one that happened while paused
+/// or before the cooldown elapsed — from an ordinary withdrawal (#1142).
+///
+/// **Topics**: `(EmergencyWithdraw, provider, token)`
+/// **Data**: `(amount, shares_burned)`
+pub fn emergency_withdraw(
+    env: &Env,
+    provider: Address,
+    token: Address,
+    amount: i128,
+    shares_burned: i128,
+) {
+    let topics = (Symbol::new(env, "EmergencyWithdraw"), provider, token);
+    env.events().publish(topics, (amount, shares_burned));
+}
+
 /// Emitted when yield is explicitly distributed to the pool, increasing the share price.
 ///
 /// **Topics**: `(YieldDistributed, token)`
@@ -26,7 +48,6 @@ pub fn withdraw(env: &Env, provider: Address, token: Address, amount: i128, shar
 ///
 /// Increments `TotalYieldDistributed` storage for the token and updates `total_managed_assets`,
 /// raising the share price for all existing holders.
-#[allow(dead_code)]
 pub fn yield_distributed(env: &Env, token: Address, amount: i128) {
     if amount > 0 {
         let total = env
@@ -99,6 +120,19 @@ pub fn admin_proposed(env: &Env, current_admin: Address, proposed_admin: Address
 pub fn admin_transferred(env: &Env, previous_admin: Address, new_admin: Address, via: Symbol) {
     let topics = (Symbol::new(env, "AdminTransferred"), via);
     env.events().publish(topics, (previous_admin, new_admin));
+}
+
+/// Emitted when pooled liquidity is disbursed to a borrower via `disburse_loan`.
+///
+/// **Topics**: `(LoanDisbursed, token, borrower)`
+/// **Data**: `amount`
+pub fn loan_disbursed(env: &Env, token: Address, borrower: Address, amount: i128) {
+    let topics = (
+        Symbol::new(env, "LoanDisbursed"),
+        token,
+        borrower,
+    );
+    env.events().publish(topics, amount);
 }
 
 /// Emitted on every mutation of a token pool's share-pricing state

@@ -88,4 +88,29 @@ describe('Environment Variable Validation', () => {
     expect(() => validateEnvVars()).not.toThrow();
     expect(mockExit).not.toHaveBeenCalled();
   });
+
+  it('should pass validation when supplied with deploy.ts emitted contract and token variables', () => {
+    delete process.env.LOAN_MANAGER_CONTRACT_ID;
+    delete process.env.LENDING_POOL_CONTRACT_ID;
+    delete process.env.REMITTANCE_NFT_CONTRACT_ID;
+    delete process.env.MULTISIG_GOVERNANCE_CONTRACT_ID;
+    delete process.env.POOL_TOKEN_ADDRESS;
+
+    expect(() => validateEnvVars()).toThrow('Process.exit called with 1');
+    expect(mockExit).toHaveBeenCalledWith(1);
+    mockExit.mockClear();
+
+    process.env.LOAN_MANAGER_CONTRACT_ID =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    process.env.LENDING_POOL_CONTRACT_ID =
+      'CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+    process.env.REMITTANCE_NFT_CONTRACT_ID =
+      'CDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD';
+    process.env.MULTISIG_GOVERNANCE_CONTRACT_ID =
+      'CEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE';
+    process.env.POOL_TOKEN_ADDRESS = 'CAS3J7GYCCXG7W35XU4643F2M3T63BGCV2X4D6C4V7G4X6C4V7G4X6C4';
+
+    expect(() => validateEnvVars()).not.toThrow();
+    expect(mockExit).not.toHaveBeenCalled();
+  });
 });

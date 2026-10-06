@@ -1,1 +1,590 @@
-IyBSZW1pdExlbmQgU21hcnQgQ29udHJhY3RzCgpTb3JvYmFuIHNtYXJ0IGNvbnRyYWN0cyBmb3IgdGhlIFJlbWl0TGVuZCBkZWNlbnRyYWxpemVkIGxlbmRpbmcgcGxhdGZvcm0gb24gU3RlbGxhci4gVGhlc2UgY29udHJhY3RzIGhhbmRsZSBORlQgbWludGluZywgbG9hbiBtYW5hZ2VtZW50LCBhbmQgbGVuZGluZyBwb29sIG9wZXJhdGlvbnMuCgojIyBPdmVydmlldwoKUmVtaXRMZW5kIHVzZXMgdGhyZWUgY29yZSBzbWFydCBjb250cmFjdHM6CgoxLiAqKlJlbWl0dGFuY2UgTkZU KiAtIFN0b3JlcyBjcmVkaXQgc2NvcmVzIGFuZCByZW1pdHRhbmNlIGhpc3RvcnkgYXMgTkZUcwoyLiAqKkxvYW4gTWFuYWdlcioqIC0gTWFuYWdlcyB0aGUgY29tcGxldGUgbG9hbiBsaWZlY3ljbGUKMy4gKipMZW5kaW5nIFBvb2wqKiAtIEhhbmRsZXMgbGlxdWlkaXR5IGRlcG9zaXRzIGFuZCB3aXRoZHJhd2FscwoKPiAqKkVycm9yIGNvZGVzOioqIGVhY2ggY29udHJhY3QgbnVtYmVycyBpdHMgYGNvbnRyYWN0ZXJyb3JgIGVudW0gaW5kZXBlbmRlbnRseSwgc28gdGhlIHNhbWUgbnVtZXJpYyBjb2RlIGNhbiBtZWFuIGRpZmZlcmVudCB0aGluZ3MgYWNyb3NzIGNvbnRyYWN0cy4gU2VlIFtFUlJPUl9DT0RFUy5tZF0oLi9FUlJPUl9DT0RFUy5tZCkgZm9yIHRoZSBmdWxsIGNyb3NzLWNvbnRyYWN0IHJlZmVyZW5jZSBhbmQgbmFtZXNwYWNpbmcgcmVjb21tZW5kYXRpb24uCgojIyMjIGBmaXhfYXJncy5weWAgKG9uZS10aW1lIG1pZ3JhdGlvbiBoZWxwZXIpCgpgY29udHJhY3RzL2ZpeF9hcmdzLnB5YCBpcyBhICoq b25lLXRpbWUqKiBtaWdyYXRpb24gaGVscGVyLiBJdCBwYXRjaGVzCmBjb250cmFjdHMvcmVtaXR0YW5jZV9uZnQvc3JjL3Rlc3QucnNgIChzd2FwcGVkIGBjb21taXRtZW50YC9gdXJpYCBhcmdzLCBldmVudAplbmNvZGluZyBmaXhlcykuIEl0IGlzIG5vdCBwYXJ0IG9mIHRoZSBub3JtYWwgYnVpbGQvdGVzdCB3b3JrZmxvdyDigJQgcnVuIGl0IG9uY2UKZnJvbSB0aGUgcmVwbyByb290IHdpdGg6CgpgYGBiYXNoCnB5dGhvbjMgY29udHJhY3RzL2ZpeF9hcmdzLnB5CmBgYAoKUmUtcnVubmluZyBpdCBhZnRlcndhcmRzIGlzIGhhcm1sZXNzICh0aGUgc3Vic3RpdHV0aW9ucyBiZWNvbWUgbm8tb3BzKS4KCiMjIFByZXJlcXVpc2l0ZXMKCi0gW1J1c3QgVG9vbGNoYWluXShodHRwczovL3d3dy5ydXN0LWxhbmcub3JnL3Rvb2xzL2luc3RhbGwpIGluc3RhbGxlZCB2aWEgYHJ1c3R1cGAgKioxLjIzLjAgb3IgbmV3ZXIqKgotIFtTb3JvYmFuIENMSV0oaHR0cHM6Ly9zb3JvYmFuLnN0ZWxsYXIub3JnL2RvY3MvZ2V0dGluZy1zdGFydGVkL3NldHVwKSAodjIyLjAuMCspCi0gW3dhc20zMi11bmtub3duLXVua25vd24gdGFyZ2V0XShodHRwczovL2RvYy5ydXN0LWxhbmcub3JnL3J1c3RjL3BsYXRmb3JtLXN1cHBvcnQvd2FzbTMyLXVua25vd24tdW5rbm93bi5odG1sKQoKIyMjIFJlcXVpcmVkIFZlcnNpb25zCgp8IERlcGVuZGVuY3kgICAgfCBWZXJzaW9uIHwKfCAtLS0tLS0tLS0tLS0tIHwgLS0tLS0tLSB8CnwgYHNvcm9iYW4tc2RrYCB8IDIyLjAuMCAgfAp8IGBzb3JvYmFuLWNsaWAgfCAyMi4wLjArIHwKCj4gVGhlc2UgdmVyc2lvbnMgYXJlIHBpbm5lZCBpbiBgY29udHJhY3RzL0NhcmdvLnRvbWwg4oCUIGtlZXAgdGhlIHR3byBmaWxlcyBpbiBzeW5jIHdoZW4gdXBncmFkaW5nLgoKIyMjIFRoZSBwaW5uZWQgdG9vbGNoYWluCgpUaGlzIGRpcmVjdG9yeSBjb250YWlucyBhIGBydXN0LXRvb2xjaGFpbi50b21sYCB0aGF0IHBpbnMgdGhlIGV4YWN0IHRvb2xjaGFpbgp1c2VkIHRvIGJ1aWxkIHRoZSBjb250cmFjdHM6CgpgYGB0b21sClt0b29sY2hhaW5dCmNoYW5uZWwgPSAiMS44NS4wIgp0YXJnZXRzID0gWyJ3YXNtMzItdW5rbm93bi11bmtub3duIl0KY29tcG9uZW50cyA9IFsicnVzdGZtdCIsICJjbGlwcHkiXQpgYGAKCioqWW91IGRvIG5vdCBuZWVkIHRvIGluc3RhbGwgdGhpcyB0b29sY2hhaW4geW91cnNlbGYuKiogQW55IGBjYXJnb2Agb3IgYHJ1c3RjYApjb21tYW5kIHJ1biBmcm9tIGluc2lkZSBgY29udHJhY3RzL2AgaXMgaW50ZXJjZXB0ZWQgYnkgYHJ1c3R1cGAsIHdoaWNoIHJlYWRzCnRoaXMgZmlsZSwgZG93bmxvYWRzIHRoZSBwaW5uZWQgdG9vbGNoYWluIGFuZCB0aGUgYHdhc20zMi11bmtub3duLXVua25vd24gYAp0YXJnZXQgb24gZmlyc3QgdXNlLCBhbmQgcnVucyB0aGUgcmVhbCBjb21tYW5kIHdpdGggdGhlbS4gVGhlIGZpcnN0IGJ1aWxkIGFmdGVyCmNsb25pbmcgd2lsbCB0aGVyZWZvcmUgcGF1c2UgdG8gZG93bmxvYWQgYSB0b29sY2hhaW4g4oCUIHRoYXQgaXMgZXhwZWN0ZWQsIG5vdCBhCmZhaWx1cmUuCgpUaGUgcGluIGlzIHdoYXQgbWFrZXMgYnVpbGRzIHJlcHJvZHVjaWJsZTogYSBXQVNNIGJ1aWx0IG9uIGEgZGlmZmVyZW50IGNvbXBpbGVyCnZlcnNpb24gY2FuIGRpZmZlciBieXRlLWZvci1ieXRlLCB3aGljaCBicmVha3Mgb24tY2hhaW4gaGFzaCB2ZXJpZmljYXRpb24gZXZlbgp3aGVuIHRoZSBzb3VyY2UgaXMgaWRlbnRpY2FsLiBEbyBub3Qgd29yayBhcm91bmQgaXQgYnkgb3ZlcnJpZGluZyB0aGUgY2hhbm5lbC4KCioqTWluaW11bSBydXN0dXAgdmVyc2lvbjogMS4yMy4wKiosIHRoZSByZWxlYXNlIHRoYXQgYWRkZWQgYHJ1c3QtdG9vbGNoYWluLnRvbWxgCnN1cHBvcnQuIE9uIGFueXRoaW5nIG9sZGVyIHRoZSBmaWxlIGlzIGlnbm9yZWQgYW5kIHlvdSBnZXQgY29uZnVzaW5nIGVycm9ycyDigJQKdHlwaWNhbGx5IGEgY29tcGlsZSBmYWlsdXJlIGFnYWluc3QgeW91ciBzeXN0ZW0gdG9vbGNoYWluLCBvcgpgZXJyb3I6IHRhcmdldCAnd2FzbTMyLXVua25vd24tdW5rbm93bicgbm90IGZvdW5kYCwgcmF0aGVyIHRoYW4gYSBjbGVhciBtZXNzYWdlCmFib3V0IHRoZSBwaW4uIENoZWNrIGFuZCB1cGdyYWRlIHdpdGg6CgpgYGBiYXNoCnJ1c3R1cCAtLXZlcnNpb24KcnVzdHVwIHNlbGYgdXBkYXRlCmBgYAoKSWYgeW91IG11c3QgY29uZmlybSB0aGUgcGluIGlzIGFjdGl2ZSwgcnVuIGBydXN0dXAgc2hvd2AgZnJvbSBgY29udHJhY3RzL2Ag4oCUCnRoZSBwaW5uZWQgdmVyc2lvbiBzaG91bGQgYmUgbGlzdGVkIGFzIHRoZSBhY3RpdmUgdG9vbGNoYWluLCB3aXRoIGBvdmVycmlkZGVuCmJ5YCBwb2ludGluZyBhdCBgcnVzdC10b29sY2hhaW4udG9tbGAuCgojIyMgSW5zdGFsbGF0aW9uCgpgYGBiYXNoCiMgSW5zdGFsbCBSdXN0IChydXN0dXAgMS4yMy4wKzsgc2tpcCBpZiBhbHJlYWR5IGluc3RhbGxlZCwgdGhlbiBgcnVzdHVwIHNlbGYgdXBkYXRlYCkKY3VybCAtLXByb3RvICc9aHR0cHMnIC0tdGxzdjEuMiAtc1NmIGh0dHBzOi8vc2gucnVzdHVwLnJzIHwgc2gKCiMgQWRkIHdhc20zMiB0YXJnZXQuCiMgT3B0aW9uYWwgaGVyZSDigJQgcnVzdC10b29sY2hhaW4udG9tbCBhbHJlYWR5IGRlY2xhcmVzIGl0LCBzbyBydXN0dXAgaW5zdGFsbHMKIyBpdCBhdXRvbWF0aWNhbGx5IGZvciB0aGUgcGlubmVkIHRvb2xjaGFpbiBvbiBmaXJzdCBidWlsZC4gSGFybWxlc3MgdG8gcnVuLAojIGFuZCB1c2VmdWwgaWYgeW91IGFsc28gYnVpbGQgb3V0c2lkZSB0aGlzIGRpcmVjdG9yeS4KcnVzdHVwIHRhcmdldCBhZGQgd2FzbTMyLXVua25vd24tdW5rbm93bgoKIyBJbnN0YWxsIFNvcm9iYW4gQ0xJCmNhcmdvIGluc3RhbGwgLS1sb2NrZWQgc29yb2Jhbi1jbGkKYGBgCgojIyBQcm9qZWN0IFN0cnVjdHVyZQoKYGBgCmNvbnRyYWN0cy8K4pSc4pSA4pSAIHJlbWl0dGFuY2VfbmZ0LyAgICAgICAgICAjIE5GVCBjb250cmFjdCBmb3IgY3JlZGl0IHNjb3JlcwrilIIgICDilJzilIDilIAgc3JjLwrilIIgICDilIIgICDilJzilIDilIAgbGliLnJzICAgICAgICAgICMgTWFpbiBjb250cmFjdCBsb2dpYwrilIIgICDilIIgICDilJTilIDilIAgdGVzdC5ycyAgICAgICAgICMgQ29udHJhY3QgdGVzdHMK4pSCICAg4pSc4pSA4pSAIHRlc3Rfc25hcHNob3RzLyAgICAgIyBUZXN0IHNuYXBzaG90cwrilIIgICDilJTilIDilIAgQ2FyZ28udG9tbArilJzilIDilIAgbG9hbl9tYW5hZ2VyLyAgICAgICAgICAgICMgTG9hbiBsaWZlY3ljbGUgbWFuYWdlbWVudArilIIgICDilJzilIDilIAgc3JjLwrilIIgICDilIIgICDilJzilIDilIAgbGliLnJzCuKUgiAgIOKUgiAgIOKUleKUgOKUgCB0ZXN0LnJzCuKUgiAgIOKUnOKUgOKUgCB0ZXN0X3NuYXBzaG90cy8K4pSCICAg4pSU4pSA4pSAIENhcmdvLnRvbWwK4pSc4pSA4pSAIGxlbmRpbmdfcG9vbC8gICAgICAgICAgICAjIExpcXVpZGl0eSBwb29sIG1hbmFnZW1lbnQK4pSCICAg4pSc4pSA4pSAIHNyYy8K4pSCICAg4pSCICAg4pSc4pSA4pSAIGxpYi5ycwrilIIgICDilIIgICDilJTilIDilIAgdGVzdC5ycwrilIIgICDilJzilIDilIAgdGVzdF9zbmFwc2hvdHMvCuKUgiAgIOKUlOKUgOKUgCBDYXJnby50b21sCuKUnOKUgOKUgCBDYXJnby50b21sICAgICAgICAgICAgICAgIyBXb3Jrc3BhY2UgY29uZmlndXJhdGlvbgrilJzilIDilIAgQ2FyZ28ubG9jawrilJTilIDilIAgUkVBRE1FLm1kCmBgYAoKIyMgQnVpbGRpbmcgQ29udHJhY3RzCgojIyMgQnVpbGQgQWxsIENvbnRyYWN0cwoKYGBgYmFzaAojIEZyb20gY29udHJhY3RzIGRpcmVjdG9yeQpjYXJnbyBidWlsZCAtLXRhcmdldCB3YXNtMzItdW5rbm93bi11bmtub3duIC0tcmVsZWFzZQpgYGAKCiMjIyBCdWlsZCBTcGVjaWZpYyBDb250cmFjdAoKYGBgYmFzaAojIEJ1aWxkIG9ubHkgTkZUIGNvbnRyYWN0CmNhcmdvIGJ1aWxkIC1wIHJlbWl0dGFuY2VfbmZ0IC0tdGFyZ2V0IHdhc20zMi11bmtub3duLXVua25vd24gLS1yZWxlYXNlCgojIEJ1aWxkIG9ubHkgTG9hbiBNYW5hZ2VyCmNhcmdvIGJ1aWxkIC1wIGxvYW5fbWFuYWdlciAtLXRhcmdldCB3YXNtMzItdW5rbm93bi11bmtub3duIC0tcmVsZWFzZQoKIyBCdWlsZCBvbmx5IExlbmRpbmcgUG9vbApjYXJnbyBidWlsZCAtcCBsZW5kaW5nX3Bvb2wgLS10YXJnZXQgd2FzbTMyLXVua25vd24tdW5rbm93biAtLXJlbGVhc2UKYGBgCgojIyMgQnVpbGQgT3V0cHV0CgpDb21waWxlZCBXQVNNIGZpbGVzIGFyZSBsb2NhdGVkIGF0OgpgYGAKdGFyZ2V0L3dhc20zMi11bmtub3duLXVua25vd24vcmVsZWFzZS8K4pSc4pSA4pSAIHJlbWl0dGFuY2VfbmZ0Lndhc20K4pSc4pSA4pSAIGxvYW5fbWFuYWdlci53YXNtCuKUlOKUgOKUgCBsZW5kaW5nX3Bvb2wud2FzbQpgYGAKCiMjIFRlc3RpbmcKCiMjIyBSdW4gQWxsIFRlc3RzCgpgYGBiYXNoCmNhcmdvIHRlc3QKYGBgCgojIyMgUnVuIFNwZWNpZmljIENvbnRyYWN0IFRlc3RzCgpgYGBiYXNoCiMgVGVzdCBORlQgY29udHJhY3QKY2FyZ28gdGVzdCAtcCByZW1pdHRhbmNlX25mdAoKIyBUZXN0IExvYW4gTWFuYWdlcgpjYXJnbyB0ZXN0IC1wIGxvYW5fbWFuYWdlcgoKIyBUZXN0IExlbmRpbmcgUG9vbApjYXJnbyB0ZXN0IC1wIGxlbmRpbmdfcG9vbApgYGAKCiMjIyBSdW4gVGVzdHMgd2l0aCBPdXRwdXQKCmBgYGJhc2gKIyBTaG93IHByaW50bG4hIG91dHB1dApjYXJnbyB0ZXN0IC0tIC0tbm9jYXB0dXJlCgojIFNob3cgdGVzdCBuYW1lcwpjYXJnbyB0ZXN0IC0tIC0tdGVzdC10aHJlYWRzPTEgLS1ub2NhcHR1cmUKYGBgCgojIyMgVGVzdCBDb3ZlcmFnZQoKYGBgYmFzaAojIEluc3RhbGwgdGFycGF1bGluCmNhcmdvIGluc3RhbGwgY2FyZ28tdGFycGF1bGluCgojIEdlbmVyYXRlIGNvdmVyYWdlIHJlcG9ydApjYXJnbyB0YXJwYXVsaW4gLS1vdXQgSHRtbApgYGAKCiMjIENvbnRyYWN0IERldGFpbHMKCiMjIyAxLiBSZW1pdHRhbmNlIE5GVCBDb250cmFjdAoKKipQdXJwb3NlKio6IE1pbnQgYW5kIG1hbmFnZSBORlRzIHJlcHJlc2VudGluZyBib3Jyb3dlciBjcmVkaXQgc2NvcmVzLgoKKipLZXkgRnVuY3Rpb25zKio6CmBgYHJ1c3QKLy8gSW5pdGlhbGl6ZSB0aGUgY29udHJhY3QKcHViIGZuIGluaXRpYWxpemUoZW52OiBFbnYsIGFkbWluOiBBZGRyZXNzKQoKLy8gTWludCBhIG5ldyBORlQKcHViIGZuIG1pbnRfbmZ0KGVudjogRW52LCBvd25lcjogQWRkcmVzcywgc2NvcmU6IHUzMikgLT4gdTY0CgovLyBVcGRhdGUgY3JlZGl0IHNjb3JlCnB1YiBmbiB1cGRhdGVfc2NvcmUoZW52OiBFbnYsIG5mdF9pZDogdTY0LCBuZXdfc2NvcmU6IHUzMikKCi8vIFVwZGF0ZSByZW1pdHRhbmNlIGhpc3RvcnkgaGFzaApwdWIgZm4gdXBkYXRlX2hpc3RvcnlfaGFzaChlbnY6IEVudiwgbmZ0X2lkOiB1NjQsIGhhc2g6IEJ5dGVzTjwzMj4pCgovLyBHZXQgTkZUIGhpc3RvcnkgaGFzaApwdWIgZm4gZ2V0X2hpc3RvcnlfaGFzaChlbnY6IEVudiwgbmZ0X2lkOiB1NjQpIC0+IEJ5dGVzTjwzMj4KCi8vIEdldCBORlQgc2NvcmUKcHViIGZuIGdldF9zY29yZShlbnY6IEVudiwgbmZ0X2lkOiB1NjQpIC0+IHUzMgoKLy8gTG9jayBORlQgKGZvciBsb2FuIGNvbGxhdGVyYWwpCnB1YiBmbiBsb2NrX25mdChlbnY6IEVudiwgbmZ0X2lkOiB1NjQpCgovLyBVbmxvY2sgTkZUIChhZnRlciBsb2FuIHJlcGF5bWVudCkKcHViIGZuIHVubG9ja19uZnQoZW52OiBFbnYsIG5mdF9pZDogdTY0KQpgYGAKCioqU3RvcmFnZSBLZXlzKio6Ci0gYE5GVF9DT1VOVEVSYCAtIFRvdGFsIE5GVHMgbWludGVkCi0gYE5GVF9PV05FUl97aWR9YCAtIE5GVCBvd25lcnNoaXAgbWFwcGluZwotIGBORlRfU0NPUkVfe2lkfWAgLSBDcmVkaXQgc2NvcmUgc3RvcmFnZQotIGBORlRfSEFTSF97aWR9YCAtIFJlbWl0dGFuY2UgaGlzdG9yeSBoYXNoCi0gYE5GVF9MT0NLRURfe2lkfWAgLSBMb2NrIHN0YXR1cwoKKipUZXN0cyoqOgotIOKchSBNaW50IE5GVCBmbG93Ci0g4pyFIFVwZGF0ZSBzY29yZQotIOKchSBVcGRhdGUgaGlzdG9yeSBoYXNoCi0g4pyFIExvY2svdW5sb2NrIE5GVAotIOKchSBVbmF1dGhvcml6ZWQgYWNjZXNzIHByZXZlbnRpb24KLSDimIUgTWlncmF0aW9uIGNvbXBhdGliaWxpdHkKCiMjIyAyLiBMb2FuIE1hbmFnZXIgQ29udHJhY3QKCioqUHVycG9zZSoqOiBDb29yZGluYXRlIGxvYW4gcmVxdWVzdHMsIGFwcHJvdmFscywgYW5kIHJlcGF5bWVudHMuCgoqKktleSBGdW5jdGlvbnMqKjoKYGBgcnVzdAovLyBJbml0aWFsaXplIHRoZSBjb250cmFjdApwdWIgZm4gaW5pdGlhbGl6ZShlbnY6IEVudiwgYWRtaW46IEFkZHJlc3MsIHBvb2xfYWRkcmVzczogQWRkcmVzcykKCi8vIFJlcXVlc3QgYSBsb2FuCnB1YiBmbiByZXF1ZXN0X2xvYW4oCiAgICBlbnY6IEVudiwKICAgIGJvcnJvd2VyOiBBZGRyZXNzLAogICAgbmZ0X2lkOiB1NjQsCiAgICBhbW91bnQ6IGkxMjgKKSAtPiB1NjQKCi8vIEFwcHJvdmUgYSBsb2FuCnB1YiBmbiBhcHByb3ZlX2xvYW4oZW52OiBFbnYsIGxvYW5faWQ6IHU2NCkKCi8vIFJlcGF5IGxvYW4KcHViIGZuIHJlcGF5X2xvYW4oZW52OiBFbnYsIGxvYW5faWQ6IHU2NCwgYW1vdW50OiBpMTI4KQoKLy8gR2V0IGxvYW4gZGV0YWlscwpwdWIgZm4gZ2V0X2xvYW4oZW52OiBFbnYsIGxvYW5faWQ6IHU2NCkgLT4gTG9hbgoKLy8gQ2hlY2sgbG9hbiBzdGF0dXMKcHViIGZuIGdldF9sb2FuX3N0YXR1cyhlbnY6IEVudiwgbG9hbl9pZDogdTY0KSAtPiBMb2FuU3RhdHVzCmBgYAoKKipMb2FuIFN0YXRlcyoqOgpgYGBydXN0CnB1YiBlbnVtIExvYW5TdGF0dXMgewogICAgUmVxdWVzdGVkLCAgIC8vIExvYW4gcmVxdWVzdGVkLCBhd2FpdGluZyBhcHByb3ZhbAogICAgQXBwcm92ZWQsICAgIC8vIEFwcHJvdmVkLCBmdW5kcyBkaXNidXJzZWQKICAgIEFjdGl2ZSwgICAgICAvLyBSZXBheW1lbnQgaW4gcHJvZ3Jlc3MKICAgIFJlcGFpZCwgICAgICAgLy8gRnVsbHkgcmVwYWlkCiAgICBEZWZhdWx0ZWQsICAgIC8vIFBheW1lbnQgbWlzc2VkCn0KYGBgCgoqKkJ1c2luZXNzIExvZ2ljKio6Ci0gTWluaW11bSBjcmVkaXQgc2NvcmU6IDYwMAotIE1heGltdW0gbG9hbi10by12YWx1ZTogODAlCi0gSW50ZXJlc3QgcmF0ZTogQmFzZWQgb24gY3JlZGl0IHNjb3JlCi0gUmVwYXltZW50IHBlcmlvZDogQ29uZmlndXJhYmxlCgoqKlRlc3RzKio6Ci0g4pyFIExvYW4gcmVxdWVzdCBmbG93Ci0g4pyFIExvYW4gYXBwcm92YWwgZmxvdwotIOKchSBSZXBheW1lbnQgZmxvdwotIOKchSBMb3cgc2NvcmUgcmVqZWN0aW9uCi0g4pyFIFVuYXV0aG9yaXplZCByZXBheW1lbnQgcHJldmVudGlvbgotIOKchSBBY2Nlc3MgY29udHJvbHMKCiMjIyAzLiBMZW5kaW5nIFBvb2wgQ29udHJhY3QKCioqUHVycG9zZSoqOiBNYW5hZ2UgbGVuZGVyIGRlcG9zaXRzIGFuZCBsb2FuIGZ1bmQgYWxsb2NhdGlvbi4KCioqS2V5IEZ1bmN0aW9ucyoqOgpgYGBydXN0Ci8vIEluaXRpYWxpemUgdGhlIGNvbnRyYWN0CnB1YiBmbiBpbml0aWFsaXplKGVudjogRW52LCBhZG1pbjogQWRkcmVzcykKCi8vIERlcG9zaXQgZnVuZHMKcHViIGZuIGRlcG9zaXQoZW52OiBFbnYsIGxlbmRlcjogQWRkcmVzcywgYW1vdW50OiBpMTI4KQoKLy8gV2l0aGRyYXcgZnVuZHMKcHViIGZuIHdpdGhkcmF3KGVudjogRW52LCBsZW5kZXI6IEFkZHJlc3MsIGFtb3VudDogaTEyOCkKCi8vIEdldCBhdmFpbGFibGUgbGlxdWlkaXR5CnB1YiBmbiBnZXRfYXZhaWxhYmxlX2xpcXVpZGl0eShlbnY6IEVudikgLT4gaTEyOAoKLy8gQWxsb2NhdGUgZnVuZHMgZm9yIGxvYW4gKGNhbGxlZCBieSBMb2FuIE1hbmFnZXIpCnB1YiBmbiBhbGxvY2F0ZV9mdW5kcyhlbnY6IEVudiwgbG9hbl9pZDogdTY0LCBhbW91bnQ6IGkxMjgpCgovLyBSZXR1cm4gZnVuZHMgZnJvbSByZXBheW1lbnQgKGNhbGxlZCBieSBMb2FuIE1hbmFnZXIpCnB1YiBmbiByZXR1cm5fZnVuZHMoZW52OiBFbnYsIGxvYW5faWQ6IHU2NCwgYW1vdW50OiBpMTI4KQoKLy8gR2V0IGxlbmRlciBiYWxhbmNlCnB1YiBmbiBnZXRfbGVuZGVyX2JhbGFuY2UoZW52OiBFbnYsIGxlbmRlcjogQWRkcmVzcykgLT4gaTEyOApgYGAKCioqUG9vbCBNZWNoYW5pY3MqKjoKLSBQcm9wb3J0aW9uYWwgc2hhcmUgdHJhY2tpbmcKLSBJbnRlcmVzdCBkaXN0cmlidXRpb24KLSBSZXNlcnZlIHJhdGlvIG1haW50ZW5hbmNlCi0gV2l0aGRyYXdhbCBsaW1pdHMKCioqVGVzdHMqKjoKLSDimIUgRGVwb3NpdCBmbG93Ci0g4pyFIFdpdGhkcmF3YWwgZmxvdwotIOKchSBMaXF1aWRpdHkgdHJhY2tpbmcKLSDimIUgVW5hdXRob3JpemVkIGFjY2VzcyBwcmV2ZW50aW9uCi0g4pyFIEZ1bmQgYWxsb2NhdGlvbgoKIyMgRGVwbG95bWVudAoKIyMjIERlcGxveSB0byBUZXN0bmV0CgpgYGBiYXNoCiMgU2V0IHVwIFNvcm9iYW4gaWRlbnRpdHkKc29yb2JhbiBrZXlzIGdlbmVyYXRlIC0tZ2xvYmFsIGFsaWNlIC0tbmV0d29yayB0ZXN0bmV0CgojIERlcGxveSBORlQgY29udHJhY3QKc29yb2JhbiBjb250cmFjdCBkZXBsb3kgXAogIC0td2FzbSB0YXJnZXQvd2FzbTMyLXVua25vd24tdW5rbm93bi9yZWxlYXNlL3JlbWl0dGFuY2VfbmZ0Lndhc20gXAogIC0tc291cmNlIGFsaWNlIFwKICAtLXJwYy11cmwgaHR0cHM6Ly9zb3JvYmFuLXRlc3RuZXQuc3RlbGxhci5vcmcgXAogIC0tbmV0d29yay1wYXNzcGhyYXNlICJUZXN0IFNERiBOZXR3b3JrIDsgU2VwdGVtYmVyIDIwMTUiCgojIFNhdmUgdGhlIGNvbnRyYWN0IElECmV4cG9ydCBORlRfQ09OVFJBQ1RfSUQ9PGNvbnRyYWN0X2lkPgoKIyBJbml0aWFsaXplIHRoZSBjb250cmFjdApzb3JvYmFuIGNvbnRyYWN0IGludm9rZSBcCiAgLS1pZCAkTkZUX0NPTlRSQUNUX0lEIFwKICAtLXNvdXJjZSBhbGljZSBcCiAgLS1ycGMtdXJsIGh0dHBzOi8vc29yb2Jhbi10ZXN0bmV0LnN0ZWxsYXIub3JnIFwKICAtLW5ldHdvcmstcGFzc3BocmFzZSAiVGVzdCBGREYgTmV0d29yayA7IFNlcHRlbWJlciAyMDE1IiBcCiAgLSBpbml0aWFsaXplIFwKICAtLWFkbWluIDxhZG1pbl9hZGRyZXNzPgpgYGAKCiMjIyBEZXBsb3kgQWxsIENvbnRyYWN0cwoKYGBgYmFzaAojIERlcGxveSBhbmQgaW5pdGlhbGl6ZSBhbGwgdGhyZWUgY29udHJhY3RzCi4vc2NyaXB0cy9kZXBsb3kuc2ggdGVzdG5ldApgYGAKCiMjIyBWZXJpZnkgRGVwbG95bWVudAoKYGBgYmFzaAojIENoZWNrIGNvbnRyYWN0IGluZm8Kc29yb2JhbiBjb250cmFjdCBpbmZvIFwKICAtLWlkICRORlRfQ09OVFJBQ1RfSUQgXAogIC0tcnBjLXVybCBodHRwczovL3Nvcm9iYW4tdGVzdG5ldC5zdGVsbGFyLm9yZwpgYGAKCiMjIEludGVyYWN0aW5nIHdpdGggQ29udHJhY3RzCgojIyMgVXNpbmcgU29yb2JhbiBDTEkKCmBgYGJhc2gKIyBNaW50IGFuIE5GVApzb3JvYmFuIGNvbnRyYWN0IGludm9rZSBcCiAgLS1pZCAkTkZUX0NPTlRSQUNUX0lEIFwKICAtLXNvdXJjZSBhbGljZSBcCiAgLSBtaW50X25mdCBcCiAgLS1vd25lciA8b3duZXJfYWRkcmVzcz4gXAogIC0tc2NvcmUgNzUwCgojIEdldCBORlQgc2NvcmUKc29yb2JhbiBjb250cmFjdCBpbnZva2UgXAogIC0taWQgJE5GVF9DT05UUkFDVF9JRCBcCiAgLSBnZXRfc2NvcmUgXAogIC0tbmZ0X2lkIDEKCiMgUmVxdWVzdCBhIGxvYW4Kc29yb2JhbiBjb250cmFjdCBpbnZva2UgXAogIC0taWQgJExPQU5fTUFOQUdFUl9JRCBcCiAgLS1zb3VyY2UgYWxpY2UgXAogIC0gcmVxdWVzdF9sb2FuIFwKICAtLWJvcnJvd2VyIDxib3Jyb3dlcl9hZGRyZXNzPiBcCiAgLS1uZnRfaWQgMSBcCiAgLS1hbW91bnQgMTAwMDAwMDAwMApgYGAKCiMjIyBVc2luZyBTdGVsbGFyIFNESyAoSmF2YVNjcmlwdCkKCmBgYGphdmFzY3JpcHQKaW1wb3J0IHsgQ29udHJhY3QsIFNvcm9iYW5ScGMgfSBmcm9tICdAc3RlbGxhci9zdGVsbGFyLXNkayc7Cgpjb25zdCBjb250cmFjdCA9IG5ldyBDb250cmFjdChjb250cmFjdElkKTsKY29uc3Qgc2VydmVyID0gbmV3IFNvcm9iYW5ScGMuU2VydmVyKCdodHRwczovL3Nvcm9iYW4tdGVzdG5ldC5zdGVsbGFyLm9yZycpOwoKLy8gQ2FsbCBjb250cmFjdCBtZXRob2QKY29uc3QgcmVzdWx0ID0gYXdhaXQgY29udHJhY3QuY2FsbCgnZ2V0X3Njb3JlJywgW25mdElkXSk7CmNvbnNvbGUubG9nKCdTY29yZTonLCByZXN1bHQpOwpgYGAKCiMjIERldmVsb3BtZW50CgojIyMgQ29kZSBTdHlsZQoKYGBgYmFzaAojIEZvcm1hdCBjb2RlCmNhcmdvIGZtdAoKIyBDaGVjayBjb2RlIHF1YWxpdHkKY2FyZ28gY2xpcHB5CgojIEZpeCBjbGlwcHkgd2FybmluZ3MKY2FyZ28gY2xpcHB5IC0tZml4CmBgYAoKIyMjIEJlc3QgUHJhY3RpY2VzCgotIFVzZSBgUmVzdWx0YCB0eXBlcyBmb3IgZXJyb3IgaGFuZGxpbmcKLSBBdm9pZCBwYW5pY3MgaW4gcHJvZHVjdGlvbiBjb2RlCi0gV3JpdGUgY29tcHJlaGVuc2l2ZSB0ZXN0cwotIERvY3VtZW50IHB1YmxpYyBmdW5jdGlvbnMKLSBVc2UgZGVzY3JpcHRpdmUgdmFyaWFibGUgbmFtZXMKLSBLZWVwIGZ1bmN0aW9ucyBzbWFsbCBhbmQgZm9jdXNlZAoKIyMjIERvY3VtZW50YXRpb24KCmBgYGJhc2gKIyBHZW5lcmF0ZSBkb2N1bWVudGF0aW9uCmNhcmdvIGRvYyAtLW9wZW4KCiMgR2VuZXJhdGUgZG9jcyBmb3IgYWxsIGNvbnRyYWN0cwpjYXJnbyBkb2MgLS13b3Jrc3BhY2UgLS1vcGVuCmBgYAoKIyMgU2VjdXJpdHkgQ29uc2lkZXJhdGlvbnMKCiMjIyBBY2Nlc3MgQ29udHJvbAoKLSBBZG1pbi1vbmx5IGZ1bmN0aW9ucyBwcm90ZWN0ZWQKLSBPd25lciB2ZXJpZmljYXRpb24gZm9yIHNlbnNpdGl2ZSBvcGVyYXRpb25zCi0gQ29udHJhY3QtdG8tY29udHJhY3QgYXV0aGVudGljYXRpb24KCiMjIyBEYXRhIFZhbGlkYXRpb24KCi0gSW5wdXQgcGFyYW1ldGVyIHZhbGlkYXRpb24KLSBTY29yZSByYW5nZSBjaGVja3MgKDAtMTAwMCkKLSBBbW91bnQgdmFsaWRhdGlvbiAocG9zaXRpdmUgdmFsdWVzKQotIE5GVCBleGlzdGVuY2UgdmVyaWZpY2F0aW9uCgojIyMgUmVlbnRyYW5jeSBQcm90ZWN0aW9uCgpTb3JvYmFuIHByb3ZpZGVzIGJ1aWx0LWluIHJlZW50cmFuY3kgcHJvdGVjdGlvbiB0aHJvdWdoIGl0cyBleGVjdXRpb24gbW9kZWwuCgojIyMgSW50ZWdlciBPdmVyZmxvdwoKUnVzdCdzIHR5cGUgc3lzdGVtIHByZXZlbnRzIGludGVnZXIgb3ZlcmZsb3cgaW4gZGVidWcgbW9kZS4gVXNlIGNoZWNrZWQgYXJpdGhtZXRpYyBpbiBwcm9kdWN0aW9uLgoKYGBgcnVzdAovLyBHb29kCmxldCByZXN1bHQgPSBhbW91bnQuY2hlY2tlZF9hZGQoaW50ZXJlc3QpPzsKCi8vIEF2b2lkCmxldCByZXN1bHQgPSBhbW91bnQgKyBpbnRlcmVzdDsKYGBgCgojIyBVcGdyYWRpbmcgQ29udHJhY3RzCgojIyMgQ29udHJhY3QgVXBncmFkZXMKClNvcm9iYW4gY29udHJhY3RzIGNhbiBiZSB1cGdyYWRlZCB1c2luZyB0aGUgdXBncmFkZSBtZWNoYW5pc206CgpgYGBiYXNoCiMgQnVpbGQgbmV3IHZlcnNpb24KY2FyZ28gYnVpbGQgLS10YXJnZXQgd2FzbTMyLXVua25vd24tdW5rbm93biAtLXJlbGVhc2UKCiMgVXBncmFkZSBjb250cmFjdApzb3JvYmFuIGNvbnRyYWN0IHVwZ3JhZGUgXAogIC0taWQgJENPTlRSQUNUX0lEIFwKICAtLXdhc20gdGFyZ2V0L3dhc20zMi11bmtub3duLXVua25vd24vcmVsZWFzZS9jb250cmFjdC53YXNtIFwKICAtLXNvdXJjZSBhZG1pbgpgYGAKCiMjIyBNaWdyYXRpb24gU3RyYXRlZ3kKCi0gVGVzdCB1cGdyYWRlcyBvbiB0ZXN0bmV0IGZpcnN0Ci0gSW1wbGVtZW50IGRhdGEgbWlncmF0aW9uIGZ1bmN0aW9ucwotIE1haW50YWluIGJhY2t3YXJkIGNvbXBhdGliaWxpdHkKLSBEb2N1bWVudCBicmVha2luZyBjaGFuZ2VzCgojIyBUcm91Ymxlc2hvb3RpbmcKCiMjCg==
+# RemitLend Smart Contracts
+
+Soroban smart contracts for the RemitLend decentralized lending platform on Stellar. These contracts handle NFT minting, loan management, and lending pool operations.
+
+## Overview
+
+RemitLend uses four core smart contracts:
+
+1. **Remittance NFT** - Stores credit scores and remittance history as NFTs
+2. **Loan Manager** - Manages the complete loan lifecycle
+3. **Lending Pool** - Handles liquidity deposits and withdrawals
+4. **Multisig Governance** - Manages timelocked multi-signature administrative transitions across protocol contracts
+
+### Protocol Admin API
+
+All protocol contracts (`Remittance NFT`, `Loan Manager`, `Lending Pool`) implement a consistent administrative API:
+- `pub fn propose_admin(env: Env, new_admin: Address)`: Proposes a new administrator (gated by current admin auth).
+- `pub fn accept_admin(env: Env)`: Accepts the proposed administrator role (gated by proposed admin auth).
+- `pub fn set_admin(env: Env, new_admin: Address)`: Direct admin transfer (gated by current admin auth).
+
+When `MultisigGovernance::finalize_admin_transfer` executes, it cross-invokes `propose_admin(new_admin)` on all configured targets, enabling the incoming admin to call `accept_admin` to complete the transfer.
+
+### `fix_args.py` (one-time migration helper)
+
+`contracts/fix_args.py` is a **one-time** migration helper. It patches
+`contracts/remittance_nft/src/test.rs` (swapped `commitment`/`uri` args, event
+encoding fixes). It is not part of the normal build/test workflow — run it once
+from the repo root with:
+
+```bash
+python3 contracts/fix_args.py
+```
+
+Re-running it afterwards is harmless (the substitutions become no-ops).
+
+## Prerequisites
+
+- [Rust Toolchain](https://www.rust-lang.org/tools/install) installed via `rustup` **1.23.0 or newer**
+- [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup) (v22.0.0+)
+- [wasm32-unknown-unknown target](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html)
+
+### Required Versions
+
+| Dependency    | Version |
+| ------------- | ------- |
+| `soroban-sdk` | 22.0.0  |
+| `soroban-cli` | 22.0.0+ |
+
+> These versions are pinned in `contracts/Cargo.toml` — keep the two files in sync when upgrading.
+
+### The pinned toolchain
+
+This directory contains a `rust-toolchain.toml` that pins the exact toolchain
+used to build the contracts:
+
+```toml
+[toolchain]
+channel = "1.85.0"
+targets = ["wasm32-unknown-unknown"]
+components = ["rustfmt", "clippy"]
+```
+
+**You do not need to install this toolchain yourself.** Any `cargo` or `rustc`
+command run from inside `contracts/` is intercepted by `rustup`, which reads
+this file, downloads the pinned toolchain and the `wasm32-unknown-unknown`
+target on first use, and runs the real command with them. The first build after
+cloning will therefore pause to download a toolchain — that is expected, not a
+failure.
+
+The pin is what makes builds reproducible: a WASM built on a different compiler
+version can differ byte-for-byte, which breaks on-chain hash verification even
+when the source is identical. Do not work around it by overriding the channel.
+
+**Minimum rustup version: 1.23.0**, the release that added `rust-toolchain.toml`
+support. On anything older the file is ignored and you get confusing errors —
+typically a compile failure against your system toolchain, or
+`error: target 'wasm32-unknown-unknown' not found`, rather than a clear message
+about the pin. Check and upgrade with:
+
+```bash
+rustup --version
+rustup self update
+```
+
+If you must confirm the pin is active, run `rustup show` from `contracts/` —
+the pinned version should be listed as the active toolchain, with `overridden
+by` pointing at `rust-toolchain.toml`.
+
+### Installation
+
+```bash
+# Install Rust (rustup 1.23.0+; skip if already installed, then `rustup self update`)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Add wasm32 target.
+# Optional here — rust-toolchain.toml already declares it, so rustup installs
+# it automatically for the pinned toolchain on first build. Harmless to run,
+# and useful if you also build outside this directory.
+rustup target add wasm32-unknown-unknown
+
+# Install Soroban CLI
+cargo install --locked soroban-cli
+```
+
+## Project Structure
+
+```
+contracts/
+├── remittance_nft/          # NFT contract for credit scores
+│   ├── src/
+│   │   ├── lib.rs          # Main contract logic
+│   │   └── test.rs         # Contract tests
+│   ├── test_snapshots/     # Test snapshots
+│   └── Cargo.toml
+├── loan_manager/            # Loan lifecycle management
+│   ├── src/
+│   │   ├── lib.rs
+│   │   └── test.rs
+│   ├── test_snapshots/
+│   └── Cargo.toml
+├── lending_pool/            # Liquidity pool management
+│   ├── src/
+│   │   ├── lib.rs
+│   │   └── test.rs
+│   ├── test_snapshots/
+│   └── Cargo.toml
+├── Cargo.toml               # Workspace configuration
+├── Cargo.lock
+└── README.md
+```
+
+## Building Contracts
+
+### Build All Contracts
+
+```bash
+# From contracts directory
+cargo build --target wasm32-unknown-unknown --release
+```
+
+### Build Specific Contract
+
+```bash
+# Build only NFT contract
+cargo build -p remittance_nft --target wasm32-unknown-unknown --release
+
+# Build only Loan Manager
+cargo build -p loan_manager --target wasm32-unknown-unknown --release
+
+# Build only Lending Pool
+cargo build -p lending_pool --target wasm32-unknown-unknown --release
+```
+
+### Build Output
+
+Compiled WASM files are located at `target/wasm32-unknown-unknown/release/`.
+When built via `./scripts/build.sh` with the Stellar/Soroban CLI installed, each contract generates an optimized binary:
+- `remittance_nft.optimized.wasm` (canonical)
+- `loan_manager.optimized.wasm` (canonical)
+- `lending_pool.optimized.wasm` (canonical)
+- `multisig_governance.optimized.wasm` (canonical)
+
+Unoptimized artifacts (`<name>.wasm`) are retained as fallbacks if the optimization pass is skipped.
+
+## Testing
+
+### Run All Tests
+
+```bash
+cargo test
+```
+
+### Run Specific Contract Tests
+
+```bash
+# Test NFT contract
+cargo test -p remittance_nft
+
+# Test Loan Manager
+cargo test -p loan_manager
+
+# Test Lending Pool
+cargo test -p lending_pool
+```
+
+### Run Tests with Output
+
+```bash
+# Show println! output
+cargo test -- --nocapture
+
+# Show test names
+cargo test -- --test-threads=1 --nocapture
+```
+
+### Test Coverage
+
+```bash
+# Install tarpaulin
+cargo install cargo-tarpaulin
+
+# Generate coverage report
+cargo tarpaulin --out Html
+```
+
+## Contract Details
+
+### 1. Remittance NFT Contract
+
+**Purpose**: Mint and manage NFTs representing borrower credit scores.
+
+**Key Functions**:
+```rust
+// Initialize the contract
+pub fn initialize(env: Env, admin: Address)
+
+// Mint a new NFT
+pub fn mint_nft(env: Env, owner: Address, score: u32) -> u64
+
+// Update credit score
+pub fn update_score(env: Env, nft_id: u64, new_score: u32)
+
+// Update remittance history hash
+pub fn update_history_hash(env: Env, nft_id: u64, hash: BytesN<32>)
+
+// Get NFT score
+pub fn get_score(env: Env, nft_id: u64) -> u32
+
+// Lock NFT (for loan collateral)
+pub fn lock_nft(env: Env, nft_id: u64)
+
+// Unlock NFT (after loan repayment)
+pub fn unlock_nft(env: Env, nft_id: u64)
+```
+
+**Storage Keys**:
+- `NFT_COUNTER` - Total NFTs minted
+- `NFT_OWNER_{id}` - NFT ownership mapping
+- `NFT_SCORE_{id}` - Credit score storage
+- `NFT_HASH_{id}` - Remittance history hash
+- `NFT_LOCKED_{id}` - Lock status
+
+**Tests**:
+- ✅ Mint NFT flow
+- ✅ Update score
+- ✅ Update history hash
+- ✅ Lock/unlock NFT
+- ✅ Unauthorized access prevention
+- ✅ Migration compatibility
+
+### 2. Loan Manager Contract
+
+**Purpose**: Coordinate loan requests, approvals, and repayments.
+
+**Key Functions**:
+```rust
+// Initialize the contract
+pub fn initialize(env: Env, admin: Address, pool_address: Address)
+
+// Request a loan
+pub fn request_loan(
+    env: Env,
+    borrower: Address,
+    nft_id: u64,
+    amount: i128
+) -> u64
+
+// Approve a loan
+pub fn approve_loan(env: Env, loan_id: u64)
+
+// Repay loan
+pub fn repay_loan(env: Env, loan_id: u64, amount: i128)
+
+// Get loan details
+pub fn get_loan(env: Env, loan_id: u64) -> Loan
+
+// Check loan status
+pub fn get_loan_status(env: Env, loan_id: u64) -> LoanStatus
+```
+
+**Loan States**:
+```rust
+pub enum LoanStatus {
+    Requested,   // Loan requested, awaiting approval
+    Approved,    // Approved, funds disbursed
+    Active,      // Repayment in progress
+    Repaid,      // Fully repaid
+    Defaulted,   // Payment missed
+}
+```
+
+**Business Logic**:
+- Minimum credit score: 600
+- Maximum loan-to-value: 80%
+- Interest rate: Based on credit score
+- Repayment period: Configurable
+
+**Tests**:
+- ✅ Loan request flow
+- ✅ Loan approval flow
+- ✅ Repayment flow
+- ✅ Low score rejection
+- ✅ Unauthorized repayment prevention
+- ✅ Access controls
+
+### 3. Lending Pool Contract
+
+**Purpose**: Manage lender deposits and loan fund allocation.
+
+**Key Functions**:
+```rust
+// Initialize the contract
+pub fn initialize(env: Env, admin: Address)
+
+// Deposit funds
+pub fn deposit(env: Env, lender: Address, amount: i128)
+
+// Withdraw funds
+pub fn withdraw(env: Env, lender: Address, amount: i128)
+
+// Get available liquidity
+pub fn get_available_liquidity(env: Env) -> i128
+
+// Allocate funds for loan (called by Loan Manager)
+pub fn allocate_funds(env: Env, loan_id: u64, amount: i128)
+
+// Return funds from repayment (called by Loan Manager)
+pub fn return_funds(env: Env, loan_id: u64, amount: i128)
+
+// Get lender balance
+pub fn get_lender_balance(env: Env, lender: Address) -> i128
+```
+
+**Pool Mechanics**:
+- Proportional share tracking
+- Interest distribution
+- Reserve ratio maintenance
+- Withdrawal limits
+
+**Tests**:
+- ✅ Deposit flow
+- ✅ Withdrawal flow
+- ✅ Liquidity tracking
+- ✅ Unauthorized access prevention
+- ✅ Fund allocation
+
+## Deployment
+
+### Deploy to Testnet
+
+```bash
+# Set up Soroban identity
+soroban keys generate --global alice --network testnet
+
+# Deploy NFT contract
+soroban contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/remittance_nft.wasm \
+  --source alice \
+  --rpc-url https://soroban-testnet.stellar.org \
+  --network-passphrase "Test SDF Network ; September 2015"
+
+# Save the contract ID
+export NFT_CONTRACT_ID=<contract_id>
+
+# Initialize the contract
+soroban contract invoke \
+  --id $NFT_CONTRACT_ID \
+  --source alice \
+  --rpc-url https://soroban-testnet.stellar.org \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  -- initialize \
+  --admin <admin_address>
+```
+
+### Deploy All Contracts
+
+```bash
+# Deploy and initialize all three contracts
+./scripts/deploy.sh testnet
+```
+
+### Verify Deployment
+
+```bash
+# Check contract info
+soroban contract info \
+  --id $NFT_CONTRACT_ID \
+  --rpc-url https://soroban-testnet.stellar.org
+```
+
+## Interacting with Contracts
+
+### Using Soroban CLI
+
+```bash
+# Mint an NFT
+soroban contract invoke \
+  --id $NFT_CONTRACT_ID \
+  --source alice \
+  -- mint_nft \
+  --owner <owner_address> \
+  --score 750
+
+# Get NFT score
+soroban contract invoke \
+  --id $NFT_CONTRACT_ID \
+  -- get_score \
+  --nft_id 1
+
+# Request a loan
+soroban contract invoke \
+  --id $LOAN_MANAGER_ID \
+  --source alice \
+  -- request_loan \
+  --borrower <borrower_address> \
+  --nft_id 1 \
+  --amount 1000000000
+```
+
+### Using Stellar SDK (JavaScript)
+
+```javascript
+import { Contract, SorobanRpc } from '@stellar/stellar-sdk';
+
+const contract = new Contract(contractId);
+const server = new SorobanRpc.Server('https://soroban-testnet.stellar.org');
+
+// Call contract method
+const result = await contract.call('get_score', [nftId]);
+console.log('Score:', result);
+```
+
+## Development
+
+### Code Style
+
+```bash
+# Format code
+cargo fmt
+
+# Check code quality
+cargo clippy
+
+# Fix clippy warnings
+cargo clippy --fix
+```
+
+### Best Practices
+
+- Use `Result` types for error handling
+- Avoid panics in production code
+- Write comprehensive tests
+- Document public functions
+- Use descriptive variable names
+- Keep functions small and focused
+
+### Documentation
+
+```bash
+# Generate documentation
+cargo doc --open
+
+# Generate docs for all contracts
+cargo doc --workspace --open
+```
+
+## Security Considerations
+
+### Access Control
+
+- Admin-only functions protected
+- Owner verification for sensitive operations
+- Contract-to-contract authentication
+
+### Data Validation
+
+- Input parameter validation
+- Score range checks (0-1000)
+- Amount validation (positive values)
+- NFT existence verification
+
+### Reentrancy Protection
+
+Soroban provides built-in reentrancy protection through its execution model.
+
+### Integer Overflow
+
+Rust's type system prevents integer overflow in debug mode. Use checked arithmetic in production.
+
+```rust
+// Good
+let result = amount.checked_add(interest)?;
+
+// Avoid
+let result = amount + interest;
+```
+
+## Upgrading Contracts
+
+### Contract Upgrades
+
+Soroban contracts can be upgraded using the upgrade mechanism:
+
+```bash
+# Build new version
+cargo build --target wasm32-unknown-unknown --release
+
+# Upgrade contract
+soroban contract upgrade \
+  --id $CONTRACT_ID \
+  --wasm target/wasm32-unknown-unknown/release/contract.wasm \
+  --source admin
+```
+
+### Migration Strategy
+
+- Test upgrades on testnet first
+- Implement data migration functions
+- Maintain backward compatibility
+- Document breaking changes
+
+## Troubleshooting
+
+### Build Errors
+
+```bash
+# Clean build artifacts
+cargo clean
+
+# Update dependencies
+cargo update
+
+# Rebuild
+cargo build --target wasm32-unknown-unknown --release
+```
+
+### Test Failures
+
+```bash
+# Run tests with verbose output
+cargo test -- --nocapture
+
+# Run specific test
+cargo test test_name -- --nocapture
+```
+
+### Deployment Issues
+
+```bash
+# Check Soroban CLI version
+soroban --version
+
+# Verify network connectivity
+curl https://soroban-testnet.stellar.org
+
+# Check account balance
+soroban keys address alice
+```
+
+## Resources
+
+- [Soroban Documentation](https://soroban.stellar.org/docs)
+- [Soroban Examples](https://github.com/stellar/soroban-examples)
+- [Rust Book](https://doc.rust-lang.org/book/)
+- [Stellar Documentation](https://developers.stellar.org)
+
+## Contributing
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
+
+### Before Submitting PR
+
+```bash
+cargo fmt
+cargo clippy
+cargo test
+cargo build --target wasm32-unknown-unknown --release
+```
+
+## License
+
+ISC License - See LICENSE file for details.
+
+## Support
+
+- Open an issue for bug reports
+- Check existing issues before creating new ones
+- Provide error messages and logs
+- Include contract IDs for deployment issues
+

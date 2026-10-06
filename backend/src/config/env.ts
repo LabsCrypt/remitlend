@@ -63,7 +63,6 @@ export function validateEnvVars(): void {
   if (!hasKmsEndpoint && !hasKekKey) {
     const boldRed = (msg: string) => `\x1b[1;31m${msg}\x1b[0m`;
     const bold = (msg: string) => `\x1b[1m${msg}\x1b[0m`;
-
     const errorPrefix = boldRed('FATAL ERROR: PII encryption misconfiguration');
     const msg = `PII_KEK_KEY or PII_KMS_ENDPOINT must be provided. ${bold('Both are missing.')}`;
     const actionMsg =

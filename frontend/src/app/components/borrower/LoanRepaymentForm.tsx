@@ -26,9 +26,16 @@ interface LoanRepaymentFormProps {
   loanId: number;
   totalOwed: number;
   minPayment?: number;
+  dueDate?: string | Date;
+  isPastDue?: boolean;
 }
-
-export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRepaymentFormProps) {
+export function LoanRepaymentForm({
+  loanId,
+  totalOwed,
+  minPayment = 0,
+  dueDate,
+  isPastDue,
+}: LoanRepaymentFormProps) {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const txPreview = useTransactionPreview();
@@ -39,8 +46,10 @@ export function LoanRepaymentForm({ loanId, totalOwed, minPayment = 0 }: LoanRep
     onSuccess: () => {
       gamificationStore.addXP(50, "Loan repayment");
       gamificationStore.unlockAchievement("first_repayment");
-      const isStreak = Math.random() > 0.5;
-      if (isStreak) {
+      const isOnTime =
+        isPastDue === false ||
+        (dueDate ? new Date().getTime() <= new Date(dueDate).getTime() : isPastDue !== true);
+      if (isOnTime) {
         setTimeout(() => {
           gamificationStore.addXP(100, "On-time repayment streak");
           gamificationStore.unlockAchievement("streak_master");
