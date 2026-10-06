@@ -1,4 +1,5 @@
 use crate::{events, LendingPool, LendingPoolClient};
+use soroban_sdk::testutils::storage::Persistent as _;
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
@@ -1668,14 +1669,15 @@ fn test_adjust_outstanding_zero_delta_is_a_no_op() {
     assert_eq!(pool_client.get_total_outstanding(&token), 1_000);
 }
 
-// ── #1380: slippage bounds & virtual-share/asset offset ───────────────────────
+// ── #1089 / #1380: donation-attack & slippage bounds ────────────────────────
 //
-// These tests reproduce the single-ledger share-price manipulation described
-// in #1380 and assert it is now prevented: a bare token transfer to the
-// pool's address ("donation") cannot move the share price, the classic
-// first-depositor inflation attack is defused by the virtual offset, and
-// `min_shares_out`/`min_assets_out` cause settlement to revert rather than
-// execute at a worse price than the caller expected.
+// These tests reproduce the first-depositor share inflation attack (#1089)
+// and single-ledger share-price manipulation (#1380), asserting they are
+// prevented: a bare token transfer to the pool's address ("donation")
+// cannot move the share price, the classic first-depositor inflation
+// attack is defused by the virtual offset, and `min_shares_out` /
+// `min_assets_out` cause settlement to revert rather than execute at a
+// worse price than the caller expected.
 
 #[test]
 fn test_donation_to_pool_address_does_not_move_share_price() {
@@ -2014,4 +2016,213 @@ fn test_utilization_accurate_when_yield_distributed() {
     // 4,000 outstanding / 15,000 total managed assets = 2,666 bps (26.66%)
     assert_eq!(stats_after.utilization_bps, 2_666);
     assert!(stats_after.utilization_bps > 0);
+}
+
+#[test]
+fn test_total_deposits_tracks_principal_after_yield_and_full_withdrawal() {
+    // Regression test for #1091: TotalDeposits must track principal only,
+    // not the yield-inclusive redemption amount. Two depositors, yield
+    // accrues, provider_a fully withdraws; assert TotalDeposits still
+    // reflects provider_b's principal (not corrupted low by yield), and
+    // that MaxPoolSize is enforced against that true principal figure.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider_a = Address::generate(&env);
+    let provider_b = Address::generate(&env);
+    stellar_asset_client.mint(&provider_a, &600);
+    stellar_asset_client.mint(&provider_b, &400);
+
+    // provider_a: 600 principal, provider_b: 400 principal.
+    pool_client.deposit(&provider_a, &token_id, &600, &0);
+    pool_client.deposit(&provider_b, &token_id, &400, &0);
+    assert_eq!(pool_client.get_total_deposits(&token_id), 1_000);
+
+    // 100 tokens of yield arrive; managed assets = 1100, principal unaffected.
+    stellar_asset_client.mint(&token_admin, &100);
+    pool_client.distribute_yield(&token_admin, &token_id, &100);
+    assert_eq!(pool_client.get_total_deposits(&token_id), 1_000);
+
+    // provider_a fully redeems their 600 shares. The payout (principal +
+    // pro-rata yield) is larger than provider_a's principal, but only the
+    // principal portion must be deducted from TotalDeposits.
+    let shares_a = pool_client.get_shares(&provider_a, &token_id);
+    let assets_returned = pool_client.preview_redeem(&token_id, &shares_a);
+    assert!(
+        assets_returned > 600,
+        "expected withdrawal to include yield: got {assets_returned}"
+    );
+    pool_client.withdraw(&provider_a, &token_id, &shares_a, &0);
+
+    // TotalDeposits must reflect provider_b's remaining principal (400),
+    // not be dragged down by provider_a's yield-inclusive payout.
+    assert_eq!(pool_client.get_total_deposits(&token_id), 400);
+
+    // MaxPoolSize must be enforced against this true principal figure: with
+    // a cap of 500, provider_b (or a new depositor) can still deposit up to
+    // 100 more before hitting the cap.
+    pool_client.set_max_pool_size(&token_id, &500);
+    stellar_asset_client.mint(&provider_b, &100);
+    pool_client.deposit(&provider_b, &token_id, &100, &0);
+    assert_eq!(pool_client.get_total_deposits(&token_id), 500);
+
+    stellar_asset_client.mint(&provider_b, &1);
+    let result = pool_client.try_deposit(&provider_b, &token_id, &1, &0);
+    assert!(
+        result.is_err(),
+        "deposit exceeding true-principal cap must be rejected"
+    );
+}
+
+// ── Persistent TTL durability (#1140) ────────────────────────────────────────
+
+/// A passive lender's `Shares`/`DepositTimestamp` entries must not expire after
+/// the old fixed ~30-day window. The bump now targets the network maximum entry
+/// TTL, so a lender who deposits and then leaves the pool untouched for a
+/// realistic idle period keeps a live position instead of being archived and
+/// forced through a `RestoreFootprint` before they can withdraw.
+#[test]
+fn test_passive_lender_position_survives_realistic_idle_period() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Mimic the network's maximum entry TTL (~180 days at 5s/ledger).
+    const MAX_ENTRY_TTL: u32 = 3_110_400;
+    // The old, too-short fixed bump: ~30 days.
+    const THIRTY_DAYS_LEDGERS: u32 = 518_400;
+    // Half a day at 5s/ledger. Other pool activity (a view call) happens at
+    // this cadence below, which is finer than the instance TTL threshold, so
+    // the *instance* stays alive while the lender stays idle.
+    const HALF_DAY_LEDGERS: u32 = 12 * 60 * 12; // 8_640
+
+    env.ledger().set_min_persistent_entry_ttl(17_280);
+    env.ledger().set_max_entry_ttl(MAX_ENTRY_TTL);
+    env.ledger().set_sequence_number(1_000);
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &1_000);
+    pool_client.deposit(&provider, &token_id, &1_000, &0);
+
+    let share_key = crate::DataKey::Shares(provider.clone(), token_id.clone());
+    let timestamp_key = crate::DataKey::DepositTimestamp(provider.clone(), token_id.clone());
+
+    // The per-lender entries must be extended toward the network max, not the
+    // old ~30-day window, and never beyond the network limit.
+    env.as_contract(&pool_id, || {
+        let shares_ttl = env.storage().persistent().get_ttl(&share_key);
+        let timestamp_ttl = env.storage().persistent().get_ttl(&timestamp_key);
+        assert!(
+            shares_ttl > THIRTY_DAYS_LEDGERS,
+            "Shares TTL {shares_ttl} should exceed the old 30-day bump"
+        );
+        assert!(
+            timestamp_ttl > THIRTY_DAYS_LEDGERS,
+            "DepositTimestamp TTL {timestamp_ttl} should exceed the old 30-day bump"
+        );
+        assert!(shares_ttl <= MAX_ENTRY_TTL);
+        assert!(timestamp_ttl <= MAX_ENTRY_TTL);
+    });
+
+    // Other pool activity keeps the *instance* alive while the passive lender
+    // never touches the pool: 180 half-day steps, ~90 days total. This view
+    // does not read the provider's `Shares`/`DepositTimestamp`, so the lender's
+    // position is never refreshed by it.
+    let mut ledger = 1_000;
+    for _ in 0..180 {
+        ledger += HALF_DAY_LEDGERS;
+        env.ledger().set_sequence_number(ledger);
+        let _ = pool_client.get_pool_stats(&token_id);
+    }
+
+    // The position is still live — it was never archived — with the same share
+    // balance and asset value it held at deposit.
+    env.as_contract(&pool_id, || {
+        assert!(
+            env.storage().persistent().get_ttl(&share_key) > 0,
+            "Shares entry was archived during the idle period"
+        );
+        assert!(
+            env.storage().persistent().get_ttl(&timestamp_key) > 0,
+            "DepositTimestamp entry was archived during the idle period"
+        );
+        let shares: i128 = env
+            .storage()
+            .persistent()
+            .get(&share_key)
+            .expect("Shares entry missing");
+        assert_eq!(shares, 1_000);
+    });
+    assert_eq!(pool_client.get_shares(&provider, &token_id), 1_000);
+    assert_eq!(pool_client.get_deposit(&provider, &token_id), 1_000);
+}
+
+// ── Emergency withdraw observability (#1142) ───────────────────────────────────
+
+fn event_topics_contain(env: &Env, topic: &soroban_sdk::Symbol) -> bool {
+    let events = env.events().all();
+    for event in events.iter() {
+        if let Ok(sym) = soroban_sdk::Symbol::try_from_val(env, &event.1.get(0).unwrap()) {
+            if &sym == topic {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[test]
+fn test_emergency_withdraw_emits_distinct_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token_id, stellar_asset_client, _token_client) = create_token_contract(&env, &token_admin);
+
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&token_admin);
+    pool_client.set_withdrawal_cooldown(&0);
+
+    let provider = Address::generate(&env);
+    stellar_asset_client.mint(&provider, &2_000);
+    pool_client.deposit(&provider, &token_id, &1_000, &0);
+
+    let emergency_topic = soroban_sdk::Symbol::new(&env, "EmergencyWithdraw");
+    let withdraw_topic = soroban_sdk::Symbol::new(&env, "Withdraw");
+
+    // A normal withdraw must NEVER emit the emergency signal.
+    pool_client.withdraw(&provider, &token_id, &500, &0);
+    assert!(
+        !event_topics_contain(&env, &emergency_topic),
+        "normal withdraw must not emit EmergencyWithdraw"
+    );
+
+    // The emergency path emits both the ordinary Withdraw (backward
+    // compatible) and the distinct EmergencyWithdraw signal.
+    pool_client.pause();
+    pool_client.emergency_withdraw(&provider, &token_id, &500, &0);
+    assert!(
+        event_topics_contain(&env, &withdraw_topic),
+        "emergency withdraw should still emit the ordinary Withdraw event"
+    );
+    assert!(
+        event_topics_contain(&env, &emergency_topic),
+        "emergency withdraw must emit the distinct EmergencyWithdraw event"
+    );
 }

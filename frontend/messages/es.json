@@ -167,7 +167,9 @@
       "repayment_due": "Pago pendiente",
       "repayment_confirmed": "Pago confirmado",
       "loan_defaulted": "Préstamo en incumplimiento",
-      "score_changed": "Puntaje cambiado"
+      "score_changed": "Puntaje cambiado",
+      "dispute_opened": "Disputa abierta",
+      "dispute_contested": "Incumplimiento impugnado"
     },
     "empty": {
       "title": "No se encontraron notificaciones",

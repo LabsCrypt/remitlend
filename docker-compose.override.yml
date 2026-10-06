@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      target: builder
+    command: sh -c "npm run migrate:up && npm run dev"
+    volumes:
+      - ./backend/src:/app/src
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public

@@ -73,34 +73,70 @@ class ScoreReconciliationService {
   }
 
   private async fetchActiveBorrowerScores(): Promise<ActiveBorrowerScoreRow[]> {
-    const result = await query(
-      `
-      WITH active_loans AS (
-        SELECT approved.loan_id, approved.address
-        FROM contract_events approved
-        WHERE approved.event_type = 'LoanApproved'
-          AND approved.loan_id IS NOT NULL
-          AND approved.address IS NOT NULL
-          AND approved.address <> ''
-          AND NOT EXISTS (
-            SELECT 1
-            FROM contract_events e
-            WHERE e.loan_id = approved.loan_id
-              AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
+    let rows: any[] = [];
+    try {
+      const result = await query(
+        `
+        WITH active_loans AS (
+          SELECT approved.loan_id, approved.address
+          FROM contract_events approved
+          WHERE approved.event_type = 'LoanApproved'
+            AND approved.loan_id IS NOT NULL
+            AND approved.address IS NOT NULL
+            AND approved.address <> ''
+            AND NOT EXISTS (
+              SELECT 1
+              FROM contract_events e
+              WHERE e.loan_id = approved.loan_id
+                AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
+            )
+        )
+        SELECT DISTINCT
+          a.address,
+          s.score
+        FROM active_loans a
+        LEFT JOIN scores s ON s.borrower = a.address
+        ORDER BY a.address ASC
+        LIMIT $1
+        `,
+        [this.getMaxBorrowersPerRun()],
+      );
+      rows = result.rows;
+    } catch (err: any) {
+      if (err && (err.code === '42703' || String(err.message).includes('does not exist'))) {
+        const fallbackResult = await query(
+          `
+          WITH active_loans AS (
+            SELECT approved.loan_id, approved.address
+            FROM contract_events approved
+            WHERE approved.event_type = 'LoanApproved'
+              AND approved.loan_id IS NOT NULL
+              AND approved.address IS NOT NULL
+              AND approved.address <> ''
+              AND NOT EXISTS (
+                SELECT 1
+                FROM contract_events e
+                WHERE e.loan_id = approved.loan_id
+                  AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
+              )
           )
-      )
-      SELECT DISTINCT
-        a.address,
-        s.score
-      FROM active_loans a
-      LEFT JOIN scores s ON s.borrower = a.address
-      ORDER BY a.address ASC
-      LIMIT $1
-      `,
-      [this.getMaxBorrowersPerRun()],
-    );
+          SELECT DISTINCT
+            a.address,
+            s.current_score AS score
+          FROM active_loans a
+          LEFT JOIN scores s ON s.user_id = a.address
+          ORDER BY a.address ASC
+          LIMIT $1
+          `,
+          [this.getMaxBorrowersPerRun()],
+        );
+        rows = fallbackResult.rows;
+      } else {
+        throw err;
+      }
+    }
 
-    return result.rows.map((row) => {
+    return rows.map((row) => {
       const record = row as {
         address?: string;
         score?: number | string | null;

@@ -68,9 +68,7 @@ function MyComponent() {
     const toastId = toast.showPending("Creating loan...");
 
     try {
-      const result = await createLoan.mutateAsync({
-        /* data */
-      });
+      const result = await createLoan.mutateAsync({/* data */});
 
       toast.showSuccess(toastId, {
         successMessage: "Loan created!",

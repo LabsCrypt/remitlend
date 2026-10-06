@@ -26,6 +26,48 @@ const describeIf = (name: string, fn: () => void) => {
   }
 };
 
+describe('databaseService update column allowlists (#1858)', () => {
+  it('rejects unpermitted column names in UserProfileService.update', async () => {
+    await expect(
+      UserProfileService.update('G_TEST', {
+        'display_name; DROP TABLE users; --': 'val',
+      } as unknown as Partial<Parameters<typeof UserProfileService.update>[1]>),
+    ).rejects.toThrow('Disallowed column in UserProfile update');
+
+    await expect(
+      UserProfileService.update('G_TEST', {
+        id: 1,
+      } as unknown as Partial<Parameters<typeof UserProfileService.update>[1]>),
+    ).rejects.toThrow('Disallowed column in UserProfile update: id');
+
+    await expect(
+      UserProfileService.update('G_TEST', {
+        public_key: 'G_OTHER',
+      } as unknown as Partial<Parameters<typeof UserProfileService.update>[1]>),
+    ).rejects.toThrow('Disallowed column in UserProfile update: public_key');
+  });
+
+  it('rejects unpermitted column names in LoanHistoryService.update', async () => {
+    await expect(
+      LoanHistoryService.update(1, {
+        malicious_col: 'val',
+      } as unknown as Partial<Parameters<typeof LoanHistoryService.update>[1]>),
+    ).rejects.toThrow('Disallowed column in LoanHistory update');
+
+    await expect(
+      LoanHistoryService.update(1, {
+        id: 100,
+      } as unknown as Partial<Parameters<typeof LoanHistoryService.update>[1]>),
+    ).rejects.toThrow('Disallowed column in LoanHistory update: id');
+
+    await expect(
+      LoanHistoryService.update(1, {
+        loan_id: 200,
+      } as unknown as Partial<Parameters<typeof LoanHistoryService.update>[1]>),
+    ).rejects.toThrow('Disallowed column in LoanHistory update: loan_id');
+  });
+});
+
 describeIf('Database Services', () => {
   beforeAll(async () => {
     try {

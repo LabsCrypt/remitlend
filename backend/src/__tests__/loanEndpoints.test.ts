@@ -2,7 +2,6 @@ import request from 'supertest';
 import { jest } from '@jest/globals';
 import { Keypair } from '@stellar/stellar-sdk';
 import jwt from 'jsonwebtoken';
-import { generateJwtToken } from '../services/authService.js';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
 
@@ -23,7 +22,8 @@ const mockClient = {
   release: mockRelease,
 };
 
-jest.unstable_mockModule('../db/connection.js', () => ({
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
@@ -32,12 +32,16 @@ jest.unstable_mockModule('../db/connection.js', () => ({
 }));
 
 // Mock CacheService to prevent Redis connections
-jest.unstable_mockModule('../services/cacheService.js', () => ({
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
   cacheService: {
-    get: jest.fn<() => Promise<null>>().mockResolvedValue(null),
-    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    ping: jest.fn<() => Promise<string>>().mockResolvedValue('ok'),
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
   },
 }));
 
@@ -100,7 +104,7 @@ const mockSubmitSignedTx =
   jest.fn<
     (signedTxXdr: string) => Promise<{ txHash: string; status: string; resultXdr?: string }>
   >();
-jest.unstable_mockModule('../services/sorobanService.js', () => ({
+await jest.unstable_mockModule('../services/sorobanService.js', () => ({
   sorobanService: {
     buildRequestLoanTx: mockBuildRequestLoanTx,
     buildRepayTx: mockBuildRepayTx,
@@ -116,6 +120,7 @@ jest.unstable_mockModule('../services/sorobanService.js', () => ({
 await import('../db/connection.js');
 await import('../services/sorobanService.js');
 const { default: app } = await import('../app.js');
+const { generateJwtToken } = await import('../services/authService.js');
 
 const mockedQuery = mockQuery;
 
@@ -136,6 +141,7 @@ const bearerWithScopes = (publicKey: string, scopes: string[]) => ({
 beforeEach(() => {
   mockedQuery.mockReset();
   jest.clearAllMocks();
+  fakeCacheStore.clear();
 });
 
 afterAll(() => {
@@ -336,6 +342,47 @@ describe('GET /api/loans/:loanId', () => {
         response.body.summary.accruedInterest -
         response.body.summary.totalRepaid,
     );
+  });
+
+  it('should add accrued interest to owed amount instead of subtracting it (issue #1369)', async () => {
+    mockedQuery
+      .mockResolvedValueOnce({ rows: [{ address: TEST_BORROWER }] }) // address check
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            event_type: 'LoanRequested',
+            amount: '10000000000',
+            ledger: 10,
+            ledger_closed_at: '2025-01-01T00:00:00.000Z',
+            tx_hash: 'request-tx',
+            interest_rate_bps: null,
+            term_ledgers: null,
+          },
+          {
+            event_type: 'LoanApproved',
+            amount: null,
+            ledger: 20,
+            ledger_closed_at: '2025-01-02T00:00:00.000Z',
+            tx_hash: 'approve-tx',
+            interest_rate_bps: 1200,
+            term_ledgers: 17280,
+          },
+        ],
+      }) // loan events
+      .mockResolvedValueOnce({ rows: [{ last_indexed_ledger: 30 }] }) // getLatestLedger (10 ledgers elapsed)
+      .mockResolvedValueOnce({ rows: [] }); // loan_disputes (no open disputes)
+
+    const response = await request(app).get('/api/loans/123').set(bearer(TEST_BORROWER));
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary.principal).toBe(10000000000);
+    expect(response.body.summary.totalRepaid).toBe(0);
+    expect(response.body.summary.accruedInterest).toBe(694444);
+    // If interest were subtracted (defect in #1369), totalOwed would be 10000000000 - 694444 = 9993305556.
+    // With correct addition, totalOwed must be principal + accruedInterest = 10000694444.
+    expect(response.body.summary.totalOwed).toBe(10000000000 + 694444);
+    expect(response.body.summary.totalOwed).toBeGreaterThan(response.body.summary.principal);
+    expect(response.body.summary.status).toBe('active');
   });
 
   it('should accrue interest against the remaining principal after partial repayments (issue #1600)', async () => {

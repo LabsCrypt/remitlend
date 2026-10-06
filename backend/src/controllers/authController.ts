@@ -140,13 +140,16 @@ export async function listAuditLogs(
   next: NextFunction,
 ): Promise<void> {
   try {
+    const rawLimit = req.query.limit !== undefined ? Number(req.query.limit) : 25;
+    const limit = Math.min(Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 25), 100);
+
     const result = await getAuditLogs({
       actor: req.query.actor as string | undefined,
       action: req.query.action as string | undefined,
       from: req.query.from as string | undefined,
       to: req.query.to as string | undefined,
       cursor: req.query.cursor as string | undefined,
-      limit: Number(req.query.limit ?? 25),
+      limit,
       withTotal: req.query.withTotal === 'true',
     } as AuditLogFilters);
 

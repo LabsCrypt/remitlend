@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { requireApiKey } from '../middleware/auth.js';
 import { requireJwtAuth, requireRoles } from '../middleware/jwtAuth.js';
 import { strictRateLimiter } from '../middleware/rateLimiter.js';
-import { validateBody } from '../middleware/validation.js';
+import { validateBody, validateQuery } from '../middleware/validation.js';
+import { getAuditLogsQuerySchema } from '../schemas/auditLogSchemas.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { auditLog } from '../middleware/auditLog.js';
 import { defaultChecker } from '../services/defaultChecker.js';
@@ -30,7 +31,13 @@ import { listAuditLogs } from '../controllers/authController.js';
 
 const router = Router();
 
-router.get('/audit-logs', requireJwtAuth, requireRoles('admin'), listAuditLogs);
+router.get(
+  '/audit-logs',
+  requireJwtAuth,
+  requireRoles('admin'),
+  validateQuery(getAuditLogsQuerySchema),
+  listAuditLogs,
+);
 
 router.post(
   '/loans/:loanId/build-reject',

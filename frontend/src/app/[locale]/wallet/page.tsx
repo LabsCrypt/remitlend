@@ -26,6 +26,7 @@ import {
   selectIsWalletConnected,
 } from "../../stores/useWalletStore";
 import Link from "next/link";
+import { useLocale } from "next-intl";
 import { QRCodeSVG } from "qrcode.react";
 import { COPY_FEEDBACK_RESET_MS } from "../../components/ui";
 
@@ -468,6 +469,7 @@ function TransactionHistoryCard({
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
+  const locale = useLocale();
   const isConnected = useWalletStore(selectIsWalletConnected);
   const address = useWalletStore(selectWalletAddress);
   const network = useWalletStore(selectWalletNetwork);
@@ -540,7 +542,7 @@ export default function WalletPage() {
           <CardContent className="space-y-3">
             {[
               {
-                href: "/lend",
+                href: `/${locale}/lend`,
                 icon: ArrowDownLeft,
                 iconClass: "text-indigo-600 dark:text-indigo-400",
                 bg: "bg-indigo-50 dark:bg-indigo-500/10",
@@ -548,7 +550,7 @@ export default function WalletPage() {
                 desc: "Earn yield by supplying liquidity",
               },
               {
-                href: "/lend",
+                href: `/${locale}/lend`,
                 icon: ArrowUpRight,
                 iconClass: "text-green-600 dark:text-green-400",
                 bg: "bg-green-50 dark:bg-green-500/10",
@@ -556,7 +558,7 @@ export default function WalletPage() {
                 desc: "Withdraw your deposits + yield",
               },
               {
-                href: "/loans",
+                href: `/${locale}/loans`,
                 icon: ArrowDownLeft,
                 iconClass: "text-amber-600 dark:text-amber-400",
                 bg: "bg-amber-50 dark:bg-amber-500/10",

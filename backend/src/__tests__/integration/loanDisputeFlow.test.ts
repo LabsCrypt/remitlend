@@ -8,6 +8,11 @@ const mockQuery = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockNotifyAdmins = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockCreateNotification = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 
+jest.unstable_mockModule('../../db/connection.ts', () => ({
+  query: mockQuery,
+  default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
+  withTransaction: jest.fn(),
+}));
 jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
@@ -168,7 +173,16 @@ describe('loan dispute resolution integration flow', () => {
             String(DISPUTE_ID),
           ],
         ],
-        [expect.stringContaining('DefaultConfirmed'), [LOAN_ID, TEST_PUBLIC_KEY]],
+        [
+          expect.stringContaining('DefaultConfirmed'),
+          [
+            expect.any(String),
+            LOAN_ID,
+            TEST_PUBLIC_KEY,
+            `admin-dispute:${DISPUTE_ID}`,
+            expect.any(String),
+          ],
+        ],
       ]),
     );
   });
@@ -239,7 +253,16 @@ describe('loan dispute resolution integration flow', () => {
             String(DISPUTE_ID),
           ],
         ],
-        [expect.stringContaining('DefaultReversed'), [LOAN_ID, TEST_PUBLIC_KEY]],
+        [
+          expect.stringContaining('DefaultReversed'),
+          [
+            expect.any(String),
+            LOAN_ID,
+            TEST_PUBLIC_KEY,
+            `admin-dispute:${DISPUTE_ID}`,
+            expect.any(String),
+          ],
+        ],
       ]),
     );
   });

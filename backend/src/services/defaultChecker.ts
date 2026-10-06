@@ -1,10 +1,12 @@
 import {
+  Account,
   BASE_FEE,
   Keypair,
   Operation,
   TransactionBuilder,
   nativeToScVal,
   rpc,
+  xdr,
 } from '@stellar/stellar-sdk';
 import { query } from '../db/connection.js';
 import logger from '../utils/logger.js';
@@ -19,11 +21,11 @@ import { hasUnresolvedLedgerGaps } from './ledgerCheckpoints.js';
 /**
  * Owed-vs-paid reconciliation for a single loan, computed entirely in
  * `bigint` stroops (see `backend/src/money/decimal.ts`). `owedStroops` is
- * the originally approved principal; `paidStroops` is every `LoanRepaid`
- * amount summed to date. `driftStroops` is `owedStroops - paidStroops`
- * clamped at zero once the loan is fully repaid — a nonzero value here
- * after a `LoanRepaid`/`LoanDefaulted` terminal event indicates the kind of
- * cross-layer rounding drift issue #1378 closes.
+ * the originally approved principal; `paidStroops` is the principal
+ * component of every `LoanRepaid` amount, capped at `owedStroops`.
+ * `driftStroops` is `owedStroops - paidStroops`. LoanRepaid amounts include
+ * yield (interest + late fees), so capping at principal prevents false
+ * drift on fully repaid loans with interest (#1601).
  */
 export interface LoanReconciliation {
   loanId: number;
@@ -64,15 +66,19 @@ export async function reconcileLoanStroops(loanId: number): Promise<LoanReconcil
     }
   }
 
-  const driftStroops = owedStroops > paidStroops ? owedStroops - paidStroops : 0n;
+  // FIX: Cap paidStroops at owedStroops. LoanRepaid.amount includes yield
+  // (interest + late fees) on top of principal. Once the principal is fully
+  // repaid, any excess is yield — not drift.
+  const principalPaidStroops = paidStroops > owedStroops ? owedStroops : paidStroops;
+  const driftStroops = owedStroops - principalPaidStroops;
 
   return {
     loanId,
     owedStroops,
-    paidStroops,
+    paidStroops: principalPaidStroops,
     driftStroops,
     owedDisplay: fromStroops(owedStroops),
-    paidDisplay: fromStroops(paidStroops),
+    paidDisplay: fromStroops(principalPaidStroops),
   };
 }
 
@@ -341,10 +347,14 @@ export class DefaultChecker {
     signer: Keypair,
     passphrase: string,
     loanIds: number[],
+    account: Account,
   ): Promise<DefaultCheckBatchResult> {
-    const account = await server.getAccount(signer.publicKey());
-
-    const loanIdsScVal = nativeToScVal(loanIds, { type: 'u32' });
+    // `nativeToScVal` with a `type` hint applies to a single scalar value, not
+    // to each element of an array — passing `loanIds` (a number[]) directly
+    // with `{ type: 'u32' }` throws a TypeError. Build the u32 elements
+    // individually and wrap them in a Vec to match the contract's
+    // `check_defaults(loan_ids: Vec<u32>)` signature.
+    const loanIdsScVal = xdr.ScVal.scvVec(loanIds.map((id) => nativeToScVal(id, { type: 'u32' })));
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -421,6 +431,7 @@ export class DefaultChecker {
     signer: Keypair,
     passphrase: string,
     loanIds: number[],
+    account: Account,
   ): Promise<DefaultCheckBatchResult> {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
@@ -440,6 +451,7 @@ export class DefaultChecker {
       signer,
       passphrase,
       loanIds,
+      account,
     ).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       return {
@@ -581,21 +593,40 @@ export class DefaultChecker {
       });
 
       const allChunks = chunk(targetIds, this.batchSize).filter((b) => b.length > 0);
-      const batchResults = await mapConcurrent(allChunks, this.concurrency, async (batch) => {
-        const result = await this.submitCheckDefaultsWithTimeout(server, signer, passphrase, batch);
 
-        logger.withContext().info('default_check.batch', {
-          runId,
-          loanIds: result.loanIds,
-          txHash: result.txHash,
-          submitStatus: result.submitStatus,
-          txStatus: result.txStatus,
-          error: result.error,
-          timedOut: result.timedOut,
-        });
+      // Fetch the admin account once and assign strictly increasing sequence
+      // numbers so concurrent batches never collide on txBAD_SEQ (issue #1094).
+      const adminAccount = await server.getAccount(signer.publicKey());
+      const baseSequence = BigInt(adminAccount.sequenceNumber());
+      const batchAccounts = allChunks.map(
+        (_, i) => new Account(signer.publicKey(), String(baseSequence + BigInt(i + 1))),
+      );
 
-        return result;
-      });
+      const batchResults = await mapConcurrent(
+        allChunks.map((batch, i) => ({ batch, account: batchAccounts[i]! })),
+        this.concurrency,
+        async ({ batch, account: batchAccount }) => {
+          const result = await this.submitCheckDefaultsWithTimeout(
+            server,
+            signer,
+            passphrase,
+            batch,
+            batchAccount,
+          );
+
+          logger.withContext().info('default_check.batch', {
+            runId,
+            loanIds: result.loanIds,
+            txHash: result.txHash,
+            submitStatus: result.submitStatus,
+            txStatus: result.txStatus,
+            error: result.error,
+            timedOut: result.timedOut,
+          });
+
+          return result;
+        },
+      );
 
       const loansChecked = targetIds.length;
       const successfulSubmissions = batchResults.filter((b) => !b.error && b.txHash).length;

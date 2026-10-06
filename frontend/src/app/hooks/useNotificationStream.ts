@@ -78,11 +78,16 @@ export function useNotificationStream() {
 
               try {
                 const payload = JSON.parse(dataStr) as
-                  | AppNotification
-                  | { type: "init"; notifications: AppNotification[] };
+                  AppNotification | { type: "init"; notifications: AppNotification[] };
 
-                queryClient.setQueryData(
-                  queryKeys.notifications.all(),
+                // Use partial-match setQueriesData so the write lands in every
+                // list cache entry readers subscribe to (e.g. the dropdown's
+                // ["notifications", {}] and the inbox page's
+                // ["notifications", { limit, type, unread }]). setQueryData only
+                // matches an exact key, which would drop the update into a cache
+                // entry nothing reads until the 60s poll refetches. (#1071)
+                queryClient.setQueriesData(
+                  { queryKey: queryKeys.notifications.all() },
                   (prev: { notifications: AppNotification[]; unreadCount: number } | undefined) => {
                     const existing = prev ?? { notifications: [], unreadCount: 0 };
 
@@ -115,6 +120,15 @@ export function useNotificationStream() {
               }
             }
           }
+        }
+
+        // Stream ended cleanly (done: true) — schedule reconnect with backoff
+        // just like an error close. This handles server-side idle timeouts,
+        // deploys, or load-balancer cutoffs.
+        if (!cancelled) {
+          const delay = Math.min(retryDelay.current, 30_000);
+          retryDelay.current = Math.min(delay * 2, 30_000);
+          timeoutRef.current = setTimeout(connect, delay);
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {

@@ -321,6 +321,21 @@ NEXT_PUBLIC_STELLAR_NETWORK=testnet
 NEXT_PUBLIC_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 ```
 
+## Service Worker Update Strategy
+
+This application uses [Serwist](https://serwist-docs.vercel.app/) (PWA) to pre-cache assets and serve them offline. The service worker configuration lives in `src/app/sw.ts`.
+
+### How updates reach users after a deployment
+
+1. **New precache manifest** — Every production build generates a fresh `__SW_MANIFEST` with content-hashed URLs. When the browser fetches the updated HTML, it discovers the new manifest and detects that the cached assets no longer match.
+2. **Immediate activation** — `skipWaiting: true` and `clientsClaim: true` ensure the new service worker activates and takes over all open tabs without requiring the user to close the browser.
+3. **Next navigation is fresh** — After the new SW activates, the next page navigation or fetch request goes through the updated precache, so users receive the latest code.
+4. **Runtime cache bypass** — API (`/api/`), SSE (`/sse/`), and Next.js internal (`/_next/`) requests are always fetched from the network (`bypassCdn`) to prevent stale data.
+
+### Known limitation
+
+There is currently **no user-facing "update available" prompt**. Users only receive new code when they refresh the page or navigate to a new route. Tabs that have been open for a long time will continue serving the old cached version until the user refreshes. See `docs/FOLLOWUP-sw-update-prompt.md` for tracking this gap.
+
 ## Troubleshooting
 
 ```bash

@@ -18,12 +18,38 @@ const MAX_SIGNERS: u32 = 20;
 /// Time-to-live for proposals before they expire (7 days in seconds).
 const PROPOSAL_TTL_SECONDS: u64 = 604_800;
 
+/// Maximum timelock delay. Must be strictly less than PROPOSAL_TTL_SECONDS
+/// so the finalize window [executable_after, expiry) is always non-empty.
+/// With the default TTL of 7 days this allows delays up to ~6 days 23 h 59 min.
+const MAX_TIMELOCK_SECONDS: u64 = PROPOSAL_TTL_SECONDS - 1;
+
+/// Instance-storage TTL threshold: re-extend the contract instance whenever
+/// fewer than this many ledgers remain (~1 day at ~5 s/ledger).
+///
+/// Soroban does **not** bump instance TTL automatically on invocation, so all
+/// of the contract's state — admin, targets, proposal counter and the pending
+/// transfer — is at risk of archival unless every state-touching entrypoint
+/// and view extends it explicitly via `bump_instance_ttl`.
+const INSTANCE_TTL_THRESHOLD: u32 = 17_280;
+
+/// Instance-storage TTL bump: extend the contract instance to this many
+/// ledgers (~30 days at ~5 s/ledger).
+///
+/// This deliberately covers far more than `PROPOSAL_TTL_SECONDS`
+/// (7 days = 120_960 ledgers), so a proposal can sit untouched for its full
+/// TTL with no other calls touching the contract and still be finalized or
+/// expired before the instance entry is archived (#1143). It stays well
+/// within the network `max_entry_ttl`.
+const INSTANCE_TTL_BUMP: u32 = 518_400;
+
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
 const KEY_VERSION: Symbol = symbol_short!("VERSION");
 const KEY_PENDING: Symbol = symbol_short!("PENDING");
+/// Legacy single-target key, read only as a fallback for pre-#1776 deployments.
 const KEY_TARGET: Symbol = symbol_short!("TARGET");
+const KEY_TARGETS: Symbol = symbol_short!("TARGETS");
 const KEY_LAST_CANCELLED_AT: Symbol = symbol_short!("CANCEL_AT");
 const KEY_PROPOSAL_COUNT: Symbol = symbol_short!("COUNT");
 
@@ -47,6 +73,7 @@ pub enum GovernanceError {
     TimelockNotElapsed = 4010,
     ThresholdNotMet = 4011,
     DelayTooShort = 4012,
+    DelayTooLong = 4021,
     EmptySignerList = 4013,
     ReproposalCooldownActive = 4015,
     ProposalExpired = 4016,
@@ -153,32 +180,50 @@ pub struct GovernanceContract;
 
 #[contractimpl]
 impl GovernanceContract {
+    // ── TTL ───────────────────────────────────────────────────────────────────
+
+    /// Extend the contract instance TTL so the admin, targets and any pending
+    /// proposal are not archived while the contract sits idle. Called from
+    /// every state-touching entrypoint and every view (#1143).
+    fn bump_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+    }
+
     // ── Initialization ────────────────────────────────────────────────────────
 
     /// Initialize the governance contract.
-    /// `admin`           — current RemitLend admin.
-    /// `target_contract` — the RemitLend contract whose admin will be updated
-    ///                     when finalize_admin_transfer is called.
+    /// `admin`   — current RemitLend admin.
+    /// `targets` — the RemitLend contracts (LendingPool, LoanManager,
+    ///             RemittanceNFT) whose admin is handed over when
+    ///             finalize_admin_transfer is called. Must be non-empty.
     pub fn initialize(
         env: Env,
         admin: Address,
-        target_contract: Address,
+        targets: Vec<Address>,
     ) -> Result<(), GovernanceError> {
         if env.storage().instance().has(&KEY_ADMIN) {
             return Err(GovernanceError::AlreadyInitialized);
         }
+        if targets.is_empty() {
+            return Err(GovernanceError::TargetNotSet);
+        }
         env.storage().instance().set(&KEY_ADMIN, &admin);
-        env.storage().instance().set(&KEY_TARGET, &target_contract);
+        env.storage().instance().set(&KEY_TARGETS, &targets);
         env.storage().instance().set(&KEY_VERSION, &CURRENT_VERSION);
         env.storage().instance().set(&KEY_PROPOSAL_COUNT, &0u32);
+        Self::bump_instance_ttl(&env);
         Ok(())
     }
 
     pub fn version(env: Env) -> u32 {
+        Self::bump_instance_ttl(&env);
         env.storage().instance().get(&KEY_VERSION).unwrap_or(0)
     }
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
 
@@ -201,7 +246,7 @@ impl GovernanceContract {
     /// Only the current admin may call this. Any pending proposal must be
     /// cancelled before a new one can be submitted.
     ///
-    /// `delay_seconds` must be >= MIN_TIMELOCK_SECONDS (86400 = 24 h).
+    /// `delay_seconds` must be in [MIN_TIMELOCK_SECONDS, MAX_TIMELOCK_SECONDS].
     /// `threshold` must be in [1, len(signers)] and len(signers) <= MAX_SIGNERS.
     pub fn propose_admin_transfer(
         env: Env,
@@ -210,6 +255,7 @@ impl GovernanceContract {
         threshold: u32,
         delay_seconds: u64,
     ) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
 
@@ -262,6 +308,9 @@ impl GovernanceContract {
         if delay_seconds < MIN_TIMELOCK_SECONDS {
             return Err(GovernanceError::DelayTooShort);
         }
+        if delay_seconds > MAX_TIMELOCK_SECONDS {
+            return Err(GovernanceError::DelayTooLong);
+        }
 
         let now = env.ledger().timestamp();
         let executable_after = now.saturating_add(delay_seconds);
@@ -311,6 +360,7 @@ impl GovernanceContract {
     /// Idempotent — calling twice from the same signer records one approval.
     /// Soroban's require_auth guarantees the caller genuinely controls `signer`.
     pub fn approve_transfer(env: Env, signer: Address) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         signer.require_auth();
 
         let mut pending: PendingTransfer = env
@@ -358,11 +408,13 @@ impl GovernanceContract {
     ///   1. now >= executable_after   (timelock elapsed)
     ///   2. approval_count >= threshold
     ///
-    /// Calls set_admin on the target RemitLend contract via cross-contract
-    /// invocation. The target must expose:
-    ///   pub fn set_admin(env: Env, new_admin: Address)
-    /// and must verify the caller is this governance contract address.
+    /// Calls propose_admin on every target RemitLend contract via
+    /// cross-contract invocation. Each target must expose:
+    ///   pub fn propose_admin(env: Env, new_admin: Address)
+    /// and have this governance contract as its current admin. The new admin
+    /// then completes the handover by calling accept_admin on each target.
     pub fn finalize_admin_transfer(env: Env, caller: Address) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         caller.require_auth();
 
         let pending: PendingTransfer = env
@@ -375,12 +427,8 @@ impl GovernanceContract {
             return Err(GovernanceError::ProposalNotActive);
         }
 
-        // Get target early to prevent archiving issues in tests
-        let target: Address = env
-            .storage()
-            .instance()
-            .get(&KEY_TARGET)
-            .ok_or(GovernanceError::TargetNotSet)?;
+        // Get targets early to prevent archiving issues in tests
+        let targets = Self::read_targets(&env)?;
 
         let now = env.ledger().timestamp();
 
@@ -403,14 +451,17 @@ impl GovernanceContract {
 
         let new_admin = pending.proposed_admin.clone();
 
-        // 1. Interactions: Cross-contract call to update global admin in the RemitLend protocol contract.
-        // If this call fails (panics/traps), the entire transaction will rollback by default in Soroban.
-        // We call this FIRST to ensure the remote state change is attempted before committing local changes.
-        env.invoke_contract::<()>(
-            &target,
-            &symbol_short!("set_admin"),
-            soroban_sdk::vec![&env, new_admin.clone().into_val(&env)],
-        );
+        // 1. Interactions: propose the new admin on every RemitLend protocol contract.
+        // If any call fails (panics/traps), the entire transaction will rollback by default in Soroban.
+        // We call these FIRST to ensure the remote state changes are attempted before committing local changes.
+        let propose_fn = Symbol::new(&env, "propose_admin");
+        for target in targets.iter() {
+            env.invoke_contract::<()>(
+                &target,
+                &propose_fn,
+                soroban_sdk::vec![&env, new_admin.clone().into_val(&env)],
+            );
+        }
 
         // 2. Effects: Clear pending transfer and update local admin state only after successful interaction.
         env.storage().instance().remove(&KEY_PENDING);
@@ -431,11 +482,29 @@ impl GovernanceContract {
         Ok(())
     }
 
+    /// Complete the handover of every target's admin role *to* this contract.
+    ///
+    /// Each target's current admin must first call
+    /// `propose_admin(<this contract>)`; the targets' `accept_admin` then
+    /// requires this contract's auth, which only it can provide by invoking
+    /// the call itself.
+    pub fn accept_target_admins(env: Env) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
+        Self::read_admin(&env)?.require_auth();
+
+        let accept_fn = Symbol::new(&env, "accept_admin");
+        for target in Self::read_targets(&env)?.iter() {
+            env.invoke_contract::<()>(&target, &accept_fn, Vec::new(&env));
+        }
+        Ok(())
+    }
+
     // ── Cancel ────────────────────────────────────────────────────────────────
 
     /// Cancel a pending transfer. Only the current admin may do this.
     /// After cancellation the process must restart from propose_admin_transfer.
     pub fn cancel_admin_transfer(env: Env) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
 
@@ -473,6 +542,7 @@ impl GovernanceContract {
         proposal_id: u32,
         reason: Option<soroban_sdk::String>,
     ) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
 
@@ -517,6 +587,7 @@ impl GovernanceContract {
     /// Anyone can call this function once the proposal has passed its TTL.
     /// This cleans up stale proposals and allows new ones to be created.
     pub fn expire_proposal(env: Env, caller: Address) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         caller.require_auth();
 
         let pending: PendingTransfer = env
@@ -552,21 +623,22 @@ impl GovernanceContract {
     // ── Views ─────────────────────────────────────────────────────────────────
 
     pub fn get_current_admin(env: Env) -> Result<Address, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         Self::read_admin(&env)
     }
 
     pub fn get_admin(env: Env) -> Result<Address, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         Self::read_admin(&env)
     }
 
-    pub fn get_target(env: Env) -> Result<Address, GovernanceError> {
-        env.storage()
-            .instance()
-            .get(&KEY_TARGET)
-            .ok_or(GovernanceError::TargetNotSet)
+    pub fn get_targets(env: Env) -> Result<Vec<Address>, GovernanceError> {
+        Self::bump_instance_ttl(&env);
+        Self::read_targets(&env)
     }
 
     pub fn get_pending_transfer(env: Env) -> Result<PendingTransfer, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&KEY_PENDING)
@@ -574,10 +646,12 @@ impl GovernanceContract {
     }
 
     pub fn get_pending(env: Env) -> Option<PendingTransfer> {
+        Self::bump_instance_ttl(&env);
         env.storage().instance().get(&KEY_PENDING)
     }
 
     pub fn has_pending_transfer(env: Env) -> bool {
+        Self::bump_instance_ttl(&env);
         if let Some(pending) = env
             .storage()
             .instance()
@@ -590,6 +664,7 @@ impl GovernanceContract {
     }
 
     pub fn get_approval_count(env: Env) -> Result<u32, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
@@ -601,6 +676,7 @@ impl GovernanceContract {
     /// Returns seconds remaining until the timelock expires.
     /// Returns 0 if already elapsed or no pending transfer exists.
     pub fn get_timelock_remaining(env: Env) -> u64 {
+        Self::bump_instance_ttl(&env);
         match env
             .storage()
             .instance()
@@ -619,6 +695,7 @@ impl GovernanceContract {
     }
 
     pub fn get_proposal_count(env: Env) -> u32 {
+        Self::bump_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&KEY_PROPOSAL_COUNT)
@@ -626,6 +703,7 @@ impl GovernanceContract {
     }
 
     pub fn get_signers(env: Env) -> Result<Vec<Address>, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
@@ -635,6 +713,7 @@ impl GovernanceContract {
     }
 
     pub fn get_threshold(env: Env) -> Result<u32, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
@@ -644,6 +723,7 @@ impl GovernanceContract {
     }
 
     pub fn has_approved(env: Env, signer: Address) -> Result<bool, GovernanceError> {
+        Self::bump_instance_ttl(&env);
         let pending: PendingTransfer = env
             .storage()
             .instance()
@@ -653,6 +733,17 @@ impl GovernanceContract {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    fn read_targets(env: &Env) -> Result<Vec<Address>, GovernanceError> {
+        let storage = env.storage().instance();
+        if let Some(targets) = storage.get(&KEY_TARGETS) {
+            return Ok(targets);
+        }
+        storage
+            .get::<Symbol, Address>(&KEY_TARGET)
+            .map(|target| soroban_sdk::vec![env, target])
+            .ok_or(GovernanceError::TargetNotSet)
+    }
 
     fn read_admin(env: &Env) -> Result<Address, GovernanceError> {
         env.storage()

@@ -1,141 +1,93 @@
-import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LoanRepaymentForm } from "./LoanRepaymentForm";
+import { useGamificationStore } from "../../stores/useGamificationStore";
 
-/* ── Mocks ─────────────────────────────────────────────────────────────── */
-
-jest.mock("../../hooks/useTransactionPreview", () => ({
-  useTransactionPreview: jest.fn(() => ({
-    isOpen: false,
-    show: jest.fn(),
-    close: jest.fn(),
-    confirm: jest.fn(),
-    data: null,
-    isLoading: false,
-  })),
-}));
+const mockAddXP = jest.fn();
+const mockUnlockAchievement = jest.fn();
 
 jest.mock("../../stores/useGamificationStore", () => ({
-  useGamificationStore: jest.fn(() => ({
-    addXP: jest.fn(),
-    unlockAchievement: jest.fn(),
-  })),
+  useGamificationStore: () => ({
+    addXP: mockAddXP,
+    unlockAchievement: mockUnlockAchievement,
+  }),
 }));
 
+let mockExecuteSuccess = true;
+let mockOnSuccessCallback: (() => void) | undefined;
+
 jest.mock("../../hooks/useRepaymentOperation", () => ({
-  useRepaymentOperation: jest.fn(() => ({
-    executeRepayment: jest.fn(),
-    isLoading: false,
-    error: null,
-    transaction: {},
-  })),
+  useRepaymentOperation: ({ onSuccess }: { onSuccess?: () => void }) => {
+    mockOnSuccessCallback = onSuccess;
+    return {
+      execute: jest.fn(async () => {
+        if (mockExecuteSuccess) {
+          onSuccess?.();
+        }
+      }),
+      isProcessing: false,
+      progress: 0,
+      step: "",
+      statusText: "",
+      error: null,
+      txHash: null,
+      reset: jest.fn(),
+    };
+  },
+}));
+
+jest.mock("../../hooks/useTransactionPreview", () => ({
+  useTransactionPreview: () => ({
+    isOpen: false,
+    previewData: null,
+    openPreview: jest.fn(),
+    closePreview: jest.fn(),
+    confirmPreview: jest.fn(),
+  }),
 }));
 
 jest.mock("../../stores/useWalletStore", () => ({
-  useWalletStore: jest.fn((selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ address: "GTEST123ADDR" }),
-  ),
-  selectWalletAddress: (state: Record<string, unknown>) => state.address,
+  useWalletStore: (selector: any) => selector({ address: "GBORROWER123" }),
+  selectWalletAddress: (state: any) => state.address,
 }));
 
-jest.mock("../transaction/TransactionPreviewModal", () => ({
-  TransactionPreviewModal: () => null,
-}));
-
-jest.mock("../ui/OperationProgress", () => ({
-  OperationProgress: () => null,
-}));
-
-jest.mock("lucide-react", () => ({
-  DollarSign: () => null,
-  AlertCircle: () => null,
-}));
-
-/* ── Tests ─────────────────────────────────────────────────────────────── */
-
-describe("LoanRepaymentForm – Pay Full Amount precision (#1488)", () => {
-  const renderForm = (totalOwed: number, minPayment = 0) =>
-    render(<LoanRepaymentForm loanId={1} totalOwed={totalOwed} minPayment={minPayment} />);
-
-  it("fills a value that satisfies USDC precision when totalOwed has >2 decimals", () => {
-    renderForm(123.456);
-
-    fireEvent.click(screen.getByText(/Pay Full Amount/i));
-
-    const input = screen.getByPlaceholderText("0.00") as HTMLInputElement;
-    expect(input.value).not.toBe("");
-
-    // No USDC precision error should appear
-    expect(screen.queryByText(/supports at most/i)).not.toBeInTheDocument();
-
-    // Submit button must be enabled
-    const submitBtn = screen.getByRole("button", { name: /Review Repayment/i });
-    expect(submitBtn).toBeEnabled();
+describe("LoanRepaymentForm", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
   });
 
-  it("formats totalOwed with exactly 2 decimal places for USDC", () => {
-    renderForm(50.1);
-
-    fireEvent.click(screen.getByText(/Pay Full Amount/i));
-
-    const input = screen.getByPlaceholderText("0.00") as HTMLInputElement;
-    // toFixed(2) turns 50.1 into "50.10", trailing zero stripped → "50.1"
-    expect(input.value).toBe("50.1");
-    expect(screen.queryByText(/supports at most/i)).not.toBeInTheDocument();
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
-  it("strips trailing zeros after formatting to asset decimals", () => {
-    renderForm(200);
+  it("grants streak XP and achievement when repayment is on-time", async () => {
+    const futureDate = new Date(Date.now() + 86400000).toISOString();
+    render(<LoanRepaymentForm loanId={1} totalOwed={500} dueDate={futureDate} isPastDue={false} />);
 
-    fireEvent.click(screen.getByText(/Pay Full Amount/i));
+    mockOnSuccessCallback?.();
 
-    const input = screen.getByPlaceholderText("0.00") as HTMLInputElement;
-    // toFixed(2) gives "200.00", replace strips trailing → "200"
-    expect(input.value).toBe("200");
-    expect(screen.queryByText(/supports at most/i)).not.toBeInTheDocument();
+    expect(mockAddXP).toHaveBeenCalledWith(50, "Loan repayment");
+    expect(mockUnlockAchievement).toHaveBeenCalledWith("first_repayment");
+
+    jest.advanceTimersByTime(1000);
+
+    expect(mockAddXP).toHaveBeenCalledWith(100, "On-time repayment streak");
+    expect(mockUnlockAchievement).toHaveBeenCalledWith("streak_master");
   });
 
-  it("immediately submitting after Pay Full is not blocked by a precision error", () => {
-    renderForm(1000.999);
+  it("does not grant streak XP or achievement when repayment is late / past-due", async () => {
+    const pastDate = new Date(Date.now() - 86400000).toISOString();
+    render(<LoanRepaymentForm loanId={1} totalOwed={500} dueDate={pastDate} isPastDue={true} />);
 
-    fireEvent.click(screen.getByText(/Pay Full Amount/i));
+    mockOnSuccessCallback?.();
 
-    const submitBtn = screen.getByRole("button", { name: /Review Repayment/i });
-    expect(submitBtn).toBeEnabled();
+    expect(mockAddXP).toHaveBeenCalledWith(50, "Loan repayment");
+    expect(mockUnlockAchievement).toHaveBeenCalledWith("first_repayment");
 
-    // Manually clicking submit should NOT produce a precision error
-    fireEvent.click(submitBtn);
+    jest.advanceTimersByTime(1000);
 
-    expect(screen.queryByText(/supports at most/i)).not.toBeInTheDocument();
-  });
-
-  it("clears previous validation error when Pay Full is clicked", () => {
-    renderForm(500);
-
-    const input = screen.getByPlaceholderText("0.00") as HTMLInputElement;
-
-    // Type "0" which passes sanitization but fails the >0 validation
-    fireEvent.change(input, { target: { value: "0" } });
-    fireEvent.click(screen.getByRole("button", { name: /Review Repayment/i }));
-    expect(screen.getByText(/Amount must be greater than 0/i)).toBeInTheDocument();
-
-    // Click Pay Full Amount – should clear the error
-    fireEvent.click(screen.getByText(/Pay Full Amount/i));
-    expect(screen.queryByText(/Amount must be greater than 0/i)).not.toBeInTheDocument();
-
-    const submitBtn = screen.getByRole("button", { name: /Review Repayment/i });
-    expect(submitBtn).toBeEnabled();
-  });
-
-  it("totalOwed with many decimal places is truncated to 2 decimals", () => {
-    renderForm(99.123456789);
-
-    fireEvent.click(screen.getByText(/Pay Full Amount/i));
-
-    const input = screen.getByPlaceholderText("0.00") as HTMLInputElement;
-    // toFixed(2) truncates/rounds → "99.12"
-    expect(input.value).toBe("99.12");
-    expect(screen.queryByText(/supports at most/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Review Repayment/i })).toBeEnabled();
+    expect(mockAddXP).not.toHaveBeenCalledWith(100, "On-time repayment streak");
+    expect(mockUnlockAchievement).not.toHaveBeenCalledWith("streak_master");
   });
 });
+

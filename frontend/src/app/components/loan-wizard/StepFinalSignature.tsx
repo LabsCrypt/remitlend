@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PenLine, CircleAlert, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
@@ -10,9 +11,11 @@ import {
   type TransactionStatusState,
 } from "../ui/TransactionStatusTracker";
 import { useTransactionPreview } from "../../hooks/useTransactionPreview";
-import { useCreateLoan } from "../../hooks/useApi";
+import { submitLoanTransaction, queryKeys } from "../../hooks/useApi";
+import { useWallet } from "../providers/WalletProvider";
 import { useContractToast } from "../../hooks/useContractToast";
 import { buildUnsignedLoanRequestXdr } from "../../utils/soroban";
+import { getAssetDecimals } from "../../utils/amount";
 import {
   mapTransactionError,
   pollTransactionStatus,
@@ -63,7 +66,8 @@ export function StepFinalSignature({
   const pollingAbortControllerRef = useRef<AbortController | null>(null);
 
   const txPreview = useTransactionPreview();
-  const createLoan = useCreateLoan();
+  const { signTransaction } = useWallet();
+  const queryClient = useQueryClient();
   const toast = useContractToast();
 
   const principal = Number(data.amount || "0");
@@ -96,6 +100,7 @@ export function StepFinalSignature({
           amount: principal,
           term: data.termDays * 17280,
           contractId: managerContractId,
+          decimals: getAssetDecimals(data.asset),
         });
         if (!cancelled) setUnsignedXdr(xdr);
       } catch (err) {
@@ -177,36 +182,30 @@ export function StepFinalSignature({
         setTrackerMessage("Approve the transaction in your wallet to continue.");
 
         try {
+          // #1811 — the loan request is a real Soroban transaction. It has to be
+          // signed by the borrower and submitted to the network; POST /loans is
+          // a test/dev-only fixture that 404s in production and records nothing
+          // on-chain, so relying on it meant no loan was ever actually issued.
+          if (!unsignedXdr) {
+            throw new Error(
+              "The loan transaction could not be prepared. Please go back and try again.",
+            );
+          }
+
+          const signedTxXdr = await signTransaction(unsignedXdr);
+
           setTrackerState("submitting");
           setTrackerTitle("Submitting transaction");
           setTrackerMessage("Sending your loan request to the network.");
           toastId = toast.showPending("Transaction submitted");
 
-          const loan = await createLoan.mutateAsync({
-            amount: principal,
-            currency: data.asset,
-            interestRate: ANNUAL_RATE_PERCENT,
-            termDays: data.termDays,
-            borrowerId: borrowerAddress,
-          });
-
-          if (!loan.txHash) {
-            setTrackerState("success");
-            setTrackerTitle("Loan request submitted");
-            setTrackerMessage("Your request was accepted and recorded.");
-            setTrackerGuidance("You can monitor approval status from your loans dashboard.");
-            if (toastId !== null) {
-              toast.showSuccess(toastId, {
-                successMessage: "Loan request submitted successfully",
-              });
-            } else {
-              toast.success("Loan request submitted successfully");
-            }
-            onSuccess(loan.id);
-            return;
+          const submitResult = await submitLoanTransaction(signedTxXdr);
+          if (submitResult.status !== "SUCCESS" || !submitResult.txHash) {
+            throw new Error("Stellar did not confirm the loan request transaction.");
           }
+          const txHash = submitResult.txHash;
 
-          setTrackerTxHash(loan.txHash);
+          setTrackerTxHash(txHash);
           setTrackerState("polling");
           setTrackerTitle("Waiting for on-chain confirmation");
           setTrackerMessage("Tracking transaction status on Stellar testnet.");
@@ -214,13 +213,22 @@ export function StepFinalSignature({
           const controller = new AbortController();
           pollingAbortControllerRef.current = controller;
 
-          const pollResult = await pollTransactionStatus(loan.txHash, {
+          const pollResult = await pollTransactionStatus(txHash, {
             signal: controller.signal,
           });
 
           pollingAbortControllerRef.current = null;
 
           if (pollResult.status === "success") {
+            // The loan row is created by the indexer from the on-chain event, so
+            // refresh the borrower's lists now that the transaction is final.
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: queryKeys.loans.all() }),
+              queryClient.invalidateQueries({
+                queryKey: queryKeys.loans.borrowerPagePrefix(borrowerAddress),
+              }),
+            ]);
+
             setTrackerState("success");
             setTrackerTitle("Transaction confirmed");
             setTrackerMessage("Your loan request is confirmed on-chain.");
@@ -228,10 +236,14 @@ export function StepFinalSignature({
             if (toastId !== null) {
               toast.showSuccess(toastId, {
                 successMessage: "Loan request confirmed on-chain",
-                txHash: loan.txHash,
+                txHash,
               });
+            } else {
+              toast.success("Loan request confirmed on-chain");
             }
-            onSuccess(loan.id);
+            // The on-chain transaction hash is the request's identifier: the
+            // loan id only exists once the indexer has ingested the event.
+            onSuccess(txHash);
             return;
           }
 
@@ -405,7 +417,7 @@ export function StepFinalSignature({
                   : retrySubmission
                 : undefined
             }
-            disabled={createLoan.isPending || txPreview.isLoading}
+            disabled={txPreview.isLoading}
           />
 
           <div className="flex gap-3">
@@ -414,7 +426,6 @@ export function StepFinalSignature({
             </Button>
             <Button
               onClick={handleSignAndSubmit}
-              isLoading={createLoan.isPending}
               disabled={isBuildingXdr}
               className="w-full"
               leftIcon={<CheckCircle2 className="h-4 w-4" />}
@@ -431,7 +442,7 @@ export function StepFinalSignature({
           onClose={txPreview.close}
           onConfirm={txPreview.confirm}
           data={txPreview.data}
-          isLoading={txPreview.isLoading || createLoan.isPending}
+          isLoading={txPreview.isLoading}
         />
       )}
     </div>

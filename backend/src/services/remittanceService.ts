@@ -80,9 +80,23 @@ export const remittanceService = {
       throw AppError.badRequest('Invalid Stellar sender address (must be 56 chars, start with G)');
     }
 
-    const paymentAsset = getCurrencyAsset(payload.fromCurrency);
     const normalizedFromCurrency = normalizeCurrency(payload.fromCurrency);
     const normalizedToCurrency = normalizeCurrency(payload.toCurrency);
+
+    // Currency-mismatch guard: the payment built below sends `payload.amount`
+    // in `paymentAsset` verbatim — there is no conversion step. Accepting a
+    // toCurrency that differs from fromCurrency would silently deliver the
+    // fromCurrency amount while the API contract promises toCurrency, so such
+    // requests are rejected until a real conversion path (e.g. Stellar path
+    // payment strict-send) is implemented.
+    if (normalizedFromCurrency !== normalizedToCurrency) {
+      throw AppError.validation(
+        `Cross-currency remittances are not supported yet: the amount is sent as-is in ${normalizedFromCurrency} with no conversion, so toCurrency must equal fromCurrency`,
+        'toCurrency',
+      );
+    }
+
+    const paymentAsset = getCurrencyAsset(normalizedFromCurrency);
 
     try {
       const networkPassphrase = getStellarNetworkPassphrase();
@@ -308,23 +322,47 @@ export const remittanceService = {
     }
   },
 
+  /**
+   * Transition a remittance to `processing` / `completed` / `failed`.
+   *
+   * Entering `processing` is a single atomic statement conditioned on the
+   * status the row has *right now* (`WHERE ... AND status = 'pending'`), and
+   * resolves `null` when that guard matched nothing because a concurrent
+   * submission claimed the remittance first (#1850). Callers must treat `null`
+   * as "already submitted" rather than overwriting the other request's state.
+   * The unguarded `completed` / `failed` transitions only ever miss the row
+   * when it does not exist, which still throws 404.
+   */
   async updateRemittanceStatus(
     id: string,
     status: 'processing' | 'completed' | 'failed',
     transactionHash?: string,
     errorMessage?: string,
-  ): Promise<Remittance> {
+  ): Promise<Remittance | null> {
     try {
+      // Two concurrent submissions can both read `pending` before either write
+      // lands, so the claim is conditioned on the row's current status inside
+      // the same statement: exactly one matches, everyone else gets no rows.
+      const pendingGuard = status === 'processing' ? `AND status = 'pending'` : '';
+
       const result = await query(
         `UPDATE remittances 
          SET status = $1, transaction_hash = $2, error_message = $3, updated_at = $4
-         WHERE id = $5
+         WHERE id = $5 ${pendingGuard}
          RETURNING *`,
         [status, transactionHash || null, errorMessage || null, new Date().toISOString(), id],
       );
 
       if (!result.rows[0]) {
-        throw AppError.notFound('Remittance not found');
+        // Distinguish "row does not exist" (404) from "status guard did not
+        // match" (a concurrent request claimed this remittance first).
+        const stillExists = await query('SELECT id FROM remittances WHERE id = $1', [id]);
+
+        if (!stillExists.rows[0]) {
+          throw AppError.notFound('Remittance not found');
+        }
+
+        return null;
       }
 
       const r = result.rows[0];

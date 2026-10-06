@@ -1,6 +1,5 @@
 import request from 'supertest';
 import { jest } from '@jest/globals';
-import { generateJwtToken } from '../services/authService.js';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
 
@@ -15,7 +14,7 @@ process.env.LENDER_WALLETS = LENDER_WALLET;
 const mockQuery: jest.MockedFunction<
   (text: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
-jest.unstable_mockModule('../db/connection.js', () => ({
+await jest.unstable_mockModule('../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn(),
@@ -27,7 +26,7 @@ jest.unstable_mockModule('../db/connection.js', () => ({
 const mockGetNotificationsForUser = jest.fn<(...args: unknown[]) => Promise<unknown[]>>();
 const mockGetUnreadCount = jest.fn<(...args: unknown[]) => Promise<number>>();
 const mockSubscribe = jest.fn();
-jest.unstable_mockModule('../services/notificationService.js', () => ({
+await jest.unstable_mockModule('../services/notificationService.js', () => ({
   notificationService: {
     getNotificationsForUser: mockGetNotificationsForUser,
     getUnreadCount: mockGetUnreadCount,
@@ -37,9 +36,24 @@ jest.unstable_mockModule('../services/notificationService.js', () => ({
   },
 }));
 
+// ── cacheService mock ─────────────────────────────────────────────────────────
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
+  cacheService: {
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
+  },
+}));
+
 // ── eventStreamService mock ──────────────────────────────────────────────────
 const mockGetConnectionCount = jest.fn();
-jest.unstable_mockModule('../services/eventStreamService.js', () => ({
+await jest.unstable_mockModule('../services/eventStreamService.js', () => ({
   eventStreamService: {
     getConnectionCount: mockGetConnectionCount,
     subscribeBorrower: jest.fn(),
@@ -51,6 +65,7 @@ await import('../db/connection.js');
 await import('../services/notificationService.js');
 await import('../services/eventStreamService.js');
 const { default: app } = await import('../app.js');
+const { generateJwtToken } = await import('../services/authService.js');
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,

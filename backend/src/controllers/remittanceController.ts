@@ -10,6 +10,21 @@ import { encodeCursor, decodeCursor, parseKeysetParams } from '../utils/paginati
 import logger from '../utils/logger.js';
 
 /**
+ * Reads an optional numeric query-param bound.
+ *
+ * Returns `undefined` for absent, empty or non-numeric input so the caller can
+ * skip the predicate. `0` is a real bound and is returned as such — the
+ * distinction matters because `if (minAmount)` would silently discard it.
+ */
+function parseAmountBound(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+  const parsed = parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
  * POST /api/remittances - Create a new remittance
  *
  * Creates an unsigned Stellar transaction for the frontend to sign
@@ -55,7 +70,7 @@ export const createRemittance = asyncHandler(async (req: Request, res: Response)
  * Supports filtering by status, date range, and search by recipient/reference
  */
 export const getRemittances = asyncHandler(async (req: Request, res: Response) => {
-  const senderAddress = req.user?.publicKey as string;
+  const senderAddress = req.user?.publicKey;
 
   if (!senderAddress) {
     throw AppError.unauthorized('Wallet address not found in request');
@@ -115,6 +130,24 @@ export const getRemittances = asyncHandler(async (req: Request, res: Response) =
     const searchTerm = `%${q}%`;
     params.push(searchTerm, searchTerm);
     whereClause += ` AND (recipient_address ILIKE $${params.length - 1} OR memo ILIKE $${params.length})`;
+  }
+
+  // Amount range. These arrive as raw query strings, not the numbers the
+  // zod schema produced: `validate()` parses and discards, so `req.query`
+  // keeps its original strings. That is why the sibling `from`/`to` filters
+  // re-parse here too. `parseInt` is safe because the schema has already
+  // rejected anything non-numeric, but it is checked anyway so a future caller
+  // that bypasses the schema cannot inject a non-finite value into SQL.
+  const minAmount = parseAmountBound(req.query.minAmount);
+  if (minAmount !== undefined) {
+    params.push(minAmount.toString());
+    whereClause += ` AND amount >= $${params.length}`;
+  }
+
+  const maxAmount = parseAmountBound(req.query.maxAmount);
+  if (maxAmount !== undefined) {
+    params.push(maxAmount.toString());
+    whereClause += ` AND amount <= $${params.length}`;
   }
 
   // Pin snapshot on first request or use provided one
@@ -193,7 +226,7 @@ export const getRemittances = asyncHandler(async (req: Request, res: Response) =
  */
 export const getRemittance = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const senderAddress = req.user?.publicKey as string;
+  const senderAddress = req.user?.publicKey;
 
   if (!senderAddress) {
     throw AppError.unauthorized('Wallet address not found in request');
@@ -224,7 +257,7 @@ export const getRemittance = asyncHandler(async (req: Request, res: Response) =>
 export const submitRemittanceTransaction = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
   const { signedXdr } = req.body as { signedXdr: string };
-  const senderAddress = req.user?.publicKey as string;
+  const senderAddress = req.user?.publicKey;
 
   if (!senderAddress) {
     throw AppError.unauthorized('Wallet address not found in request');
@@ -247,6 +280,9 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
       throw AppError.forbidden('You do not have access to this remittance');
     }
 
+    // Fast path for sequential retries. This read is not the guard — two
+    // concurrent requests can both pass it before either writes (TOCTOU), so
+    // the authoritative check is the atomic claim below.
     if (remittance.status !== 'pending') {
       throw AppError.badRequest('Remittance has already been submitted');
     }
@@ -256,8 +292,16 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
     // be flipped to `processing` or `failed` — the sender can re-sign and retry.
     parseAndValidateSignedEnvelope(signedXdr);
 
-    // Update status to processing before submission
-    await remittanceService.updateRemittanceStatus(id, 'processing');
+    // Atomically claim the pending → processing transition. The UPDATE is
+    // guarded on the row's current status, so of several concurrent submissions
+    // exactly one matches; every other request gets `null` back and is rejected
+    // below with a deterministic 400 instead of also submitting to Stellar
+    // (TOCTOU double submission, #1850).
+    const claimed = await remittanceService.updateRemittanceStatus(id, 'processing');
+
+    if (!claimed) {
+      throw AppError.badRequest('Remittance has already been submitted');
+    }
 
     // Submit signed XDR to Stellar and poll for confirmation
     const stellarResult = await sorobanService.submitSignedTx(signedXdr);
@@ -276,12 +320,18 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
       throw AppError.internal(failureMessage);
     }
 
-    // Persist completed status with transaction hash
+    // Persist completed status with transaction hash. `null` would mean the
+    // row vanished mid-flight (only the guarded `processing` claim ever
+    // returns it), so never report a success the record does not reflect.
     const completed = await remittanceService.updateRemittanceStatus(
       id,
       'completed',
       stellarResult.txHash,
     );
+
+    if (!completed) {
+      throw AppError.internal('Failed to persist the completed remittance status');
+    }
 
     logger.withContext().info('Remittance transaction confirmed', {
       remittanceId: id,

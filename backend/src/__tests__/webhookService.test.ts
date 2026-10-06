@@ -16,6 +16,11 @@ jest.unstable_mockModule('../db/connection.js', () => ({
   closePool: jest.fn(),
 }));
 
+jest.unstable_mockModule('../services/webhookHttp.js', () => ({
+  postWebhook: async (url: string, body: string, headers: Record<string, string>) =>
+    global.fetch(url, { method: 'POST', headers, body }),
+}));
+
 const { WebhookService, getRetryDelayMs } = await import('../services/webhookService.js');
 const { default: logger } = await import('../utils/logger.js');
 
@@ -195,7 +200,7 @@ describe('WebhookService', () => {
   });
 
   describe('HMAC signature', () => {
-    it('sets X-RemitLend-Signature with sha256= prefix for a known body+secret', async () => {
+    it('signs the timestamp and exact body using the documented header format', async () => {
       const secret = 'test-secret-key';
       const crypto = await import('node:crypto');
 
@@ -206,11 +211,14 @@ describe('WebhookService', () => {
         jest.fn<(_url: string, opts: RequestInit) => Promise<{ ok: boolean; status: number }>>();
       fetchMock.mockImplementation(async (_url: string, opts: RequestInit) => {
         const hdrs = opts.headers as Record<string, string>;
+        const signatureHeader = hdrs['x-remitlend-signature'];
+        expect(signatureHeader).toMatch(/^t=\d+,v1=[a-f0-9]{64}$/);
+        const [, timestamp, signature] = /^t=(\d+),v1=([a-f0-9]{64})$/.exec(signatureHeader)!;
         const expectedHex = crypto
           .createHmac('sha256', secret)
-          .update(opts.body as string)
+          .update(`${timestamp}.${opts.body as string}`)
           .digest('hex');
-        expect(hdrs['x-remitlend-signature']).toBe(`sha256=${expectedHex}`);
+        expect(signature).toBe(expectedHex);
         return { ok: true, status: 200 };
       });
       global.fetch = fetchMock as unknown as typeof fetch;
@@ -238,7 +246,7 @@ describe('WebhookService', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it("header value starts with 'sha256=' and matches HMAC-SHA256 of the request body", async () => {
+    it('uses a timestamped HMAC-SHA256 header that matches the request body', async () => {
       const secret = 'another-secret';
       const fetchMock = jest.fn<(...args: unknown[]) => Promise<{ ok: boolean; status: number }>>();
       fetchMock.mockResolvedValue({ ok: true, status: 200 });
@@ -268,14 +276,17 @@ describe('WebhookService', () => {
       const hdrs = callOpts.headers as Record<string, string>;
       const sigHeader = hdrs['x-remitlend-signature'];
 
-      // Must start with the algorithm prefix
-      expect(sigHeader).toMatch(/^sha256=[a-f0-9]{64}$/);
+      expect(sigHeader).toMatch(/^t=\d+,v1=[a-f0-9]{64}$/);
 
-      // The hex part must equal HMAC-SHA256(secret, body)
+      // The signature covers the timestamp and exact body, preventing replay.
       const crypto = await import('node:crypto');
       const sentBody = callOpts.body as string;
-      const expectedHex = crypto.createHmac('sha256', secret).update(sentBody).digest('hex');
-      expect(sigHeader).toBe(`sha256=${expectedHex}`);
+      const [, timestamp, signature] = /^t=(\d+),v1=([a-f0-9]{64})$/.exec(sigHeader!)!;
+      const expectedHex = crypto
+        .createHmac('sha256', secret)
+        .update(`${timestamp}.${sentBody}`)
+        .digest('hex');
+      expect(signature).toBe(expectedHex);
     });
 
     it('omits X-RemitLend-Signature when no secret is configured', async () => {
