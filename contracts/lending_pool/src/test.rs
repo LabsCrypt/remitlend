@@ -195,8 +195,7 @@ fn test_insufficient_balance_withdraw_panic() {
 }
 
 #[test]
-#[should_panic(expected = "withdrawal_cooldown_active")]
-fn test_immediate_withdraw_panics_when_cooldown_active() {
+fn test_immediate_withdraw_returns_error_when_cooldown_active() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -211,7 +210,8 @@ fn test_immediate_withdraw_panics_when_cooldown_active() {
     stellar_asset_client.mint(&provider, &5_000);
     pool_client.deposit(&provider, &token_id, &1_000, &0);
 
-    pool_client.withdraw(&provider, &token_id, &1_000, &0);
+    let result = pool_client.try_withdraw(&provider, &token_id, &1_000, &0);
+    assert_eq!(result, Err(Ok(crate::PoolError::WithdrawalCooldownActive)));
 }
 
 #[test]
