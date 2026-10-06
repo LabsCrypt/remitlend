@@ -195,7 +195,7 @@ export const idempotencyMiddleware = async (
 
     // Override res.send (as res.json eventually calls res.send)
     res.send = function (body: unknown) {
-      if (!responseBody) {
+      if (responseBody === undefined) {
         if (typeof body === 'string') {
           try {
             responseBody = JSON.parse(body);
@@ -224,7 +224,7 @@ export const idempotencyMiddleware = async (
 
       // Only cache 2xx and 4xx status codes.
       // 5xx errors should usually be retried without returning a cached failure.
-      if (res.statusCode >= 200 && res.statusCode < 500 && responseBody) {
+      if (res.statusCode >= 200 && res.statusCode < 500 && responseBody !== undefined) {
         try {
           await cacheService.set(
             cacheKey,

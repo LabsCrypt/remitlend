@@ -10,7 +10,7 @@
  * matches that exact key, so live notifications did not show up in the bell/inbox.
  */
 
-import { render, screen, act, waitFor } from "@testing-library/react";
+import { render, screen, act, waitFor, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useUserStore } from "../stores/useUserStore";
@@ -89,22 +89,26 @@ function Harness() {
   );
 }
 
-function createWrapper(queryClient: QueryClient) {
- * Regression test for #1485: useNotificationStream must schedule reconnect
- * when the server closes the stream cleanly (reader.read() returns done: true).
- */
 
-import { renderHook, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { useNotificationStream } from "./useNotificationStream";
 
 // Mock useUserStore
-jest.mock("../stores/useUserStore", () => ({
-  useUserStore: jest.fn(),
-}));
-
-const { useUserStore } = require("../stores/useUserStore");
+jest.mock("../stores/useUserStore", () => {
+  let mockUserState = {
+    user: { id: "u1", email: "u1@example.com", kycVerified: true } as any,
+    authToken: "stream-test-token",
+    isAuthenticated: true,
+    isLoading: false,
+    error: null,
+  };
+  const mockStoreFn: any = jest.fn((selector?: (s: typeof mockUserState) => any) =>
+    selector ? selector(mockUserState) : mockUserState,
+  );
+  mockStoreFn.setState = jest.fn((newState: any) => {
+    mockUserState = { ...mockUserState, ...newState };
+  });
+  mockStoreFn.getState = jest.fn(() => mockUserState);
+  return { useUserStore: mockStoreFn };
+});
 
 /**
  * Creates a mock fetch response whose body.getReader().read() returns
@@ -125,13 +129,15 @@ function mockFetchCleanClose() {
   });
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
+function createWrapper(qc?: QueryClient) {
+  const queryClient =
+    qc ??
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   };

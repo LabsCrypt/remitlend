@@ -93,6 +93,9 @@ pub enum DataKey {
     Admin,
     Paused,
     WithdrawalCooldown,
+    /// Address of the authorized LoanManager contract permitted to disburse
+    /// pooled liquidity via `disburse_loan`.
+    LoanManager,
     /// token → max pool size cap (0 = unlimited)
     MaxPoolSize(Address),
     /// token → total LP shares outstanding across all providers
@@ -146,8 +149,9 @@ pub struct LendingPool;
 impl LendingPool {
     const INSTANCE_TTL_THRESHOLD: u32 = 17280;
     const INSTANCE_TTL_BUMP: u32 = 518400;
+    /// Threshold (in ledgers) below which the per-lender persistent entries
+    /// (`Shares`, `DepositTimestamp`) are re-extended on access.
     const PERSISTENT_TTL_THRESHOLD: u32 = 17280;
-    const PERSISTENT_TTL_BUMP: u32 = 518400;
     const CURRENT_VERSION: u32 = 3;
     const DEFAULT_WITHDRAWAL_COOLDOWN: u32 = 1_440;
     const SHARE_PRICE_SCALE: i128 = 1_000_000;
@@ -170,11 +174,23 @@ impl LendingPool {
             .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_BUMP);
     }
 
+    /// Extend the TTL of a per-lender persistent entry (`Shares` /
+    /// `DepositTimestamp`) to the network's maximum entry TTL.
+    ///
+    /// Unlike the instance entry, which is touched by almost every call,
+    /// these keys are bumped only when their owner transacts — or when
+    /// somebody reads their balance. A passive lender who deposits and then
+    /// leaves the pool alone would otherwise fall below the old fixed
+    /// ~30-day bump, be archived, and be forced through a `RestoreFootprint`
+    /// (and its extra fee) before they could withdraw. Extending to
+    /// `env.storage().max_ttl()` keeps the position alive for the longest
+    /// window the network permits (`max_entry_ttl`), so it can never exceed
+    /// the ledger limit (#1140).
     fn bump_persistent_ttl(env: &Env, key: &DataKey) {
         env.storage().persistent().extend_ttl(
             key,
             Self::PERSISTENT_TTL_THRESHOLD,
-            Self::PERSISTENT_TTL_BUMP,
+            env.storage().max_ttl(),
         );
     }
 
@@ -369,13 +385,18 @@ impl LendingPool {
         }
     }
 
+    /// Burn `shares` and transfer the proportional underlying assets to
+    /// `provider`, returning the number of assets paid out so callers can
+    /// emit path-specific events. Emits the ordinary `Withdraw` event;
+    /// callers that need a distinct signal (see `emergency_withdraw`) emit it
+    /// themselves after this returns.
     fn redeem_shares(
         env: &Env,
         provider: &Address,
         token: &Address,
         shares: i128,
         min_assets_out: i128,
-    ) -> Result<(), PoolError> {
+    ) -> Result<i128, PoolError> {
         if shares <= 0 {
             return Err(PoolError::InvalidAmount);
         }
@@ -482,7 +503,7 @@ impl LendingPool {
             assets_to_return,
             shares,
         );
-        Ok(())
+        Ok(assets_to_return)
     }
 
     // ── Admin / lifecycle ─────────────────────────────────────────────────
@@ -686,8 +707,8 @@ impl LendingPool {
                     .persistent()
                     .set(&deposit_key, &current_ledger);
             } else {
-                let old_ts = Self::read_deposit_timestamp(&env, &provider, &token)
-                    .unwrap_or(current_ledger);
+                let old_ts =
+                    Self::read_deposit_timestamp(&env, &provider, &token).unwrap_or(current_ledger);
                 // weighted_ts = (old_ts * existing_shares + current_ledger * new_shares)
                 //             / (existing_shares + new_shares)
                 let weighted_ts = (old_ts as i128)
@@ -699,9 +720,7 @@ impl LendingPool {
                     })
                     .and_then(|num| num.checked_div(new_shares))
                     .expect("weighted cooldown overflow") as u32;
-                env.storage()
-                    .persistent()
-                    .set(&deposit_key, &weighted_ts);
+                env.storage().persistent().set(&deposit_key, &weighted_ts);
             }
             Self::bump_persistent_ttl(&env, &deposit_key);
         }
@@ -905,11 +924,18 @@ impl LendingPool {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
         Self::assert_withdrawal_cooldown_elapsed(&env, &provider, &token);
-        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)
+        // Discard the returned asset amount: the normal path signals only via
+        // the ordinary `Withdraw` event emitted inside `redeem_shares`.
+        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)?;
+        Ok(())
     }
 
     /// Same as `withdraw` but bypasses the pause flag and cooldown. Still
     /// enforces `min_assets_out`.
+    ///
+    /// On top of the ordinary `Withdraw` event, this emits a distinct
+    /// `EmergencyWithdraw` event so that indexers and monitoring can tell an
+    /// emergency exit apart from a regular withdrawal (#1142).
     pub fn emergency_withdraw(
         env: Env,
         provider: Address,
@@ -918,7 +944,15 @@ impl LendingPool {
         min_assets_out: i128,
     ) -> Result<(), PoolError> {
         provider.require_auth();
-        Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)
+        let assets_returned = Self::redeem_shares(&env, &provider, &token, shares, min_assets_out)?;
+        emergency_withdraw(
+            &env,
+            provider.clone(),
+            token.clone(),
+            assets_returned,
+            shares,
+        );
+        Ok(())
     }
 
     // ── Cooldown views ────────────────────────────────────────────────────
@@ -1073,9 +1107,97 @@ impl LendingPool {
         Self::read_total_outstanding(&env, &token)
     }
 
+    /// Register (or replace) the LoanManager contract authorized to disburse
+    /// pooled liquidity via `disburse_loan`.
+    ///
+    /// Must be called by the admin.
+    pub fn set_loan_manager(env: Env, loan_manager: Address) -> Result<(), PoolError> {
+        Self::admin(&env).require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::LoanManager, &loan_manager);
+        Self::bump_instance_ttl(&env);
+        env.events()
+            .publish((Symbol::new(&env, "LoanMgrSet"),), loan_manager);
+        Ok(())
+    }
+
+    /// Return the currently registered LoanManager contract address, or
+    /// `None` if no address has been set.
+    pub fn get_loan_manager(env: Env) -> Option<Address> {
+        Self::bump_instance_ttl(&env);
+        env.storage().instance().get(&DataKey::LoanManager)
+    }
+
+    /// Disburse `amount` of `token` to `borrower`.
+    ///
+    /// Only the registered LoanManager contract may call this function. The
+    /// caller is verified via `loan_manager.require_auth()`: when LoanManager
+    /// invokes this cross-contract, its authorization is implicit; any direct
+    /// caller cannot forge it on a live network.
+    ///
+    /// The transfer is executed with the pool's own authorization
+    /// (`transfer(pool, borrower, amount)`), so LoanManager must never attempt
+    /// `token.transfer(pool, borrower, ...)` itself — that would fail with a
+    /// Soroban authorization error since the pool never authorized LoanManager
+    /// to spend its tokens.
+    ///
+    /// Accounting: `TotalOutstanding` grows by `amount` (principal now deployed
+    /// in a loan) while `TotalManagedAssets` is unchanged (idle → outstanding
+    /// does not change total value under management), so share pricing is
+    /// unaffected.
+    pub fn disburse_loan(
+        env: Env,
+        token: Address,
+        borrower: Address,
+        amount: i128,
+    ) -> Result<(), PoolError> {
+        let loan_manager: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LoanManager)
+            .ok_or(PoolError::NotInitialized)?;
+        // Only the registered LoanManager may disburse. Panics with an auth
+        // error for any other caller.
+        loan_manager.require_auth();
+        Self::assert_not_paused(&env)?;
+
+        if amount <= 0 {
+            return Err(PoolError::InvalidAmount);
+        }
+
+        let idle_balance = Self::read_pool_balance(&env, &token);
+        if idle_balance < amount {
+            return Err(PoolError::InsufficientLiquidity);
+        }
+
+        // Track deployed principal for utilization stats. TotalManagedAssets
+        // is intentionally untouched (see `total_managed_assets` docs).
+        let key = DataKey::TotalOutstanding(token.clone());
+        let current = Self::read_total_outstanding(&env, &token);
+        let updated = current
+            .checked_add(amount)
+            .expect("total outstanding overflow");
+        env.storage().instance().set(&key, &updated);
+
+        // Interaction: pool authorizes its own outflow.
+        TokenClient::new(&env, &token).transfer(
+            &env.current_contract_address(),
+            &borrower,
+            &amount,
+        );
+
+        Self::bump_instance_ttl(&env);
+        loan_disbursed(&env, token, borrower, amount);
+        Ok(())
+    }
+
     pub fn adjust_outstanding(env: Env, token: Address, delta: i128) {
-        let lending_pool = Self::admin(&env);
-        lending_pool.require_auth();
+        if let Some(lm) = Self::get_loan_manager(env.clone()) {
+            lm.require_auth();
+        } else {
+            Self::admin(&env).require_auth();
+        }
 
         if delta == 0 {
             return;

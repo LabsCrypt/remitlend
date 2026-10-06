@@ -7,6 +7,10 @@ const DEK_LENGTH = 32;
 const KEK_ID = process.env.PII_KEK_ID ?? 'default-kek';
 const KMS_ENDPOINT = process.env.PII_KMS_ENDPOINT ?? '';
 
+function getKmsEndpoint(): string {
+  return process.env.PII_KMS_ENDPOINT ?? KMS_ENDPOINT;
+}
+
 interface EncryptedField {
   ciphertext: Buffer;
   gcm_nonce: Buffer;
@@ -15,8 +19,9 @@ interface EncryptedField {
 }
 
 async function unwrapDek(dekWrapped: Buffer, kekId: string): Promise<Buffer> {
-  if (KMS_ENDPOINT) {
-    const resp = await fetch(`${KMS_ENDPOINT}/decrypt`, {
+  const endpoint = getKmsEndpoint();
+  if (endpoint) {
+    const resp = await fetch(`${endpoint}/decrypt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kek_id: kekId, wrapped_key: dekWrapped.toString('base64') }),
@@ -35,8 +40,9 @@ async function unwrapDek(dekWrapped: Buffer, kekId: string): Promise<Buffer> {
 }
 
 async function wrapDek(dek: Buffer): Promise<Buffer> {
-  if (KMS_ENDPOINT) {
-    const resp = await fetch(`${KMS_ENDPOINT}/encrypt`, {
+  const endpoint = getKmsEndpoint();
+  if (endpoint) {
+    const resp = await fetch(`${endpoint}/encrypt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kek_id: KEK_ID, plaintext: dek.toString('base64') }),

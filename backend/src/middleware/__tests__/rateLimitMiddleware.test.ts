@@ -165,8 +165,9 @@ describe('Rate Limit Middleware', () => {
       const middleware = createRateLimitMiddleware();
       await middleware(mockRequest as Request, mockResponse as Response, mockNext);
 
-      // Middleware fails open when getIdentifier throws
-      expect(mockNext).toHaveBeenCalledWith();
+      // Missing identifier is a client error — it should be forwarded as an
+      // AppError, NOT silently bypass rate limiting via fail-open.
+      expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     });
 
     it('should log when rate limit is nearing exhaustion', async () => {

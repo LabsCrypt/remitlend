@@ -2,7 +2,6 @@ import request from 'supertest';
 import { jest } from '@jest/globals';
 import { Keypair } from '@stellar/stellar-sdk';
 import jwt from 'jsonwebtoken';
-import { generateJwtToken } from '../services/authService.js';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
 
@@ -23,7 +22,8 @@ const mockClient = {
   release: mockRelease,
 };
 
-jest.unstable_mockModule('../db/connection.js', () => ({
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
@@ -32,12 +32,16 @@ jest.unstable_mockModule('../db/connection.js', () => ({
 }));
 
 // Mock CacheService to prevent Redis connections
-jest.unstable_mockModule('../services/cacheService.js', () => ({
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
   cacheService: {
-    get: jest.fn<() => Promise<null>>().mockResolvedValue(null),
-    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    ping: jest.fn<() => Promise<string>>().mockResolvedValue('ok'),
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
   },
 }));
 
@@ -100,7 +104,7 @@ const mockSubmitSignedTx =
   jest.fn<
     (signedTxXdr: string) => Promise<{ txHash: string; status: string; resultXdr?: string }>
   >();
-jest.unstable_mockModule('../services/sorobanService.js', () => ({
+await jest.unstable_mockModule('../services/sorobanService.js', () => ({
   sorobanService: {
     buildRequestLoanTx: mockBuildRequestLoanTx,
     buildRepayTx: mockBuildRepayTx,
@@ -116,6 +120,7 @@ jest.unstable_mockModule('../services/sorobanService.js', () => ({
 await import('../db/connection.js');
 await import('../services/sorobanService.js');
 const { default: app } = await import('../app.js');
+const { generateJwtToken } = await import('../services/authService.js');
 
 const mockedQuery = mockQuery;
 
@@ -136,6 +141,7 @@ const bearerWithScopes = (publicKey: string, scopes: string[]) => ({
 beforeEach(() => {
   mockedQuery.mockReset();
   jest.clearAllMocks();
+  fakeCacheStore.clear();
 });
 
 afterAll(() => {

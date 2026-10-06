@@ -280,6 +280,9 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
       throw AppError.forbidden('You do not have access to this remittance');
     }
 
+    // Fast path for sequential retries. This read is not the guard — two
+    // concurrent requests can both pass it before either writes (TOCTOU), so
+    // the authoritative check is the atomic claim below.
     if (remittance.status !== 'pending') {
       throw AppError.badRequest('Remittance has already been submitted');
     }
@@ -289,8 +292,16 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
     // be flipped to `processing` or `failed` — the sender can re-sign and retry.
     parseAndValidateSignedEnvelope(signedXdr);
 
-    // Update status to processing before submission
-    await remittanceService.updateRemittanceStatus(id, 'processing');
+    // Atomically claim the pending → processing transition. The UPDATE is
+    // guarded on the row's current status, so of several concurrent submissions
+    // exactly one matches; every other request gets `null` back and is rejected
+    // below with a deterministic 400 instead of also submitting to Stellar
+    // (TOCTOU double submission, #1850).
+    const claimed = await remittanceService.updateRemittanceStatus(id, 'processing');
+
+    if (!claimed) {
+      throw AppError.badRequest('Remittance has already been submitted');
+    }
 
     // Submit signed XDR to Stellar and poll for confirmation
     const stellarResult = await sorobanService.submitSignedTx(signedXdr);
@@ -309,12 +320,18 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
       throw AppError.internal(failureMessage);
     }
 
-    // Persist completed status with transaction hash
+    // Persist completed status with transaction hash. `null` would mean the
+    // row vanished mid-flight (only the guarded `processing` claim ever
+    // returns it), so never report a success the record does not reflect.
     const completed = await remittanceService.updateRemittanceStatus(
       id,
       'completed',
       stellarResult.txHash,
     );
+
+    if (!completed) {
+      throw AppError.internal('Failed to persist the completed remittance status');
+    }
 
     logger.withContext().info('Remittance transaction confirmed', {
       remittanceId: id,

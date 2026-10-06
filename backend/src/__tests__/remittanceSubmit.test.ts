@@ -77,6 +77,16 @@ function makeRes() {
 beforeEach(() => {
   jest.clearAllMocks();
   process.env.STELLAR_NETWORK = 'testnet';
+  // Default: the atomic pending → processing claim succeeds and every later
+  // transition returns the updated row (the real service never resolves `null`
+  // for unguarded transitions).
+  mockUpdateRemittanceStatus.mockImplementation(
+    async (id: string, status: string, txHash?: string) => ({
+      id,
+      status,
+      transactionHash: txHash,
+    }),
+  );
 });
 
 afterAll(() => {
@@ -128,6 +138,49 @@ describe('POST /api/remittances/:id/submit', () => {
         data: expect.objectContaining({ status: 'completed', txHash: 'txhash-abc' }),
       }),
     );
+  });
+
+  it('rejects with 400 when a concurrent submission wins the processing claim, without submitting (#1850)', async () => {
+    mockGetRemittance.mockResolvedValue({
+      id: 'remit-1',
+      senderId: SENDER,
+      status: 'pending',
+      amount: 100,
+      fromCurrency: 'USDC',
+    });
+
+    // Both requests read `pending` before either writes; this one then loses
+    // the atomic `UPDATE ... WHERE status = 'pending'` claim, so the service
+    // resolves null for the `processing` transition.
+    mockUpdateRemittanceStatus.mockImplementation(
+      async (id: string, status: string, txHash?: string) =>
+        status === 'processing' ? null : { id, status, transactionHash: txHash },
+    );
+    mockSubmitSignedTx.mockResolvedValue({ txHash: 'txhash-abc', status: 'SUCCESS' });
+
+    const req = makeReq(buildSignedXdr()) as Request;
+    const res = makeRes();
+    const next = jest.fn();
+
+    (submitRemittanceTransaction as (req: Request, res: Response, next: () => void) => void)(
+      req,
+      res,
+      next,
+    );
+    await flush();
+
+    // Deterministic loser: rejected before anything touches Stellar, and the
+    // record is not flipped to `failed` either (4xx is a client error).
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 400,
+        message: 'Remittance has already been submitted',
+      }),
+    );
+    expect(mockSubmitSignedTx).not.toHaveBeenCalled();
+    expect(mockUpdateRemittanceStatus).toHaveBeenCalledTimes(1);
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('marks the remittance failed and surfaces an error when the network rejects the submission', async () => {

@@ -1,7 +1,6 @@
 import { jest, describe, it, expect, beforeEach, afterAll } from '@jest/globals';
 import request from 'supertest';
 import { Keypair } from '@stellar/stellar-sdk';
-import { generateJwtToken } from '../services/authService.js';
 
 /**
  * Tests for status + date-range filters on GET /api/loans/borrower/:borrower
@@ -25,7 +24,8 @@ const mockQuery: jest.MockedFunction<
 const mockRelease = jest.fn();
 const mockClient = { query: mockQuery, release: mockRelease };
 
-jest.unstable_mockModule('../db/connection.js', () => ({
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
@@ -33,17 +33,21 @@ jest.unstable_mockModule('../db/connection.js', () => ({
   withTransaction: jest.fn(),
 }));
 
-jest.unstable_mockModule('../services/cacheService.js', () => ({
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
   cacheService: {
-    get: jest.fn<() => Promise<null>>().mockResolvedValue(null),
-    set: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    ping: jest.fn<() => Promise<string>>().mockResolvedValue('ok'),
-    invalidatePattern: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
+    invalidatePattern: jest.fn(async () => {}),
   },
 }));
 
-jest.unstable_mockModule('../services/sorobanService.js', () => ({
+await jest.unstable_mockModule('../services/sorobanService.js', () => ({
   sorobanService: {
     ping: jest.fn<() => Promise<string>>().mockResolvedValue('ok'),
     healthCheck: jest
@@ -56,6 +60,7 @@ jest.unstable_mockModule('../services/sorobanService.js', () => ({
 }));
 
 const { default: app } = await import('../app.js');
+const { generateJwtToken } = await import('../services/authService.js');
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,

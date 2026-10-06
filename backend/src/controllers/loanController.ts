@@ -367,13 +367,32 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
           *,
           COALESCE(rate_bps, ${DEFAULT_INTEREST_RATE_BPS}) as effective_rate_bps,
           COALESCE(term_ledgers, ${DEFAULT_TERM_LEDGERS}) as effective_term_ledgers,
-          COALESCE(approved_ledger, 0) as effective_approved_ledger
+          COALESCE(approved_ledger, 0) as effective_approved_ledger,
+          -- Dispute freeze: when a loan has an open dispute, interest stops
+          -- accruing at the ledger closest to (at or before) the earliest open
+          -- dispute's creation. Mirrors the freeze-ledger lookup in
+          -- getLoanDetails so the list and detail endpoints agree.
+          (
+            SELECT ce.ledger
+            FROM contract_events ce
+            WHERE ce.loan_id = loan_summaries.loan_id
+              AND ce.ledger_closed_at <= (
+                SELECT d.created_at
+                FROM loan_disputes d
+                WHERE d.loan_id = loan_summaries.loan_id
+                  AND d.status = 'open'
+                ORDER BY d.created_at ASC
+                LIMIT 1
+              )
+            ORDER BY ce.ledger_closed_at DESC
+            LIMIT 1
+          ) as dispute_freeze_ledger
         FROM loan_summaries
       ),
       loan_fin AS (
         SELECT
           *,
-          FLOOR(GREATEST(0, principal - total_repaid) * effective_rate_bps * GREATEST(0, $2 - effective_approved_ledger) / (10000 * effective_term_ledgers)) as accrued_interest
+          FLOOR(GREATEST(0, principal - total_repaid) * effective_rate_bps * GREATEST(0, COALESCE(dispute_freeze_ledger, $2) - effective_approved_ledger) / (10000 * effective_term_ledgers)) as accrued_interest
         FROM loan_calculations
       ),
       loan_final AS (
