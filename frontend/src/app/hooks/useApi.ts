@@ -300,6 +300,8 @@ export interface LoanDetails {
   approvedAt?: string;
   events: LoanEvent[];
   lateFees?: number;
+  extensionFee?: number;
+  extensionFee?: number;
   collateralLocked?: number;
   collateralRatio?: number;
   healthFactor?: number;

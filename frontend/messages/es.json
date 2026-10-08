@@ -303,8 +303,10 @@
     },
     "extension": {
       "title": "Solicitar extensión",
-      "extraLedgers": "Ledgers adicionales",
+      "days": "Duración de la extensión (días)",
       "newDueDate": "Nueva fecha de vencimiento",
+      "fee": "Tarifa de extensión",
+      "feeDisclosure": "El contrato cobra el 1 % del capital pendiente.",
       "submit": "Construir, Firmar y Enviar"
     }
   },

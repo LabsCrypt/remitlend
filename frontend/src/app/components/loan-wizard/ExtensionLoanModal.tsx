@@ -22,19 +22,20 @@ interface ExtensionLoanModalProps {
   title: string;
   submitLabel: string;
   cancelLabel: string;
-  ledgersLabel: string;
+  daysLabel: string;
   newDueDateLabel: string;
+  extensionFeeLabel: string;
+  feeDisclosure: string;
+  extensionFee: number;
   busyLabel: string;
 }
 
-const LEDGER_CLOSE_SECONDS = 5;
-
-function calculateDueDate(baseIso: string | undefined, extraLedgers: number): string {
-  if (!baseIso || !Number.isFinite(extraLedgers) || extraLedgers <= 0) {
+function calculateDueDate(baseIso: string | undefined, extensionDays: number): string {
+  if (!baseIso || !Number.isFinite(extensionDays) || extensionDays <= 0) {
     return "—";
   }
   const base = new Date(baseIso);
-  const next = new Date(base.getTime() + extraLedgers * LEDGER_CLOSE_SECONDS * 1000);
+  const next = new Date(base.getTime() + extensionDays * 24 * 60 * 60 * 1000);
   return next.toLocaleString();
 }
 
@@ -47,21 +48,24 @@ export function ExtensionLoanModal({
   title,
   submitLabel,
   cancelLabel,
-  ledgersLabel,
+  daysLabel,
   newDueDateLabel,
+  extensionFeeLabel,
+  feeDisclosure,
+  extensionFee,
   busyLabel,
 }: ExtensionLoanModalProps) {
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const walletAddress = useWalletStore(selectWalletAddress);
   const toast = useContractToast();
 
-  const [extraLedgers, setExtraLedgers] = useState(17280);
+  const [extensionDays, setExtensionDays] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const disabled = isSubmitting || !isWalletConnected || !walletAddress;
   const predictedDueDate = useMemo(
-    () => calculateDueDate(currentDueDate, extraLedgers),
-    [currentDueDate, extraLedgers],
+    () => calculateDueDate(currentDueDate, extensionDays),
+    [currentDueDate, extensionDays],
   );
 
   async function handleSubmit() {
@@ -71,8 +75,12 @@ export function ExtensionLoanModal({
       toast.error("Wallet not connected", "Connect your wallet before requesting an extension.");
       return;
     }
-    if (!Number.isFinite(extraLedgers) || extraLedgers <= 0) {
-      toast.error("Invalid extension", "Extra ledgers must be a positive number.");
+    if (
+      !Number.isSafeInteger(extensionDays) ||
+      extensionDays <= 0 ||
+      extensionDays > Math.floor(0xffffffff / 17280)
+    ) {
+      toast.error("Invalid extension", "Enter a whole number of days within the supported range.");
       return;
     }
 
@@ -82,7 +90,7 @@ export function ExtensionLoanModal({
       const built = await buildExtendLoanTransaction({
         loanId,
         borrowerPublicKey: walletAddress,
-        extraLedgers: Math.round(extraLedgers),
+        extraLedgers: extensionDays * 17280,
       });
 
       const signResult = await signTransaction(built.unsignedTxXdr, {
@@ -124,12 +132,13 @@ export function ExtensionLoanModal({
     <Modal isOpen={isOpen} onClose={onClose} title={title} className="max-w-xl">
       <div className="space-y-5">
         <Input
-          label={ledgersLabel}
+          label={daysLabel}
           type="number"
           min={1}
+          max={Math.floor(0xffffffff / 17280)}
           step={1}
-          value={Number.isFinite(extraLedgers) ? extraLedgers : ""}
-          onChange={(event) => setExtraLedgers(Number(event.target.value))}
+          value={Number.isFinite(extensionDays) ? extensionDays : ""}
+          onChange={(event) => setExtensionDays(Number(event.target.value))}
           disabled={disabled}
         />
 
@@ -140,6 +149,16 @@ export function ExtensionLoanModal({
           <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             {predictedDueDate}
           </p>
+        </div>
+
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            {extensionFeeLabel}
+          </p>
+          <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            {extensionFee.toLocaleString(undefined, { maximumFractionDigits: 7 })}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{feeDisclosure}</p>
         </div>
 
         {isSubmitting && (
