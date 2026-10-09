@@ -5,6 +5,7 @@ import {
   Operation,
   TransactionBuilder,
   nativeToScVal,
+  scValToNative,
   rpc,
   xdr,
 } from '@stellar/stellar-sdk';
@@ -89,6 +90,82 @@ export async function reconcileLoanStroops(loanId: number): Promise<LoanReconcil
 const DEFAULT_TERM_LEDGERS = 17_280;
 const LOCK_KEY = 'default_checker:running';
 const LOCK_TTL_SECONDS = 600; // 10 minutes - prevents stuck locks from crashed runs
+
+const OVERDUE_LOAN_CTES = `
+  WITH approved AS (
+    SELECT
+      loan_id,
+      MAX(ledger) AS approved_ledger,
+      MAX(term_ledgers) FILTER (WHERE event_type = 'LoanApproved') AS approved_term_ledgers
+    FROM contract_events
+    WHERE event_type = 'LoanApproved'
+      AND loan_id IS NOT NULL
+    GROUP BY loan_id
+  ),
+  extensions AS (
+    SELECT loan_id, MAX(due_ledger) AS extended_due_ledger
+    FROM contract_events
+    WHERE event_type = 'LoanExtended'
+      AND loan_id IS NOT NULL
+      AND due_ledger IS NOT NULL
+    GROUP BY loan_id
+  ),
+  active AS (
+    SELECT
+      a.loan_id,
+      COALESCE(
+        x.extended_due_ledger,
+        a.approved_ledger + COALESCE(NULLIF(a.approved_term_ledgers, 0), $1)
+      ) AS due_ledger
+    FROM approved a
+    LEFT JOIN extensions x ON x.loan_id = a.loan_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM contract_events e
+      WHERE e.loan_id = a.loan_id AND e.event_type = 'LoanDefaulted'
+    )
+    -- LoanRepaid is emitted for both partial and full payments, so its mere
+    -- presence cannot establish terminal repayment. The Soroban contract's
+    -- check_defaults verifies LoanStatus::Approved before changing any loan.
+  ),
+  overdue AS (
+    SELECT * FROM active WHERE due_ledger < $2
+  )
+`;
+
+/**
+ * Older indexed LoanExtended rows predate the due_ledger column. Recover the
+ * absolute due ledger from their original Soroban event payload, once, so an
+ * already-extended loan is not evaluated against its original term.
+ */
+async function backfillExtensionDueLedgers(): Promise<void> {
+  const result = await query(
+    `SELECT id, value FROM contract_events
+     WHERE event_type = 'LoanExtended' AND due_ledger IS NULL AND value IS NOT NULL`,
+  );
+
+  for (const row of result.rows as Array<{ id: number; value: string }>) {
+    // Allows simple query mocks and partially populated test fixtures to
+    // return no-op rows; real database rows always have both fields.
+    if (!Number.isInteger(row.id) || typeof row.value !== 'string') continue;
+    try {
+      const decoded = scValToNative(xdr.ScVal.fromXDR(row.value, 'base64'));
+      const dueLedger = Array.isArray(decoded) ? Number(decoded[0]) : NaN;
+      if (!Number.isSafeInteger(dueLedger) || dueLedger <= 0) {
+        throw new Error('invalid new_due_ledger in LoanExtended payload');
+      }
+      await query(
+        'UPDATE contract_events SET due_ledger = $1 WHERE id = $2 AND due_ledger IS NULL',
+        [dueLedger, row.id],
+      );
+    } catch (error) {
+      logger.withContext().error('Failed to backfill LoanExtended due ledger', {
+        eventRowId: row.id,
+        error,
+      });
+      throw error;
+    }
+  }
+}
 
 export interface DefaultCheckBatchResult {
   loanIds: number[];
@@ -237,30 +314,9 @@ export class DefaultChecker {
    */
   private async fetchOverdueLoanIds(currentLedger: number): Promise<number[]> {
     const result = await query(
-      `
-      WITH approved AS (
-        SELECT loan_id, MAX(ledger) AS approved_ledger
-        FROM contract_events
-        WHERE event_type = 'LoanApproved'
-          AND loan_id IS NOT NULL
-        GROUP BY loan_id
-      ),
-      active AS (
-        SELECT
-          a.loan_id,
-          a.approved_ledger,
-          (a.approved_ledger + $1) AS due_ledger
-        FROM approved a
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM contract_events e
-          WHERE e.loan_id = a.loan_id
-            AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
-        )
-      )
+      `${OVERDUE_LOAN_CTES}
       SELECT loan_id
-      FROM active
-      WHERE due_ledger < $2
+      FROM overdue
       ORDER BY due_ledger ASC, loan_id ASC
       LIMIT $3
       `,
@@ -282,31 +338,7 @@ export class DefaultChecker {
     ledgersPastOldestDue?: number;
   }> {
     const result = await query(
-      `
-      WITH approved AS (
-        SELECT loan_id, MAX(ledger) AS approved_ledger
-        FROM contract_events
-        WHERE event_type = 'LoanApproved'
-          AND loan_id IS NOT NULL
-        GROUP BY loan_id
-      ),
-      active AS (
-        SELECT
-          a.loan_id,
-          (a.approved_ledger + $1) AS due_ledger
-        FROM approved a
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM contract_events e
-          WHERE e.loan_id = a.loan_id
-            AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
-        )
-      ),
-      overdue AS (
-        SELECT *
-        FROM active
-        WHERE due_ledger < $2
-      )
+      `${OVERDUE_LOAN_CTES}
       SELECT
         COUNT(*)::bigint AS overdue_count,
         MIN(due_ledger) AS oldest_due_ledger
@@ -566,6 +598,8 @@ export class DefaultChecker {
 
       const latest = await server.getLatestLedger();
       const currentLedger = latest.sequence;
+
+      await backfillExtensionDueLedgers();
 
       const stats = await this.fetchOverdueStats(currentLedger);
 
