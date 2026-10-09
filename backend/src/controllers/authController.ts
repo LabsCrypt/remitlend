@@ -31,7 +31,7 @@ import {
 } from '../services/authService.js';
 import logger from '../utils/logger.js';
 
-const logAuthFailure = (req: Request, publicKey: string | undefined, reason: string): void => {
+const logAythFailure = (req: Request, publicKey: string | undefined, reason: string): void => {
   logger.warn('Auth attempt failed', {
     ip: req.ip,
     publicKey,
@@ -179,7 +179,14 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
   }
 
   const cookieName = process.env.JWT_COOKIE_NAME ?? 'remitlend_jwt';
-  res.clearCookie(cookieName, { path: '/' });
+  // Match the attributes used when setting the cookie so browsers actually
+  // delete it on logout.
+  res.clearCookie(cookieName, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+  });
 
   res.status(200).json({
     success: true,
