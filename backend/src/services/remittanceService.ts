@@ -118,7 +118,9 @@ export const remittanceService = {
             amount: payload.amount.toString(),
           }),
         )
-        .setTimeout(30)
+        // Give users enough time to review and sign the XDR in their wallet.
+        // A 30-second timebound frequently expires while Freighter is open.
+        .setTimeout(300)
         .build();
 
       const xdr = transaction.toXDR();
