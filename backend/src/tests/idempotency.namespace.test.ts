@@ -44,6 +44,11 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     return request;
   };
 
+  const aliceCacheKey = `idemp:${ALICE}:shared-key`;
+  const aliceLockKey = `idemp:${ALICE}:shared-key:lock`;
+  const bobCacheKey = `idemp:${BOB}:shared-key`;
+  const bobLockKey = `idemp:${BOB}:shared-key:lock`;
+
   const cacheKeysRead = () => asMock(cacheService.get).mock.calls.map(([key]) => String(key));
 
   beforeEach(() => {
@@ -175,8 +180,7 @@ describe('idempotencyMiddleware key namespacing (#1809)', () => {
     });
 
     it('namespaces the lock key as well as the cache key', async () => {
-      asMock(cacheService.setNotExists).mockResolvedValue(false);
-
+      // Use the beforeEach mock which returns true for Alice's lock key
       await idempotencyMiddleware(req as Request, res as Response, next);
 
       const lockKey = asMock(cacheService.setNotExists).mock.calls[0][0];

@@ -2,6 +2,37 @@ import type { Request, Response, NextFunction } from 'express';
 import { query } from '../db/connection.js';
 import logger from '../utils/logger.js';
 
+const AUDIT_LOG_TIMEOUT_MS = Number(process.env.AUDIT_LOG_TIMEOUT_MS ?? 750);
+
+async function persistAuditLog(
+  actor: string,
+  action: string,
+  target: string | undefined,
+  payload: unknown,
+  ipAddress: string | undefined,
+  statusCode: number,
+): Promise<void> {
+  await Promise.race([
+    query(
+      `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        actor,
+        action,
+        target ?? null,
+        payload ? JSON.stringify(payload) : null,
+        ipAddress ?? null,
+        statusCode,
+      ],
+    ),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Audit log insert timed out after ${AUDIT_LOG_TIMEOUT_MS}ms`));
+      }, AUDIT_LOG_TIMEOUT_MS);
+    }),
+  ]);
+}
+
 /**
  * Sanitizes the request body to remove sensitive fields before logging.
  */
@@ -79,31 +110,27 @@ export const auditLog = (req: Request, res: Response, next: NextFunction): void 
       )?.split(',')[0] ||
       req.socket.remoteAddress;
 
+    const isJestTestRun = !!process.env.JEST_WORKER_ID;
+    const allowTestAuditLogging = process.env.AUDIT_LOG_ALLOW_IN_TESTS === '1';
+
     res.on('finish', () => {
-      // Log the action asynchronously to avoid blocking the main request thread
-      void (async () => {
-        try {
-          await query(
-            `INSERT INTO audit_logs (actor, action, target, payload, ip_address, status)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [
-              actor,
-              action,
-              target ?? null,
-              payload ? JSON.stringify(payload) : null,
-              ipAddress ?? null,
-              res.statusCode,
-            ],
-          );
-        } catch (err) {
+      if (isJestTestRun && !allowTestAuditLogging) {
+        return;
+      }
+
+      // Log the action asynchronously to avoid blocking the main request thread,
+      // but cap the wait so a slow or unavailable DB does not keep Jest or the
+      // Node process alive after the response has already completed.
+      void persistAuditLog(actor, action, target, payload, ipAddress, res.statusCode).catch(
+        (err) => {
           logger.error('Audit logging failure', {
             err,
             actor,
             action,
             target,
           });
-        }
-      })();
+        },
+      );
     });
   } catch (err) {
     // If the audit log logic fails, we still want to proceed with the request

@@ -1,10 +1,10 @@
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import type { AuditLogFilters } from '../auditLogService.js';
 
-// getAuditLogs talks to Postgres through query() — mock it so these tests
-// assert the SQL it builds (ordering, keyset predicate, filtered count)
-// without needing a database.
-const mockQuery = jest.fn();
+const mockQuery = jest
+  .fn<(...args: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }>>()
+  .mockResolvedValue({ rows: [], rowCount: 0 });
+
 jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
 }));
@@ -76,8 +76,6 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       // The cursor carries the timestamp *and* the id it is paging from. It
       // must split on the LAST ':' — ISO timestamps contain colons.
       expect(result.nextCursor).toContain(':');
-      // Use decodeCursor to properly parse the composite cursor
-      const { decodeCursor } = await import('../auditLogService.js');
       const decoded = decodeCursor(result.nextCursor);
       expect(decoded).not.toBeNull();
       expect(decoded!.createdAt).toMatch(/^2026-03-02T/);
@@ -120,6 +118,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       mockQuery.mockImplementation((text: unknown) =>
         Promise.resolve({
           rows: String(text).includes('SELECT * FROM audit_logs') ? PAGE_ROWS : [{ count: 3 }],
+          rowCount: String(text).includes('SELECT * FROM audit_logs') ? PAGE_ROWS.length : 1,
         }),
       );
 
@@ -149,6 +148,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       mockQuery.mockImplementation((text: unknown) =>
         Promise.resolve({
           rows: String(text).includes('SELECT * FROM audit_logs') ? PAGE_ROWS : [{ count: 7 }],
+          rowCount: String(text).includes('SELECT * FROM audit_logs') ? PAGE_ROWS.length : 1,
         }),
       );
 
@@ -164,6 +164,7 @@ describe('getAuditLogs keyset pagination and totals (#1808)', () => {
       mockQuery.mockImplementation((text: unknown) =>
         Promise.resolve({
           rows: String(text).includes('SELECT * FROM audit_logs') ? PAGE_ROWS : [{ count: 137 }],
+          rowCount: String(text).includes('SELECT * FROM audit_logs') ? PAGE_ROWS.length : 1,
         }),
       );
 
