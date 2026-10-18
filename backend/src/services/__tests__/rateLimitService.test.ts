@@ -56,8 +56,21 @@ describe('rateLimitService', () => {
     expect(script).toContain('TTL');
   });
 
-  it('blocks requests once the atomic counter reaches or exceeds the limit', async () => {
+  it('still admits the maxRequests-th request itself (off-by-one guard)', async () => {
     mockEval.mockResolvedValueOnce([5, 60]);
+
+    const result = await rateLimitService.checkRateLimit('user123', {
+      maxRequests: 5,
+      windowSeconds: 60,
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(0);
+    expect(result.currentCount).toBe(5);
+  });
+
+  it('blocks the request past maxRequests', async () => {
+    mockEval.mockResolvedValueOnce([6, 60]);
 
     const result = await rateLimitService.checkRateLimit('user123', {
       maxRequests: 5,
@@ -66,10 +79,10 @@ describe('rateLimitService', () => {
 
     expect(result.allowed).toBe(false);
     expect(result.remaining).toBe(0);
-    expect(result.currentCount).toBe(5);
+    expect(result.currentCount).toBe(6);
   });
 
-  it('admits requests strictly below maxRequests under concurrent requests', async () => {
+  it('admits exactly maxRequests out of maxRequests+1 concurrent requests', async () => {
     let counter = 0;
     mockEval.mockImplementation(async () => {
       counter += 1;
@@ -85,8 +98,8 @@ describe('rateLimitService', () => {
       ),
     );
 
-    expect(results.filter((result) => result.allowed)).toHaveLength(4);
-    expect(results.filter((result) => !result.allowed)).toHaveLength(6);
+    expect(results.filter((result) => result.allowed)).toHaveLength(5);
+    expect(results.filter((result) => !result.allowed)).toHaveLength(5);
     expect(mockEval).toHaveBeenCalledTimes(10);
   });
 
