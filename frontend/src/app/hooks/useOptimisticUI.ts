@@ -5,7 +5,13 @@ import { devtools } from "zustand/middleware";
 import { useState, useEffect } from "react";
 
 export type TransactionStatus =
-  "idle" | "pending" | "signing" | "submitted" | "confirming" | "confirmed" | "failed";
+  | "idle"
+  | "pending"
+  | "signing"
+  | "submitted"
+  | "confirming"
+  | "confirmed"
+  | "failed";
 
 export interface TransactionState {
   id: string;
@@ -48,18 +54,20 @@ export const useOptimisticUI = create<OptimisticUIStore>()(
       optimisticUpdates: new Set(),
 
       startTransaction: (id, message) =>
-        set((state): Partial<OptimisticUIStore> => ({
-          transactions: {
-            ...state.transactions,
-            [id]: {
-              id,
-              status: "pending" as TransactionStatus,
-              message,
-              progress: 0,
-              startTime: Date.now(),
-            } as TransactionState,
-          },
-        })),
+        set(
+          (state): Partial<OptimisticUIStore> => ({
+            transactions: {
+              ...state.transactions,
+              [id]: {
+                id,
+                status: "pending" as TransactionStatus,
+                message,
+                progress: 0,
+                startTime: Date.now(),
+              } as TransactionState,
+            },
+          }),
+        ),
 
       updateProgress: (id, progress, message) =>
         set((state) => {

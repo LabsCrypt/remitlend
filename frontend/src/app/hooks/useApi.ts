@@ -1389,9 +1389,7 @@ export type NotificationType =
   | "repayment_due"
   | "repayment_confirmed"
   | "loan_defaulted"
-  | "score_changed"
-  | "dispute_opened"
-  | "dispute_contested";
+  | "score_changed";
 
 export interface AppNotification {
   id: number;
