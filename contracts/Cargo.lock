@@ -815,6 +815,9 @@ dependencies = [
 name = "multisig_governance"
 version = "0.0.1"
 dependencies = [
+ "lending_pool",
+ "loan_manager",
+ "remittance_nft",
  "soroban-sdk",
 ]
 

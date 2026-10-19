@@ -22,6 +22,8 @@ const NOTIFICATION_TYPES: Array<NotificationType | "all"> = [
   "repayment_confirmed",
   "loan_defaulted",
   "score_changed",
+  "dispute_opened",
+  "dispute_contested",
 ];
 
 function notificationIcon(type: NotificationType) {
@@ -211,6 +213,8 @@ export default function NotificationsPage() {
                     repayment_confirmed: t("types.repayment_confirmed"),
                     loan_defaulted: t("types.loan_defaulted"),
                     score_changed: t("types.score_changed"),
+                    dispute_opened: t("types.dispute_opened"),
+                    dispute_contested: t("types.dispute_contested"),
                   }[type]
                 }
               </button>

@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useAdminGovernancePending } from "../../../hooks/useApi";
-import { useUserStore } from "../../../stores/useUserStore";
+import { useAdminGuard } from "../../../hooks/useAdminGuard";
 
 function shortAddress(value: string | null | undefined) {
   if (!value) return "Not configured";
@@ -19,17 +19,46 @@ function timeUntil(value: string | null | undefined) {
   return `${Math.ceil(minutes / 60)}h`;
 }
 
+function LoadingPanel({ label }: { label: string }) {
+  return (
+    <section className="rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400">{label}</p>
+    </section>
+  );
+}
+
+function ForbiddenPanel({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+      {label}
+    </div>
+  );
+}
+
 export default function GovernancePage() {
   const t = useTranslations("Governance");
-  const role = useUserStore((state) => state.user?.role);
-  const { data, isLoading, isError } = useAdminGovernancePending();
+  const { isAdmin, isChecking } = useAdminGuard();
+  // Gated on a *confirmed* admin role. Previously this fired on every render,
+  // including for anonymous visitors, which put the privileged request on the
+  // wire before the guard had decided anything (#1884).
+  const { data, isLoading, isError } = useAdminGovernancePending({ enabled: isAdmin });
 
-  if (role && role !== "admin") {
+  // An unresolved role is not a permitted role. The old check was
+  // `if (role && role !== "admin")`, so a falsy role — anonymous visitor, or an
+  // admin session still loading — fell straight through and rendered pending
+  // proposals, signer addresses and approval counts.
+  if (isChecking || (!isAdmin && isLoading)) {
     return (
       <main className="mx-auto max-w-5xl px-4 py-10">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-          {t("forbidden")}
-        </div>
+        <LoadingPanel label={t("loading")} />
+      </main>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <main className="mx-auto max-w-5xl px-4 py-10">
+        <ForbiddenPanel label={t("forbidden")} />
       </main>
     );
   }
@@ -42,9 +71,7 @@ export default function GovernancePage() {
       </div>
 
       {isLoading ? (
-        <section className="rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("loading")}</p>
-        </section>
+        <LoadingPanel label={t("loading")} />
       ) : isError ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
           {t("error")}

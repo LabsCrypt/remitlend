@@ -8,7 +8,7 @@ import { Button } from "../ui/Button";
 import { RepaymentScheduleTable } from "./RepaymentScheduleTable";
 import {
   buildRefinanceLoanTransaction,
-  submitLoanTransaction,
+  submitRefinanceLoanTransaction,
   useLoanAmortizationPreview,
 } from "../../hooks/useApi";
 import { useContractToast } from "../../hooks/useContractToast";
@@ -112,7 +112,7 @@ export function RefinanceLoanModal({
         );
       }
 
-      const submitted = await submitLoanTransaction(signResult.signedTxXdr);
+      const submitted = await submitRefinanceLoanTransaction(loanId, signResult.signedTxXdr);
       if (submitted.status !== "SUCCESS") {
         throw new Error("Transaction failed");
       }

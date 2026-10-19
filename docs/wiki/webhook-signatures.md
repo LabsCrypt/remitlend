@@ -1,69 +1,43 @@
 # Webhook Signature Verification
 
-Every outbound webhook delivery from RemitLend includes an
-`X-RemitLend-Signature` header that allows subscribers to verify the
-payload was not tampered with in transit.
+Deliveries with a configured subscription secret include an
+`X-RemitLend-Signature` header. The timestamp limits how long a captured request
+can be replayed.
 
 ## Header format
 
 ```
-X-RemitLend-Signature: sha256=<hex-encoded-hmac>
+X-RemitLend-Signature: t=<unix-seconds>,v1=<hex-encoded-hmac>
 ```
 
-The value is `sha256=` followed by the lowercase hex-encoded
-HMAC-SHA256 digest of the **raw request body** using the subscriber
-secret that was supplied when the subscription was registered.
+The HMAC-SHA256 input is the timestamp, a period, and the exact raw request body:
+`<timestamp>.<raw-body>`. Reject timestamps older than five minutes before
+comparing the digest.
 
 ## Verification recipe
-
-### Node.js
 
 ```js
 import crypto from "node:crypto";
 
-function verifySignature(secret, rawBody, signatureHeader) {
-  const expected =
-    "sha256=" +
-    crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+function verifySignature(secret, rawBody, header, now = Date.now()) {
+  const match = /^t=(\\d+),v1=([a-f0-9]{64})$/.exec(header ?? "");
+  if (!match) return false;
 
-  // Use timingSafeEqual to prevent timing attacks
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signatureHeader ?? "");
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
-
-// Express example — YOUR_SUBSCRIPTION_SECRET is the per-subscription
-// secret returned when you registered the webhook, not an env var.
-app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
-  const sig = req.headers["x-remitlend-signature"];
-  if (!verifySignature(YOUR_SUBSCRIPTION_SECRET, req.body, sig)) {
-    return res.status(401).send("Invalid signature");
+  const [, timestamp, signature] = match;
+  const timestampMs = Number(timestamp) * 1000;
+  if (!Number.isSafeInteger(timestampMs) || Math.abs(now - timestampMs) > 5 * 60_000) {
+    return false;
   }
-  // process req.body …
-  res.sendStatus(200);
-});
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest();
+  const received = Buffer.from(signature, "hex");
+  return received.length === expected.length && crypto.timingSafeEqual(expected, received);
+}
 ```
 
-### Python
-
-```python
-import hmac, hashlib
-
-def verify_signature(secret: str, raw_body: bytes, header: str) -> bool:
-    digest = "sha256=" + hmac.new(
-        secret.encode(), raw_body, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(digest, header or "")
-```
-
-## Notes
-
-- The `Authorization: Bearer <secret>` header is also present for
-  backwards compatibility with existing subscribers that have not yet
-  adopted HMAC verification, but **`X-RemitLend-Signature` is the
-  authoritative integrity check**.
-- Always parse the raw body bytes *before* JSON-decoding; most
-  frameworks let you configure a raw-body parser for webhook routes.
-- Secrets can be rotated by deleting and re-creating the subscription
-  (secret rotation via the API is tracked in a separate issue).
+Verify the raw body before JSON parsing. Use a constant-time digest comparison.
+The signing secret is per subscription. Each retry is signed with a fresh
+timestamp and must be checked independently.

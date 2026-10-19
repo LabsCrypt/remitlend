@@ -164,11 +164,20 @@ export const contestDefault = asyncHandler(
 
     // Check loan exists and is defaulted
     const loanResult = await query(
-      `SELECT loan_id FROM contract_events WHERE loan_id = $1 AND event_type = 'LoanDefaulted' LIMIT 1`,
+      `SELECT address FROM contract_events WHERE loan_id = $1 AND event_type = 'LoanDefaulted' LIMIT 1`,
       [loanId],
     );
     if (loanResult.rows.length === 0) {
       throw AppError.badRequest('Loan is not defaulted or does not exist');
+    }
+
+    // Ownership check (BOLA/IDOR): the `address` on the LoanDefaulted event is
+    // the loan's borrower, so only that wallet may contest the default. The
+    // route also runs `requireLoanOwner`; keeping the assertion here makes the
+    // handler safe wherever it is mounted.
+    const loanBorrower = loanResult.rows[0].address as string | undefined;
+    if (loanBorrower !== borrower) {
+      throw AppError.forbidden('You are not the borrower of this loan');
     }
 
     // Insert dispute record and return disputeId
@@ -188,6 +197,7 @@ export const contestDefault = asyncHandler(
 
     // Notify admins via email, SSE, and optional webhook
     await notificationService.notifyAdmins({
+      type: 'dispute_contested',
       title: 'Loan Default Contested',
       message: `Borrower ${borrower} has contested the default on loan #${loanId}. Reason: ${reason}`,
       loanId: Number(loanId),
@@ -350,6 +360,7 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
           MAX(CASE WHEN event_type = 'LoanApproved' THEN interest_rate_bps END) as rate_bps,
           MAX(CASE WHEN event_type = 'LoanApproved' THEN term_ledgers END) as term_ledgers,
           SUM(CASE WHEN event_type = 'LoanRepaid' THEN amount::numeric ELSE 0 END) as total_repaid,
+          SUM(CASE WHEN event_type = 'LateFeeCharged' THEN amount::numeric ELSE 0 END) as accrued_late_fee,
           MAX(CASE WHEN event_type = 'LoanDefaulted' THEN 1 ELSE 0 END) as is_defaulted,
           (
             ARRAY_AGG(
@@ -366,13 +377,32 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
           *,
           COALESCE(rate_bps, ${DEFAULT_INTEREST_RATE_BPS}) as effective_rate_bps,
           COALESCE(term_ledgers, ${DEFAULT_TERM_LEDGERS}) as effective_term_ledgers,
-          COALESCE(approved_ledger, 0) as effective_approved_ledger
+          COALESCE(approved_ledger, 0) as effective_approved_ledger,
+          -- Dispute freeze: when a loan has an open dispute, interest stops
+          -- accruing at the ledger closest to (at or before) the earliest open
+          -- dispute's creation. Mirrors the freeze-ledger lookup in
+          -- getLoanDetails so the list and detail endpoints agree.
+          (
+            SELECT ce.ledger
+            FROM contract_events ce
+            WHERE ce.loan_id = loan_summaries.loan_id
+              AND ce.ledger_closed_at <= (
+                SELECT d.created_at
+                FROM loan_disputes d
+                WHERE d.loan_id = loan_summaries.loan_id
+                  AND d.status = 'open'
+                ORDER BY d.created_at ASC
+                LIMIT 1
+              )
+            ORDER BY ce.ledger_closed_at DESC
+            LIMIT 1
+          ) as dispute_freeze_ledger
         FROM loan_summaries
       ),
       loan_fin AS (
         SELECT
           *,
-          FLOOR(GREATEST(0, principal - total_repaid) * effective_rate_bps * GREATEST(0, $2 - effective_approved_ledger) / (10000 * effective_term_ledgers)) as accrued_interest
+          FLOOR(GREATEST(0, principal - total_repaid) * effective_rate_bps * GREATEST(0, COALESCE(dispute_freeze_ledger, $2) - effective_approved_ledger) / (10000 * effective_term_ledgers)) as accrued_interest
         FROM loan_calculations
       ),
       loan_final AS (
@@ -431,6 +461,7 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
       accruedInterest: isPending
         ? null
         : Number.parseFloat((row.accrued_interest as string) || '0'),
+      accruedLateFee: Number.parseFloat((row.accrued_late_fee as string) || '0'),
       totalRepaid: Number.parseFloat((row.total_repaid as string) || '0'),
       totalOwed: isPending ? null : Number.parseFloat((row.total_owed as string) || '0'),
       nextPaymentDeadline: new Date(row.next_payment_deadline as string).toISOString(),
@@ -573,10 +604,13 @@ export const getLoanDetails = asyncHandler(async (req: Request, res: Response) =
         termLedgers,
       });
   const accruedInterest = Number(accruedInterestStroops);
+  // Issue #1369: Owed amount must add accrued interest to remaining principal (not subtract).
   // remaining principal + interest accrued on it == principal + accrued - totalRepaid
   const totalOwed = Number(
     remainingPrincipal(principalStroops, totalRepaidStroops) + accruedInterestStroops,
   );
+  const extensionFeeStroops =
+    (remainingPrincipal(principalStroops, totalRepaidStroops) * 100n) / 10_000n;
 
   res.json({
     success: true,
@@ -598,6 +632,7 @@ export const getLoanDetails = asyncHandler(async (req: Request, res: Response) =
             : 'repaid',
       requestedAt: requestEvent?.ledger_closed_at,
       approvedAt: approvalEvent?.ledger_closed_at,
+      extensionFee: Number(extensionFeeStroops) / 10_000_000,
       events: events.map((event: Record<string, unknown>) => ({
         type: event.event_type,
         amount: event.amount,
@@ -1173,6 +1208,45 @@ export const submitTransaction = asyncHandler(async (req: Request, res: Response
     status: sr.status,
   });
 
+  res.json({
+    success: true,
+    txHash: sr.txHash,
+    status: sr.status,
+    ...(sr.resultXdr ? { resultXdr: sr.resultXdr } : {}),
+  });
+});
+
+export const submitRefinanceTransaction = asyncHandler(async (req: Request, res: Response) => {
+  const borrower = req.user?.publicKey;
+  const loanId = Number.parseInt(req.params.loanId as string, 10);
+  const { signedTxXdr } = req.body as { signedTxXdr: string };
+  if (!borrower) throw AppError.unauthorized('Authentication required');
+  if (!signedTxXdr) {
+    throw AppError.badRequest('signedTxXdr is required', ErrorCode.MISSING_FIELD, 'signedTxXdr');
+  }
+  if (!Number.isSafeInteger(loanId) || loanId <= 0) {
+    throw AppError.badRequest('Invalid loan ID', ErrorCode.INVALID_LOAN_ID, 'loanId');
+  }
+
+  const adminSignedTxXdr = await sorobanService.signRefinanceAuthorization(
+    signedTxXdr,
+    borrower,
+    loanId,
+  );
+  const result = await withStellarAndDbTransaction(
+    async () => sorobanService.submitSignedTx(adminSignedTxXdr),
+    async (stellarResult: unknown, client) => {
+      const sr = stellarResult as { txHash: string; status: string };
+      await client.query(
+        `INSERT INTO transaction_submissions (tx_hash, status, submitted_at, submitted_by)
+           VALUES ($1, $2, NOW(), $3)
+           ON CONFLICT (tx_hash) DO UPDATE SET status = EXCLUDED.status, submitted_at = EXCLUDED.submitted_at`,
+        [sr.txHash, sr.status, borrower],
+      );
+      return { recorded: true };
+    },
+  );
+  const sr = result.stellarResult as { txHash: string; status: string; resultXdr?: string };
   res.json({
     success: true,
     txHash: sr.txHash,

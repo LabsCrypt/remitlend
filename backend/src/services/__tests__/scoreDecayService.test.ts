@@ -18,32 +18,32 @@ describe('scoreDecayService', () => {
   describe('getInactiveBorrowers', () => {
     it('selects inactive borrowers from the canonical scores table', async () => {
       mockQuery.mockResolvedValueOnce({
-        rows: [{ borrower: 'user1', score: 700, last_repayment: null }],
+        rows: [{ borrower: 'user1', score: 700, last_activity: '2025-01-01T00:00:00.000Z' }],
         rowCount: 1,
       });
 
       const borrowers = await getInactiveBorrowers();
 
-      expect(borrowers).toEqual([{ borrower: 'user1', score: 700, last_repayment: null }]);
+      expect(borrowers).toEqual([
+        { borrower: 'user1', score: 700, last_activity: '2025-01-01T00:00:00.000Z' },
+      ]);
       const sql = mockQuery.mock.calls[0]![0];
       expect(sql).toContain('FROM scores s');
-      expect(sql).toContain('s.borrower');
-      expect(sql).toContain('s.score');
-      expect(sql).not.toContain('FROM borrowers');
+      expect(sql).toContain('s.user_id');
+      expect(sql).toContain('s.current_score');
+      expect(sql).toContain("e.event_type IN ('LoanApproved', 'LoanRepaid')");
+      expect(sql).toContain('HAVING MAX(e.ledger_closed_at) < NOW() - INTERVAL');
+      expect(sql).not.toContain('IS NULL');
     });
   });
 
   describe('applyScoreDecay', () => {
-    it('decays inactive borrower with no repayment by configured amount', async () => {
-      const borrower = { borrower: 'user1', score: 700, last_repayment: null };
+    it('does not decay a borrower with no loan activity timestamp', async () => {
+      const borrower = { borrower: 'user1', score: 700, last_activity: null };
       const newScore = await applyScoreDecay(borrower);
 
-      // No last_repayment => monthsInactive = 1 => decay = 1 * 5 = 5
-      expect(newScore).toBe(695);
-      expect(mockQuery).toHaveBeenCalledWith(
-        'UPDATE scores SET score = $1, updated_at = CURRENT_TIMESTAMP WHERE borrower = $2',
-        [695, 'user1'],
-      );
+      expect(newScore).toBe(700);
+      expect(mockQuery).not.toHaveBeenCalled();
     });
 
     it('decays borrower inactive for multiple months', async () => {
@@ -54,7 +54,7 @@ describe('scoreDecayService', () => {
       const borrower = {
         borrower: 'user2',
         score: 700,
-        last_repayment: ninetyDaysAgo.toISOString(),
+        last_activity: ninetyDaysAgo.toISOString(),
       };
       const newScore = await applyScoreDecay(borrower);
 
@@ -62,23 +62,27 @@ describe('scoreDecayService', () => {
       expect(newScore).toBe(685);
     });
 
-    it('applies minimum decay of one month even with recent activity', async () => {
+    it('does not decay a borrower before one full inactive month', async () => {
       const yesterday = new Date();
       yesterday.setUTCDate(yesterday.getUTCDate() - 1);
 
       const borrower = {
         borrower: 'user3',
         score: 700,
-        last_repayment: yesterday.toISOString(),
+        last_activity: yesterday.toISOString(),
       };
       const newScore = await applyScoreDecay(borrower);
 
-      // 1 day => floor(1/30) = 0 => max(1, 0) = 1 => decay = 5
-      expect(newScore).toBe(695);
+      expect(newScore).toBe(700);
+      expect(mockQuery).not.toHaveBeenCalled();
     });
 
     it('floors score at minimum score', async () => {
-      const borrower = { borrower: 'user4', score: 304, last_repayment: null };
+      const borrower = {
+        borrower: 'user4',
+        score: 304,
+        last_activity: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+      };
       const newScore = await applyScoreDecay(borrower);
 
       // 304 - 5 = 299, floored to 300
@@ -86,7 +90,11 @@ describe('scoreDecayService', () => {
     });
 
     it('never drops score below minimum even if already below', async () => {
-      const borrower = { borrower: 'user5', score: 200, last_repayment: null };
+      const borrower = {
+        borrower: 'user5',
+        score: 200,
+        last_activity: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+      };
       const newScore = await applyScoreDecay(borrower);
 
       // max(300, 200 - 5) = 300
@@ -94,14 +102,22 @@ describe('scoreDecayService', () => {
     });
 
     it('is idempotent for identical borrower input', async () => {
-      const borrower = { borrower: 'user6', score: 700, last_repayment: null };
+      const borrower = {
+        borrower: 'user6',
+        score: 700,
+        last_activity: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+      };
 
       const first = await applyScoreDecay(borrower);
       const second = await applyScoreDecay(borrower);
 
-      expect(first).toBe(695);
-      expect(second).toBe(695);
+      expect(first).toBe(690);
+      expect(second).toBe(690);
       expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenLastCalledWith(
+        'UPDATE scores SET current_score = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+        [690, 'user6'],
+      );
     });
   });
 });

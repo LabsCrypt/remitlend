@@ -13,6 +13,7 @@ pub trait RemittanceNftInterface {
     fn seize_collateral(env: Env, user: Address, minter: Option<Address>);
     fn is_seized(env: Env, user: Address) -> bool;
     fn record_default(env: Env, user: Address, minter: Option<Address>);
+    fn clear_default(env: Env, user: Address, minter: Option<Address>);
     fn is_authorized_minter(env: Env, minter: Address) -> bool;
     fn is_paused(env: Env) -> bool;
 }
@@ -26,7 +27,9 @@ pub trait RateOracleInterface {
 pub trait LendingPoolInterface {
     fn is_paused(env: Env) -> bool;
     fn pool_balance(env: Env, token: Address) -> i128;
-    fn get_total_outstanding(env: Env, token: Address) -> i128;
+    fn adjust_outstanding(env: Env, token: Address, delta: i128);
+    fn distribute_yield(env: Env, from: Address, token: Address, amount: i128);
+    fn disburse_loan(env: Env, token: Address, borrower: Address, amount: i128);
 }
 
 mod events;
@@ -62,6 +65,9 @@ pub enum LoanError {
     InsufficientCollateral = 26,
     LoanNotLiquidatable = 27,
     LoanNotPurgable = 28,
+    /// Raised by `reverse_default` when the loan is not in `Defaulted` state
+    /// (only a default can be reversed — #1803).
+    LoanNotDefaulted = 29,
 }
 
 #[contracttype]
@@ -133,6 +139,11 @@ pub enum DataKey {
     MinRateBps,
     MaxRateBps,
     MigratedVersion,
+    /// Amount of collateral moved to the lending pool when a loan was marked
+    /// defaulted. `Loan::collateral_amount` is zeroed by the seize, so without
+    /// this the amount would be unrecoverable and an administrative reversal
+    /// could not refund it (#1803).
+    SeizedCollateral(u32),
 }
 
 #[contract]
@@ -156,6 +167,9 @@ impl LoanManager {
     const DEFAULT_LIQUIDATION_THRESHOLD_BPS: u32 = 15_000;
     const DEFAULT_LIQUIDATION_BONUS_BPS: u32 = 500;
     const MAX_LIQUIDATION_BONUS_BPS: u32 = 2000; // 20% cap on liquidation bonus
+    /// Minimum bonus (in basis points of collateral) paid to liquidators on
+    /// underwater loans so that clearing bad debt remains economically viable.
+    const MIN_UNDERWATER_BONUS_BPS: u32 = 200; // 2% floor
     const MIN_COLLATERAL_RATIO_BPS: i128 = 10_000;
     const MAX_RATIO_BPS: u32 = 10_000;
     const LATE_REPAYMENT_SCORE_PENALTY: i32 = 10;
@@ -170,6 +184,11 @@ impl LoanManager {
     /// Default maximum interest rate (configurable via set_rate_bounds). #631
     const MAX_RATE_BPS: u32 = 100_000; // Maximum 1000% interest rate
     const MAX_PENALTY_MULTIPLIER: i128 = 2; // Total debt cannot exceed 2x original principal
+    /// Maximum unpaid remainder (in stroops) eligible for rounding-dust
+    /// forgiveness in `repay` (#1770). Dust forgiveness only covers a tiny
+    /// shortfall between `amount` and `total_debt` caused by rounding — never
+    /// the whole remaining debt.
+    const ROUNDING_DUST_THRESHOLD: i128 = 1;
 
     fn bump_instance_ttl(env: &Env) {
         env.storage()
@@ -571,6 +590,15 @@ impl LoanManager {
 
         env.storage().instance().set(&key, &updated);
         Self::bump_instance_ttl(env);
+
+        if let Some(lending_pool) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::LendingPool)
+        {
+            let pool_client = PoolClient::new(env, &lending_pool);
+            pool_client.adjust_outstanding(token, &delta);
+        }
     }
 
     fn borrower_loan_count(env: &Env, borrower: &Address) -> u32 {
@@ -877,6 +905,13 @@ impl LoanManager {
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(env, &loan_key);
 
+        // Remember what was seized before zeroing it off the loan record:
+        // `reverse_default` (#1803) needs the amount to refund the borrower
+        // when a default is administratively overturned.
+        let seized_key = DataKey::SeizedCollateral(loan_id);
+        env.storage().persistent().set(&seized_key, &collateral);
+        Self::bump_persistent_ttl(env, &seized_key);
+
         let token: Address = env
             .storage()
             .instance()
@@ -1162,18 +1197,25 @@ impl LoanManager {
         Self::bump_instance_ttl(&env);
         Self::bump_persistent_ttl(&env, &DataKey::Loan(loan_counter));
 
-        // Add loan ID to borrower's loan list
+        // Add loan ID to borrower's loan list (persistent storage with TTL
+        // bumping — #1772: instance storage is capped at 64KB for the whole
+        // contract, so per-borrower vectors must not live there).
         let borrower_loans_key = DataKey::BorrowerLoans(borrower.clone());
         let mut borrower_loans: Vec<u32> = env
             .storage()
-            .instance()
+            .persistent()
             .get(&borrower_loans_key)
+            .or_else(|| {
+                // Backwards-compat migration read for loans recorded under the
+                // legacy instance-storage layout.
+                env.storage().instance().get(&borrower_loans_key)
+            })
             .unwrap_or(Vec::new(&env));
         borrower_loans.push_back(loan_counter);
         env.storage()
-            .instance()
+            .persistent()
             .set(&borrower_loans_key, &borrower_loans);
-        Self::bump_instance_ttl(&env);
+        Self::bump_persistent_ttl(&env, &borrower_loans_key);
 
         events::loan_requested(&env, loan_counter, borrower.clone(), amount);
         Ok(loan_counter)
@@ -1187,8 +1229,6 @@ impl LoanManager {
     /// loan was requested; and [`LoanError::InsufficientPoolLiquidity`] when
     /// available pool liquidity is below the loan amount.
     pub fn approve_loan(env: Env, loan_id: u32) -> Result<(), LoanError> {
-        use soroban_sdk::token::TokenClient;
-
         // ── CHECKS ──────────────────────────────────────────────────────────
         let admin = Self::admin(&env);
         admin.require_auth();
@@ -1266,8 +1306,12 @@ impl LoanManager {
         Self::bump_persistent_ttl(&env, &loan_key);
 
         // ── INTERACTIONS (external calls last) ──────────────────────────────
-        let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&lending_pool, &borrower, &transfer_amount);
+        // Disburse via the pool's authorized `disburse_loan` entrypoint: the
+        // pool transfers with its own authorization after verifying the caller
+        // is this LoanManager. A direct `token.transfer(pool, borrower, ...)`
+        // here would fail on-chain since the pool never authorized LoanManager
+        // to spend its tokens.
+        PoolClient::new(&env, &lending_pool).disburse_loan(&token, &borrower, &transfer_amount);
 
         events::loan_approved(
             &env,
@@ -1330,9 +1374,9 @@ impl LoanManager {
     /// Requires `borrower` authorization and the loan manager, lending pool,
     /// and NFT contract to be unpaused. The loan must be [`LoanStatus::Approved`]
     /// and owned by `borrower`. The repayment is split proportionally across
-    /// principal, accrued interest, and accrued late fees; if the remaining debt
-    /// is at or below the configured minimum repayment amount, the final payment
-    /// may forgive rounding dust and mark the loan [`LoanStatus::Repaid`].
+    /// principal, accrued interest, and accrued late fees; if the payment falls
+    /// short of the total debt by at most a tiny rounding-dust threshold, the
+    /// dust may be forgiven and the loan marked [`LoanStatus::Repaid`].
     ///
     /// Returns [`LoanError::ContractPaused`], [`LoanError::PoolPaused`], or
     /// [`LoanError::NftPaused`] when pause checks fail; [`LoanError::InvalidAmount`]
@@ -1386,9 +1430,15 @@ impl LoanManager {
 
         let min_repayment_amount = Self::min_repayment_amount(&env);
 
-        // Allow below-minimum repayment only when it fully clears the remaining debt
-        // or when the remaining debt itself is just small rounding dust.
-        let is_rounding_dust_forgiveness = total_debt <= min_repayment_amount;
+        // Allow below-minimum repayment only when it fully clears the remaining debt.
+        // Rounding-dust forgiveness (#1770) covers only a tiny unpaid remainder
+        // (total_debt - amount <= ROUNDING_DUST_THRESHOLD) caused by rounding —
+        // never the whole remaining debt. Checking `total_debt <=
+        // min_repayment_amount` instead allowed wiping out the entire debt
+        // with a 1-stroop payment.
+        let shortfall = total_debt.checked_sub(amount).unwrap_or(0);
+        let is_rounding_dust_forgiveness =
+            amount < total_debt && shortfall <= Self::ROUNDING_DUST_THRESHOLD;
 
         if amount < total_debt && amount < min_repayment_amount && !is_rounding_dust_forgiveness {
             panic!("repayment amount below minimum");
@@ -1428,6 +1478,9 @@ impl LoanManager {
             .principal_paid
             .checked_add(principal_payment)
             .expect("principal paid overflow");
+        // Total outstanding tracks remaining principal, so every principal
+        // payment reduces it immediately (#1771).
+        Self::adjust_total_outstanding(&env, &token, -principal_payment);
 
         let was_late = env.ledger().sequence()
             > loan
@@ -1436,6 +1489,7 @@ impl LoanManager {
                 .expect("grace period overflow");
 
         let mut completed = false;
+        let unpaid_principal = Self::remaining_principal(&loan);
 
         let is_fully_repaid = loan.principal_paid == loan.amount
             && loan.accrued_interest == 0
@@ -1458,7 +1512,8 @@ impl LoanManager {
             // CEI: mark the loan as Repaid in state before any cross-contract call (#630).
             // A reentrant repay() on the same loan_id will now hit LoanNotActive and
             // revert, preventing double withdrawal of collateral.
-            Self::adjust_total_outstanding(&env, &token, -loan.amount);
+            // Only principal forgiven as rounding dust is still counted here.
+            Self::adjust_total_outstanding(&env, &token, -unpaid_principal);
             loan.status = LoanStatus::Repaid;
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
         }
@@ -1491,7 +1546,7 @@ impl LoanManager {
                         &Self::LATE_REPAYMENT_SCORE_PENALTY.unsigned_abs(),
                         &Some(env.current_contract_address()),
                     );
-                } else {
+                } else if !was_late {
                     // Use apply_score_delta rather than update_score so score adjustments
                     // work for any token denomination without hitting RemittanceNFT's
                     // anti-dust repayment floor (which assumes XLM stroops).
@@ -1551,7 +1606,7 @@ impl LoanManager {
         }
 
         let loan_key = DataKey::Loan(loan_id);
-        let loan: Loan = env
+        let mut loan: Loan = env
             .storage()
             .persistent()
             .get(&loan_key)
@@ -1579,16 +1634,9 @@ impl LoanManager {
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
-        let token_client = TokenClient::new(&env, &token);
-        token_client.transfer(&loan.borrower, &env.current_contract_address(), &amount);
 
-        let loan_key = DataKey::Loan(loan_id);
-        let mut loan: Loan = env
-            .storage()
-            .persistent()
-            .get(&loan_key)
-            .expect("loan not found");
-
+        // Effects before interactions (CEI): persist collateral before the
+        // external token call. A failed transfer rolls back the whole tx.
         let updated_collateral = loan
             .collateral_amount
             .checked_add(amount)
@@ -1596,6 +1644,12 @@ impl LoanManager {
         loan.collateral_amount = updated_collateral;
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
+
+        TokenClient::new(&env, &token).transfer(
+            &loan.borrower,
+            &env.current_contract_address(),
+            &amount,
+        );
 
         events::collateral_deposited(&env, loan.borrower.clone(), loan_id, updated_collateral);
 
@@ -1761,9 +1815,23 @@ impl LoanManager {
                 .expect("borrower refund underflow");
             (total_debt, liquidator_bonus, borrower_refund)
         } else {
-            (collateral_amount, 0, 0)
+            // Underwater loan: collateral < total_debt.  Provide a minimum
+            // bonus from the collateral so liquidators are incentivised to
+            // clear bad debt rather than leaving it stranded.
+            let underwater_bonus = collateral_amount
+                .checked_mul(Self::MIN_UNDERWATER_BONUS_BPS as i128)
+                .and_then(|v| {
+                    money::round_div(v, Self::MAX_RATIO_BPS as i128, money::RoundingMode::Floor)
+                        .ok()
+                })
+                .unwrap_or(0);
+            let debt_portion = collateral_amount
+                .checked_sub(underwater_bonus)
+                .unwrap_or(collateral_amount);
+            (debt_portion, underwater_bonus, 0)
         };
 
+        let unpaid_principal = Self::remaining_principal(&loan);
         Self::apply_debt_recovery(&mut loan, debt_repaid);
         loan.status = LoanStatus::Liquidated;
         loan.collateral_amount = 0;
@@ -1773,7 +1841,7 @@ impl LoanManager {
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
-        Self::adjust_total_outstanding(&env, &token, -loan.amount);
+        Self::adjust_total_outstanding(&env, &token, -unpaid_principal);
 
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
@@ -1966,11 +2034,14 @@ impl LoanManager {
 
         // Remove the purged loan id from the borrower's loan list so that
         // get_borrower_loans no longer returns a dangling id.
+        // (#1772: the list lives in persistent storage; also sweep any legacy
+        // instance-storage copy.)
         let borrower_loans_key = DataKey::BorrowerLoans(loan.borrower.clone());
         if let Some(existing) = env
             .storage()
-            .instance()
+            .persistent()
             .get::<_, Vec<u32>>(&borrower_loans_key)
+            .or_else(|| env.storage().instance().get(&borrower_loans_key))
         {
             let mut updated: Vec<u32> = Vec::new(&env);
             for id in existing.iter() {
@@ -1979,10 +2050,15 @@ impl LoanManager {
                 }
             }
             if updated.is_empty() {
-                env.storage().instance().remove(&borrower_loans_key);
+                env.storage().persistent().remove(&borrower_loans_key);
             } else {
-                env.storage().instance().set(&borrower_loans_key, &updated);
+                env.storage()
+                    .persistent()
+                    .set(&borrower_loans_key, &updated);
+                Self::bump_persistent_ttl(&env, &borrower_loans_key);
             }
+            // Drop any stale legacy copy in instance storage.
+            env.storage().instance().remove(&borrower_loans_key);
         }
 
         // Note: borrower loan count is already decremented by cancel_loan
@@ -2093,6 +2169,10 @@ impl LoanManager {
             return Err(LoanError::InsufficientScore);
         }
 
+        if nft_client.is_seized(&loan.borrower) {
+            return Err(LoanError::SeizedBorrower);
+        }
+
         // Validate collateral covers new amount (collateral must be >= loan amount)
         if loan.collateral_amount < new_amount {
             return Err(LoanError::InsufficientCollateral);
@@ -2114,13 +2194,20 @@ impl LoanManager {
             .expect("lending pool not set");
         let token_client = TokenClient::new(&env, &token);
 
-        // Transfer accrued interest + late fees from borrower to lending pool before resetting.
+        // Collect accrued interest + late fees from borrower before resetting.
+        // Routed through `distribute_yield` so the settlement is recognized in
+        // the pool's `total_managed_assets` (and share price); a bare transfer
+        // to the pool is ignored for pricing and would strand LP earnings (#1795).
         let accrued_settlement = loan
             .accrued_interest
             .checked_add(loan.accrued_late_fee)
             .expect("overflow");
         if accrued_settlement > 0 {
-            token_client.transfer(&loan.borrower, &lending_pool, &accrued_settlement);
+            PoolClient::new(&env, &lending_pool).distribute_yield(
+                &loan.borrower,
+                &token,
+                &accrued_settlement,
+            );
         }
 
         loan.interest_paid = loan
@@ -2140,11 +2227,13 @@ impl LoanManager {
 
         match new_amount.cmp(&remaining_principal) {
             core::cmp::Ordering::Greater => {
-                // Pool disburses the additional amount to the borrower.
+                // Pool disburses the additional amount to the borrower via its
+                // authorized `disburse_loan` entrypoint (see `approve_loan`).
                 let additional = new_amount
                     .checked_sub(remaining_principal)
                     .expect("underflow");
-                let pool_balance = token_client.balance(&lending_pool);
+                let pool_client = PoolClient::new(&env, &lending_pool);
+                let pool_balance = pool_client.pool_balance(&token);
                 // #1589: `pool_balance` is the live idle balance and already
                 // excludes disbursed principal, so it must not be reduced by
                 // outstanding debt (which would double-count it and could even
@@ -2152,7 +2241,7 @@ impl LoanManager {
                 if pool_balance < additional {
                     return Err(LoanError::InsufficientPoolLiquidity);
                 }
-                token_client.transfer(&lending_pool, &loan.borrower, &additional);
+                pool_client.disburse_loan(&token, &loan.borrower, &additional);
             }
             core::cmp::Ordering::Less => {
                 // Borrower returns the excess principal to the pool.
@@ -2230,11 +2319,15 @@ impl LoanManager {
 
     pub fn set_liquidation_threshold(env: Env, ratio_bps: u32) -> Result<(), LoanError> {
         Self::validate_liquidation_threshold(ratio_bps)?;
-        Self::admin(&env).require_auth();
+        let admin = Self::admin(&env);
+        admin.require_auth();
+
+        let old_threshold = Self::liquidation_threshold_bps(&env);
         env.storage()
             .instance()
             .set(&DataKey::LiquidationThresholdBps, &ratio_bps);
         Self::bump_instance_ttl(&env);
+        events::liquidation_threshold_updated(&env, admin, old_threshold, ratio_bps);
         Ok(())
     }
 
@@ -2244,11 +2337,15 @@ impl LoanManager {
 
     pub fn set_liquidation_bonus_bps(env: Env, bonus_bps: u32) -> Result<(), LoanError> {
         Self::validate_liquidation_bonus_bps(bonus_bps)?;
-        Self::admin(&env).require_auth();
+        let admin = Self::admin(&env);
+        admin.require_auth();
+
+        let old_bonus = Self::liquidation_bonus_bps(&env);
         env.storage()
             .instance()
             .set(&DataKey::LiquidationBonusBps, &bonus_bps);
         Self::bump_instance_ttl(&env);
+        events::liquidation_bonus_updated(&env, admin, old_bonus, bonus_bps);
         Ok(())
     }
 
@@ -2444,11 +2541,15 @@ impl LoanManager {
     }
 
     pub fn get_borrower_loans(env: Env, borrower: Address) -> Vec<u32> {
+        let key = DataKey::BorrowerLoans(borrower);
+        if let Some(loans) = env.storage().persistent().get::<_, Vec<u32>>(&key) {
+            Self::bump_persistent_ttl(&env, &key);
+            return loans;
+        }
+        // Backwards-compat fallback for loans recorded under the legacy
+        // instance-storage layout (#1772).
         Self::bump_instance_ttl(&env);
-        env.storage()
-            .instance()
-            .get(&DataKey::BorrowerLoans(borrower))
-            .unwrap_or(Vec::new(&env))
+        env.storage().instance().get(&key).unwrap_or(Vec::new(&env))
     }
 
     pub fn get_min_score(env: Env) -> u32 {
@@ -2661,6 +2762,17 @@ impl LoanManager {
         Ok(())
     }
 
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let current_admin = Self::admin(&env);
+        current_admin.require_auth();
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().instance().remove(&DataKey::ProposedAdmin);
+        Self::bump_instance_ttl(&env);
+        env.events()
+            .publish((Symbol::new(&env, "AdminTransferred"),), new_admin);
+    }
+
     pub fn pause(env: Env) {
         Self::admin(&env).require_auth();
         let paused_at_ledger = env.ledger().sequence();
@@ -2732,7 +2844,8 @@ impl LoanManager {
             .instance()
             .get(&DataKey::Token)
             .expect("token not set");
-        Self::adjust_total_outstanding(&env, &token, -loan.amount);
+        let remaining_principal = Self::remaining_principal(&loan);
+        Self::adjust_total_outstanding(&env, &token, -remaining_principal);
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
@@ -2751,6 +2864,138 @@ impl LoanManager {
         Ok(())
     }
 
+    /// Reverse a default that an administrative dispute process has overturned
+    /// (#1803).
+    ///
+    /// Admin-only, and the counterpart of [`Self::check_default`]: it is the
+    /// only path back out of [`LoanStatus::Defaulted`]. Without it
+    /// `adminDisputeController.resolveLoanDispute('reverse')` was a
+    /// database-only fiction — the ledger kept the loan, the seized collateral
+    /// and the borrower's credit record defaulted for good.
+    ///
+    /// What it restores, in one atomic call:
+    ///
+    /// - `status` returns to [`LoanStatus::Approved`] and the outstanding
+    ///   principal that `check_default` removed is added back.
+    /// - The borrower's active-loan slot, freed by `check_default`, is reused.
+    /// - `due_date` is pushed out by the loan's own term (falling back to the
+    ///   configured default term) and the interest/late-fee clocks restart, so
+    ///   the reinstated loan is neither instantly re-defaultable nor charged
+    ///   interest for the window in which it was wrongly defaulted. Debt
+    ///   accrued up to the default is untouched — this reverses the default, not
+    ///   the debt.
+    /// - The collateral seized into the lending pool is transferred back to the
+    ///   borrower, reinstated on the loan, and the `SeizedCollateral` record is
+    ///   cleared.
+    /// - The NFT credit record is repaired: the default count is decremented,
+    ///   the seized flag cleared, and the score penalty refunded.
+    ///
+    /// Two deliberate asymmetries with `check_default`:
+    ///
+    /// - Pausing does **not** block a reversal. An emergency pause freezes new
+    ///   activity; it must not freeze remediation of a wrongful default.
+    /// - [`LoanStatus::Liquidated`] loans are rejected. Their collateral has
+    ///   already been auctioned to a third party and cannot be unwound.
+    ///
+    /// Returns [`LoanError::LoanNotFound`] for an unknown loan,
+    /// [`LoanError::LoanNotDefaulted`] when the loan is not `Defaulted`, and
+    /// [`LoanError::InsufficientPoolLiquidity`] when the pool no longer holds
+    /// enough of the token to refund the seized collateral. Nothing is mutated
+    /// in any of those cases, so a failed reversal leaves the default exactly as
+    /// it was and can be retried once the pool is funded.
+    pub fn reverse_default(env: Env, loan_id: u32) -> Result<(), LoanError> {
+        use soroban_sdk::token::TokenClient;
+
+        Self::admin(&env).require_auth();
+
+        let loan_key = DataKey::Loan(loan_id);
+        let mut loan: Loan = env
+            .storage()
+            .persistent()
+            .get(&loan_key)
+            .ok_or(LoanError::LoanNotFound)?;
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        if loan.status != LoanStatus::Defaulted {
+            return Err(LoanError::LoanNotDefaulted);
+        }
+
+        let token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("token not set");
+        let lending_pool: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LendingPool)
+            .expect("lending pool not set");
+
+        let seized_key = DataKey::SeizedCollateral(loan_id);
+        let seized: i128 = env
+            .storage()
+            .persistent()
+            .get(&seized_key)
+            .unwrap_or(0);
+
+        // ── CHECKS ──────────────────────────────────────────────────────────
+        // Fail before mutating anything if the refund cannot be covered: a
+        // half-applied reversal would be worse than the default it corrects.
+        if seized > 0 {
+            let pool_client = PoolClient::new(&env, &lending_pool);
+            if pool_client.pool_balance(&token) < seized {
+                return Err(LoanError::InsufficientPoolLiquidity);
+            }
+        }
+
+        // ── EFFECTS (all state mutations before any external call) ──────────
+        let borrower = loan.borrower.clone();
+        let restored_principal = Self::remaining_principal(&loan);
+        let term = if loan.term_ledgers > 0 {
+            loan.term_ledgers
+        } else {
+            Self::read_default_term(&env)
+        };
+        let reinstated_at = env.ledger().sequence();
+        let due_date = reinstated_at
+            .checked_add(term)
+            .expect("reinstated due date overflow");
+
+        loan.status = LoanStatus::Approved;
+        loan.due_date = due_date;
+        loan.last_interest_ledger = reinstated_at;
+        loan.last_late_fee_ledger = due_date
+            .checked_add(Self::grace_period_ledgers(&env))
+            .expect("grace period overflow");
+        loan.collateral_amount = seized;
+
+        Self::adjust_total_outstanding(&env, &token, restored_principal);
+        Self::increment_borrower_loan_count(&env, &borrower);
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        // ── INTERACTIONS (external calls last) ──────────────────────────────
+        if seized > 0 {
+            let token_client = TokenClient::new(&env, &token);
+            token_client.transfer(&lending_pool, &borrower, &seized);
+
+            env.storage().persistent().remove(&seized_key);
+            events::collateral_returned(&env, borrower.clone(), loan_id, seized);
+        }
+
+        let nft_client = NftClient::new(&env, &Self::nft_contract(&env));
+        nft_client.apply_score_delta(
+            &borrower,
+            &(Self::DEFAULT_SCORE_PENALTY_POINTS as i32),
+            &Some(env.current_contract_address()),
+        );
+        nft_client.clear_default(&borrower, &Some(env.current_contract_address()));
+
+        events::loan_default_reversed(&env, loan_id, borrower);
+        Ok(())
+    }
+
     /// Extend a loan's due date by the specified number of ledgers.
     /// Only callable by the borrower while the loan is in Approved status.
     /// Rejects extension if loan is defaulted, repaid, or has exceeded max extensions.
@@ -2761,8 +3006,6 @@ impl LoanManager {
         loan_id: u32,
         extra_ledgers: u32,
     ) -> Result<(), LoanError> {
-        use soroban_sdk::token::TokenClient;
-
         borrower.require_auth();
         Self::require_not_paused(&env)?;
 
@@ -2788,6 +3031,13 @@ impl LoanManager {
             return Err(LoanError::LoanNotActive);
         }
 
+        // Re-check the borrower hasn't been seized since loan approval
+        let nft_contract = Self::nft_contract(&env);
+        let nft_client = NftClient::new(&env, &nft_contract);
+        if nft_client.is_seized(&loan.borrower) {
+            return Err(LoanError::SeizedBorrower);
+        }
+
         // Check if loan is past due (in default window)
         let current_ledger = env.ledger().sequence();
         let default_ends = loan
@@ -2811,7 +3061,28 @@ impl LoanManager {
             .and_then(|v| money::round_div(v, 10_000, money::RoundingMode::Floor).map_err(|_| ()))
             .expect("extension fee overflow");
 
-        // Collect extension fee from borrower if any
+        // Effects: extend the due date, bump the extension count and persist
+        // the loan before any cross-contract call (CEI).
+        let new_due_date = loan
+            .due_date
+            .checked_add(extra_ledgers)
+            .expect("due date overflow");
+        loan.due_date = new_due_date;
+
+        loan.extension_count = loan
+            .extension_count
+            .checked_add(1)
+            .expect("extension count overflow");
+
+        env.storage().persistent().set(&loan_key, &loan);
+        Self::bump_persistent_ttl(&env, &loan_key);
+
+        // Interactions: collect the extension fee from the borrower, if any.
+        // Routed through `distribute_yield` so the fee is recognized in the
+        // pool's `total_managed_assets` (and share price); a bare transfer to
+        // the pool is ignored for pricing and would strand LP earnings (#1794).
+        // A failed transfer reverts the whole invocation, including the
+        // storage write above.
         if extension_fee > 0 {
             let token: Address = env
                 .storage()
@@ -2823,26 +3094,12 @@ impl LoanManager {
                 .instance()
                 .get(&DataKey::LendingPool)
                 .expect("lending pool not set");
-            let token_client = TokenClient::new(&env, &token);
-            token_client.transfer(&borrower, &lending_pool, &extension_fee);
+            PoolClient::new(&env, &lending_pool).distribute_yield(
+                &borrower,
+                &token,
+                &extension_fee,
+            );
         }
-
-        // Extend the due date
-        let new_due_date = loan
-            .due_date
-            .checked_add(extra_ledgers)
-            .expect("due date overflow");
-        loan.due_date = new_due_date;
-
-        // Increment extension count
-        loan.extension_count = loan
-            .extension_count
-            .checked_add(1)
-            .expect("extension count overflow");
-
-        // Persist updated loan
-        env.storage().persistent().set(&loan_key, &loan);
-        Self::bump_persistent_ttl(&env, &loan_key);
 
         // Emit extension event
         events::loan_extended(
@@ -2889,7 +3146,8 @@ impl LoanManager {
                 .instance()
                 .get(&DataKey::Token)
                 .expect("token not set");
-            Self::adjust_total_outstanding(&env, &token, -loan.amount);
+            let remaining_principal = Self::remaining_principal(&loan);
+            Self::adjust_total_outstanding(&env, &token, -remaining_principal);
             env.storage().persistent().set(&loan_key, &loan);
             Self::bump_persistent_ttl(&env, &loan_key);
             Self::decrement_borrower_loan_count(&env, &loan.borrower);

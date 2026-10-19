@@ -106,7 +106,7 @@ describe("RemittanceForm", () => {
     });
   });
 
-  it("should show warning for memo longer than 28 characters", async () => {
+  it("should reject memo that exceeds 28 UTF-8 bytes (multibyte characters)", async () => {
     const user = userEvent.setup();
     render(<RemittanceForm onSuccess={mockOnSuccess} />);
 
@@ -117,20 +117,69 @@ describe("RemittanceForm", () => {
     await user.type(amountInput, "100");
 
     const memoInput = screen.getByLabelText(/^Memo/);
-    // Use fireEvent.change to bypass the textarea's maxLength attribute
+    // "¡Hola mundo! 🌍" is 18 characters but 24 bytes in UTF-8.
+    // Adding more to exceed 28 bytes: "¡Hola mundo! 🌍 es un saludo" is 29 chars but 35 bytes
     fireEvent.change(memoInput, {
-      target: { value: "This is a very long memo that exceeds the limit" },
+      target: { value: "¡Hola mundo! 🌍 es un saludo" },
     });
 
     const reviewButton = screen.getByRole("button", { name: /review/i });
     fireEvent.click(reviewButton);
 
     await waitFor(() => {
-      expect(screen.getByText("Memo must be 28 characters or less")).toBeInTheDocument();
+      expect(screen.getByText(/Memo must be 28 bytes or less/)).toBeInTheDocument();
     });
   });
 
-  it("should display character count for memo", async () => {
+  it("should allow memo with multibyte characters that fit within 28 bytes", async () => {
+    const user = userEvent.setup();
+    render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+    const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+    const amountInput = screen.getByPlaceholderText("0.00");
+
+    await user.type(addressInput, VALID_ADDRESS);
+    await user.type(amountInput, "100");
+
+    const memoInput = screen.getByLabelText(/^Memo/);
+    // "¡Hola!" is 6 chars but 7 bytes — fits in 28 bytes
+    await user.type(memoInput, "¡Hola!");
+
+    const reviewButton = screen.getByRole("button", { name: /review/i });
+    fireEvent.click(reviewButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Memo must be 28 bytes or less/)).not.toBeInTheDocument();
+    });
+  });
+
+  it("should allow ASCII memo up to 28 characters", async () => {
+    const user = userEvent.setup();
+    render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+    const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+    const amountInput = screen.getByPlaceholderText("0.00");
+
+    await user.type(addressInput, VALID_ADDRESS);
+    await user.type(amountInput, "100");
+
+    const memoInput = screen.getByLabelText(/^Memo/);
+    // 28 ASCII characters = 28 bytes — should pass
+    await user.type(memoInput, "Hello World! This is a memo!");
+
+    await waitFor(() => {
+      expect(screen.getByText("28/28 bytes")).toBeInTheDocument();
+    });
+
+    const reviewButton = screen.getByRole("button", { name: /review/i });
+    fireEvent.click(reviewButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Memo must be 28 bytes or less/)).not.toBeInTheDocument();
+    });
+  });
+
+  it("should display byte count for memo", async () => {
     const user = userEvent.setup();
     render(<RemittanceForm onSuccess={mockOnSuccess} />);
 
@@ -138,7 +187,7 @@ describe("RemittanceForm", () => {
     await user.type(memoInput, "Test memo");
 
     await waitFor(() => {
-      expect(screen.getByText("9/28 characters")).toBeInTheDocument();
+      expect(screen.getByText("9/28 bytes")).toBeInTheDocument();
     });
   });
 

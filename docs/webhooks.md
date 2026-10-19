@@ -20,29 +20,31 @@ subscribe, receive, and verify webhook deliveries.
 
 ## Creating a Subscription
 
-**Endpoint:** `POST /api/webhooks/subscriptions`
+**Endpoint:** `POST /api/indexer/webhooks` *(also available at `POST /api/v1/indexer/webhooks` and `POST /api/admin/webhooks`)*
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <your-jwt-token>
+x-api-key: <your-admin-api-key>
 ```
+
+*(Requires `admin:webhooks` API key scope)*
 
 **Request body:**
 
 ```json
 {
-  "url": "https://your-service.com/webhooks/remitlend",
-  "events": ["LoanApproved", "LoanRepaid", "LoanDefaulted"],
-  "description": "My loan tracking service (optional)"
+  "callbackUrl": "https://your-service.com/webhooks/remitlend",
+  "eventTypes": ["LoanApproved", "LoanRepaid", "LoanDefaulted"],
+  "secret": "your-hmac-secret-key"
 }
 ```
 
-| Field       | Type     | Description                                          |
-|-------------|----------|------------------------------------------------------|
-| `url`       | string   | HTTPS endpoint that will receive POST requests       |
-| `events`    | string[] | Array of [event types](#supported-event-types)       |
-| `description` | string | Optional human-readable label                      |
+| Field         | Type     | Required | Description                                                                      |
+|---------------|----------|----------|----------------------------------------------------------------------------------|
+| `callbackUrl` | string   | Yes      | HTTP or HTTPS endpoint that will receive POST deliveries (private IPs rejected)  |
+| `eventTypes`  | string[] | Yes      | Array of [event types](#supported-event-types) to subscribe to                   |
+| `secret`      | string   | No       | Optional secret key used to sign webhook payloads using HMAC-SHA256              |
 
 **Response (201):**
 
@@ -50,11 +52,14 @@ Authorization: Bearer <your-jwt-token>
 {
   "success": true,
   "data": {
-    "id": "sub_abc123",
-    "url": "https://your-service.com/webhooks/remitlend",
-    "events": ["LoanApproved", "LoanRepaid", "LoanDefaulted"],
-    "active": true,
-    "createdAt": "2026-05-28T12:00:00.000Z"
+    "subscription": {
+      "id": 1,
+      "callbackUrl": "https://your-service.com/webhooks/remitlend",
+      "eventTypes": ["LoanApproved", "LoanRepaid", "LoanDefaulted"],
+      "isActive": true,
+      "createdAt": "2026-05-28T12:00:00.000Z",
+      "updatedAt": "2026-05-28T12:00:00.000Z"
+    }
   }
 }
 ```
@@ -64,12 +69,13 @@ is required.
 
 ### Managing Subscriptions
 
-| Method | Endpoint                              | Description            |
-|--------|---------------------------------------|------------------------|
-| GET    | `/api/webhooks/subscriptions`         | List all subscriptions |
-| GET    | `/api/webhooks/subscriptions/:id`     | Get a single subscription |
-| PUT    | `/api/webhooks/subscriptions/:id`     | Update events / URL    |
-| DELETE | `/api/webhooks/subscriptions/:id`     | Delete a subscription  |
+| Method | Endpoint                                | Description                                     |
+|--------|-----------------------------------------|-------------------------------------------------|
+| GET    | `/api/indexer/webhooks`                 | List all webhook subscriptions                  |
+| POST   | `/api/indexer/webhooks`                 | Register a new webhook subscription             |
+| DELETE | `/api/indexer/webhooks/:subscriptionId` | Delete a webhook subscription                   |
+| GET    | `/api/admin/webhooks/:id/deliveries`    | View delivery history for a subscription        |
+| GET    | `/api/admin/webhooks/retry-status`      | View failed webhooks and retry queue status     |
 
 ---
 
@@ -164,14 +170,23 @@ current event names listed above where an equivalent exists.
 
 ## Payload Examples
 
-Every delivery is a JSON POST with the following envelope:
+Every delivery is a JSON POST with a flat structure containing event metadata and indexed contract attributes:
 
 ```json
 {
-  "event": "<event_type>",
-  "id": "<unique_delivery_id>",
-  "timestamp": "2026-05-28T12:00:00.000Z",
-  "data": { }
+  "eventId": "<unique_event_id>",
+  "eventType": "<event_type>",
+  "loanId": 42,
+  "address": "<stellar_account_address>",
+  "amount": "<stroop_amount>",
+  "interestRateBps": 500,
+  "termLedgers": 17280,
+  "ledger": 12345,
+  "ledgerClosedAt": "2026-05-28T12:00:00.000Z",
+  "txHash": "<transaction_hash>",
+  "contractId": "<contract_address>",
+  "topics": ["<topic1>", "<topic2>"],
+  "value": "<scval_value>"
 }
 ```
 
@@ -179,15 +194,19 @@ Every delivery is a JSON POST with the following envelope:
 
 ```json
 {
-  "event": "LoanApproved",
-  "id": "evt_loan_42",
-  "timestamp": "2026-05-28T12:00:00.000Z",
-  "data": {
-    "loanId": 42,
-    "borrower": "GABCDEF...",
-    "amount": "5000",
-    "termMonths": 12
-  }
+  "eventId": "12345:0",
+  "eventType": "LoanApproved",
+  "loanId": 42,
+  "address": "GABCDEF...",
+  "amount": "5000000000",
+  "interestRateBps": 500,
+  "termLedgers": 17280,
+  "ledger": 12345,
+  "ledgerClosedAt": "2026-05-28T12:00:00.000Z",
+  "txHash": "a1b2c3d4...",
+  "contractId": "CA...",
+  "topics": ["LoanApproved", "42"],
+  "value": "..."
 }
 ```
 
@@ -195,15 +214,17 @@ Every delivery is a JSON POST with the following envelope:
 
 ```json
 {
-  "event": "LoanRepaid",
-  "id": "evt_repay_99",
-  "timestamp": "2026-05-28T12:05:00.000Z",
-  "data": {
-    "loanId": 42,
-    "borrower": "GABCDEF...",
-    "amount": "450",
-    "txHash": "a1b2c3d4..."
-  }
+  "eventId": "12346:1",
+  "eventType": "LoanRepaid",
+  "loanId": 42,
+  "address": "GABCDEF...",
+  "amount": "450000000",
+  "ledger": 12346,
+  "ledgerClosedAt": "2026-05-28T12:05:00.000Z",
+  "txHash": "b2c3d4e5...",
+  "contractId": "CA...",
+  "topics": ["LoanRepaid", "42"],
+  "value": "..."
 }
 ```
 
@@ -211,14 +232,17 @@ Every delivery is a JSON POST with the following envelope:
 
 ```json
 {
-  "event": "LoanDefaulted",
-  "id": "evt_default_7",
-  "timestamp": "2026-05-28T12:10:00.000Z",
-  "data": {
-    "loanId": 42,
-    "borrower": "GABCDEF...",
-    "outstandingAmount": "3200"
-  }
+  "eventId": "12347:0",
+  "eventType": "LoanDefaulted",
+  "loanId": 42,
+  "address": "GABCDEF...",
+  "amount": "3200000000",
+  "ledger": 12347,
+  "ledgerClosedAt": "2026-05-28T12:10:00.000Z",
+  "txHash": "c3d4e5f6...",
+  "contractId": "CA...",
+  "topics": ["LoanDefaulted", "42"],
+  "value": "..."
 }
 ```
 
@@ -226,15 +250,17 @@ Every delivery is a JSON POST with the following envelope:
 
 ```json
 {
-  "event": "CollateralLiquidated",
-  "id": "evt_liq_3",
-  "timestamp": "2026-05-28T12:15:00.000Z",
-  "data": {
-    "loanId": 42,
-    "borrower": "GABCDEF...",
-    "collateralSeized": true,
-    "borrowerRefund": "150"
-  }
+  "eventId": "12348:2",
+  "eventType": "CollateralLiquidated",
+  "loanId": 42,
+  "address": "GABCDEF...",
+  "amount": "1500000000",
+  "ledger": 12348,
+  "ledgerClosedAt": "2026-05-28T12:15:00.000Z",
+  "txHash": "d4e5f6a7...",
+  "contractId": "CA...",
+  "topics": ["CollateralLiquidated", "42"],
+  "value": "..."
 }
 ```
 
@@ -242,15 +268,17 @@ Every delivery is a JSON POST with the following envelope:
 
 ```json
 {
-  "event": "LateFeeCharged",
-  "id": "evt_due_21",
-  "timestamp": "2026-05-28T12:00:00.000Z",
-  "data": {
-    "loanId": 42,
-    "borrower": "GABCDEF...",
-    "dueDate": "2026-06-01",
-    "amount": "450"
-  }
+  "eventId": "12349:0",
+  "eventType": "LateFeeCharged",
+  "loanId": 42,
+  "address": "GABCDEF...",
+  "amount": "45000000",
+  "ledger": 12349,
+  "ledgerClosedAt": "2026-05-28T12:20:00.000Z",
+  "txHash": "e5f6a7b8...",
+  "contractId": "CA...",
+  "topics": ["LateFeeCharged", "42"],
+  "value": "..."
 }
 ```
 
@@ -258,15 +286,16 @@ Every delivery is a JSON POST with the following envelope:
 
 ```json
 {
-  "event": "ScoreUpdated",
-  "id": "evt_score_15",
-  "timestamp": "2026-05-28T12:00:00.000Z",
-  "data": {
-    "userId": "GABCDEF...",
-    "previousScore": 650,
-    "newScore": 665,
-    "reason": "on-time repayment"
-  }
+  "eventId": "12350:1",
+  "eventType": "ScoreUpdated",
+  "address": "GABCDEF...",
+  "amount": "665",
+  "ledger": 12350,
+  "ledgerClosedAt": "2026-05-28T12:25:00.000Z",
+  "txHash": "f6a7b8c9...",
+  "contractId": "CA...",
+  "topics": ["ScoreUpdated", "GABCDEF..."],
+  "value": "..."
 }
 ```
 
@@ -274,20 +303,15 @@ Every delivery is a JSON POST with the following envelope:
 
 ## Delivery & Retry Semantics
 
-1. **Delivery method:** HTTP POST to the subscriber URL.
-2. **Timeout:** The endpoint must respond within **10 seconds**.
-3. **Retry policy:** Deliveries are retried with exponential backoff:
-   - Retry 1: 10 seconds
-   - Retry 2: 30 seconds
-   - Retry 3: 1 minute
-   - Retry 4: 5 minutes
-   - Retry 5: 15 minutes
-   - Retry 6: 30 minutes
-   - Retry 7: 1 hour
-4. **Max attempts:** 8 total (1 initial + 7 retries).
-5. **Delivery window:** Events older than **24 hours** are not retried.
-6. **Ordering:** Webhooks are delivered on a **best-effort** basis and may not
-   arrive in the exact order events occurred.
+1. **Delivery method:** HTTP POST to the subscriber `callbackUrl` with `Content-Type: application/json`.
+2. **Timeout:** The endpoint must respond within **30 seconds** (`WEBHOOK_REQUEST_TIMEOUT_MS`, default 30s).
+3. **Retry policy:** Deliveries that fail (network error, timeout, or HTTP non-2xx status) are queued in `webhook_deliveries` and retried by the background retry processor with the following schedule:
+   - Initial attempt: immediate
+   - Retry 1: ~5 minutes after failure (`RETRY_DELAYS_MS[0]`)
+   - Retry 2: ~15 minutes after failure (`RETRY_DELAYS_MS[1]`)
+   - Retry 3: ~45 minutes after failure (`RETRY_DELAYS_MS[2]`)
+4. **Max attempts:** 4 total attempts (`MAX_RETRY_ATTEMPTS = 4`). After attempt 4, the delivery is marked as permanently failed.
+5. **Ordering:** Webhooks are delivered on a **best-effort** basis and may not arrive in the exact order events occurred.
 
 ---
 
@@ -299,26 +323,23 @@ wasting resources.
 
 While deactivated:
 - No further events are sent to the subscriber.
-- The subscription status changes to `deactivated`.
-- You can **re-activate** the subscription by calling
-  `PUT /api/webhooks/subscriptions/:id` with `{ "active": true }`.
+- The subscription status changes to `deactivated` (`isActive: false`).
+- You can register a new subscription or contact the administrator to re-enable it.
 
 ---
 
 ## Verifying HMAC Signatures
 
-Each delivery includes an `X-RemitLend-Signature` header containing an
-HMAC-SHA256 signature of the **raw request body**.
+Deliveries with a configured subscription secret include an
+`X-RemitLend-Signature` header in this format:
 
-**Header format:**
 ```
-X-RemitLend-Signature: sha256=<hex-encoded-hmac>
+X-RemitLend-Signature: t=<unix-seconds>,v1=<hex-encoded-hmac>
 ```
 
-The value is `sha256=` followed by the lowercase hex-encoded HMAC-SHA256
-digest computed over the raw request body (no timestamp prefix).
-
-### Verification snippet (Node.js)
+The HMAC-SHA256 digest covers `${timestamp}.${rawBody}`. Reject timestamps
+outside a short tolerance window (five minutes is recommended), then compare
+the digest in constant time. Retries get a fresh timestamp and signature.
 
 ```typescript
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -327,32 +348,24 @@ function verifyWebhookSignature(
   rawBody: string,
   signatureHeader: string,
   secret: string,
+  now = Date.now(),
 ): boolean {
-  const expected =
-    "sha256=" +
-    createHmac("sha256", secret).update(rawBody).digest("hex");
-
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signatureHeader ?? "");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  const match = /^t=(\d+),v1=([a-f0-9]{64})$/.exec(signatureHeader ?? "");
+  if (!match) return false;
+  const [, timestamp, signature] = match;
+  const timestampMs = Number(timestamp) * 1000;
+  if (!Number.isSafeInteger(timestampMs) || Math.abs(now - timestampMs) > 5 * 60_000) {
+    return false;
+  }
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest();
+  const received = Buffer.from(signature, "hex");
+  return received.length === expected.length && timingSafeEqual(expected, received);
 }
 ```
 
-> ⚠️ **Important:** Always use `timingSafeEqual` (or your language's
-> constant-time comparison) when verifying the signature to prevent timing
-> attacks.
-
-### Obtaining your secret
-
-The signing secret is the **per-subscription secret** returned in the
-response when you register the webhook subscription (see
-[Creating a Subscription](#creating-a-subscription)). It is **not** a
-global environment variable. Store it securely on your server and use it
-to verify each incoming delivery.
-
-See also: [docs/wiki/webhook-signatures.md](wiki/webhook-signatures.md)
-for additional language examples.
+Capture the raw body and verify before JSON decoding. The signing secret is the
+per-subscription secret returned when registering the webhook. See
+[the full signature guide](wiki/webhook-signatures.md) for Python and Express examples.
 
 ---
 
@@ -365,7 +378,7 @@ for additional language examples.
 | 5xx     | Server error — will be retried               |
 | Timeout | Treated as a failure — will be retried       |
 
-- **Respond within 10 seconds.** Slow responses are counted as failures.
+- **Respond within 30 seconds.** Slow responses exceeding the timeout are counted as failures.
 - Returning any 2xx status (200, 201, 202, 204) acknowledges delivery.
 
 ---

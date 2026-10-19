@@ -167,7 +167,9 @@
       "repayment_due": "Pago pendiente",
       "repayment_confirmed": "Pago confirmado",
       "loan_defaulted": "Préstamo en incumplimiento",
-      "score_changed": "Puntaje cambiado"
+      "score_changed": "Puntaje cambiado",
+      "dispute_opened": "Disputa abierta",
+      "dispute_contested": "Incumplimiento impugnado"
     },
     "empty": {
       "title": "No se encontraron notificaciones",
@@ -301,8 +303,10 @@
     },
     "extension": {
       "title": "Solicitar extensión",
-      "extraLedgers": "Ledgers adicionales",
+      "days": "Duración de la extensión (días)",
       "newDueDate": "Nueva fecha de vencimiento",
+      "fee": "Tarifa de extensión",
+      "feeDisclosure": "El contrato cobra el 1 % del capital pendiente.",
       "submit": "Construir, Firmar y Enviar"
     }
   },

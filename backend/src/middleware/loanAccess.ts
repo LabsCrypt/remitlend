@@ -26,7 +26,10 @@ export const requireLoanBorrowerAccess = asyncHandler(async (req, _res, next) =>
     return next();
   }
 
-  const r = await query(`SELECT address FROM contract_events WHERE loan_id = $1 LIMIT 1`, [loanId]);
+  const r = await query(
+    `SELECT address FROM contract_events WHERE loan_id = $1 AND address IS NOT NULL AND event_type IN ('LoanRequested', 'LoanApproved') ORDER BY id ASC LIMIT 1`,
+    [loanId],
+  );
 
   const row = r?.rows?.[0] as { address: string } | undefined;
   if (!row) {
@@ -59,7 +62,10 @@ export const requireLoanOwner = asyncHandler(async (req, _res, next) => {
   }
 
   // Fetch loan borrower/owner from the unified view
-  const r = await query(`SELECT address FROM loan_events WHERE loan_id = $1 LIMIT 1`, [loanId]);
+  const r = await query(
+    `SELECT address FROM loan_events WHERE loan_id = $1 AND address IS NOT NULL AND event_type IN ('LoanRequested', 'LoanApproved') ORDER BY id ASC LIMIT 1`,
+    [loanId],
+  );
 
   const row = r?.rows?.[0] as { address: string } | undefined;
   if (!row) {

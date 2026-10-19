@@ -9,38 +9,39 @@ const MIN_SCORE = 300; // Adjust as needed
 export interface InactiveBorrower {
   borrower: string;
   score: number;
-  last_repayment: string | null;
+  last_activity: string | null;
 }
 
-// Get borrowers who have not repaid in the last month
+// Only score users with an actual loan history. Account registration alone is
+// not evidence of inactivity and must not trigger repeated score decay.
 export async function getInactiveBorrowers(): Promise<InactiveBorrower[]> {
   const result = await query(`
-    SELECT s.borrower AS borrower, s.score AS score, MAX(e.ledger_closed_at) AS last_repayment
+    SELECT s.user_id AS borrower, s.current_score AS score, MAX(e.ledger_closed_at) AS last_activity
     FROM scores s
-    LEFT JOIN contract_events e ON s.borrower = e.address AND e.event_type = 'LoanRepaid'
-    GROUP BY s.borrower, s.score
-    HAVING MAX(e.ledger_closed_at) IS NULL OR MAX(e.ledger_closed_at) < NOW() - INTERVAL '1 month'
+    JOIN contract_events e
+      ON e.address = s.user_id
+      AND e.event_type IN ('LoanApproved', 'LoanRepaid')
+    GROUP BY s.user_id, s.current_score
+    HAVING MAX(e.ledger_closed_at) < NOW() - INTERVAL '1 month'
   `);
   return result.rows as InactiveBorrower[];
 }
 
 // Apply score decay to a borrower based on inactivity
 export async function applyScoreDecay(borrower: InactiveBorrower) {
-  const lastRepayment = borrower.last_repayment;
+  const lastActivity = borrower.last_activity;
+  if (!lastActivity) return borrower.score;
+
   const now = new Date();
-  let monthsInactive = 1;
-  if (lastRepayment) {
-    const last = new Date(lastRepayment);
-    monthsInactive = Math.max(
-      1,
-      Math.floor((now.getTime() - last.getTime()) / (30 * 24 * 60 * 60 * 1000)),
-    );
-  }
+  const last = new Date(lastActivity);
+  const monthsInactive = Math.floor((now.getTime() - last.getTime()) / (30 * 24 * 60 * 60 * 1000));
+  if (!Number.isFinite(last.getTime()) || monthsInactive < 1) return borrower.score;
+
   const decay = monthsInactive * DECAY_PER_MONTH;
   const newScore = Math.max(MIN_SCORE, borrower.score - decay);
-  await query(`UPDATE scores SET score = $1, updated_at = CURRENT_TIMESTAMP WHERE borrower = $2`, [
-    newScore,
-    borrower.borrower,
-  ]);
+  await query(
+    `UPDATE scores SET current_score = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`,
+    [newScore, borrower.borrower],
+  );
   return newScore;
 }

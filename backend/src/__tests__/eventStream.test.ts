@@ -1,6 +1,5 @@
 import request from 'supertest';
 import { jest } from '@jest/globals';
-import { generateJwtToken } from '../services/authService.js';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
 
@@ -12,7 +11,9 @@ process.env.INTERNAL_API_KEY = VALID_API_KEY;
 const mockQuery: jest.MockedFunction<
   (text: string, params?: unknown[]) => Promise<MockQueryResult>
 > = jest.fn();
-jest.unstable_mockModule('../db/connection.js', () => ({
+
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../db/connection.js', () => ({
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn(),
@@ -20,9 +21,23 @@ jest.unstable_mockModule('../db/connection.js', () => ({
   withTransaction: jest.fn(),
 }));
 
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
+  cacheService: {
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
+  },
+}));
+
 await import('../db/connection.js');
 const { default: app } = await import('../app.js');
 const { eventStreamService } = await import('../services/eventStreamService.js');
+const { generateJwtToken } = await import('../services/authService.js');
 
 const bearer = (publicKey: string) => ({
   Authorization: `Bearer ${generateJwtToken(publicKey)}`,

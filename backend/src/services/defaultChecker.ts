@@ -1,10 +1,13 @@
 import {
+  Account,
   BASE_FEE,
   Keypair,
   Operation,
   TransactionBuilder,
   nativeToScVal,
+  scValToNative,
   rpc,
+  xdr,
 } from '@stellar/stellar-sdk';
 import { query } from '../db/connection.js';
 import logger from '../utils/logger.js';
@@ -87,6 +90,82 @@ export async function reconcileLoanStroops(loanId: number): Promise<LoanReconcil
 const DEFAULT_TERM_LEDGERS = 17_280;
 const LOCK_KEY = 'default_checker:running';
 const LOCK_TTL_SECONDS = 600; // 10 minutes - prevents stuck locks from crashed runs
+
+const OVERDUE_LOAN_CTES = `
+  WITH approved AS (
+    SELECT
+      loan_id,
+      MAX(ledger) AS approved_ledger,
+      MAX(term_ledgers) FILTER (WHERE event_type = 'LoanApproved') AS approved_term_ledgers
+    FROM contract_events
+    WHERE event_type = 'LoanApproved'
+      AND loan_id IS NOT NULL
+    GROUP BY loan_id
+  ),
+  extensions AS (
+    SELECT loan_id, MAX(due_ledger) AS extended_due_ledger
+    FROM contract_events
+    WHERE event_type = 'LoanExtended'
+      AND loan_id IS NOT NULL
+      AND due_ledger IS NOT NULL
+    GROUP BY loan_id
+  ),
+  active AS (
+    SELECT
+      a.loan_id,
+      COALESCE(
+        x.extended_due_ledger,
+        a.approved_ledger + COALESCE(NULLIF(a.approved_term_ledgers, 0), $1)
+      ) AS due_ledger
+    FROM approved a
+    LEFT JOIN extensions x ON x.loan_id = a.loan_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM contract_events e
+      WHERE e.loan_id = a.loan_id AND e.event_type = 'LoanDefaulted'
+    )
+    -- LoanRepaid is emitted for both partial and full payments, so its mere
+    -- presence cannot establish terminal repayment. The Soroban contract's
+    -- check_defaults verifies LoanStatus::Approved before changing any loan.
+  ),
+  overdue AS (
+    SELECT * FROM active WHERE due_ledger < $2
+  )
+`;
+
+/**
+ * Older indexed LoanExtended rows predate the due_ledger column. Recover the
+ * absolute due ledger from their original Soroban event payload, once, so an
+ * already-extended loan is not evaluated against its original term.
+ */
+async function backfillExtensionDueLedgers(): Promise<void> {
+  const result = await query(
+    `SELECT id, value FROM contract_events
+     WHERE event_type = 'LoanExtended' AND due_ledger IS NULL AND value IS NOT NULL`,
+  );
+
+  for (const row of result.rows as Array<{ id: number; value: string }>) {
+    // Allows simple query mocks and partially populated test fixtures to
+    // return no-op rows; real database rows always have both fields.
+    if (!Number.isInteger(row.id) || typeof row.value !== 'string') continue;
+    try {
+      const decoded = scValToNative(xdr.ScVal.fromXDR(row.value, 'base64'));
+      const dueLedger = Array.isArray(decoded) ? Number(decoded[0]) : NaN;
+      if (!Number.isSafeInteger(dueLedger) || dueLedger <= 0) {
+        throw new Error('invalid new_due_ledger in LoanExtended payload');
+      }
+      await query(
+        'UPDATE contract_events SET due_ledger = $1 WHERE id = $2 AND due_ledger IS NULL',
+        [dueLedger, row.id],
+      );
+    } catch (error) {
+      logger.withContext().error('Failed to backfill LoanExtended due ledger', {
+        eventRowId: row.id,
+        error,
+      });
+      throw error;
+    }
+  }
+}
 
 export interface DefaultCheckBatchResult {
   loanIds: number[];
@@ -235,30 +314,9 @@ export class DefaultChecker {
    */
   private async fetchOverdueLoanIds(currentLedger: number): Promise<number[]> {
     const result = await query(
-      `
-      WITH approved AS (
-        SELECT loan_id, MAX(ledger) AS approved_ledger
-        FROM contract_events
-        WHERE event_type = 'LoanApproved'
-          AND loan_id IS NOT NULL
-        GROUP BY loan_id
-      ),
-      active AS (
-        SELECT
-          a.loan_id,
-          a.approved_ledger,
-          (a.approved_ledger + $1) AS due_ledger
-        FROM approved a
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM contract_events e
-          WHERE e.loan_id = a.loan_id
-            AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
-        )
-      )
+      `${OVERDUE_LOAN_CTES}
       SELECT loan_id
-      FROM active
-      WHERE due_ledger < $2
+      FROM overdue
       ORDER BY due_ledger ASC, loan_id ASC
       LIMIT $3
       `,
@@ -280,31 +338,7 @@ export class DefaultChecker {
     ledgersPastOldestDue?: number;
   }> {
     const result = await query(
-      `
-      WITH approved AS (
-        SELECT loan_id, MAX(ledger) AS approved_ledger
-        FROM contract_events
-        WHERE event_type = 'LoanApproved'
-          AND loan_id IS NOT NULL
-        GROUP BY loan_id
-      ),
-      active AS (
-        SELECT
-          a.loan_id,
-          (a.approved_ledger + $1) AS due_ledger
-        FROM approved a
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM contract_events e
-          WHERE e.loan_id = a.loan_id
-            AND e.event_type IN ('LoanRepaid', 'LoanDefaulted')
-        )
-      ),
-      overdue AS (
-        SELECT *
-        FROM active
-        WHERE due_ledger < $2
-      )
+      `${OVERDUE_LOAN_CTES}
       SELECT
         COUNT(*)::bigint AS overdue_count,
         MIN(due_ledger) AS oldest_due_ledger
@@ -345,10 +379,14 @@ export class DefaultChecker {
     signer: Keypair,
     passphrase: string,
     loanIds: number[],
+    account: Account,
   ): Promise<DefaultCheckBatchResult> {
-    const account = await server.getAccount(signer.publicKey());
-
-    const loanIdsScVal = nativeToScVal(loanIds, { type: 'u32' });
+    // `nativeToScVal` with a `type` hint applies to a single scalar value, not
+    // to each element of an array — passing `loanIds` (a number[]) directly
+    // with `{ type: 'u32' }` throws a TypeError. Build the u32 elements
+    // individually and wrap them in a Vec to match the contract's
+    // `check_defaults(loan_ids: Vec<u32>)` signature.
+    const loanIdsScVal = xdr.ScVal.scvVec(loanIds.map((id) => nativeToScVal(id, { type: 'u32' })));
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -425,6 +463,7 @@ export class DefaultChecker {
     signer: Keypair,
     passphrase: string,
     loanIds: number[],
+    account: Account,
   ): Promise<DefaultCheckBatchResult> {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
@@ -444,6 +483,7 @@ export class DefaultChecker {
       signer,
       passphrase,
       loanIds,
+      account,
     ).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       return {
@@ -559,6 +599,8 @@ export class DefaultChecker {
       const latest = await server.getLatestLedger();
       const currentLedger = latest.sequence;
 
+      await backfillExtensionDueLedgers();
+
       const stats = await this.fetchOverdueStats(currentLedger);
 
       const explicitIds = loanIds
@@ -585,21 +627,40 @@ export class DefaultChecker {
       });
 
       const allChunks = chunk(targetIds, this.batchSize).filter((b) => b.length > 0);
-      const batchResults = await mapConcurrent(allChunks, this.concurrency, async (batch) => {
-        const result = await this.submitCheckDefaultsWithTimeout(server, signer, passphrase, batch);
 
-        logger.withContext().info('default_check.batch', {
-          runId,
-          loanIds: result.loanIds,
-          txHash: result.txHash,
-          submitStatus: result.submitStatus,
-          txStatus: result.txStatus,
-          error: result.error,
-          timedOut: result.timedOut,
-        });
+      // Fetch the admin account once and assign strictly increasing sequence
+      // numbers so concurrent batches never collide on txBAD_SEQ (issue #1094).
+      const adminAccount = await server.getAccount(signer.publicKey());
+      const baseSequence = BigInt(adminAccount.sequenceNumber());
+      const batchAccounts = allChunks.map(
+        (_, i) => new Account(signer.publicKey(), String(baseSequence + BigInt(i + 1))),
+      );
 
-        return result;
-      });
+      const batchResults = await mapConcurrent(
+        allChunks.map((batch, i) => ({ batch, account: batchAccounts[i]! })),
+        this.concurrency,
+        async ({ batch, account: batchAccount }) => {
+          const result = await this.submitCheckDefaultsWithTimeout(
+            server,
+            signer,
+            passphrase,
+            batch,
+            batchAccount,
+          );
+
+          logger.withContext().info('default_check.batch', {
+            runId,
+            loanIds: result.loanIds,
+            txHash: result.txHash,
+            submitStatus: result.submitStatus,
+            txStatus: result.txStatus,
+            error: result.error,
+            timedOut: result.timedOut,
+          });
+
+          return result;
+        },
+      );
 
       const loansChecked = targetIds.length;
       const successfulSubmissions = batchResults.filter((b) => !b.error && b.txHash).length;
@@ -644,6 +705,126 @@ export class DefaultChecker {
       // Always release the lock, even if the run failed
       await this.releaseLock();
     }
+  }
+
+  /**
+   * Submits `reverse_default(loan_id)` to the LoanManager contract (#1803).
+   *
+   * The on-chain counterpart of `check_defaults`, signed with the same
+   * `LOAN_MANAGER_ADMIN_SECRET` key the checker already uses, and the only way
+   * a disputed default stops being a database-only fiction:
+   * `adminDisputeController.resolveLoanDispute('reverse')` calls this and
+   * refuses to record the resolution unless it comes back with a tx hash.
+   *
+   * Unlike `checkOverdueLoans` this takes no distributed lock and is not
+   * batched — it runs inside an admin HTTP request, for a single loan, and the
+   * caller reports the outcome to an operator who must see the failure rather
+   * than a best-effort batch summary.
+   *
+   * A returned `error` means nothing reached the ledger. The caller must not
+   * treat the reversal as done in that case; the dispute stays open in the
+   * database so it can be retried.
+   */
+  async reverseDefault(loanId: number): Promise<{
+    loanId: number;
+    txHash?: string;
+    ledger?: number;
+    submitStatus?: string;
+    txStatus?: string;
+    error?: string;
+  }> {
+    const { signer, server, passphrase } = this.assertConfigured();
+
+    const tx = new TransactionBuilder(await server.getAccount(signer.publicKey()), {
+      fee: BASE_FEE,
+      networkPassphrase: passphrase,
+    })
+      .addOperation(
+        Operation.invokeContractFunction({
+          contract: this.contractId,
+          function: 'reverse_default',
+          args: [nativeToScVal(loanId, { type: 'u32' })],
+        }),
+      )
+      .setTimeout(30)
+      .build();
+
+    let prepared;
+    try {
+      prepared = await server.prepareTransaction(tx);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { loanId, error: `prepareTransaction failed: ${message}` };
+    }
+
+    prepared.sign(signer);
+
+    let send;
+    try {
+      send = await server.sendTransaction(prepared);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { loanId, error: `sendTransaction failed: ${message}` };
+    }
+
+    const txHash = send.hash;
+    if (!txHash) {
+      return {
+        loanId,
+        ...(send.status !== undefined ? { submitStatus: send.status } : {}),
+        error: 'sendTransaction returned no hash',
+      };
+    }
+
+    let txStatus: string | undefined;
+    let ledger: number | undefined;
+    try {
+      const polled = await server.pollTransaction(txHash, {
+        attempts: this.pollAttempts,
+        sleepStrategy: (_attempt: number) => this.pollSleepMs,
+      });
+      txStatus = polled.status;
+      const polledLedger = (polled as { ledger?: unknown }).ledger;
+      if (typeof polledLedger === 'number') {
+        ledger = polledLedger;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.withContext().warn('Default reversal transaction polling failed', {
+        loanId,
+        txHash,
+        message,
+      });
+      // Submitted but unconfirmed: the reversal may or may not have landed, so
+      // it is reported as an error with the hash for the operator to check. The
+      // database must never claim a reversal the ledger has not confirmed.
+      return {
+        loanId,
+        txHash,
+        error: `could not confirm reverse_default on-chain (tx ${txHash}): ${message}`,
+      };
+    }
+
+    // A submitted-but-not-confirmed transaction is not a reversal: the ledger
+    // may still reject it (e.g. LoanNotDefaulted, InsufficientPoolLiquidity).
+    // Only SUCCESS is reported as a usable hash so the caller never records a
+    // resolution that did not land.
+    if (txStatus !== 'SUCCESS') {
+      return {
+        loanId,
+        txHash,
+        ...(txStatus !== undefined ? { txStatus } : {}),
+        error: `reverse_default did not succeed on-chain (status: ${txStatus ?? 'unknown'})`,
+      };
+    }
+
+    return {
+      loanId,
+      txHash,
+      ...(ledger !== undefined ? { ledger } : {}),
+      ...(send.status !== undefined ? { submitStatus: send.status } : {}),
+      txStatus,
+    };
   }
 }
 

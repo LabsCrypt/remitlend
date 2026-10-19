@@ -122,6 +122,26 @@ describe('scoreReconciliationService', () => {
       expect(result.divergences[0]?.absoluteDifference).toBeNull();
     });
 
+    it('falls back to user_id/current_score schema when borrower column is missing', async () => {
+      const err = new Error('column s.borrower does not exist') as any;
+      err.code = '42703';
+
+      mockQuery.mockRejectedValueOnce(err).mockResolvedValueOnce({
+        rows: [{ address: 'GB...XYZ', score: 720 }],
+        rowCount: 1,
+      });
+
+      mockGetOnChainCreditScore.mockResolvedValueOnce(720);
+
+      const result = await scoreReconciliationService.reconcileActiveBorrowerScores();
+
+      expect(result.activeBorrowerCount).toBe(1);
+      expect(result.checkedBorrowerCount).toBe(1);
+      expect(result.divergenceCount).toBe(0);
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockQuery.mock.calls[1]?.[0]).toContain('s.user_id = a.address');
+    });
+
     it('increments failedBorrowerCount when on-chain lookup rejects', async () => {
       mockQuery.mockResolvedValueOnce({
         rows: [

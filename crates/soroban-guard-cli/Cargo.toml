@@ -1,0 +1,8 @@
+[package]
+name = "soroban-guard"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+soroban-guard-core = { path = "../soroban-guard-core" }
+walkdir = "2"

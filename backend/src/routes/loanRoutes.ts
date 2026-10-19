@@ -16,6 +16,7 @@ import {
   extendLoan,
   buildLiquidateLoan,
   submitTransaction,
+  submitRefinanceTransaction,
 } from '../controllers/loanController.js';
 import { getLoanEvents } from '../controllers/indexerController.js';
 import { requireJwtAuth, requireScopes, requireWalletOwnership } from '../middleware/jwtAuth.js';
@@ -532,6 +533,17 @@ router.post(
   validateBody(refinanceLoanSchema),
   idempotencyMiddleware,
   refinanceLoan,
+);
+
+router.post(
+  '/:loanId/submit-refinance',
+  requireJwtAuth,
+  requireScopes('write:loans'),
+  requireLoanOwner,
+  validateParams(repayLoanParamsSchema),
+  validateBody(submitTxSchema),
+  idempotencyMiddleware,
+  submitRefinanceTransaction,
 );
 
 /**

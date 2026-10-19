@@ -35,7 +35,7 @@ const router = Router();
  *         name: type
  *         schema:
  *           type: string
- *           enum: [loan_approved, repayment_due, repayment_confirmed, loan_defaulted, loan_liquidated, score_changed]
+ *           enum: [loan_approved, repayment_due, repayment_confirmed, loan_defaulted, loan_liquidated, score_changed, dispute_opened, dispute_contested]
  *         description: Filter by notification type
  *       - in: query
  *         name: status

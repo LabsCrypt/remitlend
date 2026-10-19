@@ -46,6 +46,24 @@ export interface IndexedEvent {
   updated_at: Date;
 }
 
+export const USER_PROFILE_UPDATABLE_COLUMNS = new Set(['display_name', 'email', 'metadata']);
+
+export const LOAN_HISTORY_UPDATABLE_COLUMNS = new Set([
+  'lender_public_key',
+  'principal_amount',
+  'interest_rate_bps',
+  'principal_paid',
+  'interest_paid',
+  'accrued_interest',
+  'status',
+  'due_date',
+  'requested_at',
+  'approved_at',
+  'repaid_at',
+  'defaulted_at',
+  'metadata',
+]);
+
 export const UserProfileService = {
   async create(data: {
     public_key: string;
@@ -72,6 +90,11 @@ export const UserProfileService = {
     data: Partial<Omit<UserProfile, 'id' | 'public_key' | 'created_at' | 'updated_at'>>,
   ): Promise<UserProfile | null> {
     const fields = Object.keys(data);
+    for (const f of fields) {
+      if (!USER_PROFILE_UPDATABLE_COLUMNS.has(f)) {
+        throw new Error(`Disallowed column in UserProfile update: ${f}`);
+      }
+    }
     if (fields.length === 0) return this.findByPublicKey(publicKey);
 
     const setClauses = fields.map((f, i) => `${f} = $${i + 2}`).join(', ');
@@ -160,6 +183,11 @@ export const LoanHistoryService = {
     >,
   ): Promise<LoanHistory | null> {
     const fields = Object.keys(data);
+    for (const f of fields) {
+      if (!LOAN_HISTORY_UPDATABLE_COLUMNS.has(f)) {
+        throw new Error(`Disallowed column in LoanHistory update: ${f}`);
+      }
+    }
     if (fields.length === 0) {
       const r = await query('SELECT * FROM loan_history WHERE loan_id = $1', [loanId]);
       return (r.rows[0] as LoanHistory) ?? null;

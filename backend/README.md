@@ -343,6 +343,21 @@ router.get(
 
 ## Testing
 
+### Test Environment Variables
+
+Test environment variables are **not** committed to the repository. A template is provided:
+
+```bash
+# Create your local test env file
+cp .env.test.example .env.test
+```
+
+The `.env.test` file is loaded automatically by `jest.setup.js` before every test run.
+All values in `.env.test.example` are placeholders — replace them only when needed locally.
+
+> **Note:** `.env.test` is listed in `.gitignore` to prevent accidental credential leaks.
+> Never commit real secrets in test files.
+
 ### Running Tests
 
 ```bash

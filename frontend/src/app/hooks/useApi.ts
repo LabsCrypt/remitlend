@@ -272,6 +272,7 @@ export interface BorrowerLoan {
   id: number;
   principal: number;
   accruedInterest: number;
+  accruedLateFee: number;
   totalOwed: number;
   totalRepaid: number;
   nextPaymentDeadline: string;
@@ -300,6 +301,8 @@ export interface LoanDetails {
   approvedAt?: string;
   events: LoanEvent[];
   lateFees?: number;
+  extensionFee?: number;
+  extensionFee?: number;
   collateralLocked?: number;
   collateralRatio?: number;
   healthFactor?: number;
@@ -535,11 +538,28 @@ interface RawPaginatedResponse<T> {
   total_count?: number | null;
 }
 
-interface CursorListParams extends Record<string, unknown> {
+export interface CursorListParams extends Record<string, unknown> {
   limit?: number;
   cursor?: string | null;
   status?: string;
   enabled?: boolean;
+  /**
+   * Optional filters. Declared explicitly because the index signature on this
+   * interface means an unknown key type-checks fine but gets dropped by the
+   * per-hook query-string whitelist — the failure mode behind #1881.
+   *
+   * `""` means "no filter" and is omitted from the request by `toQueryString`.
+   */
+  /** Free-text search over recipient address / memo. */
+  q?: string;
+  /** Inclusive ISO-8601 lower bound. */
+  from?: string;
+  /** Inclusive ISO-8601 upper bound. */
+  to?: string;
+  /** Inclusive minimum amount. */
+  minAmount?: number;
+  /** Inclusive maximum amount. */
+  maxAmount?: number;
 }
 
 interface BorrowerLoansPageResponse {
@@ -608,6 +628,16 @@ async function fetchRemittancesPage(
       limit: params.limit,
       cursor: params.cursor,
       status: params.status,
+      // Filter params. These are forwarded to GET /api/remittances, which has
+      // supported them since #948 — `CursorListParams` being an open
+      // `Record<string, unknown>` meant callers could pass them without any
+      // type error while this whitelist silently dropped them, so the filter
+      // inputs on the remittances page did nothing at all (#1881).
+      q: params.q,
+      from: params.from,
+      to: params.to,
+      minAmount: params.minAmount,
+      maxAmount: params.maxAmount,
     })}`,
   );
 
@@ -918,10 +948,18 @@ export function useRemittances(
 
 export function useRemittancesPage(params: CursorListParams = {}, options?: { enabled?: boolean }) {
   return useQuery<PaginatedListResult<Remittance>>({
+    // The filters must be part of the key. They are sent to the API but were
+    // not represented here, so React Query treated "Alice" and "Bob" as the
+    // same query and served whichever page was cached first (#1881).
     queryKey: queryKeys.remittances.page({
       limit: params.limit ?? 20,
       cursor: params.cursor ?? null,
       status: params.status ?? "all",
+      q: params.q || null,
+      from: params.from || null,
+      to: params.to || null,
+      minAmount: params.minAmount ?? null,
+      maxAmount: params.maxAmount ?? null,
     }),
     queryFn: () => fetchRemittancesPage(params),
     placeholderData: keepPreviousData,
@@ -1347,7 +1385,13 @@ export function useDepositorPortfolio(
 // ─── Notification types & hooks ───────────────────────────────────────────────
 
 export type NotificationType =
-  "loan_approved" | "repayment_due" | "repayment_confirmed" | "loan_defaulted" | "score_changed";
+  | "loan_approved"
+  | "repayment_due"
+  | "repayment_confirmed"
+  | "loan_defaulted"
+  | "score_changed"
+  | "dispute_opened"
+  | "dispute_contested";
 
 export interface AppNotification {
   id: number;
@@ -1749,6 +1793,13 @@ export async function submitLoanTransaction(signedTxXdr: string) {
   });
 }
 
+export async function submitRefinanceLoanTransaction(loanId: string | number, signedTxXdr: string) {
+  return apiFetch<{ success: boolean; txHash: string; status: string }>(
+    `/loans/${loanId}/submit-refinance`,
+    { method: 'POST', body: JSON.stringify({ signedTxXdr }) },
+  );
+}
+
 interface BuildLoanTxResponse {
   success: boolean;
   loanId: number;
@@ -1807,10 +1858,18 @@ export function useMyTransactions(params: CursorListParams = {}) {
   });
 }
 
-export function useAdminGovernancePending() {
+/**
+ * @param options Pass `enabled: isAdmin` from `useAdminGuard()` so the
+ *   privileged request is not fired before the caller's role is confirmed.
+ *   Omitting it fires the request unconditionally — see #1884.
+ */
+export function useAdminGovernancePending(
+  options?: Omit<UseQueryOptions<GovernancePendingResponse>, "queryKey" | "queryFn">,
+) {
   return useQuery({
     queryKey: queryKeys.governance.pending(),
     queryFn: () => apiFetch<GovernancePendingResponse>("/admin/governance/pending"),
+    ...options,
   });
 }
 

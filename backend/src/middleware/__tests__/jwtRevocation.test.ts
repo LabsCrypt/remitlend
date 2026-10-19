@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, beforeAll } from '@jest/globals';
 import request from 'supertest';
 import express from 'express';
 import { Keypair } from '@stellar/stellar-sdk';
@@ -85,5 +85,120 @@ describe('JWT revocation and role-change propagation', () => {
 
     const afterLogout = await request(app).post('/echo').set('Authorization', `Bearer ${token}`);
     expect(afterLogout.status).toBe(401);
+  });
+});
+
+describe('isTokenRevoked fail-closed behavior', () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+
+  beforeAll(() => {
+    process.env.NODE_ENV = 'test';
+  });
+
+  beforeEach(() => {
+    jest.resetModules();
+    fakeCacheStore.clear();
+  });
+
+  afterAll(() => {
+    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+  });
+
+  it('returns true (revoked) when cacheService.get rejects', async () => {
+    jest.unstable_mockModule('../../services/cacheService.js', () => ({
+      cacheService: {
+        get: jest.fn(async () => {
+          throw new Error('Redis connection failed');
+        }),
+        set: jest.fn(),
+        delete: jest.fn(),
+      },
+    }));
+
+    // Re-import after mocking
+    const { isTokenRevoked: freshIsTokenRevoked } = await import('../../services/authService.js');
+
+    const result = await freshIsTokenRevoked('some-jti');
+    expect(result).toBe(true);
+  });
+
+  it('returns true (revoked) when cacheService.get times out', async () => {
+    jest.unstable_mockModule('../../services/cacheService.js', () => ({
+      cacheService: {
+        get: jest.fn(async () => {
+          // Hang longer than REVOCATION_CHECK_TIMEOUT_MS (250ms)
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          return null;
+        }),
+        set: jest.fn(),
+        delete: jest.fn(),
+      },
+    }));
+
+    // Re-import after mocking
+    const { isTokenRevoked: freshIsTokenRevoked } = await import('../../services/authService.js');
+
+    const result = await freshIsTokenRevoked('some-jti');
+    expect(result).toBe(true);
+  });
+
+  it('returns true (revoked) when cacheService.get returns null after timeout', async () => {
+    // This tests the race condition where the timeout fires before the cache returns
+    let resolveCache: (value: boolean | null) => void;
+    const cachePromise = new Promise<boolean | null>((resolve) => {
+      resolveCache = resolve;
+    });
+
+    jest.unstable_mockModule('../../services/cacheService.js', () => ({
+      cacheService: {
+        get: jest.fn(async () => cachePromise),
+        set: jest.fn(),
+        delete: jest.fn(),
+      },
+    }));
+
+    const { isTokenRevoked: freshIsTokenRevoked } = await import('../../services/authService.js');
+
+    // Start the check, but don't resolve the cache promise yet
+    const checkPromise = freshIsTokenRevoked('some-jti');
+
+    // Wait for the timeout to fire (250ms + buffer)
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Now resolve the cache promise - it should be ignored since timeout already fired
+    resolveCache!(true);
+
+    const result = await checkPromise;
+    expect(result).toBe(true);
+  });
+
+  it('returns false (not revoked) when cacheService.get returns null quickly', async () => {
+    jest.unstable_mockModule('../../services/cacheService.js', () => ({
+      cacheService: {
+        get: jest.fn(async () => null),
+        set: jest.fn(),
+        delete: jest.fn(),
+      },
+    }));
+
+    const { isTokenRevoked: freshIsTokenRevoked } = await import('../../services/authService.js');
+
+    const result = await freshIsTokenRevoked('some-jti');
+    expect(result).toBe(false);
+  });
+
+  it('returns true (revoked) when cacheService.get returns true quickly', async () => {
+    jest.unstable_mockModule('../../services/cacheService.js', () => ({
+      cacheService: {
+        get: jest.fn(async () => true),
+        set: jest.fn(),
+        delete: jest.fn(),
+      },
+    }));
+
+    const { isTokenRevoked: freshIsTokenRevoked } = await import('../../services/authService.js');
+
+    const result = await freshIsTokenRevoked('some-jti');
+    expect(result).toBe(true);
   });
 });

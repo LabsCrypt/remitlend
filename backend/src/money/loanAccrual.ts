@@ -14,6 +14,13 @@
  * shared money policy (`roundDiv` / `RoundingMode`), so the list and detail
  * endpoints agree with each other and no float drift accumulates.
  *
+ * Dispute freeze: when a loan has an open dispute, both the list and detail
+ * endpoints stop accrual at the ledger closest to (at or before) the open
+ * dispute's creation instead of at the current ledger. The detail endpoint
+ * resolves that freeze ledger from `loan_disputes`/`contract_events`, and the
+ * borrower-list SQL mirrors the same lookup, so a disputed loan reports
+ * identical `accruedInterest` and `totalOwed` values through either endpoint.
+ *
  * All amounts are integer stroop counts (the unit `contract_events.amount`
  * is stored in, mirroring `contracts/money`); callers convert to display
  * units at the API boundary.

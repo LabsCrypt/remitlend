@@ -1,7 +1,22 @@
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, jest } from '@jest/globals';
 import request from 'supertest';
-import app from '../app.js';
 import { Keypair } from '@stellar/stellar-sdk';
+
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
+  cacheService: {
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
+  },
+}));
+
+const { default: app } = await import('../app.js');
 
 describe('Auth API', () => {
   beforeAll(() => {
@@ -282,11 +297,16 @@ describe('authService unit tests', () => {
 
   describe('verifyChallengeTimestamp', () => {
     it('should accept timestamp at the window edge', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+
       const maxAge = 5 * 60 * 1000; // 5 minutes
       const timestamp = Date.now() - maxAge;
 
       const result = authService.verifyChallengeTimestamp(timestamp, maxAge);
       expect(result).toBe(true);
+
+      jest.useRealTimers();
     });
 
     it('should accept timestamp under the window', () => {

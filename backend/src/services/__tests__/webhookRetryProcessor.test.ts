@@ -38,6 +38,11 @@ jest.unstable_mockModule('../jobMetricsService.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../webhookHttp.js', () => ({
+  postWebhook: async (url: string, body: string, headers: Record<string, string>) =>
+    global.fetch(url, { method: 'POST', headers, body }),
+}));
+
 const { WebhookService, getRetryDelayMs } = await import('../webhookService.js');
 const { startWebhookRetryProcessor, stopWebhookRetryProcessor } =
   await import('../webhookRetryProcessor.js');

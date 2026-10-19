@@ -32,6 +32,8 @@ export const getNotificationsQuerySchema = z.object({
       'loan_defaulted',
       'loan_liquidated',
       'score_changed',
+      'dispute_opened',
+      'dispute_contested',
     ])
     .optional(),
   status: z.enum(['unread', 'read', 'archived']).optional(),

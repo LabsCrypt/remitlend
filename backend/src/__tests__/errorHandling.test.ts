@@ -1,8 +1,23 @@
 import { jest } from '@jest/globals';
 import request from 'supertest';
 import { Keypair } from '@stellar/stellar-sdk';
-import { generateJwtToken } from '../services/authService.js';
-import app from '../app.js';
+
+const fakeCacheStore = new Map<string, unknown>();
+await jest.unstable_mockModule('../services/cacheService.js', () => ({
+  cacheService: {
+    get: jest.fn(async (key: string) => fakeCacheStore.get(key) ?? null),
+    set: jest.fn(async (key: string, value: unknown) => {
+      fakeCacheStore.set(key, value);
+    }),
+    delete: jest.fn(async (key: string) => {
+      fakeCacheStore.delete(key);
+    }),
+    ping: jest.fn(async () => 'ok'),
+  },
+}));
+
+const { default: app } = await import('../app.js');
+const { generateJwtToken } = await import('../services/authService.js');
 
 jest.setTimeout(20000);
 

@@ -167,7 +167,9 @@
       "repayment_due": "Repayment due",
       "repayment_confirmed": "Repayment confirmed",
       "loan_defaulted": "Loan defaulted",
-      "score_changed": "Score changed"
+      "score_changed": "Score changed",
+      "dispute_opened": "Dispute opened",
+      "dispute_contested": "Default contested"
     },
     "empty": {
       "title": "No notifications found",
@@ -301,8 +303,10 @@
     },
     "extension": {
       "title": "Request extension",
-      "extraLedgers": "Additional ledgers",
+      "days": "Extension duration (days)",
       "newDueDate": "New due date",
+      "fee": "Extension fee",
+      "feeDisclosure": "The contract charges 1% of the remaining principal.",
       "submit": "Build, Sign & Submit"
     }
   },

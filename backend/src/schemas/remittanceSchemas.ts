@@ -4,31 +4,63 @@ import { z } from 'zod';
 const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{55}$/;
 
 // Schema for POST /remittances
+//
+// Cross-currency remittances are rejected at the schema level: the payment
+// path does not perform any currency conversion (see remittanceService), so
+// accepting `fromCurrency !== toCurrency` would silently diverge from the
+// API contract. This guard must be removed together with a real conversion
+// implementation (e.g. Stellar path payment strict-send).
 export const createRemittanceSchema = z.object({
-  body: z.object({
-    recipientAddress: z
-      .string()
-      .regex(STELLAR_ADDRESS_REGEX, 'Invalid Stellar address format')
-      .describe("Recipient's Stellar public key"),
-    amount: z
-      .number()
-      .positive('Amount must be greater than 0')
-      .max(1_000_000, 'Amount exceeds maximum limit')
-      .describe('Amount to send'),
-    fromCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Source currency'),
-    toCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Destination currency'),
-    memo: z
-      .string()
-      .max(28, 'Memo must be 28 characters or less')
-      .optional()
-      .describe('Optional transaction memo'),
-  }),
+  body: z
+    .object({
+      recipientAddress: z
+        .string()
+        .regex(STELLAR_ADDRESS_REGEX, 'Invalid Stellar address format')
+        .describe("Recipient's Stellar public key"),
+      amount: z
+        .number()
+        .positive('Amount must be greater than 0')
+        .max(1_000_000, 'Amount exceeds maximum limit')
+        .describe('Amount to send'),
+      fromCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Source currency'),
+      toCurrency: z.enum(['USDC', 'EURC', 'PHP']).describe('Destination currency'),
+      memo: z
+        .string()
+        .max(28, 'Memo must be 28 characters or less')
+        .optional()
+        .describe('Optional transaction memo'),
+    })
+    .refine((data) => data.fromCurrency === data.toCurrency, {
+      message:
+        'Cross-currency remittances are not supported yet: the amount is sent as-is in fromCurrency with no conversion. Set toCurrency equal to fromCurrency, or wait until conversion is implemented.',
+      path: ['toCurrency'],
+    }),
 });
 
 // ISO date string validation
 const isoDateString = z.string().refine((val) => !Number.isNaN(Date.parse(val)), {
   message: 'Must be a valid ISO-8601 date string',
 });
+
+/**
+ * Query-string amount bound.
+ *
+ * Query params always arrive as strings, so the bound is validated as one.
+ * There is deliberately no `.transform()` here: `validate()` in
+ * src/middleware/validation.ts calls `schema.parse()` and discards the result
+ * without writing it back to `req.query`, so a transform would be dead code.
+ * The controller re-parses, which is what the sibling `from`/`to`/`q` filters
+ * already do for the same reason.
+ *
+ * `Number.isFinite(parseInt(...))` rather than truthiness, because `parseInt('')`
+ * is `NaN` while `parseInt('0')` is a legitimate `0` that must survive.
+ */
+const amountBoundString = z
+  .string()
+  .refine((val) => Number.isFinite(parseInt(val, 10)), {
+    message: 'Must be a number',
+  })
+  .describe('Amount bound in the source currency');
 
 // Schema for GET /remittances (list)
 export const getRemittancesSchema = z.object({
@@ -44,6 +76,8 @@ export const getRemittancesSchema = z.object({
     from: isoDateString.optional(),
     to: isoDateString.optional(),
     q: z.string().max(255).optional(),
+    minAmount: amountBoundString.optional(),
+    maxAmount: amountBoundString.optional(),
   }),
 });
 

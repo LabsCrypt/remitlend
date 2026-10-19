@@ -1,8 +1,8 @@
-# RemitLend System Architecture
+#RemitLend System Architecture
 
 RemitLend is a decentralized lending platform built on the Stellar network using Soroban smart contracts. It leverages remittance history to establish creditworthiness for migrant workers who lack traditional credit history.
 
-## Table of Contents
+##Table of Contents
 
 - [Overview](#overview)
 - [Architecture Principles](#architecture-principles)

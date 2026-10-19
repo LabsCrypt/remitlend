@@ -44,9 +44,16 @@ function getTokenRole(token: string | null): string | undefined {
 interface SidebarProps {
   onClose?: () => void;
   className?: string;
+  /**
+   * Set while the drawer is closed below `lg` so its links stay out of the tab
+   * order. The panel is off-canvas via `translate`, not `display:none`, so
+   * `inert` is what keeps keyboard focus from walking into links the user
+   * cannot see. Must stay `undefined` at `lg`, where the panel is docked.
+   */
+  inert?: boolean;
 }
 
-export function Sidebar({ onClose, className }: SidebarProps) {
+export function Sidebar({ onClose, className, inert }: SidebarProps) {
   const pathname = usePathname();
   const t = useTranslations("Navigation");
   const locale = useLocale();
@@ -73,6 +80,7 @@ export function Sidebar({ onClose, className }: SidebarProps) {
   return (
     <aside
       aria-label="Main navigation"
+      inert={inert}
       className={cn(
         "flex h-full w-64 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950",
         className,

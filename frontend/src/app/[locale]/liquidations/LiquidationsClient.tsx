@@ -135,7 +135,9 @@ export default function LiquidationsClient() {
         loanId: loan.loanId,
         liquidatorPublicKey: address,
       });
-      const signedTxXdr = await signTransaction(built.unsignedTxXdr);
+      const signedTxXdr = await signTransaction(built.unsignedTxXdr, {
+        networkPassphrase: built.networkPassphrase,
+      });
       const submitted = await submitLoanTransaction(signedTxXdr);
 
       toast.showSuccess(toastId, {

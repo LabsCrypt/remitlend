@@ -97,8 +97,12 @@ export const optionalJwtAuth = async (
   next: NextFunction,
 ): Promise<void> => {
   const authHeader = req.headers.authorization;
+  const cookieToken = extractCookieToken(req.headers.cookie);
 
-  const token = extractBearerToken(authHeader);
+  // Accept the same sources as requireJwtAuth so cookie-authenticated sessions
+  // are recognised consistently on optionally-authenticated routes. A missing
+  // or invalid token simply leaves the request anonymous.
+  const token = extractBearerToken(authHeader) ?? cookieToken ?? null;
   if (!token) {
     return next();
   }

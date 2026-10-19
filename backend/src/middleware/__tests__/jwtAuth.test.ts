@@ -24,8 +24,13 @@ jest.unstable_mockModule('../../errors/AppError.js', () => ({
   },
 }));
 
-const { requireJwtAuth, requireScopes, requireWalletParamMatchesJwt, requireWalletOwnership } =
-  await import('../jwtAuth.js');
+const {
+  requireJwtAuth,
+  optionalJwtAuth,
+  requireScopes,
+  requireWalletParamMatchesJwt,
+  requireWalletOwnership,
+} = await import('../jwtAuth.js');
 const { verifyJwtToken, extractBearerToken, isTokenRevoked } =
   await import('../../services/authService.js');
 const { resolveRoleForWallet, resolveScopesForRole } = await import('../../auth/rbac.js');
@@ -236,6 +241,92 @@ describe('jwtAuth middleware', () => {
           statusCode: 401,
         }),
       );
+    });
+  });
+
+  describe('optionalJwtAuth', () => {
+    it('should authenticate with a valid cookie token when no Authorization header', async () => {
+      mockExtractBearerToken.mockReturnValue(null);
+      const payload = {
+        publicKey: 'GCOOKIE_USER',
+        role: 'lender' as const,
+        scopes: ['read:loans', 'read:pool'],
+        iat: 1000,
+        exp: 2000,
+      };
+      mockVerifyJwtToken.mockReturnValue(payload);
+      mockIsTokenRevoked.mockResolvedValue(false);
+
+      mockRequest.headers = { cookie: 'remitlend_jwt=valid-cookie-token' };
+
+      await optionalJwtAuth(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockVerifyJwtToken).toHaveBeenCalledWith('valid-cookie-token');
+      expect(mockRequest.user).toBeDefined();
+      expect(mockRequest.user?.publicKey).toBe('GCOOKIE_USER');
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should authenticate with a valid Authorization header token', async () => {
+      const payload = {
+        publicKey: 'GHEADER_USER',
+        role: 'borrower' as const,
+        scopes: ['read:loans'],
+        iat: 1000,
+        exp: 2000,
+      };
+      mockExtractBearerToken.mockReturnValue('valid-header-token');
+      mockVerifyJwtToken.mockReturnValue(payload);
+      mockIsTokenRevoked.mockResolvedValue(false);
+
+      await optionalJwtAuth(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockVerifyJwtToken).toHaveBeenCalledWith('valid-header-token');
+      expect(mockRequest.user?.publicKey).toBe('GHEADER_USER');
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should stay anonymous when no token is provided', async () => {
+      mockExtractBearerToken.mockReturnValue(null);
+      mockRequest.headers = {};
+
+      await optionalJwtAuth(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockVerifyJwtToken).not.toHaveBeenCalled();
+      expect(mockRequest.user).toBeUndefined();
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should ignore an invalid token but still continue', async () => {
+      mockExtractBearerToken.mockReturnValue(null);
+      mockVerifyJwtToken.mockReturnValue(null);
+      mockRequest.headers = { cookie: 'remitlend_jwt=invalid-cookie-token' };
+
+      await optionalJwtAuth(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockRequest.user).toBeUndefined();
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('should not set a user when the cookie token is revoked', async () => {
+      mockExtractBearerToken.mockReturnValue(null);
+      const payload = {
+        publicKey: 'GREVOKED',
+        role: 'borrower' as const,
+        scopes: [],
+        jti: 'revoked-jti',
+        iat: 1000,
+        exp: 2000,
+      };
+      mockVerifyJwtToken.mockReturnValue(payload);
+      mockIsTokenRevoked.mockResolvedValue(true);
+      mockRequest.headers = { cookie: 'remitlend_jwt=revoked-cookie-token' };
+
+      await optionalJwtAuth(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockIsTokenRevoked).toHaveBeenCalledWith('revoked-jti');
+      expect(mockRequest.user).toBeUndefined();
+      expect(mockNext).toHaveBeenCalledWith();
     });
   });
 

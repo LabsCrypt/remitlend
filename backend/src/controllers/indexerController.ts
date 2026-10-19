@@ -16,38 +16,9 @@ import {
   parseQueryParams,
 } from '../utils/pagination.js';
 import { parseCappedLimit } from '../utils/queryHelpers.js';
-import logger from '../utils/logger.js';
-
-/**
- * Returns true if the hostname resolves to a private, loopback, or link-local
- * address that should never receive outbound webhook deliveries (SSRF guard).
- */
-function isPrivateHost(hostname: string): boolean {
-  // Strip IPv6 brackets
-  const host = hostname.replace(/^\[|\]$/g, '');
-
-  // Loopback
-  if (host === 'localhost' || host === '::1') return true;
-  if (/^127\./.test(host)) return true;
-
-  // Link-local (169.254.x.x, fe80::)
-  if (/^169\.254\./.test(host)) return true;
-  if (/^fe80:/i.test(host)) return true;
-
-  // Private IPv4 ranges (RFC 1918)
-  if (/^10\./.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
-  if (/^192\.168\./.test(host)) return true;
-
-  // AWS / GCP metadata endpoints
-  if (host === '169.254.169.254' || host === 'metadata.google.internal') return true;
-
-  // Catch-all for unqualified single-label hostnames (e.g. "internal", "db")
-  if (!host.includes('.') && host !== '::1') return true;
-
-  return false;
-}
 import { getStellarRpcUrl } from '../config/stellar.js';
+import { isPrivateHost } from '../utils/webhookUrlSecurity.js';
+import logger from '../utils/logger.js';
 
 const buildEventFilters = (req: Request, baseParams: unknown[], initialWhereClause: string) => {
   const { status, dateRange, amountRange } = parseQueryParams(req);
@@ -632,7 +603,7 @@ export const createWebhookSubscription = async (req: Request, res: Response) => 
       });
     }
 
-    if (isPrivateHost(parsedUrl.hostname)) {
+    if (await isPrivateHost(parsedUrl.hostname)) {
       return res.status(400).json({
         success: false,
         message: 'callbackUrl must not target a private, loopback, or link-local address',

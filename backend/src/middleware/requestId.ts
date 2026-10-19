@@ -19,8 +19,16 @@ export const requestIdMiddleware = (req: Request, res: Response, next: NextFunct
   // of generated IDs remains astronomically small (~2^-122 birthday bound
   // per pair). See __tests__/requestId.test.ts for empirical concurrent
   // uniqueness coverage.
+  const MAX_REQUEST_ID_LENGTH = 128;
+  const REQUEST_ID_PATTERN = /^[a-zA-Z0-9-]+$/;
+
+  const isValidRequestId = (value: string): boolean =>
+    value.length <= MAX_REQUEST_ID_LENGTH && REQUEST_ID_PATTERN.test(value);
+
   const requestId =
-    typeof incomingHeader === 'string' && incomingHeader.trim().length > 0
+    typeof incomingHeader === 'string' &&
+    incomingHeader.trim().length > 0 &&
+    isValidRequestId(incomingHeader.trim())
       ? incomingHeader.trim()
       : createRequestId();
 

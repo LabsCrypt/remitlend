@@ -80,6 +80,8 @@ interface ContractEvent extends IndexedLoanEvent {
   value: string;
   interestRateBps?: number;
   termLedgers?: number;
+  /** Absolute on-chain due ledger emitted by LoanExtended. */
+  dueLedger?: number;
 }
 
 interface EventIndexerConfig {
@@ -591,9 +593,10 @@ export class EventIndexer {
             topics,
             value,
             interest_rate_bps,
-            term_ledgers
+            term_ledgers,
+            due_ledger
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
           ON CONFLICT DO NOTHING
           RETURNING event_id`,
           [
@@ -610,6 +613,7 @@ export class EventIndexer {
             event.value,
             event.interestRateBps ?? null,
             event.termLedgers ?? null,
+            event.dueLedger ?? null,
           ],
         );
 
@@ -757,6 +761,7 @@ export class EventIndexer {
     let amount: string | undefined;
     let interestRateBps: number | undefined;
     let termLedgers: number | undefined;
+    let dueLedger: number | undefined;
     let borrowerRefund: string | undefined;
 
     if (type === 'LoanRequested') {
@@ -846,7 +851,11 @@ export class EventIndexer {
       address = this.decodeAddress(event.topic[2]);
       const data = scValToNative(event.value);
       if (Array.isArray(data) && data.length >= 2) {
+        dueLedger = Number(data[0]);
         amount = data[1].toString();
+      }
+      if (!Number.isSafeInteger(dueLedger) || dueLedger! <= 0) {
+        throw new Error(`LoanExtended event has invalid new_due_ledger: ${event.id}`);
       }
     } else if (type === 'LoanCancelled') {
       // (type, borrower), loan_id
@@ -1014,6 +1023,7 @@ export class EventIndexer {
       ...(loanId !== undefined ? { loanId } : {}),
       ...(interestRateBps !== undefined ? { interestRateBps } : {}),
       ...(termLedgers !== undefined ? { termLedgers } : {}),
+      ...(dueLedger !== undefined ? { dueLedger } : {}),
       ...(address !== undefined ? { address } : {}),
       ...(adminAddress !== undefined ? { adminAddress } : {}),
       ...(borrowerRefund !== undefined ? { borrowerRefund } : {}),

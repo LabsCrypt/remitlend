@@ -1,5 +1,7 @@
 import { jest } from '@jest/globals';
 
+process.env.AUDIT_LOG_ALLOW_IN_TESTS = '1';
+
 // Use unstable_mockModule for robust ESM mocking of the connection module.
 jest.unstable_mockModule('../db/connection.js', () => ({
   query: jest.fn(),
@@ -19,6 +21,10 @@ describe('Audit Log Middleware', () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
   let next: NextFunction;
+
+  afterAll(() => {
+    delete process.env.AUDIT_LOG_ALLOW_IN_TESTS;
+  });
 
   beforeEach(() => {
     req = {
