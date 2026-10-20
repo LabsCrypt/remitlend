@@ -27,7 +27,7 @@ if (!enumMatch) {
 
 const enumBody = enumMatch[1];
 const errorCodeKeys = [];
-const keyRegex = /^\s*([A_Z0-9_]+)\s*=/gm;
+const keyRegex = /^\s*([A-Z0-9_]+)\s*=/gm;
 let match;
 
 while ((match = keyRegex.exec(enumBody)) !== null) {
@@ -36,12 +36,32 @@ while ((match = keyRegex.exec(enumBody)) !== null) {
 
 console.log(`Found ${errorCodeKeys.length} backend ErrorCode definitions.`);
 
-// Verify each ErrorCode exists in frontend ERROR_CODE_MESSAGES or transactionErrors mapping
+// Extract ERROR_CODE_MESSAGES mapping object body from frontendContent
+const messagesMatch = frontendContent.match(
+  /export\s+const\s+ERROR_CODE_MESSAGES\s*(?::\s*Record<[^>]+>)?\s*=\s*\{([\s\S]*?)\};/,
+);
+
+if (!messagesMatch) {
+  console.error('::error::Could not parse ERROR_CODE_MESSAGES in frontend/src/app/utils/transactionErrors.ts');
+  process.exit(1);
+}
+
+const messagesBody = messagesMatch[1];
+const frontendCodeKeys = new Set();
+const frontendKeyRegex = /^\s*([A-Z0-9_]+)\s*:/gm;
+let fMatch;
+
+while ((fMatch = frontendKeyRegex.exec(messagesBody)) !== null) {
+  frontendCodeKeys.add(fMatch[1]);
+}
+
+console.log(`Found ${frontendCodeKeys.size} frontend ERROR_CODE_MESSAGES mappings.`);
+
+// Verify each ErrorCode exists specifically in frontend ERROR_CODE_MESSAGES
 const missingCodes = [];
 
 for (const code of errorCodeKeys) {
-  const codePattern = new RegExp(`\\b${code}\\b`);
-  if (!codePattern.test(frontendContent)) {
+  if (!frontendCodeKeys.has(code)) {
     missingCodes.push(code);
   }
 }

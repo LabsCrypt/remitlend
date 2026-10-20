@@ -258,7 +258,7 @@ class EventStreamService {
         }
         // Remove failed clients after iteration
         for (const clientInfo of clientsToRemove) {
-          clients.delete(clientInfo);
+          this.removeClient(clientInfo);
         }
       }
     }
@@ -278,8 +278,9 @@ class EventStreamService {
     }
     // Remove failed clients after iteration
     for (const clientInfo of adminsToRemove) {
-      adminClients.delete(clientInfo);
+      this.removeClient(clientInfo);
     }
+    this.stopHeartbeatIfEmpty();
   }
 
   /** Returns the number of active SSE connections. */

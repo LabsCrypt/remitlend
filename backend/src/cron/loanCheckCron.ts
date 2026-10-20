@@ -39,15 +39,24 @@ export function startLoanDueCheckCron() {
             SELECT 1 FROM contract_events re 
             WHERE re.loan_id = le.loan_id AND re.event_type = 'LoanRepaid'
           )
+          AND NOT EXISTS (
+            SELECT 1 FROM contract_events de
+            WHERE de.loan_id = le.loan_id AND de.event_type IN ('LoanDefaulted', 'LoanLiquidated', 'CollateralLiquidated')
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM notifications n
+            WHERE n.loan_id = le.loan_id AND n.type = 'repayment_due' AND n.created_at > NOW() - INTERVAL '24 hours'
+          )
           AND le.ledger_closed_at < NOW() - INTERVAL '30 days' -- Simplified due logic
       `);
 
       for (const loan of result.rows) {
+        const formattedAmount = Number(loan.amount) / 10_000_000;
         await notificationService.createNotification({
           userId: loan.address,
           type: 'repayment_due',
           title: 'Repayment Due Soon',
-          message: `Your repayment for loan #${loan.loan_id} of ${loan.amount} is due.`,
+          message: `Your repayment for loan #${loan.loan_id} of ${formattedAmount} is due.`,
           loanId: loan.loan_id,
         });
       }

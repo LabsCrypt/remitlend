@@ -59,7 +59,7 @@ describe('requireLoanOwner (#1365 IDOR & #1860 deterministic ownership query)', 
     mockQuery.mockResolvedValueOnce({ rows: [{ address: OWNER_PK }] });
 
     const { next, error } = await runRequireLoanOwner({
-      params: { loanId: 'loan-1' },
+      params: { loanId: '1' },
       user: { publicKey: OWNER_PK },
     } as Partial<Request>);
 
@@ -67,7 +67,7 @@ describe('requireLoanOwner (#1365 IDOR & #1860 deterministic ownership query)', 
     expect(next).toHaveBeenCalledWith();
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringMatching(/loan_events.*address IS NOT NULL.*ORDER BY id ASC/s),
-      ['loan-1'],
+      ['1'],
     );
   });
 
@@ -75,7 +75,7 @@ describe('requireLoanOwner (#1365 IDOR & #1860 deterministic ownership query)', 
     mockQuery.mockResolvedValueOnce({ rows: [{ address: OWNER_PK }] });
 
     const { error } = await runRequireLoanOwner({
-      params: { loanId: 'loan-1' },
+      params: { loanId: '1' },
       user: { publicKey: ATTACKER_PK },
     } as Partial<Request>);
 
@@ -91,7 +91,7 @@ describe('requireLoanOwner (#1365 IDOR & #1860 deterministic ownership query)', 
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const { error } = await runRequireLoanOwner({
-      params: { loanId: 'missing' },
+      params: { loanId: '999' },
       user: { publicKey: OWNER_PK },
     } as Partial<Request>);
 
@@ -101,7 +101,7 @@ describe('requireLoanOwner (#1365 IDOR & #1860 deterministic ownership query)', 
 
   it('returns 401 when the caller is unauthenticated', async () => {
     const { error } = await runRequireLoanOwner({
-      params: { loanId: 'loan-1' },
+      params: { loanId: '1' },
       user: undefined,
     } as Partial<Request>);
 
@@ -114,13 +114,13 @@ describe('requireLoanOwner (#1365 IDOR & #1860 deterministic ownership query)', 
     mockQuery.mockResolvedValueOnce({ rows: [{ address: OWNER_PK }] });
 
     const { next, error } = await runRequireLoanOwner({
-      params: { id: 'loan-alt' },
+      params: { id: '5' },
       user: { publicKey: OWNER_PK },
     } as Partial<Request>);
 
     expect(error).toBeUndefined();
     expect(next).toHaveBeenCalledWith();
-    expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['loan-alt']);
+    expect(mockQuery).toHaveBeenCalledWith(expect.any(String), ['5']);
   });
 
   it('regression (#1860): guarantees a non-null borrower address is resolved even when NULL-address rows exist', async () => {
@@ -134,7 +134,7 @@ describe('requireLoanOwner (#1365 IDOR & #1860 deterministic ownership query)', 
     });
 
     const { next, error } = await runRequireLoanOwner({
-      params: { loanId: 'loan-with-late-fees' },
+      params: { loanId: '3' },
       user: { publicKey: OWNER_PK },
     } as Partial<Request>);
 
@@ -152,7 +152,7 @@ describe('requireLoanBorrowerAccess (#1860)', () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ address: OWNER_PK }] });
 
     const { next, error } = await runRequireLoanBorrowerAccess({
-      params: { loanId: 'loan-1' },
+      params: { loanId: '1' },
       user: { publicKey: OWNER_PK, role: 'borrower' },
     } as Partial<Request>);
 
@@ -160,13 +160,13 @@ describe('requireLoanBorrowerAccess (#1860)', () => {
     expect(next).toHaveBeenCalledWith();
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringMatching(/contract_events.*address IS NOT NULL.*ORDER BY id ASC/s),
-      ['loan-1'],
+      ['1'],
     );
   });
 
   it('bypasses ownership check for admin role', async () => {
     const { next, error } = await runRequireLoanBorrowerAccess({
-      params: { loanId: 'loan-1' },
+      params: { loanId: '1' },
       user: { publicKey: ATTACKER_PK, role: 'admin' },
     } as Partial<Request>);
 
@@ -177,7 +177,7 @@ describe('requireLoanBorrowerAccess (#1860)', () => {
 
   it('bypasses ownership check for lender role', async () => {
     const { next, error } = await runRequireLoanBorrowerAccess({
-      params: { loanId: 'loan-1' },
+      params: { loanId: '1' },
       user: { publicKey: ATTACKER_PK, role: 'lender' },
     } as Partial<Request>);
 
@@ -190,7 +190,7 @@ describe('requireLoanBorrowerAccess (#1860)', () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ address: OWNER_PK }] });
 
     const { error } = await runRequireLoanBorrowerAccess({
-      params: { loanId: 'loan-1' },
+      params: { loanId: '1' },
       user: { publicKey: ATTACKER_PK, role: 'borrower' },
     } as Partial<Request>);
 
@@ -204,7 +204,7 @@ describe('requireLoanBorrowerAccess (#1860)', () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     const { error } = await runRequireLoanBorrowerAccess({
-      params: { loanId: 'missing-loan' },
+      params: { loanId: '999' },
       user: { publicKey: OWNER_PK, role: 'borrower' },
     } as Partial<Request>);
 
@@ -223,11 +223,41 @@ describe('requireLoanBorrowerAccess (#1860)', () => {
     });
 
     const { next, error } = await runRequireLoanBorrowerAccess({
-      params: { loanId: 'loan-mixed-events' },
+      params: { loanId: '4' },
       user: { publicKey: OWNER_PK, role: 'borrower' },
     } as Partial<Request>);
 
     expect(error).toBeUndefined();
     expect(next).toHaveBeenCalledWith();
+  });
+});
+
+describe('loanId validation (non-integer ids return 400 before any DB query)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const req = (params: Record<string, string>) =>
+    ({ params, user: { publicKey: OWNER_PK, role: 'borrower' } }) as unknown as Partial<Request>;
+
+  it.each(['abc', '1abc', '1; DROP TABLE x', '-1', '1.5'])(
+    'requireLoanOwner rejects %s with INVALID_LOAN_ID',
+    async (id) => {
+      const { error } = await runRequireLoanOwner(req({ loanId: id }));
+      expect(error).toBeInstanceOf(AppError);
+      const appError = error as InstanceType<typeof AppError>;
+      expect(appError.statusCode).toBe(400);
+      expect(appError.errorCode).toBe(ErrorCode.INVALID_LOAN_ID);
+      expect(mockQuery).not.toHaveBeenCalled();
+    },
+  );
+
+  it('requireLoanBorrowerAccess rejects a non-numeric loanId with INVALID_LOAN_ID', async () => {
+    const { error } = await runRequireLoanBorrowerAccess(req({ loanId: 'abc' }));
+    expect(error).toBeInstanceOf(AppError);
+    const appError = error as InstanceType<typeof AppError>;
+    expect(appError.statusCode).toBe(400);
+    expect(appError.errorCode).toBe(ErrorCode.INVALID_LOAN_ID);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,14 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/errorCodes.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
+const LOAN_ID_PATTERN = /^\d+$/;
+
+const assertValidLoanId = (loanId: string | string[]): void => {
+  if (!LOAN_ID_PATTERN.test(String(loanId))) {
+    throw AppError.badRequest('Invalid loan ID', ErrorCode.INVALID_LOAN_ID, 'loanId');
+  }
+};
+
 /**
  * After `requireJwtAuth`, ensures `req.params.loanId` refers to a loan whose
  * borrower matches the JWT `publicKey`.
@@ -20,6 +28,7 @@ export const requireLoanBorrowerAccess = asyncHandler(async (req, _res, next) =>
   if (!loanId) {
     throw AppError.badRequest('Loan ID is required');
   }
+  assertValidLoanId(loanId);
 
   // Admins and lenders are allowed to view loan details.
   if (role === 'admin' || role === 'lender') {
@@ -60,6 +69,7 @@ export const requireLoanOwner = asyncHandler(async (req, _res, next) => {
   if (!loanId) {
     throw AppError.badRequest('Loan ID is required');
   }
+  assertValidLoanId(loanId);
 
   // Fetch loan borrower/owner from the unified view
   const r = await query(

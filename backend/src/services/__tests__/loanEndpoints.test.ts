@@ -14,11 +14,11 @@ process.env.ADMIN_WALLETS = ADMIN;
 // Loan fixtures keyed by the id used in the request path. PENDING satisfies
 // both the cancel (PENDING|OPEN) and reject (PENDING) guards.
 const loans: Record<string, { status: string; address: string }> = {
-  'loan-123': { status: 'PENDING', address: BORROWER },
-  'open-loan': { status: 'OPEN', address: BORROWER },
-  'defaulted-loan': { status: 'DEFAULTED', address: BORROWER },
-  'completed-loan': { status: 'COMPLETED', address: BORROWER },
-  'loan-1': { status: 'PENDING', address: BORROWER },
+  '123': { status: 'PENDING', address: BORROWER },
+  '200': { status: 'OPEN', address: BORROWER },
+  '201': { status: 'DEFAULTED', address: BORROWER },
+  '202': { status: 'COMPLETED', address: BORROWER },
+  '1': { status: 'PENDING', address: BORROWER },
 };
 
 const mockQuery: jest.MockedFunction<
@@ -87,7 +87,7 @@ const adminAuth = `Bearer ${generateJwtToken(ADMIN)}`;
 describe('POST /api/loans/:loanId/build-cancel', () => {
   it('should build cancel transaction', async () => {
     const response = await request(app)
-      .post('/api/loans/loan-123/build-cancel')
+      .post('/api/loans/123/build-cancel')
       .set('Authorization', borrowerAuth);
 
     expect(response.status).toBe(200);
@@ -96,7 +96,7 @@ describe('POST /api/loans/:loanId/build-cancel', () => {
 
   it('should reject non-cancellable loans', async () => {
     const response = await request(app)
-      .post('/api/loans/completed-loan/build-cancel')
+      .post('/api/loans/202/build-cancel')
       .set('Authorization', borrowerAuth);
 
     expect(response.status).toBe(400);
@@ -104,27 +104,27 @@ describe('POST /api/loans/:loanId/build-cancel', () => {
 
   it('should allow an OPEN loan to be cancelled', async () => {
     const response = await request(app)
-      .post('/api/loans/open-loan/build-cancel')
+      .post('/api/loans/200/build-cancel')
       .set('Authorization', borrowerAuth);
 
     expect(response.status).toBe(200);
-    expect(mockBuildCancelLoanTx).toHaveBeenCalledWith(BORROWER, 'open-loan');
+    expect(mockBuildCancelLoanTx).toHaveBeenCalledWith(BORROWER, '200');
   });
 
   it('should reject a DEFAULTED loan', async () => {
     const response = await request(app)
-      .post('/api/loans/defaulted-loan/build-cancel')
+      .post('/api/loans/201/build-cancel')
       .set('Authorization', borrowerAuth);
 
     expect(response.status).toBe(400);
-    expect(mockBuildCancelLoanTx).not.toHaveBeenCalledWith(BORROWER, 'defaulted-loan');
+    expect(mockBuildCancelLoanTx).not.toHaveBeenCalledWith(BORROWER, '201');
   });
 });
 
 describe('POST /api/admin/loans/:loanId/build-reject', () => {
   it('should build reject transaction', async () => {
     const response = await request(app)
-      .post('/api/admin/loans/loan-123/build-reject')
+      .post('/api/admin/loans/123/build-reject')
       .set('Authorization', adminAuth)
       .send({ reason: 'Insufficient collateral' });
 
@@ -134,7 +134,7 @@ describe('POST /api/admin/loans/:loanId/build-reject', () => {
 
   it('should fail if reason too short', async () => {
     const response = await request(app)
-      .post('/api/admin/loans/loan-1/build-reject')
+      .post('/api/admin/loans/1/build-reject')
       .set('Authorization', adminAuth)
       .send({ reason: 'bad' });
 

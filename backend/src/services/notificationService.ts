@@ -224,11 +224,13 @@ class NotificationService {
     >,
   ): Promise<NotificationPreferences> {
     const result = await query(
-      `UPDATE user_profiles
-       SET email_enabled = $2,
-           sms_enabled = $3,
-           phone = $4
-       WHERE public_key = $1
+      `INSERT INTO user_profiles (public_key, email_enabled, sms_enabled, phone)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (public_key) DO UPDATE
+       SET email_enabled = EXCLUDED.email_enabled,
+           sms_enabled = EXCLUDED.sms_enabled,
+           phone = EXCLUDED.phone,
+           updated_at = current_timestamp
        RETURNING email_enabled, sms_enabled, phone`,
       [userId, payload.emailEnabled, payload.smsEnabled, payload.phone],
     );
@@ -326,15 +328,19 @@ class NotificationService {
   private async notifyUserExternal(userId: string, message: string, type: NotificationType) {
     try {
       const result = await query(
-        `SELECT email, phone, email_enabled, sms_enabled 
-         FROM user_profiles 
-         WHERE public_key = $1`,
+        `SELECT up.email, up.phone, up.email_enabled, up.sms_enabled, unp.per_type_overrides
+         FROM user_profiles up
+         LEFT JOIN user_notification_preferences unp ON unp.user_id = up.public_key
+         WHERE up.public_key = $1`,
         [userId],
       );
 
       if (result.rows.length === 0) return;
 
       const user = result.rows[0];
+
+      const overrides = (user.per_type_overrides as Record<string, boolean> | null) ?? {};
+      if (overrides[type] === false) return;
 
       if (user.email_enabled && user.email) {
         await sendEmail(user.email, message, type);

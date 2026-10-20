@@ -49,7 +49,13 @@ if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
 
 // TEST/DEV ONLY: Mark a loan as defaulted for test setup
 if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
-  router.post('/:loanId/mark-defaulted', requireJwtAuth, requireLoanOwner, markLoanDefaulted);
+  router.post(
+    '/:loanId/mark-defaulted',
+    requireJwtAuth,
+    validateParams(repayLoanParamsSchema),
+    requireLoanOwner,
+    markLoanDefaulted,
+  );
 }
 
 router.get('/config', getLoanConfigEndpoint);
@@ -101,7 +107,13 @@ router.get('/config', getLoanConfigEndpoint);
  *         description: Reject transaction built
  */
 
-router.post('/:loanId/build-cancel', requireJwtAuth, requireLoanOwner, buildCancelLoanTx);
+router.post(
+  '/:loanId/build-cancel',
+  requireJwtAuth,
+  validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
+  buildCancelLoanTx,
+);
 
 router.post(
   '/amortization-preview',
@@ -151,7 +163,13 @@ router.post(
  *       404:
  *         description: Loan not found
  */
-router.post('/:loanId/contest-default', requireJwtAuth, requireLoanOwner, contestDefault);
+router.post(
+  '/:loanId/contest-default',
+  requireJwtAuth,
+  validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
+  contestDefault,
+);
 
 /**
  * @swagger
@@ -263,6 +281,7 @@ router.get(
   '/:loanId',
   requireJwtAuth,
   requireScopes('read:loans'),
+  validateParams(repayLoanParamsSchema),
   requireLoanBorrowerAccess,
   getLoanDetails,
 );
@@ -271,6 +290,7 @@ router.get(
   '/:loanId/amortization-schedule',
   requireJwtAuth,
   requireScopes('read:loans'),
+  validateParams(repayLoanParamsSchema),
   requireLoanBorrowerAccess,
   getLoanAmortizationSchedule,
 );
@@ -313,6 +333,7 @@ router.get(
   '/:loanId/events',
   requireJwtAuth,
   requireScopes('read:loans'),
+  validateParams(repayLoanParamsSchema),
   requireLoanBorrowerAccess,
   getLoanEvents,
 );
@@ -418,8 +439,8 @@ router.post(
   '/:loanId/build-deposit-collateral',
   requireJwtAuth,
   requireScopes('write:loans'),
-  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
   validateBody(depositCollateralSchema),
   idempotencyMiddleware,
   depositCollateral,
@@ -469,8 +490,8 @@ router.post(
   '/:loanId/build-release-collateral',
   requireJwtAuth,
   requireScopes('write:loans'),
-  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
   validateBody(releaseCollateralSchema),
   idempotencyMiddleware,
   releaseCollateral,
@@ -528,8 +549,8 @@ router.post(
   '/:loanId/build-refinance',
   requireJwtAuth,
   requireScopes('write:loans'),
-  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
   validateBody(refinanceLoanSchema),
   idempotencyMiddleware,
   refinanceLoan,
@@ -539,8 +560,8 @@ router.post(
   '/:loanId/submit-refinance',
   requireJwtAuth,
   requireScopes('write:loans'),
-  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
   validateBody(submitTxSchema),
   idempotencyMiddleware,
   submitRefinanceTransaction,
@@ -594,8 +615,8 @@ router.post(
   '/:loanId/build-extend',
   requireJwtAuth,
   requireScopes('write:loans'),
-  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
   validateBody(extendLoanSchema),
   idempotencyMiddleware,
   extendLoan,
@@ -750,8 +771,8 @@ router.post(
   '/:loanId/repay',
   requireJwtAuth,
   requireScopes('write:loans'),
-  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
   validateBody(repayLoanSchema),
   idempotencyMiddleware,
   repayLoan,
@@ -806,8 +827,8 @@ router.post(
   '/:loanId/submit',
   requireJwtAuth,
   requireScopes('write:loans'),
-  requireLoanOwner,
   validateParams(repayLoanParamsSchema),
+  requireLoanOwner,
   validateBody(submitTxSchema),
   idempotencyMiddleware,
   submitTransaction,

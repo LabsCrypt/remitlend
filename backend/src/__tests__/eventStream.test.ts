@@ -162,6 +162,54 @@ describe('EventStreamService', () => {
     unsubscribe();
   });
 
+  it('should free per-user connection slots when a broadcast write fails', () => {
+    const failingRes = () =>
+      ({
+        write: jest.fn(() => {
+          throw new Error('socket closed');
+        }),
+      }) as unknown as import('express').Response;
+
+    for (let i = 0; i < 3; i++) {
+      eventStreamService.subscribeAddress('USER-X', 'BORROWER-X', failingRes());
+    }
+    expect(eventStreamService.getUserConnectionCount('USER-X')).toBe(3);
+
+    eventStreamService.broadcast({
+      eventId: 'evt-fail',
+      eventType: 'LoanRepaid',
+      address: 'BORROWER-X',
+      ledger: 1,
+      ledgerClosedAt: '2026-03-01T00:00:00Z',
+      txHash: 'abc',
+    });
+
+    expect(eventStreamService.getUserConnectionCount('USER-X')).toBe(0);
+    expect(eventStreamService.getConnectionCount().total).toBe(0);
+  });
+
+  it('should free per-user connection slots when an admin broadcast write fails', () => {
+    const failingRes = {
+      write: jest.fn(() => {
+        throw new Error('socket closed');
+      }),
+    } as unknown as import('express').Response;
+
+    eventStreamService.subscribeAll('ADMIN-X', failingRes);
+    expect(eventStreamService.getUserConnectionCount('ADMIN-X')).toBe(1);
+
+    eventStreamService.broadcast({
+      eventId: 'evt-fail-admin',
+      eventType: 'LoanRepaid',
+      address: 'ANY',
+      ledger: 1,
+      ledgerClosedAt: '2026-03-01T00:00:00Z',
+      txHash: 'abc',
+    });
+
+    expect(eventStreamService.getUserConnectionCount('ADMIN-X')).toBe(0);
+  });
+
   it('should broadcast events to admin clients', () => {
     const mockRes = {
       write: jest.fn(),

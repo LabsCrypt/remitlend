@@ -1,7 +1,19 @@
 import { jest } from '@jest/globals';
 import { Account, Keypair } from '@stellar/stellar-sdk';
 import logger from '../utils/logger.js';
-import { DefaultChecker } from '../services/defaultChecker.js';
+
+// checkOverdueLoans runs backfillExtensionDueLedgers(), which queries the
+// database directly; keep the unit test off a real connection.
+const mockQuery = jest.fn<() => Promise<{ rows: unknown[] }>>().mockResolvedValue({ rows: [] });
+await jest.unstable_mockModule('../db/connection.js', () => ({
+  default: { query: mockQuery },
+  query: mockQuery,
+  getClient: jest.fn(),
+  closePool: jest.fn(),
+  withTransaction: jest.fn(),
+}));
+
+const { DefaultChecker } = await import('../services/defaultChecker.js');
 
 describe('DefaultChecker', () => {
   const originalBatchSize = process.env.DEFAULT_CHECK_BATCH_SIZE;

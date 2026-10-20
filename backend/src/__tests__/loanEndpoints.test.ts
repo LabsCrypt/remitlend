@@ -955,3 +955,22 @@ describe('POST /api/loans/:loanId/liquidate/build', () => {
     expect(response.body.message).toBe('Internal server error');
   });
 });
+
+describe('non-integer loanId returns 400 before any DB lookup', () => {
+  const cases: Array<['get' | 'post', string]> = [
+    ['get', '/api/loans/abc'],
+    ['get', '/api/loans/abc/amortization-schedule'],
+    ['get', '/api/loans/abc/events'],
+    ['post', '/api/loans/abc/contest-default'],
+    ['post', '/api/loans/abc/build-cancel'],
+    ['post', '/api/loans/abc/repay'],
+  ];
+
+  it.each(cases)('%s %s', async (method, path) => {
+    mockedQuery.mockClear();
+    const response = await request(app)[method](path).set(bearer(TEST_BORROWER)).send({});
+
+    expect(response.status).toBe(400);
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+});
