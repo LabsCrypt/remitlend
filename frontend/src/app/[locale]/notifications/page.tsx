@@ -12,6 +12,7 @@ import {
 } from "../../hooks/useApi";
 import { PaginationControls } from "../../components/ui/PaginationControls";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { useToastStore } from "../../stores/useToastStore";
 
 const PAGE_SIZE = 10;
 
@@ -122,6 +123,7 @@ export default function NotificationsPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const markRead = useMarkNotificationsRead();
+  const addToast = useToastStore((state) => state.addToast);
 
   const activeType = parseType(searchParams.get("type"));
   const unreadOnly = searchParams.get("unread") === "true";
@@ -177,6 +179,15 @@ export default function NotificationsPage() {
                 notifications
                   .filter((notification) => !notification.read)
                   .map((notification) => notification.id),
+                {
+                  onError: (err: Error) => {
+                    addToast({
+                      type: "error",
+                      title: "Failed to mark notifications as read",
+                      description: err?.message || "Please try again.",
+                    });
+                  },
+                },
               )
             }
             disabled={markRead.isPending}
@@ -263,7 +274,17 @@ export default function NotificationsPage() {
                 <NotificationRow
                   key={notification.id}
                   notification={notification}
-                  onMarkRead={(id) => markRead.mutate([id])}
+                  onMarkRead={(id) =>
+                    markRead.mutate([id], {
+                      onError: (err: Error) => {
+                        addToast({
+                          type: "error",
+                          title: "Failed to mark notification as read",
+                          description: err?.message || "Please try again.",
+                        });
+                      },
+                    })
+                  }
                   unreadLabel={t("unread")}
                   markReadLabel={t("markRead")}
                 />
