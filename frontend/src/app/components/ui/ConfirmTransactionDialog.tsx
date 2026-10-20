@@ -21,6 +21,8 @@ interface ConfirmTransactionDialogProps {
   confirmLabel?: string;
   /** Show a loading spinner on the confirm button while a tx is in-flight. */
   isLoading?: boolean;
+  /** Error message to display when the transaction fails. */
+  error?: string | null;
 }
 
 /**
@@ -54,6 +56,7 @@ const ConfirmTransactionDialog: React.FC<ConfirmTransactionDialogProps> = ({
   summary = [],
   confirmLabel = "Confirm",
   isLoading = false,
+  error = null,
 }) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="md">
@@ -63,6 +66,16 @@ const ConfirmTransactionDialog: React.FC<ConfirmTransactionDialogProps> = ({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-400" aria-hidden="true" />
           <p className="text-sm text-yellow-200/90">{description}</p>
         </div>
+
+        {/* Error banner */}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200"
+          >
+            <p className="text-sm">{error}</p>
+          </div>
+        )}
 
         {/* Transaction summary */}
         {summary.length > 0 && (
