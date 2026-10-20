@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+export const ALLOWED_FIELDS = ["email", "phone", "name"] as const;
+export type AllowedField = (typeof ALLOWED_FIELDS)[number];
+
 interface RevealRequestBody {
-  field: "email" | "phone" | "name";
+  field: AllowedField;
   reason: string;
 }
 
@@ -36,10 +39,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const { id } = await params;
-  const body = (await request.json()) as RevealRequestBody;
+
+  let body: RevealRequestBody;
+  try {
+    body = (await request.json()) as RevealRequestBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   if (!body.field || !body.reason) {
     return NextResponse.json({ error: "field and reason are required" }, { status: 400 });
+  }
+
+  if (!ALLOWED_FIELDS.includes(body.field)) {
+    return NextResponse.json({ error: "Invalid field requested" }, { status: 400 });
   }
 
   const requestId = crypto.randomUUID();
@@ -64,8 +81,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
 
     if (!backendRes.ok) {
-      const error = await backendRes.text();
-      return NextResponse.json({ error }, { status: backendRes.status });
+      return NextResponse.json(
+        { error: "Failed to reveal recipient data" },
+        { status: backendRes.status },
+      );
     }
 
     const data = (await backendRes.json()) as { plaintext: string };
