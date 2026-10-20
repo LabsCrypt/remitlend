@@ -38,7 +38,7 @@ export class AppError extends Error {
   /* ── Factory Methods ─────────────────────────────────────────── */
 
   static badRequest(message = 'Bad request', errorCode?: ErrorCode, field?: string): AppError {
-    return new AppError(message, 400, true, errorCode ?? ErrorCode.INVALID_AMOUNT, field);
+    return new AppError(message, 400, true, errorCode, field);
   }
 
   static unauthorized(message = 'Unauthorized', errorCode?: ErrorCode): AppError {
