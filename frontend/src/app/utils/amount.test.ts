@@ -1,4 +1,5 @@
 import {
+  formatAmountOnBlur,
   getAssetDecimals,
   getPrecisionError,
   hasInvalidPrecision,
@@ -51,6 +52,45 @@ describe("amount utils", () => {
       expect(sanitizeAmountInput("$1,234.56")).toBe("1234.56");
       expect(sanitizeAmountInput("1.2.3")).toBe("1.23");
       expect(sanitizeAmountInput("..1..2..3..")).toBe(".123");
+    });
+  });
+
+  describe("formatAmountOnBlur", () => {
+    it("returns empty string for empty, whitespace, or non-numeric inputs", () => {
+      expect(formatAmountOnBlur("")).toBe("");
+      expect(formatAmountOnBlur("   ")).toBe("");
+      expect(formatAmountOnBlur(".")).toBe("");
+      expect(formatAmountOnBlur("abc")).toBe("");
+    });
+
+    it("formats valid amounts using exact decimal precision", () => {
+      expect(formatAmountOnBlur("10", "USDC")).toBe("10.00");
+      expect(formatAmountOnBlur("10.5", "USDC")).toBe("10.50");
+      expect(formatAmountOnBlur("0.1", "USDC")).toBe("0.10");
+      expect(formatAmountOnBlur("1", "XLM")).toBe("1.0000000");
+      expect(formatAmountOnBlur("1.5", "XLM")).toBe("1.5000000");
+    });
+
+    it("preserves over-precision values without silent float rounding", () => {
+      // For a 2-decimal asset like USDC, 3 decimals should not be silently rounded
+      expect(formatAmountOnBlur("10.005", "USDC")).toBe("10.005");
+      expect(formatAmountOnBlur("1.005", "USDC")).toBe("1.005");
+      expect(formatAmountOnBlur("10.12345", "USDC")).toBe("10.12345");
+
+      // For 7-decimal XLM, 8 decimals should be preserved as-is
+      expect(formatAmountOnBlur("1.12345678", "XLM")).toBe("1.12345678");
+    });
+
+    it("allows getPrecisionError to detect invalid precision on the preserved value", () => {
+      const blurredUsdc = formatAmountOnBlur("10.005", "USDC");
+      expect(blurredUsdc).toBe("10.005");
+      expect(getPrecisionError(blurredUsdc, "USDC")).toBe(
+        "USDC supports at most 2 decimal places.",
+      );
+
+      const blurredXlm = formatAmountOnBlur("0.12345678", "XLM");
+      expect(blurredXlm).toBe("0.12345678");
+      expect(getPrecisionError(blurredXlm, "XLM")).toBe("XLM supports at most 7 decimal places.");
     });
   });
 });

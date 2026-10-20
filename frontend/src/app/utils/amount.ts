@@ -137,10 +137,19 @@ export function getPrecisionError(value: string, asset = "XLM", decimals?: numbe
 }
 
 export function formatAmountOnBlur(value: string, asset = "XLM"): string {
-  const decimals = getAssetDecimals(asset);
-  const parsed = parseAmount(value);
-  if (!value || Number.isNaN(parsed)) {
+  if (!value || !value.trim() || Number.isNaN(Number.parseFloat(value))) {
     return "";
   }
-  return parsed.toFixed(decimals);
+
+  const decimals = getAssetDecimals(asset);
+  if (hasInvalidPrecision(value, decimals)) {
+    return value;
+  }
+
+  const stroops = toStroops(value, decimals);
+  if (stroops === null) {
+    return value;
+  }
+
+  return fromStroops(stroops, decimals);
 }
