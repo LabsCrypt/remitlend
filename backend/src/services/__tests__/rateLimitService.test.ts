@@ -56,7 +56,7 @@ describe('rateLimitService', () => {
     expect(script).toContain('TTL');
   });
 
-  it('allows the Nth request when the atomic counter reaches the limit', async () => {
+  it('still admits the maxRequests-th request itself (off-by-one guard)', async () => {
     mockEval.mockResolvedValueOnce([5, 60]);
 
     const result = await rateLimitService.checkRateLimit('user123', {
@@ -69,7 +69,7 @@ describe('rateLimitService', () => {
     expect(result.currentCount).toBe(5);
   });
 
-  it('blocks requests once the atomic counter exceeds the limit', async () => {
+  it('blocks the request past maxRequests', async () => {
     mockEval.mockResolvedValueOnce([6, 60]);
 
     const result = await rateLimitService.checkRateLimit('user123', {
@@ -82,7 +82,7 @@ describe('rateLimitService', () => {
     expect(result.currentCount).toBe(6);
   });
 
-  it('admits requests up to maxRequests under concurrent requests', async () => {
+  it('admits exactly maxRequests out of maxRequests+1 concurrent requests', async () => {
     let counter = 0;
     mockEval.mockImplementation(async () => {
       counter += 1;
