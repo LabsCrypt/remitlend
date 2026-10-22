@@ -611,8 +611,8 @@ function normalizeLiquidatableLoan(row: RawLiquidatableLoan): LiquidatableLoan {
     borrower: stringFrom(row.borrower ?? row.borrowerAddress ?? row.borrower_address) ?? "",
     collateral: numberFrom(row.collateral ?? row.collateralLocked ?? row.collateral_locked),
     totalDebt: numberFrom(row.totalDebt ?? row.total_debt ?? row.totalOwed ?? row.total_owed),
-    healthFactor: healthFactor || collateralRatio,
-    collateralRatio: collateralRatio || healthFactor,
+    healthFactor: Number.isFinite(healthFactor) ? healthFactor : collateralRatio,
+    collateralRatio: Number.isFinite(collateralRatio) ? collateralRatio : healthFactor,
     liquidationThreshold: numberFrom(
       row.liquidationThreshold ?? row.liquidation_threshold ?? row.threshold,
     ),
@@ -1796,7 +1796,7 @@ export async function submitLoanTransaction(signedTxXdr: string) {
 export async function submitRefinanceLoanTransaction(loanId: string | number, signedTxXdr: string) {
   return apiFetch<{ success: boolean; txHash: string; status: string }>(
     `/loans/${loanId}/submit-refinance`,
-    { method: 'POST', body: JSON.stringify({ signedTxXdr }) },
+    { method: "POST", body: JSON.stringify({ signedTxXdr }) },
   );
 }
 
