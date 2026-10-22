@@ -42,6 +42,24 @@ describe("RemittanceForm", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { useCreateRemittance } = require("../../hooks/useApi");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { useTransactionPreview } = require("../../hooks/useTransactionPreview");
+
+    useCreateRemittance.mockReturnValue({
+      mutateAsync: jest.fn(),
+      isPending: false,
+    });
+
+    useTransactionPreview.mockReturnValue({
+      isOpen: false,
+      show: jest.fn(),
+      close: jest.fn(),
+      confirm: jest.fn(),
+      data: null,
+      isLoading: false,
+    });
   });
 
   it("should render the form", () => {
@@ -222,5 +240,348 @@ describe("RemittanceForm", () => {
     expect(addressInput.disabled).toBe(true);
     expect(amountInput.disabled).toBe(true);
     expect(submitButton.disabled).toBe(true);
+  });
+
+  describe("recipient validation", () => {
+    it("should reject addresses with incorrect length", async () => {
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      // Too short (55 chars starting with G)
+      await user.type(addressInput, "GBUQWP3BOUZX34ULNQG23RQ6F4BVWCIBTLFL2F7HVRQG5LDHNWY2QTW");
+      await user.type(amountInput, "50");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      fireEvent.click(reviewButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Invalid Stellar address format (must be 56 characters starting with G)",
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("should reject addresses not starting with G", async () => {
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      // 56 characters starting with C instead of G
+      const nonGAddress = "C" + VALID_ADDRESS.slice(1);
+      await user.type(addressInput, nonGAddress);
+      await user.type(amountInput, "50");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      fireEvent.click(reviewButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Invalid Stellar address format (must be 56 characters starting with G)",
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("should reject addresses containing invalid base32 characters (0, 1, 8, 9, lowercase)", async () => {
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      // Contains '0', '1', '8' or '9' which are invalid in Stellar RFC 4648 base32
+      const invalidCharAddress = "G0" + VALID_ADDRESS.slice(2);
+      await user.type(addressInput, invalidCharAddress);
+      await user.type(amountInput, "50");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      fireEvent.click(reviewButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Invalid Stellar address format (must be 56 characters starting with G)",
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("should clear recipient address error when valid address is typed", async () => {
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      await user.type(addressInput, "INVALID");
+      await user.type(amountInput, "50");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      fireEvent.click(reviewButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Invalid Stellar address format (must be 56 characters starting with G)",
+          ),
+        ).toBeInTheDocument();
+      });
+
+      // Now clear and type valid address
+      await user.clear(addressInput);
+      await user.type(addressInput, VALID_ADDRESS);
+
+      expect(
+        screen.queryByText(
+          "Invalid Stellar address format (must be 56 characters starting with G)",
+        ),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("amount precision validation and boundaries", () => {
+    it("should disable submit button when amount exceeds asset decimals", async () => {
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      await user.type(addressInput, VALID_ADDRESS);
+      // USDC default: 2 decimals, enter 3 decimal places
+      await user.type(amountInput, "10.123");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      expect(reviewButton).toBeDisabled();
+    });
+
+    it("should accept valid precision boundaries for 2-decimal asset (USDC)", async () => {
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      await user.type(addressInput, VALID_ADDRESS);
+      await user.type(amountInput, "10.99");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      expect(reviewButton).toBeEnabled();
+      expect(screen.queryByText(/supports at most 2 decimal places/)).not.toBeInTheDocument();
+    });
+
+    it("should format amount on blur with asset decimal precision", async () => {
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const amountInput = screen.getByPlaceholderText("0.00");
+      await user.type(amountInput, "15");
+      fireEvent.blur(amountInput);
+
+      await waitFor(() => {
+        expect((amountInput as HTMLInputElement).value).toBe("15.00");
+      });
+    });
+
+    it("should sanitize non-numeric input and multiple decimal points", () => {
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const amountInput = screen.getByPlaceholderText("0.00");
+      fireEvent.change(amountInput, { target: { value: "12..34abc.5" } });
+
+      expect((amountInput as HTMLInputElement).value).toBe("12.345");
+    });
+  });
+
+  describe("duplicate submissions and mutation lifecycle", () => {
+    it("should open preview modal and successfully call mutateAsync once on confirmation", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { useCreateRemittance } = require("../../hooks/useApi");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { useTransactionPreview } = require("../../hooks/useTransactionPreview");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { toast } = require("sonner");
+
+      const mockMutateAsync = jest.fn().mockResolvedValue({ id: "remit-123" });
+      useCreateRemittance.mockReturnValue({
+        mutateAsync: mockMutateAsync,
+        isPending: false,
+      });
+
+      let confirmCallback: (() => Promise<void>) | null = null;
+      const mockShow = jest.fn((previewData, onConfirm) => {
+        confirmCallback = onConfirm;
+      });
+
+      useTransactionPreview.mockReturnValue({
+        isOpen: false,
+        show: mockShow,
+        close: jest.fn(),
+        confirm: jest.fn(),
+        data: null,
+        isLoading: false,
+      });
+
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      await user.type(addressInput, VALID_ADDRESS);
+      await user.type(amountInput, "25.50");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      fireEvent.click(reviewButton);
+
+      expect(mockShow).toHaveBeenCalledTimes(1);
+      expect(mockShow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operations: expect.arrayContaining([
+            expect.objectContaining({
+              amount: "25.5",
+              token: "USDC",
+              type: "Send Remittance",
+            }),
+          ]),
+          balanceChanges: expect.arrayContaining([
+            expect.objectContaining({
+              change: "-25.5",
+              token: "USDC",
+            }),
+          ]),
+        }),
+        expect.any(Function),
+      );
+
+      // Confirm modal action executes the callback
+      expect(confirmCallback).not.toBeNull();
+      await waitFor(async () => {
+        await confirmCallback!();
+      });
+
+      expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        amount: 25.5,
+        fromCurrency: "USDC",
+        toCurrency: "USDC",
+        recipientAddress: VALID_ADDRESS,
+        memo: undefined,
+      });
+
+      expect(toast.success).toHaveBeenCalledWith("Success!", {
+        description: "Remittance sent successfully",
+      });
+      expect(mockOnSuccess).toHaveBeenCalledTimes(1);
+
+      // Form should be reset after successful submission
+      await waitFor(() => {
+        expect((addressInput as HTMLInputElement).value).toBe("");
+        expect((amountInput as HTMLInputElement).value).toBe("");
+      });
+    });
+
+    it("should handle submission failure and display error toast without resetting inputs", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { useCreateRemittance } = require("../../hooks/useApi");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { useTransactionPreview } = require("../../hooks/useTransactionPreview");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { toast } = require("sonner");
+
+      const mockMutateAsync = jest
+        .fn()
+        .mockRejectedValue(new Error("Unauthorized: Insufficient balance or signer invalid"));
+      useCreateRemittance.mockReturnValue({
+        mutateAsync: mockMutateAsync,
+        isPending: false,
+      });
+
+      let confirmCallback: (() => Promise<void>) | null = null;
+      useTransactionPreview.mockReturnValue({
+        isOpen: false,
+        show: jest.fn((_, onConfirm) => {
+          confirmCallback = onConfirm;
+        }),
+        close: jest.fn(),
+        confirm: jest.fn(),
+        data: null,
+        isLoading: false,
+      });
+
+      const user = userEvent.setup();
+      render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const addressInput = screen.getByPlaceholderText("G... (Stellar public key)");
+      const amountInput = screen.getByPlaceholderText("0.00");
+
+      await user.type(addressInput, VALID_ADDRESS);
+      await user.type(amountInput, "100");
+
+      const reviewButton = screen.getByRole("button", { name: /review/i });
+      fireEvent.click(reviewButton);
+
+      await confirmCallback!();
+
+      expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+      expect(toast.error).toHaveBeenCalledWith("Error", {
+        description: "Unauthorized: Insufficient balance or signer invalid",
+      });
+      expect(mockOnSuccess).not.toHaveBeenCalled();
+
+      // Form inputs should remain intact on failure so user does not lose their data
+      expect((addressInput as HTMLInputElement).value).toBe(VALID_ADDRESS);
+      expect((amountInput as HTMLInputElement).value).toBe("100");
+    });
+
+    it("should prevent duplicate submission clicks while mutation is in pending state", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { useCreateRemittance } = require("../../hooks/useApi");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { useTransactionPreview } = require("../../hooks/useTransactionPreview");
+
+      let resolvePromise: (value: unknown) => void;
+      const pendingPromise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+      const mockMutateAsync = jest.fn(() => pendingPromise);
+
+      const { rerender } = render(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      // When mutation becomes pending, isPending is true
+      useCreateRemittance.mockReturnValue({
+        mutateAsync: mockMutateAsync,
+        isPending: true,
+      });
+      useTransactionPreview.mockReturnValue({
+        isOpen: false,
+        show: jest.fn(),
+        close: jest.fn(),
+        confirm: jest.fn(),
+        data: null,
+        isLoading: true,
+      });
+
+      rerender(<RemittanceForm onSuccess={mockOnSuccess} />);
+
+      const submitButton = screen.getByRole("status").closest("button") as HTMLButtonElement;
+      expect(submitButton).toBeDisabled();
+      expect(screen.getByText("Processing...")).toBeInTheDocument();
+
+      // Attempting to click when disabled shouldn't invoke review or submission
+      fireEvent.click(submitButton);
+      expect(mockMutateAsync).not.toHaveBeenCalled();
+
+      // Resolve the promise to clean up
+      resolvePromise!({ id: "done" });
+    });
   });
 });
