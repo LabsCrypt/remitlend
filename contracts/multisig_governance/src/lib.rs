@@ -228,6 +228,8 @@ pub struct GovernanceContract;
 
 #[contractimpl]
 impl GovernanceContract {
+    // ── TTL helpers ───────────────────────────────────────────────────────────
+
     // ── TTL ───────────────────────────────────────────────────────────────────
 
     /// Extend the contract instance TTL so the admin, targets and any pending
@@ -251,6 +253,7 @@ impl GovernanceContract {
         admin: Address,
         targets: Vec<Address>,
     ) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
         if env.storage().instance().has(&KEY_ADMIN) {
             return Err(GovernanceError::AlreadyInitialized);
         }
@@ -274,6 +277,7 @@ impl GovernanceContract {
         Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let old_version = Self::version(env.clone());
         let new_version = old_version.saturating_add(1);
@@ -306,6 +310,7 @@ impl GovernanceContract {
         Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         if let Some(pending) = env
             .storage()
@@ -411,6 +416,7 @@ impl GovernanceContract {
     pub fn approve_transfer(env: Env, signer: Address) -> Result<(), GovernanceError> {
         Self::bump_instance_ttl(&env);
         signer.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let mut pending: PendingTransfer = env
             .storage()
@@ -465,6 +471,7 @@ impl GovernanceContract {
     pub fn finalize_admin_transfer(env: Env, caller: Address) -> Result<(), GovernanceError> {
         Self::bump_instance_ttl(&env);
         caller.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let pending: PendingTransfer = env
             .storage()
@@ -554,6 +561,7 @@ impl GovernanceContract {
         Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let mut pending: PendingTransfer = env
             .storage()
@@ -593,6 +601,7 @@ impl GovernanceContract {
         Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let mut pending: PendingTransfer = env
             .storage()
@@ -637,6 +646,7 @@ impl GovernanceContract {
     pub fn expire_proposal(env: Env, caller: Address) -> Result<(), GovernanceError> {
         Self::bump_instance_ttl(&env);
         caller.require_auth();
+        Self::bump_instance_ttl(&env);
 
         let pending: PendingTransfer = env
             .storage()
@@ -679,6 +689,14 @@ impl GovernanceContract {
     pub fn get_admin(env: Env) -> Result<Address, GovernanceError> {
         Self::bump_instance_ttl(&env);
         Self::read_admin(&env)
+    }
+
+    pub fn get_target(env: Env) -> Result<Address, GovernanceError> {
+        Self::bump_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&KEY_TARGET)
+            .ok_or(GovernanceError::TargetNotSet)
     }
 
     pub fn get_targets(env: Env) -> Result<Vec<Address>, GovernanceError> {
