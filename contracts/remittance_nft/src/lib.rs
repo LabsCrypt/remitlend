@@ -691,7 +691,7 @@ impl RemittanceNFT {
         Self::bump_persistent_ttl(&env, &metadata_key);
         env.events().publish(
             (symbol_short!("Mint"), user),
-            (initial_score, recipient_commitment),
+            (metadata.score, recipient_commitment),
         );
 
         Ok(())
@@ -786,7 +786,7 @@ impl RemittanceNFT {
         // Emit a distinct AdminRemint event — auditably separate from Mint events.
         env.events().publish(
             (symbol_short!("AdmRemint"), user.clone()),
-            (initial_score, recipient_commitment),
+            (metadata.score, recipient_commitment),
         );
 
         Ok(())

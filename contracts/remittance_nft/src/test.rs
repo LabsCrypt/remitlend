@@ -3492,3 +3492,47 @@ fn test_update_metadata_uri_enforces_metadata_uri_prefix() {
     client.update_metadata_uri(&user, &replacement, &None);
     assert_eq!(client.get_metadata_uri(&user), Some(replacement));
 }
+
+#[test]
+fn test_mint_and_admin_remint_emit_clamped_score_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let contract_id = env.register(RemittanceNFT, ());
+    let client = RemittanceNFTClient::new(&env, &contract_id);
+    client.initialize(&admin);
+
+    let commitment = create_test_commitment(&env, 1);
+    let uri = create_test_uri(&env);
+    let history_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    // 1. Mint with initial_score < MIN_CREDIT_SCORE (100 < 300)
+    client.mint(&user, &100, &history_hash, &uri, &commitment, &None);
+
+    let events = env.events().all();
+    let mint_event = events.get(events.len() - 1).unwrap();
+    let topic_0 = Symbol::from_val(&env, &mint_event.1.get(0).unwrap());
+    assert_eq!(topic_0, Symbol::new(&env, "Mint"));
+    let data = <(u32, BytesN<32>)>::from_val(&env, &mint_event.2);
+    assert_eq!(data.0, 300u32); // Must be clamped to 300, not 100
+    assert_eq!(data.1, commitment);
+
+    // Burn and approve remint
+    client.burn(&user, &None);
+    client.approve_remint(&user);
+
+    // 2. Admin remint with initial_score > MAX_SCORE (950 > 850)
+    let commitment2 = create_test_commitment(&env, 2);
+    let history_hash2 = BytesN::from_array(&env, &[2u8; 32]);
+    client.admin_remint(&user, &950, &history_hash2, &uri, &commitment2);
+
+    let events2 = env.events().all();
+    let remint_event = events2.get(events2.len() - 1).unwrap();
+    let remint_topic = Symbol::from_val(&env, &remint_event.1.get(0).unwrap());
+    assert_eq!(remint_topic, Symbol::new(&env, "AdmRemint"));
+    let remint_data = <(u32, BytesN<32>)>::from_val(&env, &remint_event.2);
+    assert_eq!(remint_data.0, 850u32); // Must be clamped to 850, not 950
+    assert_eq!(remint_data.1, commitment2);
+}
