@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ChevronRight, Clock, Wallet, Wifi, WifiOff } from "lucide-react";
 import { LoanDetailSkeleton } from "../../../components/skeletons/LoanDetailSkeleton";
 import { useLoan, useLoanAmortizationSchedule, useLoanEvents } from "../../../hooks/useApi";
@@ -37,17 +37,20 @@ function getDaysRemaining(deadline: string | undefined): number | null {
 }
 
 export function LoanDetailsPageClient() {
+  const locale = useLocale();
   const t = useTranslations("LoanDetails");
   const params = useParams<{ loanId: string }>();
   const loanId = params.loanId;
   const [isRefinanceOpen, setIsRefinanceOpen] = useState(false);
   const [isExtensionOpen, setIsExtensionOpen] = useState(false);
   const realtimeStatus = useLoanStream(loanId);
-  const { data: loan, isLoading, isError } = useLoan(loanId);
+  const loanQuery = useLoan(loanId);
+  const { data: loan, isLoading, isError } = loanQuery;
   const amortizationQuery = useLoanAmortizationSchedule(loanId, {
     retry: false,
   });
-  const { data: events, isLoading: eventsLoading, isError: eventsError } = useLoanEvents(loanId);
+  const eventsQuery = useLoanEvents(loanId);
+  const { data: events, isLoading: eventsLoading, isError: eventsError } = eventsQuery;
 
   if (isLoading) {
     return <LoanDetailSkeleton />;
@@ -69,7 +72,7 @@ export function LoanDetailsPageClient() {
           Loan #{loanId} could not be located. It may have been removed or the ID is incorrect.
         </p>
         <Link
-          href="/loans"
+          href={`/${locale}/loans`}
           className="mt-6 inline-flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900"
         >
           Back to loans
@@ -106,11 +109,11 @@ export function LoanDetailsPageClient() {
         aria-label="Breadcrumb"
         className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400"
       >
-        <Link href="/" className="hover:text-zinc-900 dark:hover:text-zinc-100 transition">
+        <Link href={`/${locale}`} className="hover:text-zinc-900 dark:hover:text-zinc-100 transition">
           Home
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
-        <Link href="/loans" className="hover:text-zinc-900 dark:hover:text-zinc-100 transition">
+        <Link href={`/${locale}/loans`} className="hover:text-zinc-900 dark:hover:text-zinc-100 transition">
           Loans
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
@@ -346,7 +349,7 @@ export function LoanDetailsPageClient() {
                 loan.status !== "defaulted" &&
                 loan.status !== "liquidated" && (
                   <Link
-                    href={`/repay/${loanId}`}
+                    href={`/${locale}/repay/${loanId}`}
                     className="mt-4 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
                   >
                     Make Payment
@@ -404,6 +407,8 @@ export function LoanDetailsPageClient() {
         isOpen={isRefinanceOpen}
         onClose={() => setIsRefinanceOpen(false)}
         onSuccess={() => {
+          loanQuery.refetch();
+          eventsQuery.refetch();
           amortizationQuery.refetch();
         }}
         loanId={loanId}
@@ -424,6 +429,8 @@ export function LoanDetailsPageClient() {
         isOpen={isExtensionOpen}
         onClose={() => setIsExtensionOpen(false)}
         onSuccess={() => {
+          loanQuery.refetch();
+          eventsQuery.refetch();
           amortizationQuery.refetch();
         }}
         loanId={loanId}
