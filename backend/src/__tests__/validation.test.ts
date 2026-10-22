@@ -68,6 +68,18 @@ describe('Input Validation', () => {
       expect(response.body.success).toBe(true);
     });
 
+    it('should accept the maximum supported amount', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ current_score: 500 }] });
+
+      const response = await request(app)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
+        .send({ amount: 1000000 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+    });
+
     it('should reject missing amount', async () => {
       const response = await request(app)
         .post('/api/simulate')
@@ -97,6 +109,29 @@ describe('Input Validation', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
+    });
+
+    it('should reject unsupported operation fields', async () => {
+      const response = await request(app)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
+        .send({ amount: 500, operation: 'unsupported' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.body.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'body' })]),
+      );
+    });
+
+    it('should reject a request body larger than the configured JSON limit', async () => {
+      const response = await request(app)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
+        .send({ amount: 500, extra: 'x'.repeat(101 * 1024) });
+
+      expect(response.status).toBe(413);
+      expect(response.body.message).toBe('Request payload too large');
     });
 
     it('should reject zero amount', async () => {

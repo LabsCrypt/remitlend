@@ -9,12 +9,14 @@ export const getRemittanceHistorySchema = z.object({
 
 // Schema for POST /simulate — userId is derived from the JWT, not the request body
 export const simulatePaymentSchema = z.object({
-  body: z.object({
-    amount: z
-      .number()
-      .positive('Amount must be positive')
-      .max(1000000, 'Amount exceeds maximum limit'),
-  }),
+  body: z
+    .object({
+      amount: z
+        .number()
+        .positive('Amount must be positive')
+        .max(1000000, 'Amount exceeds maximum limit'),
+    })
+    .strict(),
 });
 
 // Export types for TypeScript

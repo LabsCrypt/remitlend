@@ -46,6 +46,14 @@ describe('roundDiv', () => {
     expect(roundDiv(10n, 5n, RoundingMode.HalfEven)).toBe(2n);
   });
 
+  it('preserves values beyond the signed 128-bit boundary without overflow', () => {
+    const beyondI128 = 1n << 127n;
+
+    expect(roundDiv(beyondI128, 1n)).toBe(beyondI128);
+    expect(roundDiv(-beyondI128, 1n)).toBe(-beyondI128);
+    expect(toStroops(beyondI128.toString())).toBe(beyondI128 * STROOP_SCALE);
+  });
+
   // Bit-for-bit fixtures matching contracts/money/src/lib.rs's `round_div`
   // unit tests, so backend and contract agree on every rounding mode.
   it('matches the contract crate fixtures', () => {
