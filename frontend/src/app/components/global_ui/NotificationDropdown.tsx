@@ -16,6 +16,7 @@ import {
 } from "../../hooks/useApi";
 import { useNotificationStream } from "../../hooks/useNotificationStream";
 import { StatusIndicator } from "../ui/StatusIndicator";
+import { toast } from "sonner";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -210,11 +211,19 @@ export function NotificationDropdown() {
   };
 
   const handleReadOne = (id: number) => {
-    markRead.mutate([id]);
+    markRead.mutate([id], {
+      onError: () => {
+        toast.error("Failed to mark notification as read. Please try again.");
+      },
+    });
   };
 
   const handleMarkAllRead = () => {
-    markAllRead.mutate();
+    markAllRead.mutate(undefined, {
+      onError: () => {
+        toast.error("Failed to mark all notifications as read. Please try again.");
+      },
+    });
   };
 
   const handleNavigate = (path: string) => {

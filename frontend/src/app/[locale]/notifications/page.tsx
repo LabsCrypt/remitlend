@@ -12,6 +12,7 @@ import {
 } from "../../hooks/useApi";
 import { PaginationControls } from "../../components/ui/PaginationControls";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 10;
 
@@ -177,6 +178,11 @@ export default function NotificationsPage() {
                 notifications
                   .filter((notification) => !notification.read)
                   .map((notification) => notification.id),
+                {
+                  onError: () => {
+                    toast.error("Failed to mark all notifications as read. Please try again.");
+                  },
+                },
               )
             }
             disabled={markRead.isPending}
@@ -263,7 +269,13 @@ export default function NotificationsPage() {
                 <NotificationRow
                   key={notification.id}
                   notification={notification}
-                  onMarkRead={(id) => markRead.mutate([id])}
+                  onMarkRead={(id) =>
+                    markRead.mutate([id], {
+                      onError: () => {
+                        toast.error("Failed to mark notification as read. Please try again.");
+                      },
+                    })
+                  }
                   unreadLabel={t("unread")}
                   markReadLabel={t("markRead")}
                 />
