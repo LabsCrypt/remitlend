@@ -73,7 +73,7 @@ export function getLoanConfig(): LoanConfig {
     creditScoreThreshold: parseRequiredInteger(
       CREDIT_SCORE_THRESHOLD,
       CREDIT_SCORE_THRESHOLD_RANGE.min,
-      CREDIT_SCORE_THRESHOLD_RANGE.max,
+      CREDIT_SCORE_THRESHOLDS_RANGE.max,
     ),
   };
 }
