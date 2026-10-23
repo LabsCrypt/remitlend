@@ -1,46 +1,7 @@
-import { getClient } from './connection.js';
+import { withTransaction } from './connection.js';
 import logger from '../utils/logger.js';
 
-/**
- * Execute a database transaction with automatic rollback on error
- * @param operations - Array of database operations to execute within the transaction
- * @returns Promise with the result of the operations
- */
-export async function withTransaction<T>(
-  operations: (client: import('pg').PoolClient) => Promise<T>,
-): Promise<T> {
-  let client;
-  try {
-    client = await getClient();
-  } catch (error) {
-    logger.error('Failed to acquire database client for transaction', {
-      error,
-    });
-    throw new Error('Database connection failed');
-  }
-
-  if (!client) {
-    throw new Error('Database client is undefined');
-  }
-
-  try {
-    await client.query('BEGIN');
-    logger.debug('Database transaction started');
-
-    const result = await operations(client);
-
-    await client.query('COMMIT');
-    logger.debug('Database transaction committed');
-
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    logger.error('Database transaction rolled back due to error:', error);
-    throw error;
-  } finally {
-    client.release();
-  }
-}
+export { withTransaction };
 
 /**
  * Execute multiple database operations in a transaction
