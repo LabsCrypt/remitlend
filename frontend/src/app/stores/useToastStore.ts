@@ -26,9 +26,9 @@ interface ToastStore {
   clearToasts: () => void;
 }
 
-const DEFAULT_DURATION_MS = 5000;
-const ERROR_DURATION_MS = 10000;
-const MAX_STORED_TOASTS = 20;
+export const DEFAULT_DURATION_MS = 5000;
+export const ERROR_DURATION_MS = 10000;
+export const MAX_STORED_TOASTS = 20;
 
 let toastCounter = 0;
 
@@ -54,9 +54,13 @@ export const useToastStore = create<ToastStore>((set) => ({
   addToast: (toast) => {
     const nextToast = withDefaultDuration(toast);
 
-    set((state) => ({
-      toasts: [nextToast, ...state.toasts].slice(0, MAX_STORED_TOASTS),
-    }));
+    set((state) => {
+      // Replace any existing toast with the same ID so IDs stay unique.
+      const others = state.toasts.filter((t) => t.id !== nextToast.id);
+      return {
+        toasts: [nextToast, ...others].slice(0, MAX_STORED_TOASTS),
+      };
+    });
 
     return nextToast.id;
   },
