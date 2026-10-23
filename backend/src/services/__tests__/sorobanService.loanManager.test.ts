@@ -65,6 +65,15 @@ describe('SorobanService loan manager tx builders', () => {
     expect(scValToNative(args[1])).toBe(7);
   });
 
+  it('loan_id arguments are encoded as u32 (never u64) for loan manager calls', async () => {
+    await sorobanService.buildCancelLoanTx(address, '42');
+
+    const { args } = invokedArgs();
+    expect(args[1].switch().name).toBe('scvU32');
+    expect(args[1].switch().name).not.toBe('scvU64');
+    expect(scValToNative(args[1])).toBe(42);
+  });
+
   it('buildRejectLoanTx passes (loan_id: u32, reason: string) to reject_loan', async () => {
     await sorobanService.buildRejectLoanTx(address, '7', 'insufficient history');
 
