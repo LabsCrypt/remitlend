@@ -5,6 +5,27 @@ import { usePathname, useRouter } from "next/navigation";
 import { ChangeEvent, useTransition } from "react";
 import { Languages } from "lucide-react";
 
+export const SUPPORTED_LOCALES = ["en", "es", "tl"] as const;
+export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
+
+export function isSupportedLocale(value: string): value is SupportedLocale {
+  return (SUPPORTED_LOCALES as readonly string[]).includes(value);
+}
+
+/**
+ * Replaces the locale segment of a pathname while preserving the rest of the route,
+ * including nested segments, query-free path structure, and trailing slashes.
+ * Returns null when the requested locale is unsupported.
+ */
+export function buildLocalizedPath(pathname: string, nextLocale: string): string | null {
+  if (!isSupportedLocale(nextLocale)) {
+    return null;
+  }
+  const segments = pathname.split("/");
+  segments[1] = nextLocale;
+  return segments.join("/");
+}
+
 export function LanguageSwitcher() {
   const [isPending, startTransition] = useTransition();
   const locale = useLocale();
@@ -13,11 +34,12 @@ export function LanguageSwitcher() {
 
   function onSelectChange(event: ChangeEvent<HTMLSelectElement>) {
     const nextLocale = event.target.value;
+    const targetPath = buildLocalizedPath(pathname, nextLocale);
+    if (targetPath === null) {
+      return;
+    }
     startTransition(() => {
-      // replace the locale in the pathname
-      const segments = pathname.split("/");
-      segments[1] = nextLocale;
-      router.replace(segments.join("/"));
+      router.replace(targetPath);
     });
   }
 
