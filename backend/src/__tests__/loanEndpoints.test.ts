@@ -275,6 +275,15 @@ describe('POST /api/loans/submit', () => {
     expect(response.status).toBe(401);
   });
 
+  it('should reject authenticated requests without the write scope', async () => {
+    const response = await request(app)
+      .post('/api/loans/submit')
+      .set(bearerWithScopes(TEST_BORROWER, ['read:loans']))
+      .send({ signedTxXdr: 'c2lnbmVkLXhkcg==' });
+
+    expect(response.status).toBe(403);
+  });
+
   it('should submit a signed transaction', async () => {
     mockSubmitSignedTx.mockResolvedValueOnce({
       txHash: 'abc123hash',
@@ -290,6 +299,50 @@ describe('POST /api/loans/submit', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.txHash).toBe('abc123hash');
     expect(response.body.status).toBe('SUCCESS');
+  });
+
+  it('upserts repeated submissions with the same transaction hash', async () => {
+    mockSubmitSignedTx.mockResolvedValue({ txHash: 'duplicate-hash', status: 'SUCCESS' });
+
+    const submit = () =>
+      request(app)
+        .post('/api/loans/submit')
+        .set(bearer(TEST_BORROWER))
+        .send({ signedTxXdr: 'c2lnbmVkLXhkci1kYXRh' });
+
+    const first = await submit();
+    const duplicate = await submit();
+
+    expect(first.status).toBe(200);
+    expect(duplicate.status).toBe(200);
+    const hashWrites = mockedQuery.mock.calls.filter(([sql]) =>
+      String(sql).includes('INSERT INTO transaction_submissions'),
+    );
+    expect(hashWrites).toHaveLength(2);
+    for (const [sql, params] of hashWrites) {
+      expect(String(sql)).toContain('ON CONFLICT (tx_hash) DO UPDATE');
+      expect(params).toEqual(['duplicate-hash', 'SUCCESS', TEST_BORROWER]);
+    }
+  });
+
+  it('returns the structured internal error contract when submission fails', async () => {
+    mockSubmitSignedTx.mockRejectedValueOnce(new Error('RPC rejected the transaction'));
+
+    const response = await request(app)
+      .post('/api/loans/submit')
+      .set(bearer(TEST_BORROWER))
+      .send({ signedTxXdr: 'c2lnbmVkLXhkci1kYXRh' });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      success: false,
+      message: 'Internal server error',
+      error: expect.objectContaining({
+        code: expect.any(String),
+        message: 'Internal server error',
+      }),
+    });
+    expect(response.body.message).not.toContain('RPC rejected');
   });
 
   it('should reject missing signedTxXdr', async () => {

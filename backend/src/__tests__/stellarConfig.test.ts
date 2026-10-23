@@ -57,6 +57,14 @@ describe('stellar config', () => {
     expect(config.networkPassphrase).toBe(Networks.PUBLIC);
   });
 
+  it('rejects an unsupported Stellar network', () => {
+    process.env.STELLAR_NETWORK = 'futurenet';
+
+    expect(() => getStellarConfig()).toThrow(
+      'Invalid STELLAR_NETWORK "futurenet". Expected "testnet" or "mainnet".',
+    );
+  });
+
   it('rejects passphrase/network mismatches', () => {
     process.env.STELLAR_NETWORK = 'mainnet';
     process.env.STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;

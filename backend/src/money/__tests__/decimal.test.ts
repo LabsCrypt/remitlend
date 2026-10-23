@@ -100,6 +100,14 @@ describe('toStroops / fromStroops', () => {
     expect(fromStroops(STROOP_SCALE)).toBe('1.0000000');
   });
 
+  it('preserves trailing fractional zeros at full settlement precision', () => {
+    expect(fromStroops(12_340_000n)).toBe('1.2340000');
+  });
+
+  it('serializes very large bigint amounts without losing precision', () => {
+    expect(fromStroops(123_456_789_012_345_678_901_234_567n)).toBe('12345678901234567890.1234567');
+  });
+
   it('exposes the expected policy constants', () => {
     expect(STROOP_SCALE).toBe(10_000_000n);
     expect(STROOP_DECIMALS).toBe(7);

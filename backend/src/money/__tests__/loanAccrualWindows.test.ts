@@ -98,6 +98,52 @@ describe('accrueWindowInterest', () => {
   });
 });
 
+describe('calendar boundary accrual inputs', () => {
+  const elapsedLedgers = (start: string, end: string): number => {
+    const elapsedDays = (Date.parse(end) - Date.parse(start)) / 86_400_000;
+    return elapsedDays * TERM_LEDGERS;
+  };
+
+  it.each([
+    [
+      'leap day and February month end',
+      '2024-02-28T00:00:00Z',
+      '2024-03-01T00:00:00Z',
+      2_400_000_000n,
+    ],
+    ['April month end', '2026-04-30T00:00:00Z', '2026-05-01T00:00:00Z', 1_200_000_000n],
+  ])('accrues from elapsed ledgers across %s', (_boundary, start, end, expected) => {
+    expect(
+      accrueInterest({
+        remainingPrincipalStroops: PRINCIPAL,
+        interestRateBps: RATE_BPS,
+        elapsedLedgers: elapsedLedgers(start, end),
+        termLedgers: TERM_LEDGERS,
+      }),
+    ).toBe(expected);
+  });
+
+  it('preserves booked interest across a rate change and applies the new rate to the open window', () => {
+    const accrual = accrueWindows({
+      principalStroops: PRINCIPAL,
+      interestRateBps: 1800,
+      termLedgers: TERM_LEDGERS,
+      approvedLedger: 0,
+      settlements: [
+        {
+          ledger: 34_560,
+          amountStroops: 0n,
+          bookedInterestStroops: 2_400_000_000n,
+        },
+      ],
+      currentLedger: 51_840,
+    });
+
+    expect(accrual.windowInterestStroops).toEqual([2_400_000_000n, 1_800_000_000n]);
+    expect(accrual.outstandingInterestStroops).toBe(4_200_000_000n);
+  });
+});
+
 describe('splitRepayment', () => {
   it('splits a repayment across principal, interest and late fee', () => {
     const [principal = 0n, interest = 0n, lateFee = 0n] = splitRepayment([600n, 300n, 100n], 500n);
