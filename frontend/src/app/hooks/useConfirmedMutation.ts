@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useToastStore } from "../stores/useToastStore";
 import type { TransactionSummaryItem } from "../components/ui/ConfirmTransactionDialog";
 
 interface ConfirmedMutationOptions<TVariables> {
@@ -58,10 +59,20 @@ export function useConfirmedMutation<TVariables>(
     setIsLoading(true);
     try {
       await action(pendingVariables);
-    } finally {
       setIsLoading(false);
       setIsOpen(false);
       setPendingVariables(null);
+    } catch (error) {
+      setIsLoading(false);
+      const addToast = useToastStore.getState().addToast;
+      addToast({
+        type: "error",
+        title: "Transaction failed",
+        description:
+          error instanceof Error ? error.message : "An unexpected error occurred while confirming.",
+        duration: 10000,
+      });
+      // Keep the modal open so the user can retry or cancel
     }
   }, [action, pendingVariables]);
 
