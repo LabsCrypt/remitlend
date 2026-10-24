@@ -74,8 +74,11 @@ function toErrorMessage(error: unknown): string {
   if (typeof error === "string") {
     return error;
   }
+  if (error === undefined) {
+    return "Unknown transaction error";
+  }
   try {
-    return JSON.stringify(error);
+    return JSON.stringify(error) ?? "Unknown transaction error";
   } catch {
     return "Unknown transaction error";
   }
