@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState, useTransition, type ChangeEvent, type KeyboardEvent } from "react";
+import { useLocale } from "next-intl";
+import { usePathname, useRouter } from "next/navigation";
 import {
   User,
   Wallet,
@@ -562,12 +564,22 @@ function DisplaySection() {
   const LANGUAGES = [
     { code: "en", label: "English" },
     { code: "es", label: "Español" },
-    { code: "fr", label: "Français" },
-    { code: "pt", label: "Português" },
-    { code: "hi", label: "हिन्दी" },
+    { code: "tl", label: "Tagalog" },
   ];
 
-  const [language, setLanguage] = useState("en");
+  const [isPending, startTransition] = useTransition();
+  const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const handleLanguageChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextLocale = event.target.value;
+    startTransition(() => {
+      const segments = pathname.split("/");
+      segments[1] = nextLocale;
+      router.replace(segments.join("/"));
+    });
+  };
 
   const theme = useThemeStore((s) => s.theme);
   const hydrated = useThemeStore((s) => s.hydrated);
@@ -616,12 +628,17 @@ function DisplaySection() {
         </div>
 
         <div>
-          <label className="text-sm font-medium text-zinc-900 dark:text-zinc-100 block mb-2">
+          <label
+            htmlFor="settings-language-select"
+            className="text-sm font-medium text-zinc-900 dark:text-zinc-100 block mb-2"
+          >
             Language
           </label>
           <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
+            id="settings-language-select"
+            value={locale}
+            disabled={isPending}
+            onChange={handleLanguageChange}
             className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
           >
             {LANGUAGES.map((l) => (
@@ -630,9 +647,6 @@ function DisplaySection() {
               </option>
             ))}
           </select>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1.5">
-            Full i18n support is coming soon. Only English is fully translated.
-          </p>
         </div>
       </CardContent>
     </Card>
