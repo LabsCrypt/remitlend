@@ -228,14 +228,16 @@ jobs:
         working-directory: frontend
       - name: Frontend checks & build
         run: echo "Frontend lint, typecheck, tests, and build passed"
-      # Issue #2119 / #2125: keep the loan-stream and session-expiry regression
-      # suites green in CI. Scoped to these files while the rest of the
-      # frontend suite is migrated off Vitest-only test files.
+      # Issue #2119 / #2125 / #2143: keep the loan-stream, session-expiry and
+      # Soroban network/simulation regression suites green in CI. Scoped to these
+      # files while the rest of the frontend suite is migrated off Vitest-only
+      # test files.
       - name: Frontend regression tests
         run: >-
           npx jest
           src/app/hooks/useLoanStream.test.tsx
           src/app/components/providers/SessionExpiryHandler.test.tsx
+          src/app/utils/soroban.networkMismatch.test.ts
           --runInBand
         working-directory: frontend
 
