@@ -10,9 +10,16 @@ echo "=========================================="
 
 # Configuration
 FUZZ_TIME=${1:-60}  # Default 60 seconds per target if not specified
-CORPUS_DIR="fuzz/corpus"
-ARTIFACTS_DIR="fuzz/artifacts"
-REPORT_DIR="fuzz/reports"
+CORPUS_DIR="${CORPUS_DIR:-fuzz/corpus}"
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-fuzz/artifacts}"
+REPORT_DIR="${REPORT_DIR:-fuzz/reports}"
+CARGO_BIN="${CARGO_BIN:-cargo}"
+
+# Fail fast with a clear error if the fuzzing toolchain is unavailable
+if ! command -v "$CARGO_BIN" >/dev/null 2>&1; then
+    echo "❌ Required tool not found: $CARGO_BIN" >&2
+    exit 127
+fi
 
 # Create directories
 mkdir -p "$CORPUS_DIR" "$ARTIFACTS_DIR" "$REPORT_DIR"
