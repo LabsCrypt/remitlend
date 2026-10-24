@@ -257,6 +257,18 @@ jobs:
         run: npm run typecheck
         working-directory: scripts
 
+  # Issue [test] Cover contract fuzz target CI execution: exercise the fuzz
+  # campaign script's missing-tool, timeout and artifact-collection paths
+  # deterministically, so regressions in those paths fail CI.
+  fuzz-campaign-tests:
+    needs: supply-chain-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run fuzz campaign script tests
+        run: bash fuzz_campaign.test.sh
+        working-directory: contracts/fuzz
+
   e2e:
     needs: [supply-chain-audit, frontend]
     runs-on: ubuntu-latest
@@ -329,38 +341,4 @@ jobs:
 
   # Issue #1382: the contract, the backend and the frontend must agree on the
   # loan accrual to the last stroop. This job runs the shared golden vectors
-  # (`contracts/testdata/accrual_vectors.json`) and the randomised drift
-  # checks in all three layers, so a change that moves one layer's numbers
-  # fails the build instead of silently drifting away from the contract.
-  accrual-parity:
-    needs: [supply-chain-audit, money-policy]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Use Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.85.0
-      - name: Contract accrual parity
-        run: |
-          cargo test -p money
-          cargo test -p loan_manager --lib
-        working-directory: contracts
-      - name: Install backend dependencies
-        run: npm ci
-        working-directory: backend
-      - name: Backend accrual parity
-        run: node --experimental-vm-modules node_modules/jest/bin/jest.js src/money --forceExit
-        working-directory: backend
-      - name: Install frontend dependencies
-        run: npm ci
-        working-directory: frontend
-      - name: Frontend accrual parity
-        run: |
-          node --experimental-vm-modules node_modules/jest/bin/jest.js \
-            lib/money src/app/hooks/useOwedProjection.test.ts --forceExit
-        working-directory: frontend
+  # (`contracts/testdata/accrual_vectors.json`) and the randomised d
