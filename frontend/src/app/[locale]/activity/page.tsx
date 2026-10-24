@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Clock, ArrowUpRight, ArrowDownLeft, ExternalLink } from "lucide-react";
+import { Clock, AlertCircle, ArrowUpRight, ArrowDownLeft, ExternalLink } from "lucide-react";
 import { useWalletStore, selectIsWalletConnected } from "../../stores/useWalletStore";
 import { useLoans, useRemittances } from "../../hooks/useApi";
 import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
@@ -47,8 +47,10 @@ export default function ActivityPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [filterType, setFilterType] = useState<FilterType>("all");
 
-  const { data: loans = [], isLoading: loansLoading } = useLoans({ enabled: isConnected });
-  const { data: remittances = [], isLoading: remittancesLoading } = useRemittances({
+  const { data: loans = [], isLoading: loansLoading, isError: loansError } = useLoans({
+    enabled: isConnected,
+  });
+  const { data: remittances = [], isLoading: remittancesLoading, isError: remittancesError } = useRemittances({
     enabled: isConnected,
   });
 
@@ -196,6 +198,24 @@ export default function ActivityPage() {
                   className="h-16 bg-gradient-to-r from-zinc-100 to-zinc-50 dark:from-zinc-900 dark:to-zinc-800 rounded animate-pulse"
                 />
               ))}
+            </div>
+          ) : loansError || remittancesError ? (
+            <div className="p-6 text-center border rounded-lg bg-zinc-50 dark:bg-zinc-950/50 border-zinc-200 dark:border-zinc-800">
+              <AlertCircle className="h-12 w-12 mx-auto text-zinc-400 dark:text-zinc-600 mb-4" />
+              <h3 className="text-zinc-900 dark:text-zinc-100 text-lg font-medium mb-2">
+                {t("errorTitle") || "Error loading activity"}
+              </h3>
+              <p className="text-zinc-500 dark:text-zinc-400 mb-6">
+                {loansError
+                  ? t("loansError") || "Failed to load loans. Please retry."
+                  : t("remittancesError") || "Failed to load remittances. Please retry."}
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                {t("retry") || "Retry"}
+              </button>
             </div>
           ) : paginatedActivity.length === 0 ? (
             <div className="p-6">
