@@ -2,6 +2,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SettingsPage from "./page";
 
+const mockReplace = jest.fn();
+
+jest.mock("next-intl", () => ({
+  useLocale: () => "en",
+}));
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace }),
+  usePathname: () => "/en/settings",
+}));
+
 jest.mock("../../lib/session", () => ({
   logoutUser: jest.fn(),
 }));
@@ -32,10 +43,21 @@ jest.mock("../../stores/useWalletStore", () => ({
 }));
 
 jest.mock("../../stores/useThemeStore", () => ({
-  useThemeStore: jest.fn(() => ({
-    theme: "system",
-    setTheme: jest.fn(),
-  })),
+  useThemeStore: jest.fn((selector) =>
+    selector
+      ? selector({
+          theme: "system",
+          hydrated: true,
+          initializeTheme: jest.fn(),
+          setTheme: jest.fn(),
+        })
+      : {
+          theme: "system",
+          hydrated: true,
+          initializeTheme: jest.fn(),
+          setTheme: jest.fn(),
+        },
+  ),
 }));
 
 jest.mock("../../hooks/useApi", () => ({
@@ -48,6 +70,10 @@ jest.mock("../../components/gamification/GamificationSettings", () => ({
 }));
 
 describe("SettingsPage section navigation", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+  });
+
   it("exposes the default active section via aria-selected", () => {
     render(<SettingsPage />);
 
@@ -78,5 +104,24 @@ describe("SettingsPage section navigation", () => {
     const panel = screen.getByRole("tabpanel");
     expect(panel).toHaveAttribute("id", panelId);
     expect(panel).toHaveAttribute("aria-labelledby", "settings-tab-profile");
+  });
+
+  it("renders supported locales (en, es, tl) in DisplaySection and navigates via router.replace on change", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    const displayTab = screen.getByRole("tab", { name: "Display" });
+    await user.click(displayTab);
+
+    const languageSelect = screen.getByLabelText("Language") as HTMLSelectElement;
+    expect(languageSelect.value).toBe("en");
+
+    const optionValues = Array.from(languageSelect.options).map((o) => o.value);
+    expect(optionValues).toEqual(["en", "es", "tl"]);
+
+    expect(screen.queryByText(/Only English is fully translated/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(languageSelect, "es");
+    expect(mockReplace).toHaveBeenCalledWith("/es/settings");
   });
 });
