@@ -311,7 +311,7 @@ class SorobanService {
       type: 'address',
     });
     const amountScVal = nativeToScVal(toStroops(amount.toString()), { type: 'i128' });
-    const minSharesOutScVal = nativeToScVal(BigInt(minSharesOut), { type: 'i128' });
+    const minSharesOutScVal = nativeToScVal(toStroops(minSharesOut.toString()), { type: 'i128' });
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,

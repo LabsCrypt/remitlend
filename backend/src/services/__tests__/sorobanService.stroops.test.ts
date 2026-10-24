@@ -82,13 +82,23 @@ describe('SorobanService token amounts are scaled to stroops (10^7)', () => {
     expect(scValToNative(args[2])).toBe(1_205_000_000n);
   });
 
-  it('buildDepositTx scales the amount to stroops', async () => {
+  it('buildDepositTx scales both amount and minSharesOut to stroops', async () => {
     const { functionName, args } = await invokeArgsFor(() =>
-      sorobanService.buildDepositTx(userAddress, tokenAddress, 12.5, 0),
+      sorobanService.buildDepositTx(userAddress, tokenAddress, 12.5, 95),
     );
 
     expect(functionName).toBe('deposit');
     expect(scValToNative(args[2])).toBe(125_000_000n);
+    expect(scValToNative(args[3])).toBe(950_000_000n);
+  });
+
+  it('buildDepositTx scales decimal minSharesOut to stroops without throwing', async () => {
+    const { args } = await invokeArgsFor(() =>
+      sorobanService.buildDepositTx(userAddress, tokenAddress, 100, 95.5),
+    );
+
+    expect(scValToNative(args[2])).toBe(1_000_000_000n);
+    expect(scValToNative(args[3])).toBe(955_000_000n);
   });
 
   it('buildRefinanceLoanTx scales the new amount to stroops', async () => {
@@ -99,5 +109,37 @@ describe('SorobanService token amounts are scaled to stroops (10^7)', () => {
     expect(functionName).toBe('refinance_loan');
     expect(scValToNative(args[1])).toBe(25_000_000_000n);
     expect(scValToNative(args[2])).toBe(30);
+  });
+
+  it('buildPoolTransactionSchema validates optional non-negative minSharesOut', async () => {
+    const { buildPoolTransactionSchema } = await import('../../schemas/poolSchemas.js');
+    const validTokenKey = Keypair.random().publicKey();
+
+    expect(
+      buildPoolTransactionSchema.safeParse({
+        depositorPublicKey: userAddress,
+        token: validTokenKey,
+        amount: 100,
+        minSharesOut: 95.5,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      buildPoolTransactionSchema.safeParse({
+        depositorPublicKey: userAddress,
+        token: validTokenKey,
+        amount: 100,
+        minSharesOut: 0,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      buildPoolTransactionSchema.safeParse({
+        depositorPublicKey: userAddress,
+        token: validTokenKey,
+        amount: 100,
+        minSharesOut: -1,
+      }).success,
+    ).toBe(false);
   });
 });
