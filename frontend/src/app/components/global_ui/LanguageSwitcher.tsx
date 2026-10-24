@@ -26,6 +26,20 @@ export function buildLocalizedPath(pathname: string, nextLocale: string): string
   return segments.join("/");
 }
 
+/**
+ * Persists the selected locale so it survives navigation and reloads.
+ */
+export function persistLocale(locale: string): void {
+  if (!isSupportedLocale(locale)) {
+    return;
+  }
+  try {
+    window.localStorage.setItem("preferred-locale", locale);
+  } catch {
+    // Storage may be unavailable (e.g. private mode); ignore.
+  }
+}
+
 export function LanguageSwitcher() {
   const [isPending, startTransition] = useTransition();
   const locale = useLocale();
@@ -38,6 +52,7 @@ export function LanguageSwitcher() {
     if (targetPath === null) {
       return;
     }
+    persistLocale(nextLocale);
     startTransition(() => {
       router.replace(targetPath);
     });
