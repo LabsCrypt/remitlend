@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { jest } from '@jest/globals';
 
 type MockQueryResult = { rows: unknown[]; rowCount?: number };
@@ -21,7 +22,9 @@ jest.unstable_mockModule('../services/webhookHttp.js', () => ({
     global.fetch(url, { method: 'POST', headers, body }),
 }));
 
-const { WebhookService, getRetryDelayMs } = await import('../services/webhookService.js');
+const { WebhookService, SUPPORTED_WEBHOOK_EVENT_TYPES, getRetryDelayMs } = await import(
+  '../services/webhookService.js'
+);
 const { default: logger } = await import('../utils/logger.js');
 
 describe('WebhookService', () => {
@@ -533,6 +536,222 @@ describe('WebhookService', () => {
         JSON.stringify(['LoanRepaid']),
       ]);
       expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Subscription Lifecycle, Event Filtering, Deletion During Delivery & Secret Rotation', () => {
+    beforeEach(() => {
+      mockQuery.mockReset();
+    });
+
+    it('supports full subscription registration, listing, and idempotent deletion lifecycle', async () => {
+      const createdSub = {
+        id: 101,
+        callback_url: 'https://partner.remitlend.io/webhooks',
+        event_types: ['LoanRequested', 'LoanApproved', 'LoanRepaid'] as const,
+        secret: 'initial-secret-v1',
+        is_active: true,
+        created_at: new Date('2025-02-01T10:00:00.000Z'),
+        updated_at: new Date('2025-02-01T10:00:00.000Z'),
+      };
+
+      mockQuery
+        // 1. registerSubscription
+        .mockResolvedValueOnce({ rows: [createdSub], rowCount: 1 })
+        // 2. listSubscriptions (active present)
+        .mockResolvedValueOnce({ rows: [createdSub], rowCount: 1 })
+        // 3. deleteSubscription (first call succeeds)
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        // 4. deleteSubscription (second call returns false when already deleted)
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        // 5. listSubscriptions after deletion
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const service = new WebhookService();
+      const registered = await service.registerSubscription({
+        callbackUrl: createdSub.callback_url,
+        eventTypes: [...createdSub.event_types],
+        secret: createdSub.secret,
+      });
+
+      expect(registered.id).toBe(101);
+      expect(registered.isActive).toBe(true);
+      expect(registered.callbackUrl).toBe(createdSub.callback_url);
+      expect(registered.eventTypes).toEqual(['LoanRequested', 'LoanApproved', 'LoanRepaid']);
+
+      const listedBefore = await service.listSubscriptions();
+      expect(listedBefore).toHaveLength(1);
+      expect(listedBefore[0]?.id).toBe(101);
+
+      const firstDelete = await service.deleteSubscription(101);
+      expect(firstDelete).toBe(true);
+
+      const secondDelete = await service.deleteSubscription(101);
+      expect(secondDelete).toBe(false);
+
+      const listedAfter = await service.listSubscriptions();
+      expect(listedAfter).toEqual([]);
+    });
+
+    it('validates supported event types and filters out unsubscribed events deterministically', async () => {
+      for (const eventType of SUPPORTED_WEBHOOK_EVENT_TYPES) {
+        expect(WebhookService.isSupported(eventType)).toBe(true);
+      }
+      expect(WebhookService.isSupported('UnknownEvent')).toBe(false);
+      expect(WebhookService.isSupported('')).toBe(false);
+      expect(WebhookService.isSupported('loanapproved')).toBe(false);
+
+      const fetchMock = jest.fn<(...args: unknown[]) => Promise<{ ok: boolean; status: number }>>();
+      fetchMock.mockResolvedValue({ ok: true, status: 200 });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      // Subscription is only registered for LoanDefaulted; dispatching ScoreUpdated returns 0 matching rows
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const service = new WebhookService();
+      await service.dispatch({
+        eventId: 'evt-score-only',
+        eventType: 'ScoreUpdated',
+        loanId: undefined,
+        address: 'GUSER789',
+        ledger: 555,
+        ledgerClosedAt: new Date('2025-02-01T12:00:00.000Z'),
+        txHash: 'tx-score-555',
+        contractId: 'contract-score',
+        topics: ['ScoreUpdated'],
+        value: 'score-xdr',
+      });
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('event_types @> $1::jsonb'),
+        [JSON.stringify(['ScoreUpdated'])],
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('isolates subscription deletion during in-flight delivery without aborting remaining active subscribers', async () => {
+      const fetchMock = jest.fn<(...args: unknown[]) => Promise<{ ok: boolean; status: number }>>();
+      fetchMock.mockResolvedValue({ ok: true, status: 200 });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const service = new WebhookService();
+
+      // 1. deleteSubscription(1) called first while another worker prepares to dispatch
+      // 2. dispatch selects subscriptions
+      // 3. sub #1 delivery log insert fails with FK violation (23503) because sub #1 was deleted mid-flight,
+      //    and fallback retry insert also fails for deleted sub #1 (caught by top-level dispatch try/catch)
+      // 4. sub #2 delivery log insert succeeds
+      mockQuery
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, callback_url: 'https://deleted-mid-flight.example/hook', secret: 'sec-1' },
+            { id: 2, callback_url: 'https://surviving-subscriber.example/hook', secret: 'sec-2' },
+          ],
+        })
+        .mockRejectedValueOnce(
+          Object.assign(new Error('insert or update on table "webhook_deliveries" violates foreign key constraint'), {
+            code: '23503',
+          }),
+        )
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const deletedDuringFlight = await service.deleteSubscription(1);
+      expect(deletedDuringFlight).toBe(true);
+
+      await expect(
+        service.dispatch({
+          eventId: 'evt-concurrent-delete',
+          eventType: 'LoanApproved',
+          loanId: 88,
+          address: 'GBORROWER88',
+          ledger: 900,
+          ledgerClosedAt: new Date('2025-02-02T00:00:00.000Z'),
+          txHash: 'tx-concurrent-88',
+          contractId: 'contract-88',
+          topics: [],
+          value: 'val-88',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe('https://deleted-mid-flight.example/hook');
+      expect(fetchMock.mock.calls[1]?.[0]).toBe('https://surviving-subscriber.example/hook');
+    });
+
+    it('rotates subscription secrets and invalidates signatures computed with the previous secret', async () => {
+      const fixedNowMs = 1738454400000;
+      const fixedTimestampSec = Math.floor(fixedNowMs / 1000);
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(fixedNowMs);
+
+      const capturedHeaders: Record<string, string>[] = [];
+      const capturedBodies: string[] = [];
+      const fetchMock = jest.fn<(...args: unknown[]) => Promise<{ ok: boolean; status: number }>>();
+      fetchMock.mockImplementation(async (_url: unknown, init?: unknown) => {
+        const reqInit = init as { headers?: Record<string, string>; body?: string };
+        capturedHeaders.push({ ...(reqInit?.headers ?? {}) });
+        capturedBodies.push(reqInit?.body ?? '');
+        return { ok: true, status: 200 };
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const eventPayload = {
+        eventId: 'evt-secret-rotation',
+        eventType: 'LoanRepaid' as const,
+        loanId: 77,
+        address: 'GBORROWER77',
+        ledger: 777,
+        ledgerClosedAt: new Date('2025-02-02T00:00:00.000Z'),
+        txHash: 'tx-rotate-77',
+        contractId: 'contract-77',
+        topics: ['LoanRepaid'],
+        value: 'val-77',
+      };
+
+      // Phase 1: Dispatch with old secret ('secret-v1')
+      // Phase 2: Dispatch after secret rotation ('secret-v2')
+      // Phase 3: Dispatch after secret removal (null)
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [{ id: 50, callback_url: 'https://rotate.example/webhook', secret: 'secret-v1' }],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{ id: 50, callback_url: 'https://rotate.example/webhook', secret: 'secret-v2' }],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{ id: 50, callback_url: 'https://rotate.example/webhook', secret: null }],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const service = new WebhookService();
+      await service.dispatch(eventPayload);
+      await service.dispatch(eventPayload);
+      await service.dispatch(eventPayload);
+
+      expect(capturedHeaders).toHaveLength(3);
+
+      const sigV1 = capturedHeaders[0]?.['x-remitlend-signature'];
+      const sigV2 = capturedHeaders[1]?.['x-remitlend-signature'];
+      const sigRemoved = capturedHeaders[2]?.['x-remitlend-signature'];
+
+      const expectedV1 = `t=${fixedTimestampSec},v1=${crypto
+        .createHmac('sha256', 'secret-v1')
+        .update(`${fixedTimestampSec}.${capturedBodies[0]}`)
+        .digest('hex')}`;
+      const expectedV2 = `t=${fixedTimestampSec},v1=${crypto
+        .createHmac('sha256', 'secret-v2')
+        .update(`${fixedTimestampSec}.${capturedBodies[1]}`)
+        .digest('hex')}`;
+
+      expect(sigV1).toBe(expectedV1);
+      expect(sigV2).toBe(expectedV2);
+      expect(sigV1).not.toBe(sigV2);
+      expect(sigRemoved).toBeUndefined();
+
+      dateSpy.mockRestore();
     });
   });
 });
