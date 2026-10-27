@@ -437,5 +437,143 @@ describe('WebhookRetryProcessor', () => {
       expect(updateCall[1]?.[1]).toBe('fetch failed'); // last_error
       expect(updateCall[1]?.[2]).toEqual(new Date(now + getRetryDelayMs(1))); // next_retry_at
     });
+
+    it('dead-letters delivery on network error when max retry attempts are reached', async () => {
+      const fetchMock = jest.fn(async () => {
+        throw new Error('ECONNRESET: socket hang up');
+      }) as unknown as jest.MockedFunction<typeof fetch>;
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      // attemptCount = 3 -> newAttemptCount = 4 (MAX_RETRY_ATTEMPTS)
+      await WebhookService.retryWebhookDelivery(
+        42,
+        7,
+        'https://deadletter.example.com/webhook',
+        'dlq-secret',
+        'evt-dlq-net',
+        'LoanDefaulted',
+        { eventId: 'evt-dlq-net', eventType: 'LoanDefaulted', loanId: 99 },
+        3,
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const updateCall = mockQuery.mock.calls[0] as [string, unknown[]];
+      expect(updateCall[0]).toContain('UPDATE webhook_deliveries');
+      expect(updateCall[1]?.[0]).toBe(4); // final attempt_count = MAX_RETRY_ATTEMPTS
+      expect(updateCall[1]?.[1]).toBe('ECONNRESET: socket hang up');
+      expect(updateCall[1]?.[2]).toBeNull(); // next_retry_at cleared to NULL (dead-lettered)
+      expect(updateCall[1]?.[3]).toBeInstanceOf(Date); // updated_at
+      expect(updateCall[1]?.[4]).toBe(42); // delivery id
+    });
+
+    it('persists dead-letter metadata and exposes dead-lettered deliveries via getSubscriptionDeliveries', async () => {
+      const deadLetterRow = {
+        id: 88,
+        subscription_id: 12,
+        event_id: 'evt-dlq-502',
+        event_type: 'LoanRepaid',
+        attempt_count: 4,
+        last_status_code: 502,
+        last_error: 'Webhook returned status 502',
+        delivered_at: null,
+        created_at: new Date('2025-02-01T00:00:00.000Z'),
+        updated_at: new Date('2025-02-01T01:05:00.000Z'),
+      };
+
+      mockQuery.mockResolvedValueOnce({ rows: [deadLetterRow], rowCount: 1 });
+
+      const service = new WebhookService();
+      const deliveries = await service.getSubscriptionDeliveries(12, 25);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE subscription_id = $1'),
+        [12, 25],
+      );
+      expect(deliveries).toHaveLength(1);
+      expect(deliveries[0]).toMatchObject({
+        id: 88,
+        subscriptionId: 12,
+        eventId: 'evt-dlq-502',
+        eventType: 'LoanRepaid',
+        attemptCount: 4,
+        lastStatusCode: 502,
+        lastError: 'Webhook returned status 502',
+      });
+      expect(deliveries[0]?.deliveredAt).toBeUndefined();
+    });
+
+    it('replays a re-queued dead-letter delivery to completion and clears next_retry_at', async () => {
+      const fetchMock = jest.fn(async () => ({
+        ok: true,
+        status: 200,
+      })) as unknown as jest.MockedFunction<typeof fetch>;
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      // Simulate operator re-queueing delivery #88 (attempt_count reset to 1, next_retry_at <= now)
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: 88,
+              subscription_id: 12,
+              callback_url: 'https://recovered.example.com/webhook',
+              secret: 'replay-secret',
+              event_id: 'evt-dlq-502',
+              event_type: 'LoanRepaid',
+              payload: { eventId: 'evt-dlq-502', eventType: 'LoanRepaid', loanId: 12 },
+              attempt_count: 1,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      await WebhookService.processRetries();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const updateCall = mockQuery.mock.calls[1] as [string, unknown[]];
+      expect(updateCall[0]).toContain('delivered_at = $3');
+      expect(updateCall[0]).toContain('next_retry_at = NULL');
+      expect(updateCall[1]?.[0]).toBe(2); // attempt_count incremented to 2 on replay
+      expect(updateCall[1]?.[1]).toBe(200);
+      expect(updateCall[1]?.[2]).toBeInstanceOf(Date);
+      expect(updateCall[1]?.[4]).toBe(88);
+    });
+
+    it('releases inFlight lock and records job failure if post-retry queue depth refresh fails', async () => {
+      jest.useFakeTimers();
+      try {
+        const { refreshWebhookRetryQueueDepth } = (await import('../../middleware/metrics.js')) as {
+          refreshWebhookRetryQueueDepth: jest.Mock;
+        };
+        const { jobMetricsService } = await import('../jobMetricsService.js');
+
+        mockQuery.mockResolvedValue({ rows: [] });
+        refreshWebhookRetryQueueDepth
+          .mockRejectedValueOnce(new Error('metrics db connection lost'))
+          .mockResolvedValueOnce(undefined);
+
+        startWebhookRetryProcessor();
+
+        // Tick 1: refreshWebhookRetryQueueDepth rejects -> records failure and releases inFlight
+        await jest.advanceTimersByTimeAsync(10_000);
+        expect(jobMetricsService.recordFailure).toHaveBeenCalledWith(
+          'webhookRetryProcessor',
+          expect.any(Error),
+          expect.any(Number),
+        );
+
+        // Tick 2: because inFlight was released in finally, the next tick executes and succeeds
+        await jest.advanceTimersByTimeAsync(10_000);
+        expect(jobMetricsService.recordSuccess).toHaveBeenCalledWith(
+          'webhookRetryProcessor',
+          expect.any(Number),
+        );
+      } finally {
+        stopWebhookRetryProcessor();
+        jest.useRealTimers();
+      }
+    });
   });
 });
