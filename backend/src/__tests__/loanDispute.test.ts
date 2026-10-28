@@ -8,10 +8,15 @@ import { jest } from '@jest/globals';
 
 // ESM-compatible mocking
 const mockQuery = jest.fn<(...args: unknown[]) => Promise<unknown>>();
+// Run the transaction callback on the shared mock query, so a test observes
+// the same statement ordering a real transaction would produce.
+const mockWithTransaction = jest.fn(
+  async (fn: (client: { query: typeof mockQuery }) => Promise<unknown>) => fn({ query: mockQuery }),
+);
 jest.unstable_mockModule('../db/connection.js', () => ({
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
-  withTransaction: jest.fn(),
+  withTransaction: mockWithTransaction,
 }));
 jest.unstable_mockModule('../db/transaction.js', () => ({
   withTransaction: jest.fn(),
@@ -119,6 +124,7 @@ afterAll(() => {
 
 beforeEach(() => {
   mockReverseDefault.mockReset();
+  mockWithTransaction.mockClear();
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -147,7 +153,7 @@ describe('Loan Dispute/Appeal Mechanism', () => {
      *   requireLoanBorrowerAccess:
      *   [1] SELECT address FROM contract_events WHERE loan_id = 42  → TEST_PUBLIC_KEY ✓
      *
-     *   contestDefault:
+     *   contestDefault (inside withTransaction):
      *   [2] SELECT contract_events WHERE event_type='LoanDefaulted'  → found (address = borrower)
      *   [3] INSERT loan_disputes RETURNING id                    → disputeId
      *   [4] INSERT contract_events LoanDisputed
@@ -167,6 +173,22 @@ describe('Loan Dispute/Appeal Mechanism', () => {
     expect(res.body.success).toBe(true);
 
     disputeId = res.body.disputeId ?? disputeId;
+
+    // Both inserts must share one transaction, and the event must satisfy the
+    // NOT NULL columns on contract_events (#140).
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1);
+    const eventInsert = mockQuery.mock.calls.find(
+      (call) => typeof call[0] === 'string' && (call[0] as string).includes('LoanDisputed'),
+    );
+    expect(eventInsert).toBeDefined();
+    expect(eventInsert![0]).toContain('event_id');
+    expect(eventInsert![1]).toEqual([
+      expect.any(String),
+      String(LOAN_ID),
+      TEST_PUBLIC_KEY,
+      `dispute:${DISPUTE_ID}`,
+      process.env.LOAN_MANAGER_CONTRACT_ID || 'offchain_dispute',
+    ]);
   });
 
   it('should reject a contest when the defaulted loan belongs to another borrower', async () => {

@@ -104,6 +104,8 @@ const mockSubmitSignedTx =
   jest.fn<
     (signedTxXdr: string) => Promise<{ txHash: string; status: string; resultXdr?: string }>
   >();
+// Raw stroops, as the real service returns them.
+const mockGetPoolBalance = jest.fn<() => Promise<number>>().mockResolvedValue(100_000_000_000); // 10,000 tokens
 await jest.unstable_mockModule('../services/sorobanService.js', () => ({
   sorobanService: {
     buildRequestLoanTx: mockBuildRequestLoanTx,
@@ -114,6 +116,7 @@ await jest.unstable_mockModule('../services/sorobanService.js', () => ({
     buildExtendLoanTx: mockBuildExtendLoanTx,
     buildLiquidateTx: mockBuildLiquidateTx,
     submitSignedTx: mockSubmitSignedTx,
+    getPoolBalance: mockGetPoolBalance,
   },
 }));
 
@@ -261,6 +264,52 @@ describe('POST /api/loans/request', () => {
       .set(bearer(TEST_BORROWER))
       .send({ borrowerPublicKey: TEST_BORROWER });
     expect(response.status).toBe(400);
+  });
+
+  describe('pool liquidity pre-flight check (#139)', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    beforeEach(() => {
+      // The pre-flight check is skipped under NODE_ENV=test.
+      process.env.NODE_ENV = 'development';
+      mockGetPoolBalance.mockResolvedValue(100_000_000_000);
+    });
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
+      mockGetPoolBalance.mockReset();
+      mockGetPoolBalance.mockResolvedValue(100_000_000_000);
+    });
+
+    it('rejects a request larger than the pool balance measured in tokens', async () => {
+      // 1,000 stroops is 0.0001 tokens — far below the 1,000 token request.
+      mockGetPoolBalance.mockResolvedValueOnce(1_000);
+
+      const response = await request(app)
+        .post('/api/loans/request')
+        .set(bearer(TEST_BORROWER))
+        .send({ amount: 1000, borrowerPublicKey: TEST_BORROWER });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('0.0001 tokens');
+      expect(mockBuildRequestLoanTx).not.toHaveBeenCalled();
+    });
+
+    it('accepts a request covered by the pool balance', async () => {
+      mockGetPoolBalance.mockResolvedValueOnce(10_000_000_000); // 1,000 tokens
+      mockBuildRequestLoanTx.mockResolvedValueOnce({
+        unsignedTxXdr: 'AAAA...base64xdr',
+        networkPassphrase: 'Test SDF Network ; September 2015',
+      });
+
+      const response = await request(app)
+        .post('/api/loans/request')
+        .set(bearer(TEST_BORROWER))
+        .send({ amount: 1000, borrowerPublicKey: TEST_BORROWER });
+
+      expect(response.status).toBe(200);
+      expect(mockGetPoolBalance).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

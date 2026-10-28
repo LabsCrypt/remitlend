@@ -39,6 +39,7 @@ await jest.unstable_mockModule('../services/cacheService.js', () => ({
 await import('../db/connection.js');
 const { default: app } = await import('../app.js');
 const { generateJwtToken } = await import('../services/authService.js');
+const { buildPoolTransactionSchema } = await import('../schemas/poolSchemas.js');
 
 const TEST_WALLET = Keypair.random().publicKey();
 const OTHER_WALLET = Keypair.random().publicKey();
@@ -187,6 +188,32 @@ describe('Input Validation', () => {
       const response = await request(app).get('/api/history/');
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe('buildPoolTransactionSchema', () => {
+    // The deposit route previously stripped minSharesOut before it reached the
+    // controller, so the slippage bound was never validated (#142).
+    const baseDeposit = {
+      depositorPublicKey: TEST_WALLET,
+      token: OTHER_WALLET,
+      amount: 100,
+    };
+
+    it('accepts a deposit carrying minSharesOut', () => {
+      expect(
+        buildPoolTransactionSchema.safeParse({ ...baseDeposit, minSharesOut: 95 }).success,
+      ).toBe(true);
+    });
+
+    it('allows minSharesOut to be omitted', () => {
+      expect(buildPoolTransactionSchema.safeParse(baseDeposit).success).toBe(true);
+    });
+
+    it('rejects a negative minSharesOut', () => {
+      expect(
+        buildPoolTransactionSchema.safeParse({ ...baseDeposit, minSharesOut: -1 }).success,
+      ).toBe(false);
     });
   });
 });

@@ -118,6 +118,43 @@ describe('GET /api/score/:userId/breakdown', () => {
     expect(response.body.history).toHaveLength(3);
   });
 
+  it('aggregates the current score so a user without a scores row still gets their event stats', async () => {
+    mockedQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          current_score: 500,
+          total_loans: 2,
+          repaid_count: 1,
+          defaulted_count: 0,
+          total_repaid: 250,
+          on_time_count: 1,
+          late_count: 0,
+          avg_repayment_ledgers: 8640,
+        },
+      ],
+      command: 'SELECT',
+      rowCount: 1,
+      oid: 0,
+      fields: [],
+    });
+    mockedQuery.mockResolvedValueOnce({
+      rows: [{ event_type: 'LoanRepaid', ledger_closed_at: '2026-03-01T10:00:00Z' }],
+      command: 'SELECT',
+      rowCount: 1,
+      oid: 0,
+      fields: [],
+    });
+
+    await request(app).get('/api/score/newuser/breakdown').set(bearer('newuser'));
+
+    // Without an aggregate the CTE yields 0 rows and the CROSS JOINs below
+    // discard every computed statistic (#141).
+    const breakdownSql = String(mockedQuery.mock.calls[0][0]);
+    expect(breakdownSql).toMatch(
+      /current_score_cte AS \(\s*SELECT COALESCE\(MAX\(current_score\), 500\)/,
+    );
+  });
+
   it('should return default values for a user with no history', async () => {
     // Mock empty breakdown and history queries
     mockedQuery

@@ -89,6 +89,24 @@ describe('SorobanService token amounts are scaled to stroops (10^7)', () => {
 
     expect(functionName).toBe('deposit');
     expect(scValToNative(args[2])).toBe(125_000_000n);
+    expect(scValToNative(args[3])).toBe(0n);
+  });
+
+  it('buildDepositTx scales minSharesOut to stroops', async () => {
+    const { functionName, args } = await invokeArgsFor(() =>
+      sorobanService.buildDepositTx(userAddress, tokenAddress, 12.5, 95),
+    );
+
+    expect(functionName).toBe('deposit');
+    expect(scValToNative(args[3])).toBe(950_000_000n);
+  });
+
+  it('buildDepositTx accepts a fractional minSharesOut instead of throwing', async () => {
+    const { args } = await invokeArgsFor(() =>
+      sorobanService.buildDepositTx(userAddress, tokenAddress, 12.5, 95.5),
+    );
+
+    expect(scValToNative(args[3])).toBe(955_000_000n);
   });
 
   it('buildRefinanceLoanTx scales the new amount to stroops', async () => {
