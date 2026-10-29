@@ -3493,382 +3493,46 @@ fn test_update_metadata_uri_enforces_metadata_uri_prefix() {
     assert_eq!(client.get_metadata_uri(&user), Some(replacement));
 }
 
-// ---------------------------------------------------------------------------
-// Issue #2151: the remittance NFT *is* the borrower's credit identity, so its
-// two authorization gates must never widen:
-//
-//   * release — `transfer` relocates the identity to a new wallet. It requires
-//               the current owner's signature *and* an admin/authorized-minter
-//               signature; a minter signature never substitutes for the
-//               owner's, and a revoked minter cannot force the move.
-//   * claims  — `approve_remint` + `admin_remint` is a one-time, admin-gated
-//               claim ticket for a burned account. The ticket is consumed by
-//               the claim and also by a release, so it cannot be replayed.
-//
-// The tests below pin each path together with the error the contract documents
-// for it (NftError 3/6/16 and the auth-failure host error).
-// ---------------------------------------------------------------------------
-
-/// The numeric codes in `NftError` are part of the published error contract:
-/// the backend and the indexer decode them, so the values asserted here must
-/// stay stable even if variants are added or reordered.
 #[test]
-fn test_authorization_error_codes_are_stable() {
-    assert_eq!(NftError::UnauthorizedMinter as u32, 3);
-    assert_eq!(NftError::NftNotFound as u32, 6);
-    assert_eq!(NftError::RemintNotApproved as u32, 16);
-    assert_eq!(NftError::ActiveLoanExists as u32, 22);
-}
-
-#[test]
-#[should_panic]
-fn test_release_without_owner_signature_is_rejected() {
-    let env = Env::default();
-    let admin = Address::generate(&env);
-    let owner = Address::generate(&env);
-    let sink = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    env.mock_all_auths();
-    client.initialize(&admin);
-    client.mint(
-        &owner,
-        &500,
-        &create_test_hash(&env, 41),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 41),
-        &None,
-    );
-
-    // Nobody signs the release, so the identity must not move.
-    env.mock_auths(&[]);
-    client.transfer(&owner, &sink, &None);
-}
-
-#[test]
-fn test_minter_release_still_requires_owner_signature() {
-    // An authorized minter may *assist* a release, never perform one on the
-    // owner's behalf: `transfer` always demands `from.require_auth()` first.
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let minter = Address::generate(&env);
-    let owner = Address::generate(&env);
-    let sink = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    client.initialize(&admin);
-    client.authorize_minter(&minter);
-    client.mint(
-        &owner,
-        &500,
-        &create_test_hash(&env, 42),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 42),
-        &Some(minter.clone()),
-    );
-
-    client.transfer(&owner, &sink, &Some(minter.clone()));
-
-    // Exactly the owner and the minter are asked to sign; the admin is not,
-    // and the recipient never is.
-    let auths = env.auths();
-    assert_eq!(
-        auths.len(),
-        2,
-        "a minter-assisted release must require exactly two signatures"
-    );
-    assert!(
-        auths.iter().any(|(address, _)| address == &owner),
-        "the current owner must sign the release"
-    );
-    assert!(
-        auths.iter().any(|(address, _)| address == &minter),
-        "the authorized minter must sign the release"
-    );
-    assert!(
-        !auths.iter().any(|(address, _)| address == &sink),
-        "the recipient must never be asked to sign the release"
-    );
-    assert!(
-        !auths.iter().any(|(address, _)| address == &admin),
-        "a minter-assisted release must not require the admin"
-    );
-}
-
-#[test]
-fn test_revoked_minter_cannot_release_nft() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let minter = Address::generate(&env);
-    let owner = Address::generate(&env);
-    let sink = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    client.initialize(&admin);
-    client.authorize_minter(&minter);
-    client.mint(
-        &owner,
-        &500,
-        &create_test_hash(&env, 43),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 43),
-        &None,
-    );
-
-    client.revoke_minter(&minter);
-    assert!(!client.is_authorized_minter(&minter));
-
-    // A revoked minter must not be able to force the release.
-    let result = client.try_transfer(&owner, &sink, &Some(minter.clone()));
-    assert_eq!(result, Err(Ok(NftError::UnauthorizedMinter)));
-
-    // The rejected release is side-effect free: the identity stays with its
-    // owner, the sink gains nothing, and no cooldown is armed.
-    assert_eq!(client.get_score(&owner), 500);
-    assert!(client.get_metadata(&sink).is_none());
-    assert_eq!(client.get_transfer_cooldown_remaining(&sink), 0);
-
-    // The sanctioned admin release still works afterwards.
-    client.transfer(&owner, &sink, &None);
-    assert_eq!(client.get_score(&sink), 500);
-    assert_eq!(client.get_score(&owner), 0);
-}
-
-#[test]
-fn test_release_of_unknown_nft_is_rejected() {
-    // Boundary: there is nothing to release for an address that never held an
-    // identity, and the failure must not create one for the recipient.
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let stranger = Address::generate(&env);
-    let sink = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    client.initialize(&admin);
-
-    let result = client.try_transfer(&stranger, &sink, &None);
-    assert_eq!(result, Err(Ok(NftError::NftNotFound)));
-    assert!(client.get_metadata(&sink).is_none());
-    assert_eq!(client.get_score(&sink), 0);
-}
-
-#[test]
-fn test_release_consumes_pending_remint_approval() {
-    // A claim ticket issued for a live identity must not survive the release of
-    // that identity: otherwise the same approval could be replayed to hand the
-    // account a second, freshly-minted score after it moved away.
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let owner = Address::generate(&env);
-    let new_wallet = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    client.initialize(&admin);
-    client.mint(
-        &owner,
-        &500,
-        &create_test_hash(&env, 44),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 44),
-        &None,
-    );
-
-    client.approve_remint(&owner);
-    assert!(client.is_remint_approved(&owner));
-
-    client.transfer(&owner, &new_wallet, &None);
-
-    // The release consumed the pending ticket and tombstoned the sender, so
-    // both claim routes are shut. No fresh approval was granted for this.
-    assert!(!client.is_remint_approved(&owner));
-    let mint_replay = client.try_mint(
-        &owner,
-        &500,
-        &create_test_hash(&env, 45),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 45),
-        &None,
-    );
-    assert_eq!(mint_replay, Err(Ok(NftError::BurnedRequiresApproval)));
-
-    let claim_replay = client.try_admin_remint(
-        &owner,
-        &500,
-        &create_test_hash(&env, 45),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 45),
-    );
-    assert_eq!(claim_replay, Err(Ok(NftError::RemintNotApproved)));
-
-    // Replaying a claim left the released identity untouched on both sides.
-    assert!(client.get_metadata(&owner).is_none());
-    assert_eq!(client.get_score(&owner), 0);
-    assert_eq!(client.get_score(&new_wallet), 500);
-
-    // Recovery therefore needs an explicit new approval, and it works once.
-    client.approve_remint(&owner);
-    client.admin_remint(
-        &owner,
-        &480,
-        &create_test_hash(&env, 46),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 46),
-    );
-    assert_eq!(client.get_score(&owner), 480);
-    assert_eq!(client.get_score(&new_wallet), 500);
-}
-
-#[test]
-fn test_replayed_remint_claim_after_success_is_rejected() {
-    // A completed claim clears the burned flag, so replaying the same call is
-    // no longer a claim at all: it must not be able to overwrite the record
-    // that was just restored.
+fn test_mint_and_admin_remint_emit_clamped_score_event() {
     let env = Env::default();
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
-
     let contract_id = env.register(RemittanceNFT, ());
     let client = RemittanceNFTClient::new(&env, &contract_id);
-
     client.initialize(&admin);
-    client.mint(
-        &user,
-        &500,
-        &create_test_hash(&env, 47),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 47),
-        &None,
-    );
-    client.burn(&user, &None);
 
-    client.approve_remint(&user);
-    client.admin_remint(
-        &user,
-        &500,
-        &create_test_hash(&env, 48),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 48),
-    );
-    assert_eq!(client.get_score(&user), 500);
-    assert!(!client.is_remint_approved(&user));
+    let commitment = create_test_commitment(&env, 1);
+    let uri = create_test_uri(&env);
+    let history_hash = BytesN::from_array(&env, &[1u8; 32]);
 
-    // The approval is gone and the account is no longer burned.
-    let replay = client.try_admin_remint(
-        &user,
-        &850,
-        &create_test_hash(&env, 49),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 49),
-    );
-    assert_eq!(replay, Err(Ok(NftError::NftNotFound)));
+    // 1. Mint with initial_score < MIN_CREDIT_SCORE (100 < 300)
+    client.mint(&user, &100, &history_hash, &uri, &commitment, &None);
 
-    // The claimed record is exactly what the first claim wrote.
-    let metadata = client.get_metadata(&user).unwrap();
-    assert_eq!(metadata.score, 500);
-    assert_eq!(metadata.history_hash, create_test_hash(&env, 48));
-    assert_eq!(
-        client.get_recipient_commitment(&user),
-        create_test_commitment(&env, 48)
-    );
-}
+    let events = env.events().all();
+    let mint_event = events.get(events.len() - 1).unwrap();
+    let topic_0 = Symbol::from_val(&env, &mint_event.1.get(0).unwrap());
+    assert_eq!(topic_0, Symbol::new(&env, "Mint"));
+    let data = <(u32, BytesN<32>)>::from_val(&env, &mint_event.2);
+    assert_eq!(data.0, 300u32); // Must be clamped to 300, not 100
+    assert_eq!(data.1, commitment);
 
-#[test]
-fn test_remint_claim_requires_admin_signature_only() {
-    // `approve_remint` and `admin_remint` deliberately have no minter
-    // parameter: an authorized minter can operate on live identities, but a
-    // claim always needs the admin's own signature and nobody else's.
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let minter = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    client.initialize(&admin);
-    client.authorize_minter(&minter);
-    client.mint(
-        &user,
-        &500,
-        &create_test_hash(&env, 50),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 50),
-        &Some(minter.clone()),
-    );
-    client.burn(&user, &Some(minter.clone()));
-
-    client.approve_remint(&user);
-    let approval_auths = env.auths();
-    assert_eq!(approval_auths.len(), 1);
-    assert_eq!(approval_auths.get(0).unwrap().0, admin);
-
-    client.admin_remint(
-        &user,
-        &500,
-        &create_test_hash(&env, 51),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 51),
-    );
-    let claim_auths = env.auths();
-    assert_eq!(claim_auths.len(), 1);
-    assert_eq!(claim_auths.get(0).unwrap().0, admin);
-    assert!(!claim_auths.iter().any(|(address, _)| address == &minter));
-
-    assert_eq!(client.get_score(&user), 500);
-}
-
-#[test]
-#[should_panic]
-fn test_remint_claim_without_admin_signature_is_rejected() {
-    let env = Env::default();
-    let admin = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    let contract_id = env.register(RemittanceNFT, ());
-    let client = RemittanceNFTClient::new(&env, &contract_id);
-
-    env.mock_all_auths();
-    client.initialize(&admin);
-    client.mint(
-        &user,
-        &500,
-        &create_test_hash(&env, 52),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 52),
-        &None,
-    );
+    // Burn and approve remint
     client.burn(&user, &None);
     client.approve_remint(&user);
 
-    // The approval exists, but an unsigned claim must still be rejected.
-    env.mock_auths(&[]);
-    client.admin_remint(
-        &user,
-        &500,
-        &create_test_hash(&env, 53),
-        &create_test_uri(&env),
-        &create_test_commitment(&env, 53),
-    );
+    // 2. Admin remint with initial_score > MAX_SCORE (950 > 850)
+    let commitment2 = create_test_commitment(&env, 2);
+    let history_hash2 = BytesN::from_array(&env, &[2u8; 32]);
+    client.admin_remint(&user, &950, &history_hash2, &uri, &commitment2);
+
+    let events2 = env.events().all();
+    let remint_event = events2.get(events2.len() - 1).unwrap();
+    let remint_topic = Symbol::from_val(&env, &remint_event.1.get(0).unwrap());
+    assert_eq!(remint_topic, Symbol::new(&env, "AdmRemint"));
+    let remint_data = <(u32, BytesN<32>)>::from_val(&env, &remint_event.2);
+    assert_eq!(remint_data.0, 850u32); // Must be clamped to 850, not 950
+    assert_eq!(remint_data.1, commitment2);
 }

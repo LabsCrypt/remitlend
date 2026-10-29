@@ -39,6 +39,7 @@ await jest.unstable_mockModule('../services/cacheService.js', () => ({
 await import('../db/connection.js');
 const { default: app } = await import('../app.js');
 const { generateJwtToken } = await import('../services/authService.js');
+const { buildPoolTransactionSchema } = await import('../schemas/poolSchemas.js');
 
 const TEST_WALLET = Keypair.random().publicKey();
 const OTHER_WALLET = Keypair.random().publicKey();
@@ -63,6 +64,18 @@ describe('Input Validation', () => {
         .post('/api/simulate')
         .set('Authorization', authHeader)
         .send({ amount: 500 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+    });
+
+    it('should accept the maximum supported amount', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ current_score: 500 }] });
+
+      const response = await request(app)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
+        .send({ amount: 1000000 });
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
@@ -97,6 +110,29 @@ describe('Input Validation', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.success).toBe(false);
+    });
+
+    it('should reject unsupported operation fields', async () => {
+      const response = await request(app)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
+        .send({ amount: 500, operation: 'unsupported' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.body.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'body' })]),
+      );
+    });
+
+    it('should reject a request body larger than the configured JSON limit', async () => {
+      const response = await request(app)
+        .post('/api/simulate')
+        .set('Authorization', authHeader)
+        .send({ amount: 500, extra: 'x'.repeat(101 * 1024) });
+
+      expect(response.status).toBe(413);
+      expect(response.body.message).toBe('Request payload too large');
     });
 
     it('should reject zero amount', async () => {
@@ -152,6 +188,32 @@ describe('Input Validation', () => {
       const response = await request(app).get('/api/history/');
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe('buildPoolTransactionSchema', () => {
+    // The deposit route previously stripped minSharesOut before it reached the
+    // controller, so the slippage bound was never validated (#142).
+    const baseDeposit = {
+      depositorPublicKey: TEST_WALLET,
+      token: OTHER_WALLET,
+      amount: 100,
+    };
+
+    it('accepts a deposit carrying minSharesOut', () => {
+      expect(
+        buildPoolTransactionSchema.safeParse({ ...baseDeposit, minSharesOut: 95 }).success,
+      ).toBe(true);
+    });
+
+    it('allows minSharesOut to be omitted', () => {
+      expect(buildPoolTransactionSchema.safeParse(baseDeposit).success).toBe(true);
+    });
+
+    it('rejects a negative minSharesOut', () => {
+      expect(
+        buildPoolTransactionSchema.safeParse({ ...baseDeposit, minSharesOut: -1 }).success,
+      ).toBe(false);
     });
   });
 });

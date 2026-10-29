@@ -1,17 +1,14 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const nextJest = require("next/jest");
-
-const createJestConfig = nextJest({
-  dir: "./",
-});
-
-const customJestConfig = {
-  setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
+module.exports = {
+  preset: "ts-jest",
   testEnvironment: "jest-environment-jsdom",
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
+    "^(\\.{1,2}/.*)\\.js$": "$1",
   },
   testPathIgnorePatterns: ["<rootDir>/e2e/", "<rootDir>/node_modules/"],
+  transform: {
+    "^.+\\.(ts|tsx|js|jsx)$": "ts-jest",
+  },
 };
-
-module.exports = createJestConfig(customJestConfig);

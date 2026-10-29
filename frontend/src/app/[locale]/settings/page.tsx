@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useState, useTransition, type KeyboardEvent, type ChangeEvent } from "react";
 import { useLocale } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -567,18 +567,18 @@ function DisplaySection() {
     { code: "tl", label: "Tagalog" },
   ];
 
-  const [isPending, startTransition] = useTransition();
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
+  const [isPending, startTransition] = useTransition();
 
-  const handleLanguageChange = (event: ChangeEvent<HTMLSelectElement>) => {
+  const onLocaleSelect = (event: ChangeEvent<HTMLSelectElement>) => {
     const nextLocale = event.target.value;
-    startTransition(() => {
-      const segments = pathname.split("/");
-      segments[1] = nextLocale;
-      router.replace(segments.join("/"));
-    });
+    if (!LANGUAGES.some((language) => language.code === nextLocale)) return;
+
+    const segments = pathname.split("/");
+    segments[1] = nextLocale;
+    startTransition(() => router.replace(segments.join("/")));
   };
 
   const theme = useThemeStore((s) => s.theme);
@@ -635,10 +635,9 @@ function DisplaySection() {
             Language
           </label>
           <select
-            id="settings-language-select"
             value={locale}
+            onChange={onLocaleSelect}
             disabled={isPending}
-            onChange={handleLanguageChange}
             className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
           >
             {LANGUAGES.map((l) => (

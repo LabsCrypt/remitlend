@@ -81,7 +81,9 @@
     "activity": "Aktibidad",
     "notifications": "Mga Notification",
     "liquidations": "Mga Liquidasyon",
-    "adminDisputes": "Mga Dispute"
+    "adminDisputes": "Mga Dispute",
+    "lend": "Magpautang",
+    "profile": "Aking Profile"
   },
   "Loans": {
     "title": "Mga Loan",

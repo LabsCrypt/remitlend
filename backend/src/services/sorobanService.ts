@@ -311,7 +311,9 @@ class SorobanService {
       type: 'address',
     });
     const amountScVal = nativeToScVal(toStroops(amount.toString()), { type: 'i128' });
-    const minSharesOutScVal = nativeToScVal(BigInt(minSharesOut), { type: 'i128' });
+    // Shares are denominated in 7-decimal stroop units on-chain, exactly like
+    // the deposited amount, so the slippage bound has to be scaled too (#142).
+    const minSharesOutScVal = nativeToScVal(toStroops(minSharesOut.toString()), { type: 'i128' });
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,

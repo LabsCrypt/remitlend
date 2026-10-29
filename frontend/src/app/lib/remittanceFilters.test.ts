@@ -83,6 +83,153 @@ describe("normalizeRemittanceFilters", () => {
       // The API rejects an invalid date with a 400, which would blank the list.
       expect(normalizeRemittanceFilters(input({ dateFrom: "not-a-date" }))).toEqual({});
     });
+
+    describe("timezone and calendar boundaries", () => {
+      it("handles leap day correctly", () => {
+        // 2024 is a leap year
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2024-02-29" }))).toEqual({
+          from: "2024-02-29T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "2024-02-29" }))).toEqual({
+          to: "2024-02-29T23:59:59.999Z",
+        });
+      });
+
+      it("handles year boundary (Dec 31 to Jan 1)", () => {
+        const { from, to } = normalizeRemittanceFilters(
+          input({ dateFrom: "2025-12-31", dateTo: "2026-01-01" }),
+        );
+        expect(from).toBe("2025-12-31T00:00:00.000Z");
+        expect(to).toBe("2026-01-01T23:59:59.999Z");
+      });
+
+      it("handles month boundaries with different day counts", () => {
+        // April has 30 days, May has 31
+        expect(normalizeRemittanceFilters(input({ dateTo: "2026-04-30" }))).toEqual({
+          to: "2026-04-30T23:59:59.999Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "2026-05-31" }))).toEqual({
+          to: "2026-05-31T23:59:59.999Z",
+        });
+      });
+
+      it("handles DST spring forward boundary (2026-03-08 in US)", () => {
+        // When DST starts, the day has 23 hours in local time but 24 in UTC
+        // The implementation uses UTC so this should not affect the result
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2026-03-08" }))).toEqual({
+          from: "2026-03-08T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "2026-03-08" }))).toEqual({
+          to: "2026-03-08T23:59:59.999Z",
+        });
+      });
+
+      it("handles DST fall back boundary (2026-11-01 in US)", () => {
+        // When DST ends, the day has 25 hours in local time but 24 in UTC
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2026-11-01" }))).toEqual({
+          from: "2026-11-01T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "2026-11-01" }))).toEqual({
+          to: "2026-11-01T23:59:59.999Z",
+        });
+      });
+
+      it("produces chronologically ordered bounds when from > to", () => {
+        // The implementation doesn't validate order; it just normalizes each bound
+        const { from, to } = normalizeRemittanceFilters(
+          input({ dateFrom: "2026-01-20", dateTo: "2026-01-10" }),
+        );
+        expect(from).toBe("2026-01-20T00:00:00.000Z");
+        expect(to).toBe("2026-01-10T23:59:59.999Z");
+        // Resulting range is empty (from > to) which is valid API behavior
+        expect(Date.parse(from!)).toBeGreaterThan(Date.parse(to!));
+      });
+    });
+
+    describe("invalid date handling", () => {
+      it("accepts YYYY-MM-DD format even with invalid calendar values (regex match only)", () => {
+        // The implementation validates format via regex, not calendar validity.
+        // These match the regex so they get the suffix appended.
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2026-13-01" }))).toEqual({
+          from: "2026-13-01T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "2026-13-01" }))).toEqual({
+          to: "2026-13-01T23:59:59.999Z",
+        });
+      });
+
+      it("accepts YYYY-MM-DD format with invalid day (32)", () => {
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2026-01-32" }))).toEqual({
+          from: "2026-01-32T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "2026-01-32" }))).toEqual({
+          to: "2026-01-32T23:59:59.999Z",
+        });
+      });
+
+      it("accepts YYYY-MM-DD format with Feb 30", () => {
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2026-02-30" }))).toEqual({
+          from: "2026-02-30T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2024-02-30" }))).toEqual({
+          from: "2024-02-30T00:00:00.000Z",
+        });
+      });
+
+      it("accepts YYYY-MM-DD format with Feb 29 in non-leap year", () => {
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2026-02-29" }))).toEqual({
+          from: "2026-02-29T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2025-02-29" }))).toEqual({
+          from: "2025-02-29T00:00:00.000Z",
+        });
+      });
+
+      it("parses lenient date formats that Date.parse accepts", () => {
+        // Date.parse in Node.js accepts "2026-1-1" (missing zero padding)
+        // These don't match ISO_DATE_ONLY regex, so Date.parse is used
+        // and since it returns a valid timestamp, they pass through
+        expect(normalizeRemittanceFilters(input({ dateFrom: "2026-1-1" }))).toEqual({
+          from: "2026-1-1",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "2026-01-1" }))).toEqual({
+          to: "2026-01-1",
+        });
+      });
+
+      it("drops date with time component but invalid timezone offset", () => {
+        // These don't match regex, Date.parse returns NaN for invalid offset
+        expect(
+          normalizeRemittanceFilters(input({ dateFrom: "2026-01-15T12:00:00+99:00" })),
+        ).toEqual({});
+        expect(
+          normalizeRemittanceFilters(input({ dateFrom: "2026-01-15T12:00:00-99:00" })),
+        ).toEqual({});
+      });
+
+      it("passes through date with nanosecond precision (exceeds JS Date) since regex doesn't match", () => {
+        // Doesn't match ISO_DATE_ONLY, Date.parse handles it (may truncate)
+        expect(
+          normalizeRemittanceFilters(input({ dateFrom: "2026-01-15T12:00:00.123456789Z" })),
+        ).toEqual({
+          from: "2026-01-15T12:00:00.123456789Z",
+        });
+      });
+
+      it("handles whitespace around date strings", () => {
+        expect(normalizeRemittanceFilters(input({ dateFrom: "  2026-01-15  " }))).toEqual({
+          from: "2026-01-15T00:00:00.000Z",
+        });
+        expect(normalizeRemittanceFilters(input({ dateTo: "\t2026-01-15\n" }))).toEqual({
+          to: "2026-01-15T23:59:59.999Z",
+        });
+      });
+
+      it("drops empty string after trim", () => {
+        expect(normalizeRemittanceFilters(input({ dateFrom: "   " }))).toEqual({});
+        expect(normalizeRemittanceFilters(input({ dateTo: "\t\n" }))).toEqual({});
+      });
+    });
   });
 
   describe("amount bounds", () => {

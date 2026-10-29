@@ -691,7 +691,7 @@ impl RemittanceNFT {
         Self::bump_persistent_ttl(&env, &metadata_key);
         env.events().publish(
             (symbol_short!("Mint"), user),
-            (initial_score, recipient_commitment),
+            (metadata.score, recipient_commitment),
         );
 
         Ok(())
@@ -786,7 +786,7 @@ impl RemittanceNFT {
         // Emit a distinct AdminRemint event — auditably separate from Mint events.
         env.events().publish(
             (symbol_short!("AdmRemint"), user.clone()),
-            (initial_score, recipient_commitment),
+            (metadata.score, recipient_commitment),
         );
 
         Ok(())
@@ -1429,7 +1429,13 @@ impl RemittanceNFT {
             return Vec::new(&env);
         }
         let mut page = Vec::new(&env);
-        let end = (offset + limit).min(len);
+        // `offset + limit` is not safe here: contract Wasm is built with
+        // `overflow-checks = true` (contracts/Cargo.toml), so any offset above
+        // zero combined with a large limit (e.g. offset = 1, limit = u32::MAX)
+        // traps the whole call. Saturate first, THEN clamp to `len`, so a
+        // saturated u32::MAX still resolves to the real available tail instead
+        // of being used as an oversized range bound.
+        let end = offset.saturating_add(limit).min(len);
         for idx in offset..end {
             page.push_back(history.get(idx).unwrap());
         }

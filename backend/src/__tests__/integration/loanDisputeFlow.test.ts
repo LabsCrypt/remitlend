@@ -8,15 +8,20 @@ const mockQuery = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockNotifyAdmins = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockCreateNotification = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 
+// Run the transaction callback on the shared mock query, matching the shape a
+// real `withTransaction` gives its callback.
+const mockWithTransaction = jest.fn(
+  async (fn: (client: { query: typeof mockQuery }) => Promise<unknown>) => fn({ query: mockQuery }),
+);
 jest.unstable_mockModule('../../db/connection.ts', () => ({
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
-  withTransaction: jest.fn(),
+  withTransaction: mockWithTransaction,
 }));
 jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
-  withTransaction: jest.fn(),
+  withTransaction: mockWithTransaction,
 }));
 jest.unstable_mockModule('../../db/transaction.js', () => ({
   withTransaction: jest.fn(),
@@ -175,6 +180,16 @@ describe('loan dispute resolution integration flow', () => {
         [
           expect.stringContaining('INSERT INTO loan_disputes'),
           [String(LOAN_ID), TEST_PUBLIC_KEY, 'Indexer lag caused an incorrect default event.'],
+        ],
+        [
+          expect.stringContaining('LoanDisputed'),
+          [
+            expect.any(String),
+            String(LOAN_ID),
+            TEST_PUBLIC_KEY,
+            `dispute:${DISPUTE_ID}`,
+            expect.any(String),
+          ],
         ],
         [
           expect.stringContaining("UPDATE loan_disputes SET status = 'resolved'"),

@@ -81,7 +81,9 @@
     "activity": "Actividad",
     "notifications": "Notificaciones",
     "liquidations": "Liquidaciones",
-    "adminDisputes": "Disputas"
+    "adminDisputes": "Disputas",
+    "lend": "Prestar",
+    "profile": "Perfil"
   },
   "Loans": {
     "title": "Préstamos",

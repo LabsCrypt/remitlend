@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { query } from '../db/connection.js';
+import { query, withTransaction } from '../db/connection.js';
 import { withStellarAndDbTransaction } from '../db/transaction.js';
 import { AppError } from '../errors/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -12,7 +13,7 @@ import logger from '../utils/logger.js';
 import { cacheService } from '../services/cacheService.js';
 import { notificationService } from '../services/notificationService.js';
 import { invalidateOnRepay, invalidateOnLoanRequest } from '../utils/cacheKeys.js';
-import { roundToCents } from '../money/decimal.js';
+import { fromStroops, roundToCents, toStroops } from '../money/decimal.js';
 import {
   parseStroopAmount,
   remainingPrincipal,
@@ -189,18 +190,28 @@ export const contestDefault = asyncHandler(
       throw AppError.forbidden('You are not the borrower of this loan');
     }
 
-    // Insert dispute record and return disputeId
-    const disputeResult = await query(
-      `INSERT INTO loan_disputes (loan_id, borrower, reason, status) VALUES ($1, $2, $3, 'open') RETURNING id`,
-      [loanId, borrower, reason],
-    );
+    // The dispute row and its marker event must land together: writing the
+    // dispute first left an orphaned `loan_disputes` row behind when the event
+    // insert failed (#140).
+    //
+    // `contract_events` declares event_id, ledger, tx_hash and contract_id as
+    // NOT NULL, so this synthetic off-chain marker has to supply all of them
+    // (same shape as the admin dispute endpoints).
+    const contractId = process.env.LOAN_MANAGER_CONTRACT_ID || 'offchain_dispute';
+    const disputeRow = await withTransaction(async (client) => {
+      const disputeResult = await client.query(
+        `INSERT INTO loan_disputes (loan_id, borrower, reason, status) VALUES ($1, $2, $3, 'open') RETURNING id`,
+        [loanId, borrower, reason],
+      );
+      const disputeId = disputeResult.rows[0].id as number;
 
-    // Optionally: update loan status to 'disputed' in your loan status tracking (if applicable)
-    // If you have a loan status table/column, update it here. If only events, you may want to insert a new event:
-    await query(
-      `INSERT INTO contract_events (loan_id, address, event_type, amount, ledger, ledger_closed_at) VALUES ($1, $2, 'LoanDisputed', NULL, NULL, NOW())`,
-      [loanId, borrower],
-    );
+      await client.query(
+        `INSERT INTO contract_events (event_id, loan_id, address, event_type, amount, ledger, ledger_closed_at, tx_hash, contract_id) VALUES ($1, $2, $3, 'LoanDisputed', NULL, 0, NOW(), $4, $5)`,
+        [randomUUID(), loanId, borrower, `dispute:${disputeId}`, contractId],
+      );
+
+      return { disputeId };
+    });
 
     logger.withContext().info('Loan default contested', { loanId, borrower, reason });
 
@@ -214,7 +225,7 @@ export const contestDefault = asyncHandler(
 
     res.json({
       success: true,
-      disputeId: disputeResult.rows[0].id,
+      disputeId: disputeRow.disputeId,
       message: 'Loan default contested. Admins will review your dispute.',
     });
   },
@@ -856,6 +867,9 @@ export const getLoanAmortizationSchedule = asyncHandler(async (req: Request, res
   });
 });
 
+/** Format stroops as a token amount without trailing settlement zeros. */
+const formatTokenAmount = (stroops: bigint): string => fromStroops(stroops).replace(/\.?0+$/, '');
+
 /**
  * POST /api/loans/request
  */
@@ -881,12 +895,18 @@ export const requestLoan = asyncHandler(async (req: Request, res: Response) => {
     typeof (sorobanService as unknown as { getPoolBalance?: () => Promise<number> })
       .getPoolBalance === 'function'
   ) {
-    const poolBalance = await (
+    const poolBalanceStroops = await (
       sorobanService as unknown as { getPoolBalance: () => Promise<number> }
     ).getPoolBalance();
-    if (amount > poolBalance) {
+    // `amount` is a human-readable token amount (e.g. 1000 USDC) while
+    // `getPoolBalance()` returns raw stroops (10^7 per token), so the comparison
+    // has to happen in a single unit — stroops — instead of comparing the two
+    // numbers directly (#139).
+    const requestedStroops = toStroops(amount.toString());
+    const availableStroops = BigInt(Math.floor(poolBalanceStroops));
+    if (requestedStroops > availableStroops) {
       throw AppError.badRequest(
-        'Insufficient pool liquidity to cover this loan',
+        `Insufficient pool liquidity to cover this loan: requested ${amount} tokens, pool holds ${formatTokenAmount(availableStroops)} tokens`,
         ErrorCode.INSUFFICIENT_BALANCE,
       );
     }

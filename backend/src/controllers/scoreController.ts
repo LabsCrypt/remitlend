@@ -171,8 +171,11 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
   const breakdownResult = await query(
     `WITH 
        -- Current score from scores table
+       -- MAX() keeps this CTE at exactly one row: a plain COALESCE(current_score, 500)
+       -- returned zero rows for users without a scores row yet, and the CROSS
+       -- JOINs below then discarded every computed loan/timing statistic (#141).
        current_score_cte AS (
-         SELECT COALESCE(current_score, 500) AS current_score
+         SELECT COALESCE(MAX(current_score), 500) AS current_score
          FROM scores
          WHERE user_id = $1
        ),

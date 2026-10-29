@@ -104,6 +104,8 @@ const mockSubmitSignedTx =
   jest.fn<
     (signedTxXdr: string) => Promise<{ txHash: string; status: string; resultXdr?: string }>
   >();
+// Raw stroops, as the real service returns them.
+const mockGetPoolBalance = jest.fn<() => Promise<number>>().mockResolvedValue(100_000_000_000); // 10,000 tokens
 await jest.unstable_mockModule('../services/sorobanService.js', () => ({
   sorobanService: {
     buildRequestLoanTx: mockBuildRequestLoanTx,
@@ -114,6 +116,7 @@ await jest.unstable_mockModule('../services/sorobanService.js', () => ({
     buildExtendLoanTx: mockBuildExtendLoanTx,
     buildLiquidateTx: mockBuildLiquidateTx,
     submitSignedTx: mockSubmitSignedTx,
+    getPoolBalance: mockGetPoolBalance,
   },
 }));
 
@@ -262,6 +265,52 @@ describe('POST /api/loans/request', () => {
       .send({ borrowerPublicKey: TEST_BORROWER });
     expect(response.status).toBe(400);
   });
+
+  describe('pool liquidity pre-flight check (#139)', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    beforeEach(() => {
+      // The pre-flight check is skipped under NODE_ENV=test.
+      process.env.NODE_ENV = 'development';
+      mockGetPoolBalance.mockResolvedValue(100_000_000_000);
+    });
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
+      mockGetPoolBalance.mockReset();
+      mockGetPoolBalance.mockResolvedValue(100_000_000_000);
+    });
+
+    it('rejects a request larger than the pool balance measured in tokens', async () => {
+      // 1,000 stroops is 0.0001 tokens — far below the 1,000 token request.
+      mockGetPoolBalance.mockResolvedValueOnce(1_000);
+
+      const response = await request(app)
+        .post('/api/loans/request')
+        .set(bearer(TEST_BORROWER))
+        .send({ amount: 1000, borrowerPublicKey: TEST_BORROWER });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('0.0001 tokens');
+      expect(mockBuildRequestLoanTx).not.toHaveBeenCalled();
+    });
+
+    it('accepts a request covered by the pool balance', async () => {
+      mockGetPoolBalance.mockResolvedValueOnce(10_000_000_000); // 1,000 tokens
+      mockBuildRequestLoanTx.mockResolvedValueOnce({
+        unsignedTxXdr: 'AAAA...base64xdr',
+        networkPassphrase: 'Test SDF Network ; September 2015',
+      });
+
+      const response = await request(app)
+        .post('/api/loans/request')
+        .set(bearer(TEST_BORROWER))
+        .send({ amount: 1000, borrowerPublicKey: TEST_BORROWER });
+
+      expect(response.status).toBe(200);
+      expect(mockGetPoolBalance).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -273,6 +322,15 @@ describe('POST /api/loans/submit', () => {
       .post('/api/loans/submit')
       .send({ signedTxXdr: 'c2lnbmVkLXhkcg==' });
     expect(response.status).toBe(401);
+  });
+
+  it('should reject authenticated requests without the write scope', async () => {
+    const response = await request(app)
+      .post('/api/loans/submit')
+      .set(bearerWithScopes(TEST_BORROWER, ['read:loans']))
+      .send({ signedTxXdr: 'c2lnbmVkLXhkcg==' });
+
+    expect(response.status).toBe(403);
   });
 
   it('should submit a signed transaction', async () => {
@@ -290,6 +348,50 @@ describe('POST /api/loans/submit', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.txHash).toBe('abc123hash');
     expect(response.body.status).toBe('SUCCESS');
+  });
+
+  it('upserts repeated submissions with the same transaction hash', async () => {
+    mockSubmitSignedTx.mockResolvedValue({ txHash: 'duplicate-hash', status: 'SUCCESS' });
+
+    const submit = () =>
+      request(app)
+        .post('/api/loans/submit')
+        .set(bearer(TEST_BORROWER))
+        .send({ signedTxXdr: 'c2lnbmVkLXhkci1kYXRh' });
+
+    const first = await submit();
+    const duplicate = await submit();
+
+    expect(first.status).toBe(200);
+    expect(duplicate.status).toBe(200);
+    const hashWrites = mockedQuery.mock.calls.filter(([sql]) =>
+      String(sql).includes('INSERT INTO transaction_submissions'),
+    );
+    expect(hashWrites).toHaveLength(2);
+    for (const [sql, params] of hashWrites) {
+      expect(String(sql)).toContain('ON CONFLICT (tx_hash) DO UPDATE');
+      expect(params).toEqual(['duplicate-hash', 'SUCCESS', TEST_BORROWER]);
+    }
+  });
+
+  it('returns the structured internal error contract when submission fails', async () => {
+    mockSubmitSignedTx.mockRejectedValueOnce(new Error('RPC rejected the transaction'));
+
+    const response = await request(app)
+      .post('/api/loans/submit')
+      .set(bearer(TEST_BORROWER))
+      .send({ signedTxXdr: 'c2lnbmVkLXhkci1kYXRh' });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      success: false,
+      message: 'Internal server error',
+      error: expect.objectContaining({
+        code: expect.any(String),
+        message: 'Internal server error',
+      }),
+    });
+    expect(response.body.message).not.toContain('RPC rejected');
   });
 
   it('should reject missing signedTxXdr', async () => {

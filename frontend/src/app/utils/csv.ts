@@ -1,10 +1,27 @@
 export type CsvRow = Record<string, string | number | boolean | null | undefined>;
 
+// A cell that starts with one of these characters is treated as a formula (or a
+// DDE command) by spreadsheet applications, so exported data must be prefixed.
+const FORMULA_TRIGGER = /^[-+=@\t\r]/;
+
+// A leading sign in front of a plain decimal is an amount, not a formula: keep
+// `-12.5` numeric instead of turning it into the text `'-12.5`.
+const SIGNED_NUMBER = /^[+-](\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+
+const neutralizeFormula = (value: string): string =>
+  FORMULA_TRIGGER.test(value) && !SIGNED_NUMBER.test(value) ? `'${value}` : value;
+
 function escapeCsvValue(value: string): string {
-  if (value.includes('"') || value.includes(",") || value.includes("\n") || value.includes("\r")) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const escaped = neutralizeFormula(value);
+  if (
+    escaped.includes('"') ||
+    escaped.includes(",") ||
+    escaped.includes("\n") ||
+    escaped.includes("\r")
+  ) {
+    return `"${escaped.replace(/"/g, '""')}"`;
   }
-  return value;
+  return escaped;
 }
 
 export function rowsToCsv(rows: CsvRow[], headers?: string[]): string {
@@ -37,9 +54,15 @@ export function downloadCsv(filename: string, csv: string): void {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
 
-  URL.revokeObjectURL(url);
+  try {
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    // Detach the anchor and release the object URL even when the browser
+    // refuses the click, so a failed export leaks neither DOM nodes nor blob
+    // memory. `remove()` is a no-op when the append itself failed.
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 }

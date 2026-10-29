@@ -5,23 +5,24 @@ import { usePathname } from "next/navigation";
 import { LayoutDashboard, HandCoins, PiggyBank, SendHorizontal, User, Clock } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const navItems = [
-  { name: "Home", href: "/", icon: LayoutDashboard },
-  { name: "Loans", href: "/loans", icon: HandCoins },
-  { name: "Lend", href: "/lend", icon: PiggyBank },
-  { name: "Activity", href: "/activity", icon: Clock },
-  { name: "Profile", href: "/profile", icon: User },
-];
-
 export function BottomNav() {
   const pathname = usePathname();
   const locale = useLocale();
+  const t = useTranslations("Navigation");
+
+  const navItems = [
+    { name: t("home"), href: "/", icon: LayoutDashboard },
+    { name: t("loans"), href: "/loans", icon: HandCoins },
+    { name: t("lend"), href: "/lend", icon: PiggyBank },
+    { name: t("activity"), href: "/activity", icon: Clock },
+    { name: t("profile"), href: "/settings", icon: User },
+  ];
 
   // Normalize pathname to handle locale prefix
   const getHref = (href: string) => `/${locale}${href === "/" ? "" : href}`;

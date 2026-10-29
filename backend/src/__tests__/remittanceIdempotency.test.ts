@@ -137,6 +137,37 @@ describe('POST /api/remittances idempotency', () => {
     expect(mockCreateRemittance).toHaveBeenCalledTimes(1);
   });
 
+  it('allows retrying the same key after a downstream failure', async () => {
+    const idempotencyKey = 'retry-after-downstream-failure';
+    mockCreateRemittance.mockRejectedValueOnce(new Error('downstream failure'));
+
+    const failed = await request(app)
+      .post('/api/remittances')
+      .set(bearer(SENDER))
+      .set('Idempotency-Key', idempotencyKey)
+      .send(payload);
+
+    expect(failed.status).toBe(500);
+    expect(failed.body).toMatchObject({
+      success: false,
+      message: 'Internal server error',
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Internal server error',
+      },
+    });
+
+    const retry = await request(app)
+      .post('/api/remittances')
+      .set(bearer(SENDER))
+      .set('Idempotency-Key', idempotencyKey)
+      .send(payload);
+
+    expect(retry.status).toBe(201);
+    expect(retry.headers['x-idempotent-replayed']).toBe('false');
+    expect(mockCreateRemittance).toHaveBeenCalledTimes(2);
+  });
+
   it('returns 409 for a concurrent duplicate while the first is still in flight', async () => {
     const idempotencyKey = 'concurrent-key';
 

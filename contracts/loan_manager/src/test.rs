@@ -1750,10 +1750,27 @@ fn test_check_default_respects_default_window() {
     manager.approve_loan(&loan_id);
 
     let due_date = manager.get_loan(&loan_id).due_date;
-    env.ledger().set_sequence_number(due_date + 9_999);
+    // The exact end of the default window is still protected; defaulting is
+    // first allowed on the following ledger.
+    env.ledger().set_sequence_number(due_date + 10_000);
+    assert_eq!(
+        manager.try_check_default(&loan_id),
+        Err(Ok(LoanError::LoanNotPastDue))
+    );
 
-    let result = manager.try_check_default(&loan_id);
-    assert_eq!(result, Err(Ok(LoanError::LoanNotPastDue)));
+    env.ledger().set_sequence_number(due_date + 10_001);
+    manager.check_default(&loan_id);
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Defaulted);
+    assert_eq!(nft_client.get_default_count(&borrower), 1);
+
+    // Repeated calls must reject the already-defaulted loan and leave the
+    // borrower's credit record unchanged.
+    assert_eq!(
+        manager.try_check_default(&loan_id),
+        Err(Ok(LoanError::LoanNotActive))
+    );
+    assert_eq!(nft_client.get_default_count(&borrower), 1);
+    assert_eq!(nft_client.get_score(&borrower), 550);
 }
 
 #[test]

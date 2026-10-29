@@ -13,7 +13,7 @@
 import { render, screen, act, waitFor, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useUserStore } from "../stores/useUserStore";
+import { useUserStore, type User } from "../stores/useUserStore";
 import { useNotificationStream } from "./useNotificationStream";
 import { useNotifications } from "./useApi";
 
@@ -31,12 +31,13 @@ interface MockSse {
 }
 
 // A controllable SSE response. The test pushes events into a queue that the
-// hook's fetch ReadableStream reader drains one event at a time.
-function createSseResponse(): MockSse {
+// hook's fetch ReadableStream reader drains one event at a time. When an abort
+// signal is supplied, a pending read rejects with the same AbortError a real
+// fetch body produces, so abort/cleanup behaviour can be asserted.
+const createSseResponse = (signal?: AbortSignal): MockSse => {
   const encoder = new TextEncoder();
   const queue: Uint8Array[] = [];
   let queueReader: (() => void) | null = null;
-  let closed = false;
 
   const pushEvent = (payload: unknown) => {
     queue.push(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
@@ -44,22 +45,28 @@ function createSseResponse(): MockSse {
     queueReader = null;
   };
 
+  const abortError = () => new DOMException("The operation was aborted", "AbortError");
+
   const reader = {
     read: () => {
+      if (signal?.aborted) {
+        return Promise.reject(abortError());
+      }
       if (queue.length > 0) {
         return Promise.resolve({ done: false, value: queue.shift() as Uint8Array });
       }
-      if (closed) {
-        return Promise.resolve({ done: true, value: new Uint8Array(0) });
-      }
-      return new Promise<{ done: boolean; value: Uint8Array }>((resolve) => {
+      return new Promise<{ done: boolean; value: Uint8Array }>((resolve, reject) => {
         queueReader = () => {
-          if (queue.length > 0) {
-            resolve({ done: false, value: queue.shift() as Uint8Array });
-          } else {
-            resolve({ done: true, value: new Uint8Array(0) });
-          }
+          resolve({ done: false, value: queue.shift() as Uint8Array });
         };
+        signal?.addEventListener(
+          "abort",
+          () => {
+            queueReader = null;
+            reject(abortError());
+          },
+          { once: true },
+        );
       });
     },
   };
@@ -72,7 +79,7 @@ function createSseResponse(): MockSse {
   };
 
   return { response, pushEvent };
-}
+};
 
 function Harness() {
   useNotificationStream();
@@ -89,25 +96,32 @@ function Harness() {
   );
 }
 
+interface MockUserState {
+  user: User | null;
+  authToken: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+}
 
-
-// Mock useUserStore
+// Mock useUserStore within the suite so tests can flip the auth token without
+// touching the real persisted store.
 jest.mock("../stores/useUserStore", () => {
-  let mockUserState = {
-    user: { id: "u1", email: "u1@example.com", kycVerified: true } as any,
+  let mockUserState: MockUserState = {
+    user: { id: "u1", email: "u1@example.com", kycVerified: true },
     authToken: "stream-test-token",
     isAuthenticated: true,
     isLoading: false,
     error: null,
   };
-  const mockStoreFn: any = jest.fn((selector?: (s: typeof mockUserState) => any) =>
+  const mockStoreFn = jest.fn((selector?: (s: MockUserState) => unknown) =>
     selector ? selector(mockUserState) : mockUserState,
   );
-  mockStoreFn.setState = jest.fn((newState: any) => {
+  const setState = jest.fn((newState: Partial<MockUserState>) => {
     mockUserState = { ...mockUserState, ...newState };
   });
-  mockStoreFn.getState = jest.fn(() => mockUserState);
-  return { useUserStore: mockStoreFn };
+  const getState = jest.fn(() => mockUserState);
+  return { useUserStore: Object.assign(mockStoreFn, { setState, getState }) };
 });
 
 /**
@@ -128,6 +142,40 @@ function mockFetchCleanClose() {
     },
   });
 }
+
+// Lets the async connect() reach its pending reader.read() without using real
+// timers (the suite runs on fake timers).
+const flushStreamSetup = async () => {
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(0);
+  });
+};
+
+/**
+ * Installs a fetch mock that builds one abort-aware SSE response per call and
+ * records the AbortSignal each subscription was given.
+ */
+const mockSSEStreams = () => {
+  const streams: MockSse[] = [];
+  const signals: AbortSignal[] = [];
+  const fetchMock = jest.fn().mockImplementation((_url: string, init: RequestInit) => {
+    const signal = init.signal as AbortSignal;
+    const sse = createSseResponse(signal);
+    streams.push(sse);
+    signals.push(signal);
+    return Promise.resolve(sse.response);
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  return { fetchMock, streams, signals };
+};
+
+const seededQueryClient = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(["notifications", {}], { notifications: [], unreadCount: 0 });
+  return queryClient;
+};
 
 function createWrapper(qc?: QueryClient) {
   const queryClient =
@@ -175,12 +223,12 @@ describe("useNotificationStream", () => {
       error: null,
     });
     jest.useFakeTimers();
-    (useUserStore as unknown as jest.Mock).mockReturnValue({ authToken: "test-token" });
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     jest.restoreAllMocks();
+    jest.useRealTimers();
   });
 
   it("renders a streamed notification immediately in the list reader's cache entry", async () => {
@@ -290,6 +338,193 @@ describe("useNotificationStream", () => {
 
     // Should have been called at least 3 times (initial + 2 reconnects)
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("authenticates the stream request with the bearer token", async () => {
+    const { response } = createSseResponse();
+    const fetchMock = jest.fn().mockResolvedValue(response);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    renderHook(() => useNotificationStream(), { wrapper: createWrapper() });
+    await flushStreamSetup();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(STREAM_URL);
+    expect(init.method).toBe("GET");
+    expect(init.credentials).toBe("include");
+    expect(init.headers).toEqual({
+      Accept: "text/event-stream",
+      Authorization: "Bearer stream-test-token",
+    });
+  });
+
+  it("does not subscribe at all when there is no auth token", async () => {
+    useUserStore.setState({ authToken: null });
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    renderHook(() => useNotificationStream(), { wrapper: createWrapper() });
+    await act(() => jest.advanceTimersByTimeAsync(5_000));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a single subscription across re-renders with the same token", async () => {
+    const { fetchMock, streams } = mockSSEStreams();
+    const queryClient = seededQueryClient();
+
+    const { rerender } = renderHook(() => useNotificationStream(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await flushStreamSetup();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    rerender();
+    rerender();
+    await act(() => jest.advanceTimersByTimeAsync(1_000));
+
+    // Re-rendering must not open a second stream or tear down the live one.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      streams[0].pushEvent(n2);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(
+      queryClient.getQueryData<{ notifications: Array<{ id: number }> }>(["notifications", {}])
+        ?.notifications,
+    ).toEqual([expect.objectContaining({ id: n2.id })]);
+  });
+
+  it("aborts the old stream and reconnects when the auth token changes", async () => {
+    const { fetchMock, signals } = mockSSEStreams();
+
+    const { rerender } = renderHook(() => useNotificationStream(), {
+      wrapper: createWrapper(),
+    });
+    await flushStreamSetup();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(signals[0].aborted).toBe(false);
+
+    useUserStore.setState({ authToken: "rotated-token" });
+    rerender();
+    await flushStreamSetup();
+
+    // The stale subscription is torn down; exactly one live stream remains,
+    // authenticated with the new token (no duplicate subscription survives).
+    expect(signals[0].aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signals[1].aborted).toBe(false);
+    expect((fetchMock.mock.calls[1][1] as RequestInit).headers).toMatchObject({
+      Authorization: "Bearer rotated-token",
+    });
+  });
+
+  it("keeps two consumers' streams independent and aborts only the unmounted one", async () => {
+    const { fetchMock, streams, signals } = mockSSEStreams();
+    const queryClient = seededQueryClient();
+    const wrapper = createWrapper(queryClient);
+
+    const first = renderHook(() => useNotificationStream(), { wrapper });
+    const second = renderHook(() => useNotificationStream(), { wrapper });
+    await flushStreamSetup();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    first.unmount();
+
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+
+    // The surviving consumer still receives events into the shared cache.
+    await act(async () => {
+      streams[1].pushEvent(n2);
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    const cached = queryClient.getQueryData<{
+      notifications: Array<{ id: number }>;
+      unreadCount: number;
+    }>(["notifications", {}]);
+    expect(cached?.notifications.map((n) => n.id)).toEqual([n2.id]);
+    expect(cached?.unreadCount).toBe(1);
+
+    second.unmount();
+    expect(signals[1].aborted).toBe(true);
+  });
+
+  it("aborts the active stream on unmount and drops events that arrive afterwards", async () => {
+    const { fetchMock, streams, signals } = mockSSEStreams();
+    const queryClient = seededQueryClient();
+
+    const { unmount } = renderHook(() => useNotificationStream(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await flushStreamSetup();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+    expect(signals[0].aborted).toBe(true);
+
+    // A late event from the torn-down stream must not reach the cache, and no
+    // reconnect may be scheduled after cleanup.
+    act(() => streams[0].pushEvent(n1));
+    await act(() => jest.advanceTimersByTimeAsync(5_000));
+
+    expect(queryClient.getQueryData(["notifications", {}])).toEqual({
+      notifications: [],
+      unreadCount: 0,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries with exponential backoff on an authorization failure without touching the cache", async () => {
+    const queryClient = seededQueryClient();
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      body: null,
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    renderHook(() => useNotificationStream(), { wrapper: createWrapper(queryClient) });
+
+    // First attempt fails immediately and schedules a 1s retry.
+    await act(() => jest.advanceTimersByTimeAsync(1_000));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Backoff doubles: 2s, then 4s.
+    await act(() => jest.advanceTimersByTimeAsync(2_000));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(() => jest.advanceTimersByTimeAsync(3_999));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(() => jest.advanceTimersByTimeAsync(1));
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    expect(queryClient.getQueryData(["notifications", {}])).toEqual({
+      notifications: [],
+      unreadCount: 0,
+    });
+  });
+
+  it("caps reconnect backoff at 30 seconds when connections keep failing", async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 503, body: null });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    renderHook(() => useNotificationStream(), { wrapper: createWrapper() });
+
+    // Retries at ~1s, 3s, 7s, 15s, 31s — the next delay is capped at 30s.
+    await act(() => jest.advanceTimersByTimeAsync(60_000));
+    const callsAtSixtySeconds = fetchMock.mock.calls.length;
+    expect(callsAtSixtySeconds).toBe(6);
+
+    // The capped 30s timer fires at ~61s, not immediately after the 31s one.
+    await act(() => jest.advanceTimersByTimeAsync(1_000));
+    expect(fetchMock.mock.calls.length).toBe(callsAtSixtySeconds + 1);
+
+    await act(() => jest.advanceTimersByTimeAsync(29_999));
+    expect(fetchMock.mock.calls.length).toBe(callsAtSixtySeconds + 1);
+    await act(() => jest.advanceTimersByTimeAsync(1));
+    expect(fetchMock.mock.calls.length).toBe(callsAtSixtySeconds + 2);
   });
 
   it("does not reconnect when unmounted after initial connection", async () => {
