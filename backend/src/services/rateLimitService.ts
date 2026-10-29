@@ -85,6 +85,8 @@ return {currentCount, ttl}
       const resetTime = new Date(
         Date.now() + (ttlSeconds > 0 ? ttlSeconds : config.windowSeconds) * 1000,
       );
+      // The script increments before returning, so `currentCount === maxRequests` is still the
+      // limit'th admitted request. `<=` is what makes "maxRequests per window" honest.
       const allowed = currentCount <= config.maxRequests;
       const remaining = Math.max(0, config.maxRequests - currentCount);
 
@@ -166,7 +168,9 @@ return {currentCount, ttl}
         Date.now() + (ttlSeconds > 0 ? ttlSeconds : config.windowSeconds) * 1000,
       );
       const remaining = Math.max(0, config.maxRequests - currentCount);
-      const allowed = currentCount < config.maxRequests;
+      // The script increments before returning, so `currentCount === maxRequests` is still the
+      // limit'th admitted request. `<=` is what makes "maxRequests per window" honest.
+      const allowed = currentCount <= config.maxRequests;
 
       return {
         allowed,
