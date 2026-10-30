@@ -181,6 +181,14 @@ describe('GET /api/loans/borrower/:borrower – filters', () => {
       expect(res.status).toBe(400);
     });
 
+    it('returns 400 for an invalid date in to param', async () => {
+      const res = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?to=not-a-date`)
+        .set(bearer(TEST_BORROWER));
+
+      expect(res.status).toBe(400);
+    });
+
     it('returns empty array when date range matches no loans', async () => {
       mockQuery.mockImplementation(async (sql: unknown) => {
         if (typeof sql === 'string' && sql.includes('indexer_state')) {
@@ -247,6 +255,87 @@ describe('GET /api/loans/borrower/:borrower – filters', () => {
         .set(bearer(TEST_BORROWER));
 
       expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when limit is 0 (below minimum 1)', async () => {
+      const res = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?limit=0`)
+        .set(bearer(TEST_BORROWER));
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when limit is negative', async () => {
+      const res = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?limit=-5`)
+        .set(bearer(TEST_BORROWER));
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when limit is non-numeric', async () => {
+      const res = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?limit=not-a-number`)
+        .set(bearer(TEST_BORROWER));
+
+      expect(res.status).toBe(400);
+    });
+
+    it('accepts boundary limit values (1 and 100)', async () => {
+      mockQuery.mockImplementation(async (sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('indexer_state')) {
+          return { rows: [{ last_indexed_ledger: 1000 }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      });
+
+      const resMin = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?limit=1`)
+        .set(bearer(TEST_BORROWER));
+      expect(resMin.status).toBe(200);
+
+      const resMax = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?limit=100`)
+        .set(bearer(TEST_BORROWER));
+      expect(resMax.status).toBe(200);
+    });
+
+    it('accepts cursor parameter for pagination', async () => {
+      mockQuery.mockImplementation(async (sql: unknown) => {
+        if (typeof sql === 'string' && sql.includes('indexer_state')) {
+          return { rows: [{ last_indexed_ledger: 1000 }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      });
+
+      const res = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?cursor=sample-cursor-token`)
+        .set(bearer(TEST_BORROWER));
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('authorization paths', () => {
+    it('returns 401 when request has no authorization header', async () => {
+      const res = await request(app).get(`/api/loans/borrower/${TEST_BORROWER}`);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 401 when authorization token is invalid', async () => {
+      const res = await request(app)
+        .get(`/api/loans/borrower/${TEST_BORROWER}`)
+        .set({ Authorization: 'Bearer invalid-token-string' });
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 when requesting loans for a borrower different from authenticated wallet', async () => {
+      const otherBorrower = Keypair.random().publicKey();
+      const res = await request(app)
+        .get(`/api/loans/borrower/${otherBorrower}`)
+        .set(bearer(TEST_BORROWER));
+
+      expect(res.status).toBe(403);
     });
   });
 });
