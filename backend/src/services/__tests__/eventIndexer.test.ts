@@ -710,4 +710,88 @@ describe('EventIndexer – transaction atomicity via ingestRawEvents', () => {
     // 4 × repaymentDelta(10) for borrower "addr"
     expect(updates.get('addr')).toBe(40);
   });
+
+  describe('deduplication, repeated ledgers, and reordered events (#2069)', () => {
+    it('repeated ledger ingest: suppresses duplicate ledger events without double score updates', async () => {
+      let insertCount = 0;
+      mockWithTransaction.mockImplementation(async (cb: TxCallback) => {
+        const client: MockClient = {
+          query: jest.fn<any>().mockImplementation((sql: string, params: unknown[]) => {
+            if (String(sql).includes('INSERT INTO contract_events')) {
+              insertCount++;
+              if (insertCount === 1) {
+                return Promise.resolve({ rowCount: 1, rows: [{ event_id: params?.[0] }] });
+              }
+              return Promise.resolve({ rowCount: 0, rows: [] });
+            }
+            return Promise.resolve({ rowCount: 0, rows: [] });
+          }),
+        };
+        return cb(client);
+      });
+
+      const event = makeRawRepaidEvent('ledger-100-event-1');
+      const indexer = makeIndexer();
+
+      const res1 = await (indexer.ingestRawEvents([event]) as Promise<{ insertedCount: number }>);
+      expect(res1.insertedCount).toBe(1);
+      expect(mockUpdateUserScoresBulk).toHaveBeenCalledTimes(1);
+
+      mockUpdateUserScoresBulk.mockClear();
+
+      const res2 = await (indexer.ingestRawEvents([event]) as Promise<{ insertedCount: number }>);
+      expect(res2.insertedCount).toBe(0);
+      expect(mockUpdateUserScoresBulk).not.toHaveBeenCalled();
+    });
+
+    it('reordered events within ledger boundary: maintains idempotency across out-of-order deliveries', async () => {
+      const seen = new Set<string>();
+      mockWithTransaction.mockImplementation(async (cb: TxCallback) => {
+        const client: MockClient = {
+          query: jest.fn<any>().mockImplementation((sql: string, params: unknown[]) => {
+            if (String(sql).includes('INSERT INTO contract_events')) {
+              const eventId = String(params?.[0] ?? '');
+              if (seen.has(eventId)) {
+                return Promise.resolve({ rowCount: 0, rows: [] });
+              }
+              seen.add(eventId);
+              return Promise.resolve({ rowCount: 1, rows: [{ event_id: eventId }] });
+            }
+            return Promise.resolve({ rowCount: 0, rows: [] });
+          }),
+        };
+        return cb(client);
+      });
+
+      const e1 = makeRawRepaidEvent('seq-002');
+      const e2 = makeRawRepaidEvent('seq-001');
+      const indexer = makeIndexer();
+
+      const res = await (indexer.ingestRawEvents([e1, e2]) as Promise<{ insertedCount: number }>);
+      expect(res.insertedCount).toBe(2);
+      expect(mockUpdateUserScoresBulk).toHaveBeenCalledTimes(1);
+    });
+
+    it('unique constraint conflict handling: gracefully succeeds with zero side-effects on conflict', async () => {
+      mockWithTransaction.mockImplementation(async (cb: TxCallback) => {
+        const client: MockClient = {
+          query: jest.fn<any>().mockImplementation((sql: string) => {
+            if (String(sql).includes('INSERT INTO contract_events')) {
+              return Promise.resolve({ rowCount: 0, rows: [] });
+            }
+            return Promise.resolve({ rowCount: 0, rows: [] });
+          }),
+        };
+        return cb(client);
+      });
+
+      const event = makeRawRepaidEvent('conflict-001');
+      const indexer = makeIndexer();
+
+      const res = await (indexer.ingestRawEvents([event]) as Promise<{ insertedCount: number }>);
+      expect(res.insertedCount).toBe(0);
+      expect(mockUpdateUserScoresBulk).not.toHaveBeenCalled();
+      expect(mockNotificationCreate).not.toHaveBeenCalled();
+    });
+  });
 });
