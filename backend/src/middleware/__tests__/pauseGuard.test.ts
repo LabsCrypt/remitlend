@@ -222,4 +222,108 @@ describe('pauseGuard middleware (#1521)', () => {
       );
     });
   });
+
+  describe('concurrent pause state transitions & state races (#2093)', () => {
+    it('handles concurrent setPauseState calls and maintains valid state', async () => {
+      const updates = Array.from({ length: 10 }, (_, i) =>
+        setPauseState(i % 2 === 0, [`CONTRACT_${i}`], `Reason ${i}`),
+      );
+      await Promise.all(updates);
+
+      const finalState = getCurrentPauseState();
+      expect(typeof finalState.isPaused).toBe('boolean');
+      expect(Array.isArray(finalState.contracts)).toBe(true);
+      expect(typeof finalState.reason).toBe('string');
+    });
+
+    it('rejects loan mutation as soon as pause state transitions from unpaused to paused', async () => {
+      await setPauseState(false, []);
+      const req = { method: 'POST', path: '/api/loans/disburse' } as Request;
+
+      // Initial request allowed
+      pauseGuard(req, mockResponse as Response, mockNext);
+      expect(mockNext).toHaveBeenCalledTimes(1);
+
+      // Emergency pause triggers
+      await setPauseState(true, ['LOAN_ESCROW'], 'Liquidity drain detected');
+
+      // Subsequent mutating request immediately rejected
+      expect(() => pauseGuard(req, mockResponse as Response, mockNext)).toThrow(AppError);
+      expect(mockNext).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows loan mutation as soon as pause state transitions from paused to unpaused', async () => {
+      await setPauseState(true, ['LOAN_ESCROW'], 'Temporary lock');
+      const req = { method: 'POST', path: '/api/loans/repay' } as Request;
+
+      expect(() => pauseGuard(req, mockResponse as Response, mockNext)).toThrow(AppError);
+
+      // Unpause triggers
+      await setPauseState(false, []);
+
+      // Subsequent mutating request immediately succeeds
+      const next = jest.fn();
+      pauseGuard(req, mockResponse as Response, next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('formats error message with fallback reason when reason is null or omitted', async () => {
+      await setPauseState(true, []);
+      const req = { method: 'POST', path: '/api/loans/repay' } as Request;
+
+      try {
+        pauseGuard(req, mockResponse as Response, mockNext);
+        throw new Error('should have thrown AppError');
+      } catch (err) {
+        expect(err).toBeInstanceOf(AppError);
+        expect((err as InstanceType<typeof AppError>).message).toContain(
+          'Reason: Maintenance or security measure',
+        );
+        expect((err as InstanceType<typeof AppError>).message).toContain('Affected contracts: ');
+      }
+    });
+
+    it('preserves existing in-memory state when DB update query fails', async () => {
+      await setPauseState(true, ['LOAN_CONTRACT'], 'Critical vulnerability');
+      mockQuery.mockRejectedValueOnce(new Error('DB pool timeout'));
+
+      await updatePauseStateFromDatabase();
+
+      expect(getCurrentPauseState().isPaused).toBe(true);
+      expect(getCurrentPauseState().reason).toBe('Critical vulnerability');
+      expect(getCurrentPauseState().contracts).toEqual(['LOAN_CONTRACT']);
+    });
+  });
+
+  describe('exempt route boundaries during active pause (#2093)', () => {
+    beforeEach(async () => {
+      await setPauseState(true, ['ALL'], 'Emergency Incident');
+    });
+
+    it.each([
+      '/api/auth/login',
+      '/api/v1/auth/session',
+      '/api/admin/recovery',
+      '/api/v1/admin/unpause',
+      '/admin/status',
+    ])('allows mutating write request to exempt path: %s', (path) => {
+      const next = jest.fn();
+      pauseGuard({ method: 'POST', path } as Request, {} as Response, next);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it.each([
+      '/api/authentication/login',
+      '/api/administrator/kill',
+      '/api/loans/repay',
+      '/api/v1/loans/apply',
+      '/api/contracts/invoke',
+    ])('blocks non-exempt path even if partially similar: %s', (path) => {
+      const next = jest.fn();
+      expect(() => pauseGuard({ method: 'POST', path } as Request, {} as Response, next)).toThrow(
+        AppError,
+      );
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
 });
