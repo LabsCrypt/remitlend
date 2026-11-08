@@ -260,4 +260,159 @@ describe('loanId validation (non-integer ids return 400 before any DB query)', (
     expect(appError.errorCode).toBe(ErrorCode.INVALID_LOAN_ID);
     expect(mockQuery).not.toHaveBeenCalled();
   });
+
+  it('rejects missing loanId parameter with 400 Bad Request', async () => {
+    const { error: ownerError } = await runRequireLoanOwner({
+      params: {},
+      user: { publicKey: OWNER_PK },
+    } as Partial<Request>);
+    expect(ownerError).toBeInstanceOf(AppError);
+    expect((ownerError as InstanceType<typeof AppError>).statusCode).toBe(400);
+    expect((ownerError as InstanceType<typeof AppError>).message).toBe('Loan ID is required');
+
+    const { error: borrowerError } = await runRequireLoanBorrowerAccess({
+      params: {},
+      user: { publicKey: OWNER_PK },
+    } as Partial<Request>);
+    expect(borrowerError).toBeInstanceOf(AppError);
+    expect((borrowerError as InstanceType<typeof AppError>).statusCode).toBe(400);
+    expect((borrowerError as InstanceType<typeof AppError>).message).toBe('Loan ID is required');
+  });
+});
+
+describe('tenant boundary isolation & multi-role access matrix (#2092)', () => {
+  const BORROWER_ALICE = 'GALICEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const BORROWER_BOB = 'GBOBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const UNRELATED_USER = 'GUNRELATEDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const ADMIN_USER = 'GADMINAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const LENDER_USER = 'GLENDERAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('multi-tenant cross-account isolation between borrowers', () => {
+    it('prevents Alice from accessing Bob loan via requireLoanBorrowerAccess', async () => {
+      // Bob owns loan 200
+      mockQuery.mockResolvedValueOnce({ rows: [{ address: BORROWER_BOB }] });
+
+      const { next, error } = await runRequireLoanBorrowerAccess({
+        params: { loanId: '200' },
+        user: { publicKey: BORROWER_ALICE, role: 'borrower' },
+      } as Partial<Request>);
+
+      expect(error).toBeInstanceOf(AppError);
+      const appErr = error as InstanceType<typeof AppError>;
+      expect(appErr.statusCode).toBe(403);
+      expect(appErr.errorCode).toBe(ErrorCode.ACCESS_DENIED);
+      expect(next).toHaveBeenCalledWith(appErr);
+    });
+
+    it('prevents Bob from accessing Alice loan via requireLoanBorrowerAccess', async () => {
+      // Alice owns loan 100
+      mockQuery.mockResolvedValueOnce({ rows: [{ address: BORROWER_ALICE }] });
+
+      const { next, error } = await runRequireLoanBorrowerAccess({
+        params: { loanId: '100' },
+        user: { publicKey: BORROWER_BOB, role: 'borrower' },
+      } as Partial<Request>);
+
+      expect(error).toBeInstanceOf(AppError);
+      const appErr = error as InstanceType<typeof AppError>;
+      expect(appErr.statusCode).toBe(403);
+      expect(appErr.errorCode).toBe(ErrorCode.ACCESS_DENIED);
+      expect(next).toHaveBeenCalledWith(appErr);
+    });
+
+    it('prevents Alice from accessing Bob loan via requireLoanOwner', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ address: BORROWER_BOB }] });
+
+      const { next, error } = await runRequireLoanOwner({
+        params: { loanId: '200' },
+        user: { publicKey: BORROWER_ALICE },
+      } as Partial<Request>);
+
+      expect(error).toBeInstanceOf(AppError);
+      const appErr = error as InstanceType<typeof AppError>;
+      expect(appErr.statusCode).toBe(403);
+      expect(appErr.errorCode).toBe(ErrorCode.ACCESS_DENIED);
+      expect(next).toHaveBeenCalledWith(appErr);
+    });
+  });
+
+  describe('unrelated user access rejection', () => {
+    it.each(['borrower', 'investor', 'guest', 'auditor', undefined])(
+      'rejects unrelated caller with role "%s" with 403 ACCESS_DENIED',
+      async (role) => {
+        mockQuery.mockResolvedValueOnce({ rows: [{ address: BORROWER_ALICE }] });
+
+        const { next, error } = await runRequireLoanBorrowerAccess({
+          params: { loanId: '100' },
+          user: { publicKey: UNRELATED_USER, role },
+        } as Partial<Request>);
+
+        expect(error).toBeInstanceOf(AppError);
+        const appErr = error as InstanceType<typeof AppError>;
+        expect(appErr.statusCode).toBe(403);
+        expect(appErr.errorCode).toBe(ErrorCode.ACCESS_DENIED);
+        expect(next).toHaveBeenCalledWith(appErr);
+      },
+    );
+  });
+
+  describe('privileged roles (admin & lender) in requireLoanBorrowerAccess', () => {
+    it('allows admin access without database query', async () => {
+      const { next, error } = await runRequireLoanBorrowerAccess({
+        params: { loanId: '100' },
+        user: { publicKey: ADMIN_USER, role: 'admin' },
+      } as Partial<Request>);
+
+      expect(error).toBeUndefined();
+      expect(next).toHaveBeenCalledWith();
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('allows lender access without database query', async () => {
+      const { next, error } = await runRequireLoanBorrowerAccess({
+        params: { loanId: '100' },
+        user: { publicKey: LENDER_USER, role: 'lender' },
+      } as Partial<Request>);
+
+      expect(error).toBeUndefined();
+      expect(next).toHaveBeenCalledWith();
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('strict borrower ownership in requireLoanOwner (no role bypass)', () => {
+    it('rejects admin caller if admin is not the recorded loan owner', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ address: BORROWER_ALICE }] });
+
+      const { next, error } = await runRequireLoanOwner({
+        params: { loanId: '100' },
+        user: { publicKey: ADMIN_USER, role: 'admin' },
+      } as Partial<Request>);
+
+      expect(error).toBeInstanceOf(AppError);
+      const appErr = error as InstanceType<typeof AppError>;
+      expect(appErr.statusCode).toBe(403);
+      expect(appErr.errorCode).toBe(ErrorCode.ACCESS_DENIED);
+      expect(next).toHaveBeenCalledWith(appErr);
+    });
+
+    it('rejects lender caller if lender is not the recorded loan owner', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ address: BORROWER_ALICE }] });
+
+      const { next, error } = await runRequireLoanOwner({
+        params: { loanId: '100' },
+        user: { publicKey: LENDER_USER, role: 'lender' },
+      } as Partial<Request>);
+
+      expect(error).toBeInstanceOf(AppError);
+      const appErr = error as InstanceType<typeof AppError>;
+      expect(appErr.statusCode).toBe(403);
+      expect(appErr.errorCode).toBe(ErrorCode.ACCESS_DENIED);
+      expect(next).toHaveBeenCalledWith(appErr);
+    });
+  });
 });
