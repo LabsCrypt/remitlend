@@ -5,7 +5,6 @@ contracts/target/
 contracts/**/test_snapshots/
 contracts/cobertura.xml
 dist
-.env
 .next
 .cargo-home/
 .cargo-target/
@@ -22,3 +21,4 @@ checks.md
 
 # Teacher-only bug-hunt answer key (never commit)
 BUG_HUNT_ANSWER_KEY.md
+config.bat
