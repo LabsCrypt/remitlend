@@ -5323,6 +5323,89 @@ fn test_purge_cancelled_loan_does_not_double_decrement() {
     assert_eq!(manager.get_borrower_loan_count(&borrower), 0);
 }
 
+fn setup_borrower_with_liquidity<'a>(env: &Env) -> (LoanManagerClient<'a>, Address) {
+    let (manager, nft_client, pool_address, token_id, _admin) = setup_test(env);
+    let borrower = Address::generate(env);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &BytesN::from_array(env, &[0u8; 32]),
+        &String::from_str(env, "ipfs://QmTest"),
+        &create_test_commitment(env, 1),
+        &None,
+    );
+    let stellar_token = StellarAssetClient::new(env, &token_id);
+    stellar_token.mint(&pool_address, &10_000);
+    stellar_token.mint(&borrower, &10_000);
+    (manager, borrower)
+}
+
+#[test]
+fn test_borrower_loans_round_trip_via_persistent_storage() {
+    use soroban_sdk::testutils::storage::Persistent as _;
+    use soroban_sdk::{vec, Vec};
+
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+    let (manager, borrower) = setup_borrower_with_liquidity(&env);
+
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    let key = DataKey::BorrowerLoans(borrower.clone());
+
+    let ttl_after_write = env.as_contract(&manager.address, || {
+        assert!(!env.storage().instance().has(&key));
+        let stored: Vec<u32> = env.storage().persistent().get(&key).unwrap();
+        assert_eq!(stored, vec![&env, loan_id]);
+        env.storage().persistent().get_ttl(&key)
+    });
+    assert!(ttl_after_write > LoanManager::PERSISTENT_TTL_THRESHOLD);
+
+    // Let the entry age below the bump threshold, then read it back: the
+    // getter must return the same list and re-extend its TTL.
+    let aged = ttl_after_write - LoanManager::PERSISTENT_TTL_THRESHOLD + 1;
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + aged);
+    let ttl_aged = env.as_contract(&manager.address, || {
+        env.storage().persistent().get_ttl(&key)
+    });
+    assert!(ttl_aged < LoanManager::PERSISTENT_TTL_THRESHOLD);
+
+    assert_eq!(manager.get_borrower_loans(&borrower), vec![&env, loan_id]);
+    let ttl_after_read = env.as_contract(&manager.address, || {
+        env.storage().persistent().get_ttl(&key)
+    });
+    assert!(ttl_after_read > LoanManager::PERSISTENT_TTL_THRESHOLD);
+}
+
+#[test]
+fn test_legacy_instance_borrower_loans_migrated_to_persistent() {
+    use soroban_sdk::{vec, Vec};
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+    let (manager, borrower) = setup_borrower_with_liquidity(&env);
+    let key = DataKey::BorrowerLoans(borrower.clone());
+
+    // Seed a list under the legacy instance-storage layout.
+    let legacy_id = 4242u32;
+    env.as_contract(&manager.address, || {
+        env.storage().instance().set(&key, &vec![&env, legacy_id]);
+    });
+    assert_eq!(manager.get_borrower_loans(&borrower), vec![&env, legacy_id]);
+
+    // The next write migrates the list, keeping append order, and drops the
+    // instance copy.
+    let loan_id = manager.request_loan(&borrower, &1000, &17280);
+    env.as_contract(&manager.address, || {
+        assert!(!env.storage().instance().has(&key));
+        let stored: Vec<u32> = env.storage().persistent().get(&key).unwrap();
+        assert_eq!(stored, vec![&env, legacy_id, loan_id]);
+    });
+    assert_eq!(
+        manager.get_borrower_loans(&borrower),
+        vec![&env, legacy_id, loan_id]
+    );
+}
+
 #[test]
 fn test_purge_removes_id_from_get_borrower_loans() {
     let env = Env::default();
