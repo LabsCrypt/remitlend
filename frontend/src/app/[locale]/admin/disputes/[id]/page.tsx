@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -8,11 +8,10 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import {
   useAdminDispute,
   useResolveAdminDispute,
-  useVerifySession,
   type AdminDispute,
 } from "../../../../hooks/useApi";
+import { useAdminGuard } from "../../../../hooks/useAdminGuard";
 import { Modal } from "../../../../components/ui/Modal";
-import { useUserStore } from "../../../../stores/useUserStore";
 
 type ResolutionAction = "resolve" | "reject";
 
@@ -29,24 +28,6 @@ function formatAmount(value?: number) {
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: 7,
   }).format(value);
-}
-
-function useAdminGuard() {
-  const router = useRouter();
-  const user = useUserStore((state) => state.user);
-  const token = useUserStore((state) => state.authToken);
-  const session = useVerifySession({ enabled: Boolean(token) });
-  const role = session.data?.role ?? user?.role;
-  const isChecking = Boolean(token) && !role && session.isLoading;
-  const isAdmin = role === "admin";
-
-  useEffect(() => {
-    if (!token || (!isChecking && !isAdmin)) {
-      router.replace("/");
-    }
-  }, [isAdmin, isChecking, router, token]);
-
-  return { isAdmin, isChecking };
 }
 
 function LoanSummary({ dispute }: { dispute: AdminDispute }) {
