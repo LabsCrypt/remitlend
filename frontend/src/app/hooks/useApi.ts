@@ -115,6 +115,7 @@ export const queryKeys = {
  * - Sets JSON Content-Type
  * - Attaches the JWT Bearer token when one is stored
  * - Throws a descriptive error on non-2xx responses
+ * - Issue #2299: Forwards AbortSignal for query cancellation
  */
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
@@ -136,7 +137,12 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     }
   }
 
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  // Issue #2299: Forward signal to fetch for proper request cancellation
+  const response = await fetch(`${API_URL}${path}`, { 
+    ...options, 
+    headers,
+    signal: options.signal, // Explicitly forward signal
+  });
 
   if (response.status === 401 && token) {
     const error = await response
@@ -658,14 +664,24 @@ async function fetchMyTransactionsPage(
   return normalizePaginatedList(response);
 }
 
-async function fetchAllRemittances(status?: string): Promise<Remittance[]> {
+async function fetchAllRemittances(status?: string, maxPages = 5): Promise<Remittance[]> {
+  // Issue #2298: Cap pagination to prevent unbounded downloads
+  // Header search should use server-side search instead of client-side filtering
   const items: Remittance[] = [];
   let cursor: string | null = null;
+  let pageCount = 0;
 
   do {
     const page = await fetchRemittancesPage({ limit: 100, cursor, status });
     items.push(...page.items);
     cursor = page.pageInfo.nextCursor;
+    pageCount++;
+    
+    // Break after maxPages to prevent unbounded memory usage
+    if (pageCount >= maxPages) {
+      console.warn(`[fetchAllRemittances] Stopped after ${maxPages} pages. Consider using server-side search.`);
+      break;
+    }
   } while (cursor);
 
   return items;
@@ -692,9 +708,12 @@ async function fetchBorrowerLoansPage(
 async function fetchAllBorrowerLoans(
   borrowerAddress: string,
   status?: string,
+  maxPages = 5,
 ): Promise<BorrowerLoan[]> {
+  // Issue #2298: Cap pagination to prevent unbounded downloads
   const items: BorrowerLoan[] = [];
   let cursor: string | null = null;
+  let pageCount = 0;
 
   do {
     const page = await fetchBorrowerLoansPage(borrowerAddress, {
@@ -704,6 +723,13 @@ async function fetchAllBorrowerLoans(
     });
     items.push(...page.items);
     cursor = page.pageInfo.nextCursor;
+    pageCount++;
+    
+    // Break after maxPages to prevent unbounded memory usage
+    if (pageCount >= maxPages) {
+      console.warn(`[fetchAllBorrowerLoans] Stopped after ${maxPages} pages. Use pagination for large datasets.`);
+      break;
+    }
   } while (cursor);
 
   return items;
@@ -714,11 +740,12 @@ async function fetchAllBorrowerLoans(
 /**
  * Fetches all loans.
  * Data is cached for 60s (inherits QueryClient default staleTime).
+ * Issue #2299: Accept signal for proper cancellation.
  */
 export function useLoans(options?: Omit<UseQueryOptions<Loan[]>, "queryKey" | "queryFn">) {
   return useQuery<Loan[]>({
     queryKey: queryKeys.loans.all(),
-    queryFn: () => apiFetch<Loan[]>("/loans"),
+    queryFn: ({ signal }) => apiFetch<Loan[]>("/loans", { signal }),
     ...options,
   });
 }
