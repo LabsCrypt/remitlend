@@ -19,6 +19,90 @@ function jsonResponse(status: number, body: unknown, statusText = "") {
   } as Response;
 }
 
+function emptyResponse(status: number, headers: Record<string, string> = {}) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: "",
+    headers: {
+      get: (name: string) => headers[name.toLowerCase()] ?? null,
+    },
+    json: async () => {
+      throw new SyntaxError("Unexpected end of JSON input");
+    },
+    text: async () => "",
+  } as unknown as Response;
+}
+
+function jsonResponseWithHeaders(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: "",
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === "content-type"
+          ? "application/json"
+          : (headers[name.toLowerCase()] ?? null),
+    },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as unknown as Response;
+}
+
+describe("apiFetch 204 / empty-body handling", () => {
+  beforeEach(() => {
+    useUserStore.setState({ user: null, authToken: null, isAuthenticated: false });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    useUserStore.setState({ user: null, authToken: null, isAuthenticated: false });
+    jest.restoreAllMocks();
+  });
+
+  it("resolves to undefined for a 204 No Content response", async () => {
+    globalThis.fetch = jest
+      .fn<() => Promise<Response>>()
+      .mockResolvedValue(emptyResponse(204)) as unknown as typeof fetch;
+
+    const result = await apiFetch<void>("/notifications/mark-read");
+    expect(result).toBeUndefined();
+  });
+
+  it("resolves to undefined when content-length header is '0'", async () => {
+    globalThis.fetch = jest
+      .fn<() => Promise<Response>>()
+      .mockResolvedValue(emptyResponse(200, { "content-length": "0" })) as unknown as typeof fetch;
+
+    const result = await apiFetch<void>("/notifications/mark-all-read");
+    expect(result).toBeUndefined();
+  });
+
+  it("does NOT throw on 204 (mark-read must not show a failure toast)", async () => {
+    globalThis.fetch = jest
+      .fn<() => Promise<Response>>()
+      .mockResolvedValue(emptyResponse(204)) as unknown as typeof fetch;
+
+    await expect(apiFetch<void>("/notifications/mark-read")).resolves.not.toThrow();
+  });
+
+  it("still parses JSON body when response has content", async () => {
+    globalThis.fetch = jest
+      .fn<() => Promise<Response>>()
+      .mockResolvedValue(
+        jsonResponseWithHeaders(200, { ok: true }),
+      ) as unknown as typeof fetch;
+
+    const result = await apiFetch<{ ok: boolean }>("/loans/config");
+    expect(result).toEqual({ ok: true });
+  });
+});
+
 describe("apiFetch error envelope", () => {
   beforeEach(() => {
     useUserStore.setState({ user: null, authToken: null, isAuthenticated: false });

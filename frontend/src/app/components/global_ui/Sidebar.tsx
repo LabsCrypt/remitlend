@@ -22,23 +22,16 @@ import {
   selectWalletNetwork,
 } from "../../stores/useWalletStore";
 import { useUserStore } from "../../stores/useUserStore";
+import { decodeJwtPayload } from "../../lib/session";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 function getTokenRole(token: string | null): string | undefined {
-  if (!token || typeof window === "undefined") return undefined;
-
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) return undefined;
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    return (JSON.parse(window.atob(padded)) as { role?: string }).role;
-  } catch {
-    return undefined;
-  }
+  if (!token) return undefined;
+  const payload = decodeJwtPayload(token);
+  return typeof payload?.role === "string" ? payload.role : undefined;
 }
 
 interface SidebarProps {

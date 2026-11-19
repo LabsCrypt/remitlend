@@ -352,6 +352,27 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     });
   }
 
+  // Handle 204 No Content and empty-body responses gracefully.
+  // Calling response.json() on an empty body throws "Unexpected end of JSON input",
+  // turning a successful write into a spurious mutation error.
+  if (
+    response.status === 204 ||
+    response.headers.get("content-length") === "0"
+  ) {
+    return undefined as unknown as T;
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    // Non-JSON success (e.g. plain-text 200): return undefined so callers
+    // typed as apiFetch<void> don't blow up.
+    const text = await response.text().catch(() => "");
+    if (!text) return undefined as unknown as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return undefined as unknown as T;
+    }
+  }
   return response.json() as Promise<T>;
 }
 
@@ -366,6 +387,8 @@ export interface Loan {
   status: LoanStatus;
   borrowerId: string;
   createdAt: string;
+  /** ISO-8601 deadline from the backend (accounts for approval time and rollovers). */
+  nextPaymentDeadline?: string;
 }
 
 export interface Remittance {
