@@ -16,10 +16,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { useContractToast } from "../../hooks/useContractToast";
 import { selectWalletAddress, useWalletStore } from "../../stores/useWalletStore";
 import { useQueryClient } from "@tanstack/react-query";
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
+import { formatCurrency } from "../../components/borrower/loanFormatters";
 
 function formatRatio(value: number) {
   return value > 10 ? `${value.toFixed(2)}%` : `${(value * 100).toFixed(2)}%`;

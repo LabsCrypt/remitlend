@@ -16,10 +16,7 @@ import { LoanTimeline } from "../../../components/ui/LoanTimeline";
 import { TxHashLink } from "../../../components/ui/TxHashLink";
 import { LoanHealth } from "../../../components/loan/LoanHealth";
 import { downloadCsv, rowsToCsv } from "../../../utils/csv";
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
+import { formatCurrency } from "../../../components/borrower/loanFormatters";
 
 function formatDate(iso: string | undefined) {
   if (!iso) return "—";

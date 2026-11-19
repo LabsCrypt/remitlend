@@ -11,12 +11,9 @@ import { PaginationControls } from "../../components/ui/PaginationControls";
 import { useWalletStore, selectWalletAddress } from "../../stores/useWalletStore";
 import { useTranslations, useLocale } from "next-intl";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { formatCurrency } from "../../components/borrower/loanFormatters";
 
 const PAGE_SIZE = 20;
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
 
 function getLoanDisplayStatus(status: string, nextPaymentDeadline: string, now: number) {
   if (status !== "active") {

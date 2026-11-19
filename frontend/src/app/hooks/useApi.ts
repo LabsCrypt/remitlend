@@ -8,7 +8,7 @@
  * Base URL is read from NEXT_PUBLIC_API_URL environment variable.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   useQuery,
   useMutation,
@@ -22,6 +22,7 @@ import { useUserStore } from "../stores/useUserStore";
 import { isJwtExpired, logoutUser, SessionExpiredError } from "../lib/session";
 import { useWallet } from "../components/providers/WalletProvider";
 import { useContractToast } from "./useContractToast";
+import { useSSE } from "./useSSE";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -1297,6 +1298,12 @@ export function useRemittanceNft(
 
 /**
  * Fetches the current credit score for the authenticated borrower.
+ *
+ * The SSE stream that invalidates the cache on score-changing events
+ * (LoanRepaid / LoanDefaulted) is built on top of the shared {@link useSSE}
+ * hook, giving it the same maxReconnectAttempts cap and polling fallback as
+ * the notification and loan streams — previously it retried forever with
+ * no fallback.
  */
 export function useCreditScore(
   userId: string | undefined,
@@ -1325,129 +1332,66 @@ export function useCreditScore(
     ...options,
   });
 
-  useEffect(() => {
-    if (!walletAddress || !authToken || !userId) {
+  // ── SSE invalidation via shared useSSE ──────────────────────────────────
+  //
+  // Preserve the same event mapping: only LoanRepaid / LoanDefaulted events
+  // for the current borrower trigger a cache invalidation. The "init" event
+  // is ignored, just like in the old hand-rolled version.
+
+  const sseUrl =
+    walletAddress && authToken && userId
+      ? `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`
+      : null;
+
+  type CreditScoreSSEPayload = {
+    type?: string;
+    borrower?: string;
+    eventType?: string;
+  };
+
+  // Stable refs so onMessage can close over latest values without
+  // re-subscribing the stream on every render.
+  const userIdRef = useState(userId)[0] as string | undefined;
+  const walletAddressRef = useState(walletAddress)[0] as string | undefined;
+
+  const onMessage = (payload: CreditScoreSSEPayload) => {
+    if (payload.type === "init") {
       return;
     }
 
-    let cancelled = false;
-    let retryDelay = 1_000;
-    let abortControllerRef: AbortController | null = null;
-    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    const scoreChangingEvent =
+      payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
 
-    const connect = async () => {
-      if (cancelled) {
-        return;
-      }
+    if (payload.borrower === walletAddressRef && scoreChangingEvent) {
+      const currentScore = queryClient.getQueryData<number>(
+        queryKeys.creditScore.byUser(userIdRef ?? ""),
+      );
 
-      if (abortControllerRef) {
-        abortControllerRef.abort();
-      }
+      setPreviousScoreState({
+        walletAddress: walletAddressRef,
+        previousScore: currentScore,
+      });
 
-      const controller = new AbortController();
-      abortControllerRef = controller;
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.creditScore.byUser(userIdRef ?? ""),
+      });
+    }
+  };
 
-      try {
-        const url = `${API_URL}/api/events/stream?borrower=${encodeURIComponent(walletAddress)}`;
-        const headers: Record<string, string> = {
-          Accept: "text/event-stream",
-        };
+  // Fallback polling: re-fetch the score via REST when SSE is down.
+  const onFallbackPoll = () => {
+    if (userId) {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.creditScore.byUser(userId),
+      });
+    }
+  };
 
-        if (authToken) {
-          headers["Authorization"] = `Bearer ${authToken}`;
-        }
-
-        const response = await fetch(url, {
-          headers,
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`SSE connection failed: ${response.status}`);
-        }
-
-        if (!response.body) {
-          throw new Error("Response body is null");
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        retryDelay = 1_000;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-
-          for (const part of parts) {
-            const lines = part.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                const dataStr = line.slice(6);
-                try {
-                  const payload = JSON.parse(dataStr) as {
-                    type?: string;
-                    borrower?: string;
-                    eventType?: string;
-                  };
-
-                  if (payload.type === "init") {
-                    continue;
-                  }
-
-                  const scoreChangingEvent =
-                    payload.eventType === "LoanRepaid" || payload.eventType === "LoanDefaulted";
-
-                  if (payload.borrower === walletAddress && scoreChangingEvent) {
-                    const currentScore = queryClient.getQueryData<number>(
-                      queryKeys.creditScore.byUser(userId ?? ""),
-                    );
-
-                    setPreviousScoreState({
-                      walletAddress,
-                      previousScore: currentScore,
-                    });
-
-                    queryClient.invalidateQueries({
-                      queryKey: queryKeys.creditScore.byUser(userId ?? ""),
-                    });
-                  }
-                } catch {
-                  // Ignore malformed SSE payloads.
-                }
-              }
-            }
-          }
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          return;
-        }
-
-        if (!cancelled) {
-          const delay = Math.min(retryDelay, 30_000);
-          retryDelay = Math.min(retryDelay * 2, 30_000);
-          retryTimeout = setTimeout(() => void connect(), delay);
-        }
-      }
-    };
-
-    void connect();
-
-    return () => {
-      cancelled = true;
-      if (abortControllerRef) {
-        abortControllerRef.abort();
-      }
-      if (retryTimeout) {
-        clearTimeout(retryTimeout);
-      }
-    };
-  }, [authToken, queryClient, walletAddress, userId]);
+  useSSE<CreditScoreSSEPayload>({
+    url: sseUrl,
+    onMessage,
+    onFallbackPoll,
+  });
 
   return {
     ...query,

@@ -12,6 +12,8 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/Card";
 import { DollarSign, TrendingUp } from "lucide-react";
+import { formatCurrency } from "../borrower/loanFormatters";
+import { useLocale } from "next-intl";
 
 export interface YieldDataPoint {
   date: string;
@@ -26,22 +28,13 @@ interface YieldEarningsChartProps {
 }
 
 export function YieldEarningsChart({ data, className }: YieldEarningsChartProps) {
+  const locale = useLocale();
   // Calculate total earnings
   const totalEarnings = data.reduce((sum, point) => sum + point.earnings, 0);
   const avgAPY =
     data.length > 0
       ? (data.reduce((sum, point) => sum + point.apy, 0) / data.length).toFixed(2)
       : "0.00";
-
-  // Format currency
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
 
   return (
     <Card className={className}>

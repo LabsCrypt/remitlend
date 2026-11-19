@@ -382,5 +382,31 @@
     "targetContract": "Target contract",
     "expiresAt": "Expires at",
     "timeToExecutable": "Time to executable"
+  },
+  "LoanTimeline": {
+    "noEvents": "No events yet.",
+    "amount": "Amount:",
+    "events": {
+      "LoanRequested": "Loan requested",
+      "LoanApproved": "Loan approved",
+      "LoanRepaid": "Repayment made",
+      "LoanDefaulted": "Loan defaulted",
+      "Seized": "Collateral seized"
+    }
+  },
+  "Modal": {
+    "close": "Close modal"
+  },
+  "RepayPage": {
+    "eyebrow": "Borrower Portal",
+    "heading": "Repay Loan #{loanId}",
+    "subheading": "Real-time blockchain settlement for your loan repayments.",
+    "amountLabel": "Repayment amount",
+    "decimalsHint": "Up to {decimals} decimal places supported.",
+    "submitButton": "Review & Repay",
+    "readyTitle": "Ready to repay",
+    "cancelledTitle": "Repayment cancelled",
+    "cancelledMessage": "You cancelled the repayment flow.",
+    "cancelledGuidance": "No payment was submitted. Update the amount and try again."
   }
 }

@@ -40,12 +40,9 @@ import {
   formatAmountOnBlur,
   getAssetDecimals,
 } from "../../utils/amount";
+import { formatCurrency } from "../../components/borrower/loanFormatters";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(2)}%`;

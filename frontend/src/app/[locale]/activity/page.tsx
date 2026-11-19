@@ -10,6 +10,7 @@ import { StatusIndicator } from "../../components/ui/StatusIndicator";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { downloadCsv, rowsToCsv } from "../../utils/csv";
 import { formatDate } from "../../utils/date";
+import { formatCurrency } from "../../components/borrower/loanFormatters";
 
 type FilterType = "all" | "loan" | "remittance";
 
@@ -363,10 +364,6 @@ export default function ActivityPage() {
       )}
     </main>
   );
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
 function getStatusTone(status: string): "success" | "warning" | "danger" | "info" | "neutral" {

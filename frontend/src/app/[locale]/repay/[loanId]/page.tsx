@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { submitLoanTransaction } from "../../../hooks/useApi";
 import { Button } from "../../../components/ui/Button";
 import {
@@ -35,6 +36,7 @@ export default function RepayLoanPage() {
   const params = useParams<{ loanId: string }>();
   const loanId = params?.loanId ?? "unknown";
   const router = useRouter();
+  const t = useTranslations("RepayPage");
 
   const walletAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
@@ -47,7 +49,7 @@ export default function RepayLoanPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [trackerState, setTrackerState] = useState<TransactionStatusState>("idle");
-  const [trackerTitle, setTrackerTitle] = useState("Ready to repay");
+  const [trackerTitle, setTrackerTitle] = useState(() => t("readyTitle"));
   const [trackerMessage, setTrackerMessage] = useState("");
   const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
   const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
@@ -60,9 +62,9 @@ export default function RepayLoanPage() {
 
   const cancelFlow = () => {
     setTrackerState("cancelled");
-    setTrackerTitle("Repayment cancelled");
-    setTrackerMessage("You cancelled the repayment flow.");
-    setTrackerGuidance("No payment was submitted. Update the amount and try again.");
+    setTrackerTitle(t("cancelledTitle"));
+    setTrackerMessage(t("cancelledMessage"));
+    setTrackerGuidance(t("cancelledGuidance"));
     setIsSubmitting(false);
   };
 
@@ -206,13 +208,13 @@ export default function RepayLoanPage() {
     <section className="mx-auto max-w-3xl space-y-6">
       <header>
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
-          Borrower Portal
+          {t("eyebrow")}
         </p>
         <h1 className="mt-3 text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-          Repay Loan #{loanId}
+          {t("heading", { loanId })}
         </h1>
         <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          Real-time blockchain settlement for your loan repayments.
+          {t("subheading")}
         </p>
       </header>
 
@@ -225,7 +227,7 @@ export default function RepayLoanPage() {
             htmlFor="repayment-amount"
             className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
           >
-            Repayment amount
+            {t("amountLabel")}
           </label>
           <input
             id="repayment-amount"
@@ -249,7 +251,7 @@ export default function RepayLoanPage() {
               precisionError ? "text-red-600 dark:text-red-400" : "text-zinc-500 dark:text-zinc-400"
             }`}
           >
-            {precisionError ?? helperText ?? `Up to ${decimals} decimal places supported.`}
+            {precisionError ?? helperText ?? t("decimalsHint", { decimals })}
           </p>
         </div>
 
@@ -259,7 +261,7 @@ export default function RepayLoanPage() {
           isLoading={isSubmitting}
           disabled={!!precisionError}
         >
-          Review & Repay
+          {t("submitButton")}
         </Button>
       </form>
 
