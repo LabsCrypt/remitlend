@@ -108,12 +108,12 @@ function extractContractId(resultMeta: xdr.TransactionMeta): string {
 }
 
 // Poll until the transaction leaves NOT_FOUND, giving up after maxAttempts.
-export async function pollTransaction(
+export const pollTransaction = async (
     server: Pick<Rpc.Server, 'getTransaction'>,
     hash: string,
     maxAttempts: number = MAX_POLL_ATTEMPTS,
     intervalMs: number = POLL_INTERVAL_MS,
-): Promise<Rpc.Api.GetTransactionResponse> {
+): Promise<Rpc.Api.GetTransactionResponse> => {
     let txResponse = await server.getTransaction(hash);
     let attempts = 1;
     while (txResponse.status === 'NOT_FOUND') {
@@ -129,7 +129,7 @@ export async function pollTransaction(
 
 // The deployer key is the only signer, so admin-gated calls cannot succeed
 // when a different admin is configured. Reject that config up front.
-export function resolveAdminAddress(configAdmin: string | undefined, deployerPublicKey: string): string {
+export const resolveAdminAddress = (configAdmin: string | undefined, deployerPublicKey: string): string => {
     if (!configAdmin || configAdmin === 'YOUR_ADMIN_PUBLIC_KEY') return deployerPublicKey;
     if (configAdmin !== deployerPublicKey) {
         throw new Error(
@@ -142,7 +142,7 @@ export function resolveAdminAddress(configAdmin: string | undefined, deployerPub
 }
 
 // Replace any previous "RemitLend contracts" block instead of appending a duplicate.
-export function upsertEnvBlock(existing: string, block: string): string {
+export const upsertEnvBlock = (existing: string, block: string): string => {
     const lines = existing.split(/\r?\n/);
     const kept: string[] = [];
     let inBlock = false;
@@ -158,7 +158,7 @@ export function upsertEnvBlock(existing: string, block: string): string {
     return kept.join('\n').replace(/\n+$/, '') + '\n' + block.replace(/^\n+/, '\n') + '\n';
 }
 
-async function upsertEnvFile(filePath: string, block: string): Promise<void> {
+const upsertEnvFile = async (filePath: string, block: string): Promise<void> => {
     const existing = (await fs.pathExists(filePath)) ? await fs.readFile(filePath, 'utf8') : '';
     await fs.outputFile(filePath, upsertEnvBlock(existing, block));
 }
@@ -166,12 +166,12 @@ async function upsertEnvFile(filePath: string, block: string): Promise<void> {
 // Per-step state so a failed deploy can be re-run and resume where it stopped.
 type DeployState = Record<string, string>;
 
-export async function runStep(
+export const runStep = async (
     state: DeployState,
     statePath: string,
     key: string,
     fn: () => Promise<string>,
-): Promise<string> {
+): Promise<string> => {
     if (state[key] !== undefined) {
         console.log(`  ${key}: already done, skipping`);
         return state[key];
@@ -184,9 +184,8 @@ export async function runStep(
 
 let resumeState: { state: DeployState; path: string } | null = null;
 
-function step(key: string, fn: () => Promise<string>): Promise<string> {
-    return resumeState ? runStep(resumeState.state, resumeState.path, key, fn) : fn();
-}
+const step = (key: string, fn: () => Promise<string>): Promise<string> =>
+    resumeState ? runStep(resumeState.state, resumeState.path, key, fn) : fn();
 
 async function sendTx(
     server: Rpc.Server,
@@ -277,24 +276,24 @@ async function invoke(
     account: Keypair,
     networkPassphrase: string,
 ): Promise<void> {
-    await step(`invoke:${contractId}:${method}`, async () => {
-        const source = await server.getAccount(account.publicKey());
-        const tx = new TransactionBuilder(source, { fee: '100000', networkPassphrase })
-            .addOperation(
-                Operation.invokeHostFunction({
-                    func: xdr.HostFunction.hostFunctionTypeInvokeContract(
-                        new xdr.InvokeContractArgs({
-                            contractAddress: Address.fromString(contractId).toScAddress(),
-                            functionName: method,
-                            args: args.map(arg => nativeToScVal(arg)),
-                        }),
-                    ),
-                    auth: [],
-                }),
-            )
-            .setTimeout(30)
-            .build();
+    const source = await server.getAccount(account.publicKey());
+    const tx = new TransactionBuilder(source, { fee: '100000', networkPassphrase })
+        .addOperation(
+            Operation.invokeHostFunction({
+                func: xdr.HostFunction.hostFunctionTypeInvokeContract(
+                    new xdr.InvokeContractArgs({
+                        contractAddress: Address.fromString(contractId).toScAddress(),
+                        functionName: method,
+                        args: args.map(arg => nativeToScVal(arg)),
+                    }),
+                ),
+                auth: [],
+            }),
+        )
+        .setTimeout(30)
+        .build();
 
+    await step(`invoke:${contractId}:${method}`, async () => {
         await sendTx(server, tx, account);
         return 'done';
     });
