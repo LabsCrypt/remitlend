@@ -2,6 +2,7 @@
 
 import { Loader2, AlertCircle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "./Card";
+import { formatCurrency } from "../borrower/loanFormatters";
 
 interface CreditScoreBreakdownProps {
   score?: number | null;
@@ -117,9 +118,7 @@ export function CreditScoreBreakdown({
               Total repaid
             </p>
             <p className="mt-2 text-lg font-bold text-zinc-900 dark:text-zinc-50">
-              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-                breakdown.totalRepaid,
-              )}
+              {formatCurrency(breakdown.totalRepaid)}
             </p>
           </div>
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">

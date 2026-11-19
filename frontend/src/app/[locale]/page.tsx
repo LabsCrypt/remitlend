@@ -9,7 +9,7 @@ import {
   ExternalLink,
   WalletCards,
 } from "lucide-react";
-import { useTranslations } from "next-intl"; // <--- This is the new one
+import { useTranslations, useLocale } from "next-intl"; // <--- This is the new one
 import { useRouter } from "next/navigation";
 import {
   useWalletStore,
@@ -33,6 +33,7 @@ import { ErrorBoundary } from "../components/global_ui/ErrorBoundary";
 import { Tooltip } from "../components/ui/Tooltip";
 import React, { useMemo, useState, useEffect } from "react";
 import type { Loan } from "../hooks/useApi";
+import { formatCurrency } from "../components/borrower/loanFormatters";
 
 const SEVENTY_TWO_HOURS_MS = 72 * 60 * 60 * 1000;
 const SESSION_BANNER_KEY = "repayment_banner_dismissed";
@@ -90,6 +91,7 @@ function RepaymentReminderBanner({
 }) {
   const router = useRouter();
   const t = useTranslations("HomePage");
+  const locale = useLocale();
   const mostUrgent = urgentLoans[0];
   if (!mostUrgent) return null;
 
@@ -143,9 +145,7 @@ function RepaymentReminderBanner({
           </p>
           <p className={`mt-0.5 text-xs ${subColor}`}>
             Amount due:{" "}
-            {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-              mostUrgent.amount,
-            )}{" "}
+            {formatCurrency(mostUrgent.amount, locale)}{" "}
             · Due{" "}
             {dueDate.toLocaleDateString(undefined, {
               month: "short",
@@ -173,10 +173,6 @@ function RepaymentReminderBanner({
       </div>
     </div>
   );
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
 export default function Home() {

@@ -16,6 +16,7 @@ import { useWallet } from "../providers/WalletProvider";
 import { useContractToast } from "../../hooks/useContractToast";
 import { buildUnsignedLoanRequestXdr } from "../../utils/soroban";
 import { getAssetDecimals } from "../../utils/amount";
+import { formatCurrency } from "../borrower/loanFormatters";
 import {
   mapTransactionError,
   pollTransactionStatus,
@@ -24,15 +25,6 @@ import {
 import { DEFAULT_TERM_LEDGERS, type LoanWizardData } from "./LoanApplicationWizard";
 
 const ANNUAL_RATE_PERCENT = 12;
-
-function formatMoney(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function addDays(date: Date, days: number): Date {
   const result = new Date(date);
@@ -156,7 +148,7 @@ export function StepFinalSignature({
         operations: [
           {
             type: "request_loan",
-            description: `Request ${formatMoney(principal)} for ${data.termDays} days`,
+            description: `Request ${formatCurrency(principal)} for ${data.termDays} days`,
             amount: principal.toString(),
             token: data.asset,
             details: {
@@ -331,13 +323,13 @@ export function StepFinalSignature({
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {[
                 { label: "Asset", value: data.asset },
-                { label: "Principal", value: formatMoney(principal) },
+                { label: "Principal", value: formatCurrency(principal) },
                 { label: "Term", value: `${data.termDays} days` },
                 { label: "APR", value: `${ANNUAL_RATE_PERCENT}%` },
-                { label: "Estimated Interest", value: formatMoney(estimatedInterest) },
+                { label: "Estimated Interest", value: formatCurrency(estimatedInterest) },
                 {
                   label: "Total Repayment",
-                  value: formatMoney(totalRepayment),
+                  value: formatCurrency(totalRepayment),
                   highlight: true,
                 },
                 {

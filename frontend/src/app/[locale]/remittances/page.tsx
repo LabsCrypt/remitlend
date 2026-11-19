@@ -28,10 +28,7 @@ import Link from "next/link";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { hasActiveRemittanceFilters, withRemittanceFilters } from "../../lib/remittanceFilters";
 import { formatDate } from "../../utils/date";
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
+import { formatCurrency } from "../../components/borrower/loanFormatters";
 
 const STATUS_CONFIG: Record<
   Remittance["status"],

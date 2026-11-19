@@ -20,7 +20,8 @@ import {
   formatAmountOnBlur,
   getAssetDecimals,
 } from "../../utils/amount";
-import { formatCurrency } from "./loanFormatters";
+import { formatCurrency, formatCurrencyNoSymbol } from "./loanFormatters";
+import { useLocale } from "next-intl";
 
 interface LoanRepaymentFormProps {
   loanId: number;
@@ -41,6 +42,7 @@ export function LoanRepaymentForm({
   const txPreview = useTransactionPreview();
   const gamificationStore = useGamificationStore();
   const address = useWalletStore(selectWalletAddress);
+  const locale = useLocale();
 
   const repayment = useRepaymentOperation({
     onSuccess: () => {
@@ -100,13 +102,13 @@ export function LoanRepaymentForm({
     const effectiveMin = Math.min(minPayment, totalOwed);
 
     if (effectiveMin > 0 && numAmount < effectiveMin) {
-      setError(`Minimum payment is ${formatCurrency(effectiveMin).replace("$", "")} USDC`);
+      setError(`Minimum payment is ${formatCurrencyNoSymbol(effectiveMin, locale)} USDC`);
       return false;
     }
 
     if (numAmount > totalOwed) {
       setError(
-        `Amount cannot exceed total owed (${formatCurrency(totalOwed).replace("$", "")} USDC)`,
+        `Amount cannot exceed total owed (${formatCurrencyNoSymbol(totalOwed, locale)} USDC)`,
       );
       return false;
     }
@@ -157,7 +159,7 @@ export function LoanRepaymentForm({
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-600 dark:text-zinc-400">Total Owed</span>
               <span className="text-2xl font-bold text-gray-900 dark:text-zinc-100">
-                {formatCurrency(totalOwed).replace("$", "")} USDC
+                {formatCurrencyNoSymbol(totalOwed, locale)} USDC
               </span>
             </div>
             {minPayment > 0 && (
@@ -166,7 +168,7 @@ export function LoanRepaymentForm({
                   {totalOwed <= minPayment ? "Minimum Payment (payoff)" : "Minimum Payment"}
                 </span>
                 <span className="text-sm font-medium text-gray-700 dark:text-zinc-300">
-                  {formatCurrency(Math.min(minPayment, totalOwed)).replace("$", "")} USDC
+                  {formatCurrencyNoSymbol(Math.min(minPayment, totalOwed), locale)} USDC
                 </span>
               </div>
             )}
@@ -192,7 +194,7 @@ export function LoanRepaymentForm({
             />
 
             <Button variant="ghost" size="sm" onClick={handlePayFullAmount} className="w-full">
-              Pay Full Amount ({formatCurrency(totalOwed).replace("$", "")} USDC)
+              Pay Full Amount ({formatCurrencyNoSymbol(totalOwed, locale)} USDC)
             </Button>
           </div>
 

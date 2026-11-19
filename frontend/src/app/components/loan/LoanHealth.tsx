@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, ShieldCheck } from "lucide-react";
+import { formatCurrency } from "../borrower/loanFormatters";
 
 export interface LoanHealthData {
   collateralLocked?: number;
@@ -52,10 +53,6 @@ function normalizeRatio(value: number | undefined): number | null {
   }
 
   return value > 10 ? value / 100 : value;
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
 function formatPercent(value: number) {

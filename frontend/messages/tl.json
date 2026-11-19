@@ -382,5 +382,31 @@
     "targetContract": "Target na kontrata",
     "expiresAt": "Mawawalan ng bisa",
     "timeToExecutable": "Oras hanggang sa maipatupad"
+  },
+  "LoanTimeline": {
+    "noEvents": "Wala pang mga kaganapan.",
+    "amount": "Halaga:",
+    "events": {
+      "LoanRequested": "Hiningi ang loan",
+      "LoanApproved": "Naaprubahang loan",
+      "LoanRepaid": "Nagbayad na",
+      "LoanDefaulted": "Defaulted ang loan",
+      "Seized": "Kinuha ang collateral"
+    }
+  },
+  "Modal": {
+    "close": "Isara ang modal"
+  },
+  "RepayPage": {
+    "eyebrow": "Portal ng Borrower",
+    "heading": "Bayaran ang Loan #{loanId}",
+    "subheading": "Real-time blockchain settlement para sa iyong mga bayad sa loan.",
+    "amountLabel": "Halaga ng bayad",
+    "decimalsHint": "Hanggang {decimals} decimal na lugar ang sinusuportahan.",
+    "submitButton": "Suriin at Bayaran",
+    "readyTitle": "Handa nang magbayad",
+    "cancelledTitle": "Kinansela ang pagbabayad",
+    "cancelledMessage": "Kinansela mo ang proseso ng pagbabayad.",
+    "cancelledGuidance": "Walang bayad na naisumite. I-update ang halaga at subukan muli."
   }
 }

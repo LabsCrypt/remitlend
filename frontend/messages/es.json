@@ -382,5 +382,31 @@
     "targetContract": "Contrato objetivo",
     "expiresAt": "Expira",
     "timeToExecutable": "Tiempo hasta ejecutable"
+  },
+  "LoanTimeline": {
+    "noEvents": "Aún no hay eventos.",
+    "amount": "Cantidad:",
+    "events": {
+      "LoanRequested": "Solicitud de préstamo",
+      "LoanApproved": "Préstamo aprobado",
+      "LoanRepaid": "Pago realizado",
+      "LoanDefaulted": "Préstamo en incumplimiento",
+      "Seized": "Garantía confiscada"
+    }
+  },
+  "Modal": {
+    "close": "Cerrar modal"
+  },
+  "RepayPage": {
+    "eyebrow": "Portal del Prestatario",
+    "heading": "Repagar Préstamo #{loanId}",
+    "subheading": "Liquidación blockchain en tiempo real para sus pagos.",
+    "amountLabel": "Monto del pago",
+    "decimalsHint": "Hasta {decimals} decimales admitidos.",
+    "submitButton": "Revisar y Repagar",
+    "readyTitle": "Listo para repagar",
+    "cancelledTitle": "Pago cancelado",
+    "cancelledMessage": "Cancelaste el flujo de pago.",
+    "cancelledGuidance": "No se envió ningún pago. Actualiza el monto e inténtalo de nuevo."
   }
 }

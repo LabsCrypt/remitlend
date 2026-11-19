@@ -33,6 +33,7 @@ import { Button } from "../ui/Button";
 import { AnalyticsSkeleton } from "../skeletons/AnalyticsSkeleton";
 import { SkeletonChart } from "../ui/Skeleton";
 import { RefreshCw, CheckCircle2, TrendingUp, DollarSign, Activity } from "lucide-react";
+import { formatCurrency } from "../borrower/loanFormatters";
 
 interface FinancialPerformanceDashboardProps {
   userId: string;
@@ -281,12 +282,7 @@ export function FinancialPerformanceDashboard({
     }
   };
 
-  const fmt = (n: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(n);
+  const fmt = (n: number) => formatCurrency(n, "en", { decimalPlaces: 0 });
 
   return (
     <div className="space-y-6">

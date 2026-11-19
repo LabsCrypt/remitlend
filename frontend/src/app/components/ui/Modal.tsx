@@ -3,6 +3,7 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslations } from "next-intl";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 import { cn } from "@/app/utils/cn";
@@ -36,6 +37,7 @@ const Modal: React.FC<ModalProps> = ({
   const modalRef = React.useRef<HTMLDivElement>(null);
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
   const titleId = React.useId();
+  const t = useTranslations("Modal");
 
   useModalFocusTrap({
     isOpen,
@@ -84,7 +86,7 @@ const Modal: React.FC<ModalProps> = ({
               <button
                 ref={closeButtonRef}
                 onClick={onClose}
-                aria-label="Close modal"
+                aria-label={t("close")}
                 className="rounded-full p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-900 dark:text-zinc-500"
               >
                 <X size={20} />

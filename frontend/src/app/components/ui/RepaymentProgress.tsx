@@ -1,6 +1,8 @@
 "use client";
 
 import { LoanStatusBadge } from "./LoanStatusBadge";
+import { formatCurrency } from "../borrower/loanFormatters";
+import { useLocale } from "next-intl";
 
 interface RepaymentProgressProps {
   totalRepaid: number;
@@ -8,11 +10,8 @@ interface RepaymentProgressProps {
   status: "active" | "repaid" | "defaulted" | "pending" | "liquidated";
 }
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
-
 export function RepaymentProgress({ totalRepaid, totalOwed, status }: RepaymentProgressProps) {
+  const locale = useLocale();
   const total = totalRepaid + totalOwed;
   const progress = total > 0 ? Math.min((totalRepaid / total) * 100, 100) : 100;
 
@@ -35,11 +34,11 @@ export function RepaymentProgress({ totalRepaid, totalOwed, status }: RepaymentP
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
         <span>
           Paid:{" "}
-          <strong className="text-zinc-900 dark:text-zinc-50">{formatCurrency(totalRepaid)}</strong>
+          <strong className="text-zinc-900 dark:text-zinc-50">{formatCurrency(totalRepaid, locale)}</strong>
         </span>
         <span>
           Remaining:{" "}
-          <strong className="text-zinc-900 dark:text-zinc-50">{formatCurrency(totalOwed)}</strong>
+          <strong className="text-zinc-900 dark:text-zinc-50">{formatCurrency(totalOwed, locale)}</strong>
         </span>
         <LoanStatusBadge status={status} />
       </div>

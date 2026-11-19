@@ -4,15 +4,7 @@ import { CalendarDays } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import type { LoanAmortization, LoanAmortizationScheduleRow } from "../../hooks/useApi";
 import { EmptyState } from "../ui/EmptyState";
-
-function formatMoney(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+import { formatCurrency } from "../borrower/loanFormatters";
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", {
@@ -74,19 +66,19 @@ export function RepaymentScheduleTable({
             <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <p className="text-xs text-zinc-500 dark:text-zinc-400">Principal Total</p>
               <p className="mt-0.5 font-semibold text-zinc-900 dark:text-zinc-50">
-                {formatMoney(amortization.principal)}
+                {formatCurrency(amortization.principal)}
               </p>
             </div>
             <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <p className="text-xs text-zinc-500 dark:text-zinc-400">Total Interest</p>
               <p className="mt-0.5 font-semibold text-zinc-900 dark:text-zinc-50">
-                {formatMoney(amortization.totalInterest)}
+                {formatCurrency(amortization.totalInterest)}
               </p>
             </div>
             <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-900/50 dark:bg-indigo-950/30">
               <p className="text-xs text-indigo-600 dark:text-indigo-400">Total Cost of Loan</p>
               <p className="mt-0.5 font-semibold text-indigo-700 dark:text-indigo-300">
-                {formatMoney(amortization.totalDue)}
+                {formatCurrency(amortization.totalDue)}
               </p>
             </div>
           </div>
@@ -129,16 +121,16 @@ export function RepaymentScheduleTable({
                     <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{row.period}</td>
                     <td className="px-4 py-3 text-zinc-900 dark:text-zinc-50">{row.dueDate}</td>
                     <td className="px-4 py-3 text-right text-zinc-900 dark:text-zinc-50">
-                      {formatMoney(row.principal)}
+                      {formatCurrency(row.principal)}
                     </td>
                     <td className="px-4 py-3 text-right text-amber-600 dark:text-amber-400">
-                      {formatMoney(row.interest)}
+                      {formatCurrency(row.interest)}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-zinc-900 dark:text-zinc-50">
-                      {formatMoney(row.total)}
+                      {formatCurrency(row.total)}
                     </td>
                     <td className="px-4 py-3 text-right text-zinc-500 dark:text-zinc-400">
-                      {formatMoney(row.balance)}
+                      {formatCurrency(row.balance)}
                     </td>
                   </tr>
                 ))}
@@ -152,7 +144,7 @@ export function RepaymentScheduleTable({
                     Total Cost of Loan
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-indigo-600 dark:text-indigo-400">
-                    {formatMoney(amortization.totalDue)}
+                    {formatCurrency(amortization.totalDue)}
                   </td>
                   <td />
                 </tr>

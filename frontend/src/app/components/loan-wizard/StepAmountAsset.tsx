@@ -12,6 +12,7 @@ import {
   formatAmountOnBlur,
   getAssetDecimals,
 } from "../../utils/amount";
+import { formatCurrency } from "../borrower/loanFormatters";
 
 const TERM_OPTIONS = [
   { label: "30 days", days: 30 as const },
@@ -29,14 +30,6 @@ function getScoreBandLabel(score: number): string {
   if (score >= 580) return "Fair";
   if (score >= 500) return "Poor";
   return "Below minimum";
-}
-
-function formatMoney(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
 }
 
 interface StepAmountAssetProps {
@@ -69,11 +62,11 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
       return false;
     }
     if (amountNumber < minAmount) {
-      onError(`Minimum request amount is ${formatMoney(minAmount)}.`);
+      onError(`Minimum request amount is ${formatCurrency(minAmount)}.`);
       return false;
     }
     if (amountNumber > data.maxAmount) {
-      onError(`Maximum eligible amount for your score is ${formatMoney(data.maxAmount)}.`);
+      onError(`Maximum eligible amount for your score is ${formatCurrency(data.maxAmount)}.`);
       return false;
     }
     onError(null);
@@ -152,7 +145,7 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
                 helperText ||
                 (data.maxAmount === 0
                   ? "Not eligible"
-                  : `Eligible range: ${formatMoney(minAmount)} – ${formatMoney(
+                  : `Eligible range: ${formatCurrency(minAmount)} – ${formatCurrency(
                       data.maxAmount,
                     )} • Max ${decimals} decimal places`)
               }
@@ -222,7 +215,7 @@ export function StepAmountAsset({ data, onChange, onNext, error, onError }: Step
               <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
                 <p className="text-zinc-500 dark:text-zinc-400">Max Eligible</p>
                 <p className="font-semibold text-zinc-900 dark:text-zinc-50">
-                  {data.maxAmount === 0 ? "Ineligible" : formatMoney(data.maxAmount)}
+                  {data.maxAmount === 0 ? "Ineligible" : formatCurrency(data.maxAmount)}
                 </p>
               </div>
               <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
