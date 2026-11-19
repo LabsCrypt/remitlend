@@ -1348,16 +1348,20 @@ impl LoanManager {
         // bumping — #1772: instance storage is capped at 64KB for the whole
         // contract, so per-borrower vectors must not live there).
         let borrower_loans_key = DataKey::BorrowerLoans(borrower.clone());
-        let mut borrower_loans: Vec<u32> = env
-            .storage()
-            .persistent()
-            .get(&borrower_loans_key)
-            .or_else(|| {
-                // Backwards-compat migration read for loans recorded under the
-                // legacy instance-storage layout.
-                env.storage().instance().get(&borrower_loans_key)
-            })
-            .unwrap_or(Vec::new(&env));
+        let mut borrower_loans: Vec<u32> = match env.storage().persistent().get(&borrower_loans_key)
+        {
+            Some(loans) => loans,
+            None => {
+                // Migrate a list recorded under the legacy instance-storage
+                // layout: carry its ids over and drop the instance copy so it
+                // no longer inflates every invocation.
+                let legacy: Option<Vec<u32>> = env.storage().instance().get(&borrower_loans_key);
+                if legacy.is_some() {
+                    env.storage().instance().remove(&borrower_loans_key);
+                }
+                legacy.unwrap_or(Vec::new(&env))
+            }
+        };
         borrower_loans.push_back(loan_counter);
         env.storage()
             .persistent()
