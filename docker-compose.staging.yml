@@ -6,7 +6,6 @@ services:
     environment:
       POSTGRES_DB: remitlend
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -16,11 +15,11 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ghcr.io/${OWNER}/remitlend-backend:${TAG:-staging-latest}
+    image: ghcr.io/${OWNER}/remitlend-backend:${TAG}
     env_file:
       - ./backend/.env.staging
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/remitlend
+      - DATABASE_URL=${DATABASE_URL:?set-DATABASE_URL-in-server-env}
       - REDIS_URL=redis://redis:6379
       - PII_KEK_ID=${PII_KEK_ID}
       - PII_KMS_ENDPOINT=${PII_KMS_ENDPOINT}
@@ -34,7 +33,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/${OWNER}/remitlend-frontend:${TAG:-staging-latest}
+    image: ghcr.io/${OWNER}/remitlend-frontend:${TAG}
     ports:
       - "3000:3000"
     environment:

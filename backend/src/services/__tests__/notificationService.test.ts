@@ -2,9 +2,22 @@ import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals
 
 type QueryResult = { rows: Record<string, unknown>[]; rowCount: number };
 const mockQuery = jest.fn<(sql: string, params?: unknown[]) => Promise<QueryResult>>();
+const mockLoggerError = jest.fn<(message: string, meta?: unknown) => void>();
+const mockLoggerWarn = jest.fn<(message: string, meta?: unknown) => void>();
 
 jest.unstable_mockModule('../../db/connection.js', () => ({
   query: mockQuery,
+}));
+
+jest.unstable_mockModule('../../utils/logger.js', () => ({
+  default: {
+    withContext: () => ({
+      info: jest.fn(),
+      warn: mockLoggerWarn,
+      error: mockLoggerError,
+      http: jest.fn(),
+    }),
+  },
 }));
 
 jest.unstable_mockModule('twilio', () => ({
@@ -267,6 +280,7 @@ describe('notificationService', () => {
   describe('notifyAdmins', () => {
     const originalAdminWallets = process.env.ADMIN_WALLETS;
     const originalAdminEmail = process.env.ADMIN_EMAIL;
+    const originalAdminWebhookUrl = process.env.ADMIN_WEBHOOK_URL;
 
     afterEach(() => {
       if (originalAdminWallets === undefined) {
@@ -278,6 +292,11 @@ describe('notificationService', () => {
         delete process.env.ADMIN_EMAIL;
       } else {
         process.env.ADMIN_EMAIL = originalAdminEmail;
+      }
+      if (originalAdminWebhookUrl === undefined) {
+        delete process.env.ADMIN_WEBHOOK_URL;
+      } else {
+        process.env.ADMIN_WEBHOOK_URL = originalAdminWebhookUrl;
       }
     });
 
@@ -348,6 +367,35 @@ describe('notificationService', () => {
       });
 
       expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('logs only the webhook origin when ADMIN_WEBHOOK_URL POST fails', async () => {
+      const webhookUrl = 'https://hooks.slack.com/services/T000/B000/SECRET_TOKEN';
+      const originalFetch = globalThis.fetch;
+      delete process.env.ADMIN_WALLETS;
+      delete process.env.ADMIN_EMAIL;
+      process.env.ADMIN_WEBHOOK_URL = webhookUrl;
+      globalThis.fetch = jest.fn(async () => {
+        throw new Error(`Failed to parse URL from ${webhookUrl}`);
+      }) as unknown as typeof fetch;
+
+      try {
+        await notificationService.notifyAdmins({
+          title: 'Test',
+          message: 'Test',
+        });
+
+        expect(mockLoggerError).toHaveBeenCalledWith(
+          '[Admin] Webhook POST failed',
+          expect.objectContaining({ webhookUrl: 'https://hooks.slack.com' }),
+        );
+        const meta = mockLoggerError.mock.calls[0]?.[1];
+        expect(JSON.stringify(meta)).not.toContain('SECRET_TOKEN');
+        expect(JSON.stringify(meta)).not.toContain('/services/');
+      } finally {
+        globalThis.fetch = originalFetch;
+        delete process.env.ADMIN_WEBHOOK_URL;
+      }
     });
   });
 });

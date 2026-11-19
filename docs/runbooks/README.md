@@ -59,6 +59,26 @@ Configure under:
 
 ---
 
+## Server-Side Environment Files
+
+The staging host must keep `~/remitlend/.env` and
+`~/remitlend/backend/.env.staging` outside version control. They are not copied
+by the deployment workflow.
+
+| Variable            | Required | Description                                                                 |
+| ------------------- | -------- | --------------------------------------------------------------------------- |
+| `POSTGRES_PASSWORD` | Yes      | PostgreSQL password used by the `db` service                                |
+| `DATABASE_URL`      | Yes      | Backend connection string matching the PostgreSQL password                  |
+| `PII_KEK_ID`        | Yes      | KMS key identifier used by the PII encryption layer                         |
+| `PII_KMS_ENDPOINT`  | Yes      | KMS endpoint used by the PII encryption layer                               |
+| `PII_KEK_REGION`    | Yes      | KMS region used by the PII encryption layer                                 |
+
+The generated compose files intentionally preserve `${PII_KEK_ID}`,
+`${PII_KMS_ENDPOINT}`, and `${PII_KEK_REGION}` so Docker Compose resolves them
+from the server-side `.env` at deploy time.
+
+---
+
 ## Container Images
 
 The workflow publishes staging images to GHCR:

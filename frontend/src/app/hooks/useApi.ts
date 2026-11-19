@@ -109,15 +109,184 @@ export const queryKeys = {
 
 // ─── Base fetch helper ────────────────────────────────────────────────────────
 
+export interface ApiErrorOptions {
+  status?: number;
+  statusText?: string;
+  code?: string | number | null;
+  details?: unknown;
+  body?: unknown;
+  response?: unknown;
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly statusCode: number;
+  readonly statusText?: string;
+  readonly code?: string | number;
+  readonly details?: unknown;
+  readonly body?: unknown;
+  readonly response?: unknown;
+
+  constructor(message: string, options?: ApiErrorOptions);
+  constructor(message: string, status: number, code?: string | number, details?: unknown);
+  constructor(
+    message: string,
+    statusOrOptions: number | ApiErrorOptions = {},
+    codeOrOptions?: string | number | ApiErrorOptions,
+    details?: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+
+    const options: ApiErrorOptions =
+      typeof statusOrOptions === "number"
+        ? typeof codeOrOptions === "object" && codeOrOptions !== null
+          ? (codeOrOptions as ApiErrorOptions)
+          : {}
+        : statusOrOptions;
+    const status = typeof statusOrOptions === "number" ? statusOrOptions : (options.status ?? 0);
+    const code =
+      typeof statusOrOptions === "number" &&
+      (typeof codeOrOptions === "string" || typeof codeOrOptions === "number")
+        ? codeOrOptions
+        : (options.code ?? undefined);
+
+    this.status = status;
+    this.statusCode = status;
+    this.statusText = options.statusText;
+    this.code = code ?? undefined;
+    this.details = details ?? options.details ?? options.body;
+    this.body = options.body ?? this.details;
+    this.response = options.response ?? this.body;
+  }
+}
+
+export interface ApiEnvelope<T> {
+  success?: boolean;
+  data?: T;
+  [key: string]: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function normalizeApiResponse<T = unknown>(
+  response: unknown,
+  key?: string | readonly string[],
+): T {
+  if (!isRecord(response)) {
+    return response as T;
+  }
+
+  const defaultKeys = [
+    "data",
+    "result",
+    "payload",
+    "amortization",
+    "loans",
+    "disputes",
+    "dispute",
+    "nft",
+    "score",
+  ];
+  const keys =
+    key === undefined
+      ? defaultKeys
+      : [...(typeof key === "string" ? [key] : key), "data"].filter(
+          (candidate, index, all) => all.indexOf(candidate) === index,
+        );
+
+  for (const candidate of keys) {
+    if (candidate in response) {
+      return response[candidate] as T;
+    }
+  }
+
+  return response as T;
+}
+
+export const normalizeResponseEnvelope = normalizeApiResponse;
+export const unwrapApiResponse = normalizeApiResponse;
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function firstCode(...values: unknown[]): string | number | undefined {
+  for (const value of values) {
+    if (typeof value === "string" || typeof value === "number") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function parseApiErrorPayload(
+  payload: unknown,
+  response: Response,
+): { message: string; code?: string | number } {
+  const fallback = `Request failed with status ${response.status}`;
+  const statusText = typeof response.statusText === "string" ? response.statusText : undefined;
+
+  if (!isRecord(payload)) {
+    return {
+      message: typeof payload === "string" ? payload : (firstString(statusText) ?? fallback),
+    };
+  }
+
+  const nested = isRecord(payload.error) ? payload.error : undefined;
+  return {
+    message:
+      firstString(
+        payload.message,
+        nested?.message,
+        payload.detail,
+        nested?.detail,
+        typeof payload.error === "string" ? payload.error : undefined,
+        statusText,
+      ) ?? fallback,
+    code: firstCode(
+      payload.code,
+      nested?.code,
+      payload.errorCode,
+      nested?.errorCode,
+      payload.error_code,
+      nested?.error_code,
+      payload.statusCode,
+    ),
+  };
+}
+
+async function readApiErrorPayload(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    if (typeof response.text !== "function") {
+      return undefined;
+    }
+    try {
+      const text = await response.text();
+      return text.trim().length > 0 ? text : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
 /**
  * Thin fetch wrapper that:
  * - Prepends the API base URL
  * - Sets JSON Content-Type
  * - Attaches the JWT Bearer token when one is stored
- * - Throws a descriptive error on non-2xx responses
- * - Issue #2299: Forwards AbortSignal for query cancellation
+ * - Throws an ApiError carrying HTTP status and error code on non-2xx responses
  */
-async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -144,24 +313,43 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     signal: options.signal, // Explicitly forward signal
   });
 
-  if (response.status === 401 && token) {
-    const error = await response
-      .json()
-      .catch(() => ({ message: "Session expired. Please sign in again." }));
-    logoutUser("expired");
-    throw new SessionExpiredError(error.message);
+  if (response.status === 401) {
+    const payload = await readApiErrorPayload(response);
+    const parsed = parseApiErrorPayload(payload, response);
+    if (token) {
+      logoutUser("expired");
+      const error = new SessionExpiredError(parsed.message);
+      Object.assign(error, {
+        status: 401,
+        statusCode: 401,
+        statusText: response.statusText,
+        code: parsed.code,
+        details: payload,
+      });
+      throw error;
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("auth:session-expired"));
+    }
+    throw new ApiError(parsed.message, {
+      status: 401,
+      statusText: response.statusText,
+      code: parsed.code,
+      details: payload,
+      body: payload,
+    });
   }
 
   if (!response.ok) {
-    // Session expiry: fire a global event so SessionExpiryHandler can intercept
-    if (response.status === 401) {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("auth:session-expired"));
-      }
-      throw new Error("Session expired. Please sign in again.");
-    }
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    throw new Error(error.message ?? `Request failed with status ${response.status}`);
+    const payload = await readApiErrorPayload(response);
+    const parsed = parseApiErrorPayload(payload, response);
+    throw new ApiError(parsed.message, {
+      status: response.status,
+      statusText: response.statusText,
+      code: parsed.code,
+      details: payload,
+      body: payload,
+    });
   }
 
   return response.json() as Promise<T>;
@@ -761,18 +949,8 @@ export function useLoan(
   return useQuery<LoanDetails>({
     queryKey: queryKeys.loans.detail(id ?? ""),
     queryFn: async () => {
-      const response = await apiFetch<LoanDetails | { success: boolean; data: LoanDetails }>(
-        `/loans/${id}`,
-      );
-      if (
-        typeof response === "object" &&
-        response !== null &&
-        "success" in response &&
-        "data" in response
-      ) {
-        return response.data;
-      }
-      return response;
+      const response = await apiFetch<LoanDetails | ApiEnvelope<LoanDetails>>(`/loans/${id}`);
+      return normalizeApiResponse<LoanDetails>(response, "data");
     },
     enabled: !!id,
     ...options,
@@ -789,20 +967,11 @@ export function useLoanAmortizationSchedule(
   return useQuery<LoanAmortization>({
     queryKey: queryKeys.amortization.schedule(id ?? ""),
     queryFn: async () => {
-      const response = await apiFetch<
-        LoanAmortization | { success: boolean; amortization: LoanAmortization }
-      >(`/loans/${id}/amortization-schedule`);
+      const response = await apiFetch<LoanAmortization | ApiEnvelope<LoanAmortization>>(
+        `/loans/${id}/amortization-schedule`,
+      );
 
-      if (
-        typeof response === "object" &&
-        response !== null &&
-        "success" in response &&
-        "amortization" in response
-      ) {
-        return response.amortization;
-      }
-
-      return response;
+      return normalizeApiResponse<LoanAmortization>(response, "amortization");
     },
     enabled: !!id,
     ...options,
@@ -816,23 +985,15 @@ export function useLoanAmortizationPreview(
   return useQuery<LoanAmortization>({
     queryKey: queryKeys.amortization.preview(params?.amount ?? 0, params?.termDays ?? 0),
     queryFn: async () => {
-      const response = await apiFetch<
-        LoanAmortization | { success: boolean; amortization: LoanAmortization }
-      >("/loans/amortization-preview", {
-        method: "POST",
-        body: JSON.stringify(params),
-      });
+      const response = await apiFetch<LoanAmortization | ApiEnvelope<LoanAmortization>>(
+        "/loans/amortization-preview",
+        {
+          method: "POST",
+          body: JSON.stringify(params),
+        },
+      );
 
-      if (
-        typeof response === "object" &&
-        response !== null &&
-        "success" in response &&
-        "amortization" in response
-      ) {
-        return response.amortization;
-      }
-
-      return response;
+      return normalizeApiResponse<LoanAmortization>(response, "amortization");
     },
     enabled: Boolean(params),
     ...options,
@@ -851,12 +1012,7 @@ export function useLiquidatableLoans(
         | RawLiquidatableLoan[]
       >("/loans/liquidatable");
 
-      const loans = Array.isArray(response)
-        ? response
-        : "loans" in response
-          ? response.loans
-          : response.data;
-
+      const loans = normalizeApiResponse<RawLiquidatableLoan[]>(response, ["loans", "data"]);
       const fallbackSource = Array.isArray(response) ? undefined : response.source;
       return loans.map((loan) =>
         normalizeLiquidatableLoan({ source: fallbackSource ?? "backend", ...loan }),
@@ -893,15 +1049,18 @@ export function useLoanEvents(
         };
       }
       const response = await apiFetch<LoanEventsResponse>(`/loans/${loanId}/events`);
-      if (response?.success && response.data?.events) {
-        return response.data.events.map((e) => ({
-          type: e.event_type,
-          amount: e.amount,
-          timestamp: e.ledger_closed_at,
-          txHash: e.tx_hash,
-        }));
+      if (response?.success === false) {
+        return [];
       }
-      return [];
+      const payload = normalizeApiResponse<LoanEventsResponse["data"]>(response, "data");
+      return (
+        payload.events?.map((event) => ({
+          type: event.event_type,
+          amount: event.amount,
+          timestamp: event.ledger_closed_at,
+          txHash: event.tx_hash,
+        })) ?? []
+      );
     },
     enabled: !!loanId,
     ...options,
@@ -917,8 +1076,8 @@ export function useMinimumScore(
   return useQuery<LoanConfig>({
     queryKey: queryKeys.loans.config(),
     queryFn: async () => {
-      const response = await apiFetch<{ success: boolean; data: LoanConfig }>("/loans/config");
-      return response.data;
+      const response = await apiFetch<ApiEnvelope<LoanConfig>>("/loans/config");
+      return normalizeApiResponse<LoanConfig>(response, "data");
     },
     ...options,
   });
@@ -1106,7 +1265,7 @@ export function useRemittanceNft(
     queryKey: queryKeys.remittanceNft.byAddress(walletAddress ?? ""),
     queryFn: async () => {
       const response = await apiFetch<RemittanceNftResponse>(`/score/${walletAddress}/nft`);
-      return response.nft;
+      return normalizeApiResponse<RemittanceNftMetadata | null>(response, "nft");
     },
     enabled: !!walletAddress,
     ...options,
@@ -1137,7 +1296,7 @@ export function useCreditScore(
     queryKey: queryKeys.creditScore.byUser(userId ?? ""),
     queryFn: async () => {
       const response = await apiFetch<CreditScoreResponse>(`/score/${userId}`);
-      return response.score;
+      return normalizeApiResponse<number>(response, "score");
     },
     enabled: !!userId,
     ...options,
@@ -1301,7 +1460,14 @@ export function useYieldHistory(
           }>
         >
       >(`/pool/depositor/${userId}/yield-history?days=${days}`);
-      return response.data;
+      return normalizeApiResponse<
+        Array<{
+          date: string;
+          earnings: number;
+          apy: number;
+          principal?: number;
+        }>
+      >(response, "data");
     },
     enabled: !!userId,
     ...queryOptions,
@@ -1375,7 +1541,7 @@ export function usePoolStats(options?: Omit<UseQueryOptions<PoolStats>, "queryKe
     queryKey: queryKeys.pool.stats(),
     queryFn: async () => {
       const response = await apiFetch<PoolApiResponse<PoolStats>>("/pool/stats");
-      return response.data;
+      return normalizeApiResponse<PoolStats>(response, "data");
     },
     ...options,
   });
@@ -1402,7 +1568,7 @@ export function useDepositorPortfolio(
       const response = await apiFetch<PoolApiResponse<DepositorPortfolio>>(
         `/pool/depositor/${address}`,
       );
-      return response.data;
+      return normalizeApiResponse<DepositorPortfolio>(response, "data");
     },
     enabled: !!address,
     ...options,
@@ -1460,10 +1626,10 @@ export function useNotifications(
       if (params.type && params.type !== "all") searchParams.set("type", params.type);
       if (params.page) searchParams.set("page", String(params.page));
 
-      const res = await apiFetch<{ success: boolean; data: NotificationsResponse }>(
+      const response = await apiFetch<ApiEnvelope<NotificationsResponse>>(
         `/notifications?${searchParams.toString()}`,
       );
-      return res.data;
+      return normalizeApiResponse<NotificationsResponse>(response, "data");
     },
     refetchInterval: 60_000,
     ...options,
@@ -1537,8 +1703,8 @@ export function useVerifySession(
   return useQuery<AuthSession>({
     queryKey: queryKeys.auth.verify(),
     queryFn: async () => {
-      const response = await apiFetch<{ success: boolean; data: AuthSession }>("/auth/verify");
-      return response.data;
+      const response = await apiFetch<ApiEnvelope<AuthSession>>("/auth/verify");
+      return normalizeApiResponse<AuthSession>(response, "data");
     },
     retry: false,
     ...options,
@@ -1557,12 +1723,7 @@ export function useAdminDisputes(
         | RawAdminDispute[]
       >("/admin/disputes");
 
-      const disputes = Array.isArray(response)
-        ? response
-        : "disputes" in response
-          ? response.disputes
-          : response.data;
-
+      const disputes = normalizeApiResponse<RawAdminDispute[]>(response, ["disputes", "data"]);
       return disputes.map(normalizeDispute);
     },
     refetchInterval: 60_000,
@@ -1583,9 +1744,7 @@ export function useAdminDispute(
         | RawAdminDispute
       >(`/admin/disputes/${id}`);
 
-      const dispute = (
-        "dispute" in response ? response.dispute : "data" in response ? response.data : response
-      ) as RawAdminDispute;
+      const dispute = normalizeApiResponse<RawAdminDispute>(response, ["dispute", "data"]);
       return normalizeDispute(dispute);
     },
     enabled: !!id,
@@ -1823,7 +1982,7 @@ export async function submitLoanTransaction(signedTxXdr: string) {
 export async function submitRefinanceLoanTransaction(loanId: string | number, signedTxXdr: string) {
   return apiFetch<{ success: boolean; txHash: string; status: string }>(
     `/loans/${loanId}/submit-refinance`,
-    { method: 'POST', body: JSON.stringify({ signedTxXdr }) },
+    { method: "POST", body: JSON.stringify({ signedTxXdr }) },
   );
 }
 

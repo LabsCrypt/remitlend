@@ -33,6 +33,40 @@ jobs:
           fi
           echo "No known malicious packages found."
 
+  staging-compose-resolution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext-base
+      - name: Assert PII KMS settings survive compose resolution
+        run: |
+          set -euo pipefail
+          export OWNER=labscrypt
+          export TAG=staging-latest
+          envsubst '${OWNER} ${TAG}' < docker-compose.staging.yml > /tmp/remitlend-staging.resolved.yml
+          export TAG=staging-previous
+          envsubst '${OWNER} ${TAG}' < docker-compose.staging.yml > /tmp/remitlend-staging.rollback.yml
+          grep -Fq 'ghcr.io/labscrypt/remitlend-backend:staging-latest' /tmp/remitlend-staging.resolved.yml
+          grep -Fq 'ghcr.io/labscrypt/remitlend-backend:staging-previous' /tmp/remitlend-staging.rollback.yml
+          for compose_file in /tmp/remitlend-staging.resolved.yml /tmp/remitlend-staging.rollback.yml; do
+            for key in PII_KEK_ID PII_KMS_ENDPOINT PII_KEK_REGION; do
+              source_line=$(grep -E "^[[:space:]]*-[[:space:]]+${key}=" docker-compose.staging.yml | head -n 1 || true)
+              if [ -z "$source_line" ]; then
+                echo "::error::${key} is missing from docker-compose.staging.yml"
+                exit 1
+              fi
+              if ! grep -Fqx -- "$source_line" "$compose_file"; then
+                echo "::error::${compose_file} does not retain ${key} from the source compose"
+                exit 1
+              fi
+              if grep -Eq "^[[:space:]]*-[[:space:]]+${key}=[[:space:]]*$" "$compose_file"; then
+                echo "::error::${compose_file} has an empty ${key}"
+                exit 1
+              fi
+            done
+          done
+
   # Issue #1378: single source of truth for stroop scale, rounding mode,
   # display precision and pro-rata allocation strategy. `scripts/gen-money.ts`
   # derives `contracts/money/src/policy.rs`,
@@ -235,6 +269,7 @@ jobs:
       - name: Frontend regression tests
         run: >-
           npx jest
+          src/app/hooks/useApi.apiError.test.ts
           src/app/hooks/useSSE.reconnect.test.tsx
           src/app/hooks/useLoanStream.test.tsx
           src/app/components/providers/SessionExpiryHandler.test.tsx
