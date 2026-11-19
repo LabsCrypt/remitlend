@@ -36,10 +36,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const { id } = await params;
-  const body = (await request.json()) as RevealRequestBody;
 
-  if (!body.field || !body.reason) {
+  let body: Partial<RevealRequestBody> | null = null;
+  try {
+    body = (await request.json()) as Partial<RevealRequestBody>;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || !body.field || !body.reason) {
     return NextResponse.json({ error: "field and reason are required" }, { status: 400 });
+  }
+
+  if (!["email", "phone", "name"].includes(body.field)) {
+    return NextResponse.json({ error: "Invalid field" }, { status: 400 });
   }
 
   const requestId = crypto.randomUUID();
@@ -64,8 +74,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
 
     if (!backendRes.ok) {
-      const error = await backendRes.text();
-      return NextResponse.json({ error }, { status: backendRes.status });
+      // Normalize to a fixed message — backend bodies may contain internal detail.
+      return NextResponse.json({ error: "Decryption failed" }, { status: backendRes.status });
     }
 
     const data = (await backendRes.json()) as { plaintext: string };
