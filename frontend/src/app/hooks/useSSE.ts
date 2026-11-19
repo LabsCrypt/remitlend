@@ -40,8 +40,12 @@ export function useSSE<T = unknown>({
   const abortControllerRef = useRef<AbortController | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingRetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 3;
+  // While in polling fallback, re-attempt SSE this often so live streaming
+  // resumes once the endpoint recovers. Kept slow to avoid hammering it.
+  const sseRecoveryProbeInterval = 120_000;
 
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
@@ -65,6 +69,10 @@ export function useSSE<T = unknown>({
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
+      if (pollingRetryRef.current) {
+        clearInterval(pollingRetryRef.current);
+        pollingRetryRef.current = null;
+      }
     };
 
     const startPolling = () => {
@@ -77,6 +85,12 @@ export function useSSE<T = unknown>({
       pollingIntervalRef.current = setInterval(() => {
         void onFallbackPollRef.current?.();
       }, pollingInterval);
+
+      // Periodically re-attempt SSE while polling so live streaming resumes
+      // once the endpoint recovers. stopPolling() clears this on success.
+      pollingRetryRef.current = setInterval(() => {
+        connect();
+      }, sseRecoveryProbeInterval);
     };
 
     async function connect() {
@@ -86,7 +100,11 @@ export function useSSE<T = unknown>({
         abortControllerRef.current.abort();
       }
 
-      setStatus("connecting");
+      // While probing from fallback polling, keep the "polling" status until the
+      // SSE connection actually succeeds.
+      if (!pollingIntervalRef.current) {
+        setStatus("connecting");
+      }
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
