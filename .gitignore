@@ -6,6 +6,7 @@ contracts/**/test_snapshots/
 contracts/cobertura.xml
 dist
 .env
+backend/.env.staging
 .next
 .cargo-home/
 .cargo-target/

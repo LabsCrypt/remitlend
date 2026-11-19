@@ -4,6 +4,18 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import type { Response } from 'express';
 import { encryptPiiValue, readPiiValue, type UserProfilePiiRow } from './userProfilePii.js';
 
+export function maskWebhookUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return '[unsupported-url]';
+    }
+    return url.origin;
+  } catch {
+    return '[invalid-url]';
+  }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type NotificationType =
@@ -567,7 +579,10 @@ class NotificationService {
           body: JSON.stringify({ text: `[RemitLend] ${title}: ${message}` }),
         });
       } catch (err) {
-        logger.withContext().error('[Admin] Webhook POST failed', { webhookUrl, err });
+        logger.withContext().error('[Admin] Webhook POST failed', {
+          webhookUrl: maskWebhookUrl(webhookUrl),
+          errorName: err instanceof Error ? err.name : 'UnknownError',
+        });
       }
     }
   }

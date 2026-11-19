@@ -3,6 +3,18 @@ import { query, withTransaction, type PoolClient } from '../db/connection.js';
 import logger from '../utils/logger.js';
 import { postWebhook, type WebhookHttpResponse } from './webhookHttp.js';
 
+function maskUrlForLog(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return '[unsupported-url]';
+    }
+    return url.origin;
+  } catch {
+    return '[invalid-url]';
+  }
+}
+
 // #1520 — this array is the single source of truth for which event types
 // external webhook subscribers can register for. docs/webhooks.md's
 // "Supported Event Types" section is a human-readable mirror of this list
@@ -613,7 +625,7 @@ export class WebhookService {
 
         logger.withContext().warn('Webhook delivery failed, scheduled retry', {
           subscriptionId,
-          callbackUrl,
+          callbackUrl: maskUrlForLog(callbackUrl),
           eventId: payload.payload.eventId,
           statusCode: response.status,
           nextRetryAt,
@@ -645,7 +657,7 @@ export class WebhookService {
 
       logger.withContext().error('Failed to send webhook, scheduled retry', {
         subscriptionId,
-        callbackUrl,
+        callbackUrl: maskUrlForLog(callbackUrl),
         eventId: payload.payload.eventId,
         error,
         nextRetryAt,

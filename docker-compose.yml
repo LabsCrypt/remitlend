@@ -4,10 +4,8 @@ services:
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set-POSTGRES_PASSWORD-in-server-env}
       POSTGRES_DB: remitlend
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -29,7 +27,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/remitlend
+      - DATABASE_URL=${DATABASE_URL:?set-DATABASE_URL-in-server-env}
       - REDIS_URL=redis://redis:6379
       - PII_KEK_ID=${PII_KEK_ID:-default-kek}
       - PII_KMS_ENDPOINT=${PII_KMS_ENDPOINT:-}

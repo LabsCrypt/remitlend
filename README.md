@@ -89,10 +89,12 @@ verification.
 2. **Configure environment:**
 
    ```bash
+   cp .env.example .env
    cp backend/.env.example backend/.env
    ```
 
-   Edit `backend/.env` if needed (defaults work for local development).
+   Edit `.env` and `backend/.env` if needed. The root `.env` supplies the
+   local PostgreSQL password and database URL consumed by Docker Compose.
 
 3. **Start all services:**
 
@@ -138,7 +140,7 @@ verification.
    CORS_ALLOWED_ORIGINS=http://localhost:3000
    PORT=3001
    NODE_ENV=development
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/remitlend
+   DATABASE_URL=postgres://postgres:replace-with-a-strong-local-password@localhost:5432/remitlend
    ```
 
 4. **Apply database migrations** (creates `scores`, `loan_events`, `indexer_state`, and other tables):
