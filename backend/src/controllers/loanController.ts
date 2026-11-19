@@ -81,7 +81,7 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
       });
     }
 
-    const transaction = await sorobanService.buildCancelLoanTx(borrower, loanId as string);
+    const transaction = await sorobanService.buildCancelLoanTx(borrower, String(loanId));
 
     return res.json({
       success: true,

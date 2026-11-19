@@ -5,6 +5,21 @@ import { ErrorCode } from '../errors/errorCodes.js';
 import logger from '../utils/logger.js';
 import { Sentry } from '../config/sentry.js';
 
+type ClientInputError = Error & {
+  type?: string;
+  status?: number;
+  statusCode?: number;
+};
+
+const isClientInputError = (err: Error): boolean => {
+  const error = err as ClientInputError;
+  return (
+    error.type === 'entity.parse.failed' ||
+    error.type === 'entity.too.large' ||
+    (err instanceof SyntaxError && (error.status === 400 || error.statusCode === 400))
+  );
+};
+
 /**
  * Global error handling middleware.
  *
@@ -94,14 +109,18 @@ export const errorHandler = (
     return;
   }
 
-  // ── Payload Too Large (body-parser) ────────────────────────
-  if ('type' in err && (err as { type?: string }).type === 'entity.too.large') {
-    res.status(413).json({
+  if (isClientInputError(err)) {
+    const error = err as ClientInputError;
+    const isPayloadTooLarge = error.type === 'entity.too.large';
+    const status = isPayloadTooLarge ? 413 : 400;
+    const message = isPayloadTooLarge ? 'Request payload too large' : 'Invalid JSON request body';
+
+    res.status(status).json({
       success: false,
-      message: 'Request payload too large',
+      message,
       error: {
-        code: ErrorCode.VALIDATION_ERROR, // Or a dedicated code if defined
-        message: 'Request payload too large',
+        code: ErrorCode.VALIDATION_ERROR,
+        message,
       },
     });
     return;

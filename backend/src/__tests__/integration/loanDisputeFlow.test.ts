@@ -179,13 +179,13 @@ describe('loan dispute resolution integration flow', () => {
       expect.arrayContaining([
         [
           expect.stringContaining('INSERT INTO loan_disputes'),
-          [String(LOAN_ID), TEST_PUBLIC_KEY, 'Indexer lag caused an incorrect default event.'],
+          [LOAN_ID, TEST_PUBLIC_KEY, 'Indexer lag caused an incorrect default event.'],
         ],
         [
           expect.stringContaining('LoanDisputed'),
           [
             expect.any(String),
-            String(LOAN_ID),
+            LOAN_ID,
             TEST_PUBLIC_KEY,
             `dispute:${DISPUTE_ID}`,
             expect.any(String),
@@ -278,7 +278,7 @@ describe('loan dispute resolution integration flow', () => {
       expect.arrayContaining([
         [
           expect.stringContaining('INSERT INTO loan_disputes'),
-          [String(LOAN_ID), TEST_PUBLIC_KEY, 'The repayment posted before the indexer caught up.'],
+          [LOAN_ID, TEST_PUBLIC_KEY, 'The repayment posted before the indexer caught up.'],
         ],
         [
           expect.stringContaining("UPDATE loan_disputes SET status = 'resolved'"),

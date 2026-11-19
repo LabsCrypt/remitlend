@@ -772,7 +772,10 @@ export function startNotificationCleanupScheduler(): void {
 
   notificationRetentionDays = parsePositiveIntegerEnv('NOTIFICATION_RETENTION_DAYS', 90);
   readNotificationRetentionDays = parsePositiveIntegerEnv('READ_NOTIFICATION_RETENTION_DAYS', 30);
-  const intervalMs = parsePositiveIntegerEnv('NOTIFICATION_CLEANUP_INTERVAL_MS', 24 * 60 * 60 * 1000);
+  const intervalMs = parsePositiveIntegerEnv(
+    'NOTIFICATION_CLEANUP_INTERVAL_MS',
+    24 * 60 * 60 * 1000,
+  );
 
   // Run once immediately on start to clear any backlog
   void runNotificationCleanup();
