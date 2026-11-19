@@ -21,8 +21,12 @@ const router = Router();
  * /indexer/status:
  *   get:
  *     summary: Get indexer status
- *     description: Returns the current state of the event indexer including last indexed ledger and event counts
+ *     description: >
+ *       Returns the current state of the event indexer including last indexed ledger and event counts.
+ *       Internal/admin use: requires an `admin:indexer` scoped `x-api-key`.
  *     tags: [Indexer]
+ *     security:
+ *       - ApiKeyAuth: []
  *     responses:
  *       200:
  *         description: Indexer status retrieved successfully
@@ -30,8 +34,12 @@ const router = Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/IndexerStatusResponse'
+ *       401:
+ *         description: Missing or invalid API key
+ *       403:
+ *         description: API key lacks the admin:indexer scope
  */
-router.get('/status', getIndexerStatus);
+router.get('/status', requireApiKey('admin:indexer'), getIndexerStatus);
 
 /**
  * @swagger

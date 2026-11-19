@@ -39,3 +39,111 @@ describe('logger level resolution', () => {
     expect(logger.level).toBe('error');
   });
 });
+
+type TransformableFormat = {
+  transform: (info: Record<string, unknown>) => Record<string, unknown>;
+};
+
+const transform = (format: unknown, info: Record<string, unknown>) =>
+  (format as TransformableFormat).transform(info);
+
+describe('log PII redaction', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    jest.resetModules();
+  });
+
+  const buildInfo = () => ({
+    level: 'info',
+    message: 'loan approved',
+    email: 'borrower@example.com',
+    phone: '+14155551234',
+    'x-api-key': 'secret-api-key',
+    nested: {
+      authorization: 'Bearer token-value',
+      recipient_name: 'Jane Doe',
+      safe: 'kept',
+    },
+    items: [{ token: 'nested-token', signature: 'signed-payload' }],
+  });
+
+  it('redacts PII by default without LOG_REDACTION being set', async () => {
+    delete process.env.LOG_REDACTION;
+    jest.resetModules();
+    const { redactPiiFormat } = await import('../logger.js');
+
+    const result = transform(redactPiiFormat(), buildInfo());
+
+    expect(result.email).toBe('[REDACTED]');
+    expect(result.phone).toBe('[REDACTED]');
+    expect(result['x-api-key']).toBe('[REDACTED]');
+    expect(result.nested).toEqual({
+      authorization: '[REDACTED]',
+      recipient_name: '[REDACTED]',
+      safe: 'kept',
+    });
+    expect(result.items).toEqual([{ token: '[REDACTED]', signature: '[REDACTED]' }]);
+    // The log line itself is preserved so operational logs stay readable.
+    expect(result.message).toBe('loan approved');
+  });
+
+  it('redacts a nested message body but not the top-level log line', async () => {
+    delete process.env.LOG_REDACTION;
+    jest.resetModules();
+    const { redactPiiFormat } = await import('../logger.js');
+
+    const result = transform(redactPiiFormat(), {
+      level: 'info',
+      message: 'notification dispatched',
+      meta: { message: 'Your loan of 500 USDC was approved', secret: 's3cr3t' },
+    });
+
+    expect(result.message).toBe('notification dispatched');
+    expect(result.meta).toEqual({ message: '[REDACTED]', secret: '[REDACTED]' });
+  });
+
+  it('applies redaction in the dev format', async () => {
+    delete process.env.LOG_REDACTION;
+    jest.resetModules();
+    const { devFormat } = await import('../logger.js');
+
+    const result = transform(devFormat, buildInfo());
+
+    expect(result.email).toBe('[REDACTED]');
+    expect(result.nested).toEqual({
+      authorization: '[REDACTED]',
+      recipient_name: '[REDACTED]',
+      safe: 'kept',
+    });
+  });
+
+  it('applies redaction in the production JSON format', async () => {
+    delete process.env.LOG_REDACTION;
+    jest.resetModules();
+    const { productionFormat } = await import('../logger.js');
+
+    const result = transform(productionFormat, buildInfo());
+
+    expect(result.email).toBe('[REDACTED]');
+    expect(result.items).toEqual([{ token: '[REDACTED]', signature: '[REDACTED]' }]);
+  });
+
+  it('replaces circular metadata instead of throwing', async () => {
+    delete process.env.LOG_REDACTION;
+    jest.resetModules();
+    const { redactPiiFormat } = await import('../logger.js');
+
+    const circular: Record<string, unknown> = { email: 'looped@example.com' };
+    circular.self = circular;
+
+    const result = transform(redactPiiFormat(), {
+      level: 'info',
+      message: 'circular payload',
+      context: circular,
+    });
+
+    expect(result.context).toEqual({ email: '[REDACTED]', self: '[Circular]' });
+  });
+});

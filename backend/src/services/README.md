@@ -227,9 +227,12 @@ CREATE TABLE indexer_state (
 
 ```http
 GET /api/indexer/status
+x-api-key: <INTERNAL_API_KEY with admin:indexer scope>
 ```
 
-Returns current indexer state and statistics.
+Returns current indexer state and statistics. Requires an `admin:indexer`
+scoped API key; event counts are cached for 30 seconds to avoid re-running
+`contract_events` aggregates on every poll.
 
 **Response:**
 

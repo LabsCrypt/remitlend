@@ -18,7 +18,61 @@ import {
 import { parseCappedLimit } from '../utils/queryHelpers.js';
 import { getStellarRpcUrl } from '../config/stellar.js';
 import { isPrivateHost } from '../utils/webhookUrlSecurity.js';
+import { cacheService } from '../services/cacheService.js';
 import logger from '../utils/logger.js';
+
+// `/status` is polled by operators and monitoring. The two aggregates below
+// scan `contract_events` (the largest table), so their results are cached for a
+// short TTL instead of running on every request.
+const INDEXER_STATUS_COUNTS_CACHE_KEY = 'indexer:status:event-counts';
+const INDEXER_STATUS_COUNTS_TTL_SECONDS = 30;
+
+type IndexerEventCounts = {
+  totalEvents: number;
+  eventsByType: Record<string, number>;
+};
+
+const getIndexerEventCounts = async (): Promise<IndexerEventCounts> => {
+  const cached = await cacheService.get<IndexerEventCounts>(INDEXER_STATUS_COUNTS_CACHE_KEY);
+
+  if (
+    cached &&
+    typeof cached.totalEvents === 'number' &&
+    cached.eventsByType &&
+    typeof cached.eventsByType === 'object'
+  ) {
+    return cached;
+  }
+
+  const [eventCounts, totalEvents] = await Promise.all([
+    query(
+      `SELECT event_type, COUNT(*) as count
+       FROM contract_events
+       GROUP BY event_type`,
+      [],
+    ),
+    query('SELECT COUNT(*) as total FROM contract_events', []),
+  ]);
+
+  const counts: IndexerEventCounts = {
+    totalEvents: Number.parseInt(totalEvents.rows[0]?.total ?? '0', 10),
+    eventsByType: eventCounts.rows.reduce(
+      (acc, row) => {
+        acc[row.event_type] = Number.parseInt(row.count, 10);
+        return acc;
+      },
+      {} as Record<string, number>,
+    ),
+  };
+
+  await cacheService.set(
+    INDEXER_STATUS_COUNTS_CACHE_KEY,
+    counts,
+    INDEXER_STATUS_COUNTS_TTL_SECONDS,
+  );
+
+  return counts;
+};
 
 const buildEventFilters = (req: Request, baseParams: unknown[], initialWhereClause: string) => {
   const { status, dateRange, amountRange } = parseQueryParams(req);
@@ -158,13 +212,7 @@ export const getIndexerStatus = async (_req: Request, res: Response) => {
     }
 
     const state = result.rows[0];
-    const eventCounts = await query(
-      `SELECT event_type, COUNT(*) as count
-       FROM contract_events
-       GROUP BY event_type`,
-      [],
-    );
-    const totalEvents = await query('SELECT COUNT(*) as total FROM contract_events', []);
+    const { totalEvents, eventsByType } = await getIndexerEventCounts();
 
     return res.json({
       success: true,
@@ -172,14 +220,8 @@ export const getIndexerStatus = async (_req: Request, res: Response) => {
         lastIndexedLedger: state.last_indexed_ledger,
         lastIndexedCursor: state.last_indexed_cursor,
         lastUpdated: state.updated_at,
-        totalEvents: Number.parseInt(totalEvents.rows[0].total, 10),
-        eventsByType: eventCounts.rows.reduce(
-          (acc, row) => {
-            acc[row.event_type] = Number.parseInt(row.count, 10);
-            return acc;
-          },
-          {} as Record<string, number>,
-        ),
+        totalEvents,
+        eventsByType,
       },
     });
   } catch (error) {

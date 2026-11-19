@@ -139,16 +139,14 @@ async function sendEmail(email: string, message: string, type?: NotificationType
   const maskedEmail = email.replace(/(.{2}).*(@.*)/, '$1***$2');
 
   if (!fromEmail) {
-    logger.withContext().info('[Email] FROM_EMAIL not set', { email: maskedEmail, message });
+    logger.withContext().info('[Email] FROM_EMAIL not set', { email: maskedEmail, type });
     return;
   }
 
   await ensureSendGrid();
 
   if (!process.env.SENDGRID_API_KEY) {
-    logger
-      .withContext()
-      .info(`[Email] SendGrid not configured. Would send to ${maskedEmail}: ${message}`);
+    logger.withContext().info('[Email] SendGrid not configured', { email: maskedEmail, type });
     return;
   }
 
@@ -177,9 +175,7 @@ async function sendSMS(phone: string, message: string) {
   const maskedPhone = phone.length > 4 ? '+xx...****' + phone.slice(-2) : '****';
   const twilioClient = await getTwilioClient();
   if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
-    logger
-      .withContext()
-      .warn(`[SMS] Twilio not configured. Would send to ${maskedPhone}`, { message });
+    logger.withContext().warn(`[SMS] Twilio not configured. Would send to ${maskedPhone}`);
     return;
   }
 
@@ -541,7 +537,7 @@ class NotificationService {
     } else {
       logger.withContext().warn('[Admin] ADMIN_EMAIL not set — logging dispute only', {
         title,
-        message,
+        loanId,
       });
     }
 
