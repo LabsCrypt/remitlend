@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
-import { resolveWasmPath } from './deploy';
+import { resolveWasmPath, pollTransaction, resolveAdminAddress, upsertEnvBlock } from './deploy';
 
 test('resolveWasmPath returns canonical .optimized.wasm when it exists', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wasm-test-'));
@@ -88,4 +88,29 @@ test('resolveWasmPath throws error when neither optimized nor fallback WASM exis
     } finally {
         fs.removeSync(tempDir);
     }
+});
+
+test('pollTransaction throws a timeout naming the hash when the tx never lands', async () => {
+    let calls = 0;
+    const server = { getTransaction: async () => { calls++; return { status: 'NOT_FOUND' } as any; } };
+    await assert.rejects(pollTransaction(server, 'abc123', 3, 0), /Timed out waiting for transaction abc123 after 3 attempts/);
+    assert.strictEqual(calls, 3);
+});
+
+test('resolveAdminAddress rejects an external admin up front', () => {
+    const deployer = 'GDEPLOYER';
+    assert.strictEqual(resolveAdminAddress('YOUR_ADMIN_PUBLIC_KEY', deployer), deployer);
+    assert.strictEqual(resolveAdminAddress(deployer, deployer), deployer);
+    assert.throws(() => resolveAdminAddress('GOTHERADMIN', deployer), /differs from the deployer key/);
+});
+
+test('upsertEnvBlock replaces the previous RemitLend block instead of appending', () => {
+    const block1 = '\n# RemitLend contracts — testnet — t1\nPOOL=A\nNFT=B';
+    const block2 = '\n# RemitLend contracts — testnet — t2\nPOOL=C\nNFT=D';
+    const once = upsertEnvBlock('OTHER=1\n', block1);
+    const twice = upsertEnvBlock(once, block2);
+    assert.strictEqual(twice.match(/# RemitLend contracts/g)?.length, 1);
+    assert.match(twice, /OTHER=1/);
+    assert.match(twice, /POOL=C/);
+    assert.doesNotMatch(twice, /POOL=A/);
 });

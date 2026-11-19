@@ -25,13 +25,6 @@ path = "../remittance_nft"
 path = "../multisig_governance"
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "lending_pool_fuzz"
 path = "fuzz_targets/lending_pool_fuzz.rs"
 test = false

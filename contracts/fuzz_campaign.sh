@@ -66,7 +66,7 @@ generate_report() {
 EOF
     
     # Add results for each target
-    for target in "lending_pool_fuzz" "loan_manager_fuzz" "remittance_nft_fuzz"; do
+    for target in "lending_pool_fuzz" "loan_manager_fuzz" "remittance_nft_fuzz" "multisig_governance_fuzz"; do
         echo "### $target" >> "$report_file"
         
         if ls "$ARTIFACTS_DIR/$target"-* 1> /dev/null 2>&1; then
@@ -119,6 +119,7 @@ echo "================================"
 run_fuzz "lending_pool_fuzz" "LendingPool Contract"
 run_fuzz "loan_manager_fuzz" "LoanManager Contract"
 run_fuzz "remittance_nft_fuzz" "RemittanceNFT Contract"
+run_fuzz "multisig_governance_fuzz" "MultisigGovernance Contract"
 
 # Generate summary report
 generate_report

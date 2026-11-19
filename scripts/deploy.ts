@@ -17,6 +17,8 @@ dotenv.config();
 
 const CONFIG_PATH = path.join(__dirname, 'deploy-config.json');
 const POLL_INTERVAL_MS = 2000;
+export const MAX_POLL_ATTEMPTS = 60;
+const ENV_BLOCK_HEADER = '# RemitLend contracts';
 
 // Compute the SHA-256 hash of WASM bytes — this is the on-chain upload key.
 export function computeWasmHash(wasm: Buffer): Buffer {
@@ -105,6 +107,87 @@ function extractContractId(resultMeta: xdr.TransactionMeta): string {
     throw new Error('Could not extract contract ID from transaction metadata');
 }
 
+// Poll until the transaction leaves NOT_FOUND, giving up after maxAttempts.
+export async function pollTransaction(
+    server: Pick<Rpc.Server, 'getTransaction'>,
+    hash: string,
+    maxAttempts: number = MAX_POLL_ATTEMPTS,
+    intervalMs: number = POLL_INTERVAL_MS,
+): Promise<Rpc.Api.GetTransactionResponse> {
+    let txResponse = await server.getTransaction(hash);
+    let attempts = 1;
+    while (txResponse.status === 'NOT_FOUND') {
+        if (attempts >= maxAttempts) {
+            throw new Error(`Timed out waiting for transaction ${hash} after ${attempts} attempts`);
+        }
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+        txResponse = await server.getTransaction(hash);
+        attempts++;
+    }
+    return txResponse;
+}
+
+// The deployer key is the only signer, so admin-gated calls cannot succeed
+// when a different admin is configured. Reject that config up front.
+export function resolveAdminAddress(configAdmin: string | undefined, deployerPublicKey: string): string {
+    if (!configAdmin || configAdmin === 'YOUR_ADMIN_PUBLIC_KEY') return deployerPublicKey;
+    if (configAdmin !== deployerPublicKey) {
+        throw new Error(
+            `config.admin (${configAdmin}) differs from the deployer key (${deployerPublicKey}). ` +
+            `deploy.ts only signs with SECRET_KEY, so admin-gated calls would fail. ` +
+            `Deploy with the admin's key, or leave admin as YOUR_ADMIN_PUBLIC_KEY.`,
+        );
+    }
+    return configAdmin;
+}
+
+// Replace any previous "RemitLend contracts" block instead of appending a duplicate.
+export function upsertEnvBlock(existing: string, block: string): string {
+    const lines = existing.split(/\r?\n/);
+    const kept: string[] = [];
+    let inBlock = false;
+    for (const line of lines) {
+        if (line.startsWith(ENV_BLOCK_HEADER)) {
+            inBlock = true;
+            continue;
+        }
+        if (inBlock && /^[A-Z0-9_]+=/.test(line)) continue;
+        inBlock = false;
+        kept.push(line);
+    }
+    return kept.join('\n').replace(/\n+$/, '') + '\n' + block.replace(/^\n+/, '\n') + '\n';
+}
+
+async function upsertEnvFile(filePath: string, block: string): Promise<void> {
+    const existing = (await fs.pathExists(filePath)) ? await fs.readFile(filePath, 'utf8') : '';
+    await fs.outputFile(filePath, upsertEnvBlock(existing, block));
+}
+
+// Per-step state so a failed deploy can be re-run and resume where it stopped.
+type DeployState = Record<string, string>;
+
+export async function runStep(
+    state: DeployState,
+    statePath: string,
+    key: string,
+    fn: () => Promise<string>,
+): Promise<string> {
+    if (state[key] !== undefined) {
+        console.log(`  ${key}: already done, skipping`);
+        return state[key];
+    }
+    const value = await fn();
+    state[key] = value;
+    await fs.writeJson(statePath, state, { spaces: 2 });
+    return value;
+}
+
+let resumeState: { state: DeployState; path: string } | null = null;
+
+function step(key: string, fn: () => Promise<string>): Promise<string> {
+    return resumeState ? runStep(resumeState.state, resumeState.path, key, fn) : fn();
+}
+
 async function sendTx(
     server: Rpc.Server,
     tx: ReturnType<TransactionBuilder['build']>,
@@ -125,11 +208,7 @@ async function sendTx(
 
     console.log(`    tx ${sendResponse.hash} … polling`);
 
-    let txResponse = await server.getTransaction(sendResponse.hash);
-    while (txResponse.status === 'NOT_FOUND') {
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-        txResponse = await server.getTransaction(sendResponse.hash);
-    }
+    const txResponse = await pollTransaction(server, sendResponse.hash);
 
     if (txResponse.status !== 'SUCCESS') {
         throw new Error(`Transaction failed: ${JSON.stringify(txResponse, null, 2)}`);
@@ -171,20 +250,22 @@ async function createInstance(
     account: Keypair,
     networkPassphrase: string,
 ): Promise<string> {
-    const source = await server.getAccount(account.publicKey());
-    const tx = new TransactionBuilder(source, { fee: '100000', networkPassphrase })
-        .addOperation(
-            Operation.createCustomContract({
-                address: Address.fromString(account.publicKey()),
-                wasmHash,
-                salt,
-            }),
-        )
-        .setTimeout(30)
-        .build();
+    return step(`create:${salt.toString('hex')}`, async () => {
+        const source = await server.getAccount(account.publicKey());
+        const tx = new TransactionBuilder(source, { fee: '100000', networkPassphrase })
+            .addOperation(
+                Operation.createCustomContract({
+                    address: Address.fromString(account.publicKey()),
+                    wasmHash,
+                    salt,
+                }),
+            )
+            .setTimeout(30)
+            .build();
 
-    const result = await sendTx(server, tx, account);
-    return extractContractId(result.resultMetaXdr);
+        const result = await sendTx(server, tx, account);
+        return extractContractId(result.resultMetaXdr);
+    });
 }
 
 // Call a contract function with positional arguments.
@@ -196,24 +277,27 @@ async function invoke(
     account: Keypair,
     networkPassphrase: string,
 ): Promise<void> {
-    const source = await server.getAccount(account.publicKey());
-    const tx = new TransactionBuilder(source, { fee: '100000', networkPassphrase })
-        .addOperation(
-            Operation.invokeHostFunction({
-                func: xdr.HostFunction.hostFunctionTypeInvokeContract(
-                    new xdr.InvokeContractArgs({
-                        contractAddress: Address.fromString(contractId).toScAddress(),
-                        functionName: method,
-                        args: args.map(arg => nativeToScVal(arg)),
-                    }),
-                ),
-                auth: [],
-            }),
-        )
-        .setTimeout(30)
-        .build();
+    await step(`invoke:${contractId}:${method}`, async () => {
+        const source = await server.getAccount(account.publicKey());
+        const tx = new TransactionBuilder(source, { fee: '100000', networkPassphrase })
+            .addOperation(
+                Operation.invokeHostFunction({
+                    func: xdr.HostFunction.hostFunctionTypeInvokeContract(
+                        new xdr.InvokeContractArgs({
+                            contractAddress: Address.fromString(contractId).toScAddress(),
+                            functionName: method,
+                            args: args.map(arg => nativeToScVal(arg)),
+                        }),
+                    ),
+                    auth: [],
+                }),
+            )
+            .setTimeout(30)
+            .build();
 
-    await sendTx(server, tx, account);
+        await sendTx(server, tx, account);
+        return 'done';
+    });
 }
 
 export interface DeployedContracts {
@@ -265,8 +349,13 @@ async function main() {
 
     const account = Keypair.fromSecret(secretKey);
     // Fall back to the deployer's own key when admin is not set in config.
-    const adminAddr =
-        config.admin === 'YOUR_ADMIN_PUBLIC_KEY' ? account.publicKey() : config.admin;
+    const adminAddr = resolveAdminAddress(config.admin, account.publicKey());
+
+    const statePath = path.join(__dirname, `.deploy-state.${network}.json`);
+    resumeState = {
+        path: statePath,
+        state: (await fs.pathExists(statePath)) ? await fs.readJson(statePath) : {},
+    };
 
     const server = new Rpc.Server(config.rpcUrl);
     const passphrase = config.networkPassphrase;
@@ -413,8 +502,9 @@ async function main() {
     const frontendEnvBlock = buildFrontendEnvBlock(network, contracts);
     const backendEnvBlock = buildBackendEnvBlock(network, contracts);
 
-    await fs.appendFile(path.join(__dirname, '../frontend/.env.local'), frontendEnvBlock);
-    await fs.appendFile(path.join(__dirname, '../backend/.env'), backendEnvBlock);
+    await upsertEnvFile(path.join(__dirname, '../frontend/.env.local'), frontendEnvBlock);
+    await upsertEnvFile(path.join(__dirname, '../backend/.env'), backendEnvBlock);
+    await fs.remove(statePath);
 
     console.log('\nDeployment complete.');
     console.log(`  RemittanceNFT  : ${nftContractId}`);
