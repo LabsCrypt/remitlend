@@ -127,6 +127,8 @@ export const useWalletStore = create<WalletStore>()(
       {
         name: "remitlend-wallet",
         storage: createJSONStorage(() => localStorage),
+        // Issue #2301: Skip hydration to prevent SSR mismatch
+        skipHydration: true,
         partialize: (state) => ({
           status: state.status,
           address: state.address,
@@ -139,6 +141,13 @@ export const useWalletStore = create<WalletStore>()(
     { name: "WalletStore" },
   ),
 );
+
+// Issue #2301: Manual rehydration helper to call in useEffect
+export const rehydrateWalletStore = () => {
+  if (typeof window !== "undefined") {
+    useWalletStore.persist.rehydrate();
+  }
+};
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 
