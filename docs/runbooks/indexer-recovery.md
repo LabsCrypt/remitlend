@@ -9,7 +9,7 @@ When the event indexer falls behind, crashes, or encounters an RPC outage, use t
 ### Via Health Endpoint
 
 ```bash
-curl /api/indexer/status
+curl -H "x-api-key: ${INTERNAL_API_KEY}" /api/indexer/status
 ```
 
 Check the `last_indexed_ledger` field against the current Stellar ledger sequence (available from the RPC `getLatestLedger` method). A gap larger than `INDEXER_POLL_INTERVAL_MS × 2` indicates lag.
@@ -49,7 +49,7 @@ The indexer will finish its current poll cycle and then stop. In-flight events a
 ### Verify Paused State
 
 ```bash
-curl /api/indexer/status
+curl -H "x-api-key: ${INTERNAL_API_KEY}" /api/indexer/status
 ```
 
 Look for `status: "paused"`.

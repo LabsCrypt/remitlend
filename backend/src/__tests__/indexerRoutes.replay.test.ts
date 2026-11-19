@@ -119,6 +119,51 @@ afterAll(() => {
 });
 
 describe('GET /api/indexer/status checkpoints', () => {
+  it('requires an API key', async () => {
+    const res = await request(app).get('/api/indexer/status');
+
+    expect(res.status).toBe(401);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('rejects a key without the admin:indexer scope', async () => {
+    const res = await request(app).get('/api/indexer/status').set('x-api-key', 'webhook-value');
+
+    expect(res.status).toBe(403);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('serves event counts from the cache on subsequent requests', async () => {
+    mockQuery.mockImplementation(async (text: string) => {
+      if (text.includes('FROM indexer_state')) {
+        return {
+          rows: [
+            {
+              last_indexed_ledger: 4200,
+              last_indexed_cursor: '4200-1',
+              updated_at: '2026-10-01T00:00:00.000Z',
+            },
+          ],
+        };
+      }
+      if (text.includes('GROUP BY event_type')) {
+        return { rows: [{ event_type: 'LoanRepaid', count: '2' }] };
+      }
+      return { rows: [{ total: '2' }] };
+    });
+
+    const aggregateCalls = () =>
+      mockQuery.mock.calls.filter(([text]) => text.includes('GROUP BY event_type')).length;
+
+    await request(app).get('/api/indexer/status').set('x-api-key', 'indexer-value');
+    const afterFirstRequest = aggregateCalls();
+
+    await request(app).get('/api/indexer/status').set('x-api-key', 'indexer-value');
+
+    expect(afterFirstRequest).toBe(1);
+    expect(aggregateCalls()).toBe(1);
+  });
+
   it('reports the latest checkpoint and per-type counts', async () => {
     mockQuery.mockImplementation(async (text: string) => {
       if (text.includes('FROM indexer_state')) {
@@ -143,7 +188,9 @@ describe('GET /api/indexer/status checkpoints', () => {
       return { rows: [{ total: '5' }] };
     });
 
-    const res = await request(app).get('/api/indexer/status');
+    const res = await request(app)
+      .get('/api/indexer/status')
+      .set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -175,7 +222,9 @@ describe('GET /api/indexer/status checkpoints', () => {
       return { rows: [{ total: '0' }] };
     });
 
-    const res = await request(app).get('/api/indexer/status');
+    const res = await request(app)
+      .get('/api/indexer/status')
+      .set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({
@@ -192,7 +241,9 @@ describe('GET /api/indexer/status checkpoints', () => {
   it('returns 404 when no checkpoint exists yet', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
-    const res = await request(app).get('/api/indexer/status');
+    const res = await request(app)
+      .get('/api/indexer/status')
+      .set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ success: false, message: 'Indexer state not found' });
@@ -201,7 +252,9 @@ describe('GET /api/indexer/status checkpoints', () => {
   it('returns 500 when the checkpoint read fails', async () => {
     mockQuery.mockRejectedValue(new Error('db down'));
 
-    const res = await request(app).get('/api/indexer/status');
+    const res = await request(app)
+      .get('/api/indexer/status')
+      .set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ success: false, message: 'Failed to get indexer status' });
