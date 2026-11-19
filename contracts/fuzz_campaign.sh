@@ -3,7 +3,7 @@
 # Fuzz Testing Campaign Script for RemitLend Contracts
 # This script runs comprehensive fuzz testing on all contracts
 
-set -e
+set -euo pipefail
 
 echo "🔍 Starting RemitLend Fuzz Testing Campaign"
 echo "=========================================="
@@ -13,6 +13,7 @@ FUZZ_TIME=${1:-60}  # Default 60 seconds per target if not specified
 CORPUS_DIR="fuzz/corpus"
 ARTIFACTS_DIR="fuzz/artifacts"
 REPORT_DIR="fuzz/reports"
+RUN_ID="$(date +%Y%m%d_%H%M%S)"
 
 # Create directories
 mkdir -p "$CORPUS_DIR" "$ARTIFACTS_DIR" "$REPORT_DIR"
@@ -30,16 +31,18 @@ run_fuzz() {
     
     # Create corpus directory for this target
     mkdir -p "$CORPUS_DIR/$target"
+    local target_artifacts_dir="$ARTIFACTS_DIR/$RUN_ID-$target"
+    mkdir -p "$target_artifacts_dir"
     
     # Run the fuzz test
     cargo +nightly fuzz run "$target" \
         -- -max_total_time="${FUZZ_TIME}" \
-        -artifact_prefix="$ARTIFACTS_DIR/$target-" \
+        -artifact_prefix="$target_artifacts_dir/" \
         -print_final_stats=1 \
         2>&1 | tee "$REPORT_DIR/$target.log"
     
     # Check if any crashes were found
-    if ls "$ARTIFACTS_DIR/$target"-* 1> /dev/null 2>&1; then
+    if [[ -n "$(find "$target_artifacts_dir" -type f -print -quit)" ]]; then
         echo "❌ CRASHES FOUND for $target!"
         echo "Artifacts saved in: $ARTIFACTS_DIR"
     else
@@ -69,9 +72,10 @@ EOF
     for target in "lending_pool_fuzz" "loan_manager_fuzz" "remittance_nft_fuzz" "multisig_governance_fuzz"; do
         echo "### $target" >> "$report_file"
         
-        if ls "$ARTIFACTS_DIR/$target"-* 1> /dev/null 2>&1; then
+        local target_artifacts_dir="$ARTIFACTS_DIR/$RUN_ID-$target"
+        if find "$target_artifacts_dir" -type f -print -quit | grep -q .; then
             echo "- Status: ❌ CRASHES FOUND" >> "$report_file"
-            echo "- Artifacts: $(ls "$ARTIFACTS_DIR/$target"-* | wc -l) crash artifacts" >> "$report_file"
+            echo "- Artifacts: $(find "$target_artifacts_dir" -type f | wc -l | tr -d ' ') crash artifacts" >> "$report_file"
         else
             echo "- Status: ✅ PASSED" >> "$report_file"
         fi
@@ -131,7 +135,7 @@ echo "Reports available in: $REPORT_DIR"
 echo "Crash artifacts (if any) available in: $ARTIFACTS_DIR"
 
 # Exit with error if any crashes were found
-if ls "$ARTIFACTS_DIR"/*-* 1> /dev/null 2>&1; then
+if [[ -n "$(find "$ARTIFACTS_DIR" -path "$ARTIFACTS_DIR/$RUN_ID-*/*" -type f -print -quit)" ]]; then
     echo ""
     echo "⚠️  Some fuzz tests found crashes. Please review the artifacts."
     exit 1

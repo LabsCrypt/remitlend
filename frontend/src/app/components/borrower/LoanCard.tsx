@@ -157,7 +157,7 @@ export function LoanCard({ loan, variant = "compact" }: LoanCardProps) {
               variant === "compact" ? "text-lg" : "text-sm"
             } font-semibold ${deadlineTextColor}`}
           >
-            {formatDate(loan.nextPaymentDeadline)}
+            {formatDate(loan.nextPaymentDeadline, locale)}
           </p>
           <p className={`text-xs mt-1 ${deadlineSubColor}`}>{deadlineLabel}</p>
         </div>

@@ -7,11 +7,13 @@ import { useBorrowerLoans } from "../../hooks/useApi";
 import { LoanList } from "./LoanList";
 import { formatCurrency, formatDate } from "./loanFormatters";
 import { Spinner } from "../global_ui/Spinner";
+import { useLocale } from "next-intl";
 
 type Filter = "all" | "active" | "overdue";
 
 export function ActiveLoansTracker({ borrowerAddress }: { borrowerAddress: string }) {
   const { loans, stats, isLoading, isError, error, refetch } = useBorrowerLoans(borrowerAddress);
+  const locale = useLocale();
   const [filter, setFilter] = useState<Filter>("active");
 
   if (isLoading) {
@@ -81,7 +83,7 @@ export function ActiveLoansTracker({ borrowerAddress }: { borrowerAddress: strin
         <Card className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100">
           <p className="text-sm text-gray-600 mb-1">Next Payment</p>
           <p className="text-sm font-semibold text-yellow-700">
-            {stats.nextPaymentDue ? formatDate(stats.nextPaymentDue) : "No upcoming"}
+            {stats.nextPaymentDue ? formatDate(stats.nextPaymentDue, locale) : "No upcoming"}
           </p>
         </Card>
       </div>

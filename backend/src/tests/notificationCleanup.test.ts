@@ -35,7 +35,7 @@ describe('Notification Cleanup Strategy', () => {
 
       expect(mockedQuery).toHaveBeenCalledWith(
         expect.stringContaining('DELETE FROM notifications'),
-        [retentionDays],
+        [retentionDays, 500],
       );
       expect(deletedCount).toBe(2);
     });
@@ -79,7 +79,7 @@ describe('Notification Cleanup Strategy', () => {
 
       expect(mockedQuery).toHaveBeenCalledWith(
         expect.stringContaining("status IN ('read', 'archived')"),
-        [retentionDays],
+        [retentionDays, 500],
       );
       expect(deletedCount).toBe(5);
     });

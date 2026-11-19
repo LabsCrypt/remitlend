@@ -27,17 +27,10 @@ import { PaginationControls } from "../../components/ui/PaginationControls";
 import Link from "next/link";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { hasActiveRemittanceFilters, withRemittanceFilters } from "../../lib/remittanceFilters";
+import { formatDate } from "../../utils/date";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 const STATUS_CONFIG: Record<
@@ -436,7 +429,7 @@ export default function RemittancesPage() {
                       </div>
                       <div className="col-span-2">
                         <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                          {formatDate(remittance.createdAt)}
+                          {formatDate(remittance.createdAt, locale)}
                         </span>
                       </div>
                       <div className="col-span-2">
