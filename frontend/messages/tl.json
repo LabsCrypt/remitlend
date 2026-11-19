@@ -51,7 +51,14 @@
     "description": "Tingnan ang lahat ng iyong mga kahilingan pang-pautang, remesa, at transaksyon sa isang lugar.",
     "notConnected": "Wallet na hindi konektado",
     "connectWalletToViewActivity": "Ikonekta ang iyong wallet upang makita ang iyong kasaysayan ng aktibidad.",
-    "emptyState": "Walang aktibidad pa. Ang iyong mga transaksyon ay lalitaw dito.",
+    "emptyState": {
+      "title": "Wala pang aktibidad",
+      "description": "Lalabas dito ang iyong kasaysayan ng transaksyon kapag nagsimula ka nang gumamit ng RemitLend."
+    },
+    "errorTitle": "Hindi ma-load ang aktibidad",
+    "loansError": "Hindi ma-load ang mga loan. Pakisubukang muli.",
+    "remittancesError": "Hindi ma-load ang mga remittance. Pakisubukang muli.",
+    "retry": "Subukang muli",
     "filters": {
       "all": "Lahat ng Aktibidad",
       "loan": "Mga Pautang",

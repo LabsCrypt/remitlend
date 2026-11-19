@@ -632,19 +632,30 @@ class NotificationService {
    * @returns The number of deleted notifications.
    */
   async deleteOldNotifications(retentionDays: number): Promise<number> {
+    const batchSize = 500;
+    let totalDeleted = 0;
+
     try {
-      const result = await query(
-        `DELETE FROM notifications
-         WHERE created_at < NOW() - (INTERVAL '1 day' * $1)`,
-        [retentionDays],
-      );
-      const deletedCount = result.rowCount ?? 0;
-      if (deletedCount > 0) {
-        logger.withContext().info(`Notification cleanup completed: ${deletedCount} rows deleted`, {
+      while (true) {
+        const result = await query(
+          `DELETE FROM notifications
+           WHERE ctid IN (
+             SELECT ctid FROM notifications
+             WHERE created_at < NOW() - (INTERVAL '1 day' * $1)
+             LIMIT $2
+           )`,
+          [retentionDays, batchSize],
+        );
+        const deletedCount = result.rowCount ?? 0;
+        totalDeleted += deletedCount;
+        if (deletedCount < batchSize) break;
+      }
+      if (totalDeleted > 0) {
+        logger.withContext().info(`Notification cleanup completed: ${totalDeleted} rows deleted`, {
           retentionDays,
         });
       }
-      return deletedCount;
+      return totalDeleted;
     } catch (error) {
       logger.withContext().error('Error during notification cleanup', {
         error,
@@ -661,22 +672,33 @@ class NotificationService {
    * @returns The number of deleted notifications.
    */
   async deleteReadAndArchived(retentionDays: number): Promise<number> {
+    const batchSize = 500;
+    let totalDeleted = 0;
+
     try {
-      const result = await query(
-        `DELETE FROM notifications
-         WHERE status IN ('read', 'archived')
-           AND created_at < NOW() - (INTERVAL '1 day' * $1)`,
-        [retentionDays],
-      );
-      const deletedCount = result.rowCount ?? 0;
-      if (deletedCount > 0) {
+      while (true) {
+        const result = await query(
+          `DELETE FROM notifications
+           WHERE ctid IN (
+             SELECT ctid FROM notifications
+             WHERE status IN ('read', 'archived')
+               AND created_at < NOW() - (INTERVAL '1 day' * $1)
+             LIMIT $2
+           )`,
+          [retentionDays, batchSize],
+        );
+        const deletedCount = result.rowCount ?? 0;
+        totalDeleted += deletedCount;
+        if (deletedCount < batchSize) break;
+      }
+      if (totalDeleted > 0) {
         logger
           .withContext()
-          .info(`Read/archived notification cleanup completed: ${deletedCount} rows deleted`, {
+          .info(`Read/archived notification cleanup completed: ${totalDeleted} rows deleted`, {
             retentionDays,
           });
       }
-      return deletedCount;
+      return totalDeleted;
     } catch (error) {
       logger.withContext().error('Error during read/archived notification cleanup', {
         error,
@@ -711,6 +733,36 @@ class NotificationService {
 export const notificationService = new NotificationService();
 
 let cleanupInterval: ReturnType<typeof setInterval> | undefined;
+let cleanupRunning = false;
+
+function parsePositiveIntegerEnv(name: string, defaultValue: number): number {
+  const rawValue = process.env[name];
+  if (rawValue === undefined || rawValue.trim() === '') return defaultValue;
+
+  const value = Number(rawValue);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+let notificationRetentionDays = 90;
+let readNotificationRetentionDays = 30;
+
+async function runNotificationCleanup(): Promise<void> {
+  if (cleanupRunning) {
+    logger.withContext().warn('Notification cleanup is already running; skipping overlapping run.');
+    return;
+  }
+
+  cleanupRunning = true;
+  try {
+    await notificationService.deleteOldNotifications(notificationRetentionDays);
+    await notificationService.deleteReadAndArchived(readNotificationRetentionDays);
+  } finally {
+    cleanupRunning = false;
+  }
+}
 
 /**
  * Starts a periodic scheduler to clean up old notifications based on retention policy.
@@ -718,25 +770,20 @@ let cleanupInterval: ReturnType<typeof setInterval> | undefined;
 export function startNotificationCleanupScheduler(): void {
   if (cleanupInterval) return;
 
-  const retentionDays = parseInt(process.env.NOTIFICATION_RETENTION_DAYS || '90', 10);
-  const readRetentionDays = parseInt(process.env.READ_NOTIFICATION_RETENTION_DAYS || '30', 10);
-  const intervalMs = parseInt(
-    process.env.NOTIFICATION_CLEANUP_INTERVAL_MS || String(24 * 60 * 60 * 1000), // Default: 24h
-    10,
-  );
+  notificationRetentionDays = parsePositiveIntegerEnv('NOTIFICATION_RETENTION_DAYS', 90);
+  readNotificationRetentionDays = parsePositiveIntegerEnv('READ_NOTIFICATION_RETENTION_DAYS', 30);
+  const intervalMs = parsePositiveIntegerEnv('NOTIFICATION_CLEANUP_INTERVAL_MS', 24 * 60 * 60 * 1000);
 
   // Run once immediately on start to clear any backlog
-  void notificationService.deleteOldNotifications(retentionDays);
-  void notificationService.deleteReadAndArchived(readRetentionDays);
+  void runNotificationCleanup();
 
-  cleanupInterval = setInterval(async () => {
-    await notificationService.deleteOldNotifications(retentionDays);
-    await notificationService.deleteReadAndArchived(readRetentionDays);
+  cleanupInterval = setInterval(() => {
+    void runNotificationCleanup();
   }, intervalMs);
 
   logger.withContext().info('Notification cleanup scheduler started', {
-    retentionDays,
-    readRetentionDays,
+    retentionDays: notificationRetentionDays,
+    readRetentionDays: readNotificationRetentionDays,
     intervalMs,
   });
 }

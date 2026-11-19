@@ -8,13 +8,7 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-export function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
+export { formatDate } from "../../utils/date";
 
 export function getDaysUntilDeadline(deadline: string): number {
   const msUntil = new Date(deadline).getTime() - Date.now();

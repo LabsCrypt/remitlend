@@ -9,6 +9,7 @@ import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 import { StatusIndicator } from "../../components/ui/StatusIndicator";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { downloadCsv, rowsToCsv } from "../../utils/csv";
+import { formatDate } from "../../utils/date";
 
 type FilterType = "all" | "loan" | "remittance";
 
@@ -118,7 +119,7 @@ export default function ActivityPage() {
   function handleExportCsv() {
     const today = new Date().toISOString().split("T")[0];
     const rows = allActivity.map((item) => ({
-      date: formatDate(item.timestamp),
+      date: formatDate(item.timestamp, locale),
       type: item.type,
       amount: item.amount,
       status: item.status,
@@ -203,18 +204,18 @@ export default function ActivityPage() {
             <div className="p-6 text-center border rounded-lg bg-zinc-50 dark:bg-zinc-950/50 border-zinc-200 dark:border-zinc-800">
               <AlertCircle className="h-12 w-12 mx-auto text-zinc-400 dark:text-zinc-600 mb-4" />
               <h3 className="text-zinc-900 dark:text-zinc-100 text-lg font-medium mb-2">
-                {t("errorTitle") || "Error loading activity"}
+                {t("errorTitle")}
               </h3>
               <p className="text-zinc-500 dark:text-zinc-400 mb-6">
                 {loansError
-                  ? t("loansError") || "Failed to load loans. Please retry."
-                  : t("remittancesError") || "Failed to load remittances. Please retry."}
+                  ? t("loansError")
+                  : t("remittancesError")}
               </p>
               <button
                 onClick={() => window.location.reload()}
                 className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
               >
-                {t("retry") || "Retry"}
+                {t("retry")}
               </button>
             </div>
           ) : paginatedActivity.length === 0 ? (
@@ -224,13 +225,12 @@ export default function ActivityPage() {
                 title={
                   isFilteredView
                     ? "No matching activity"
-                    : t("emptyState.title") || "No activity yet"
+                    : t("emptyState.title")
                 }
                 description={
                   isFilteredView
                     ? "Try a different filter to see more loan and remittance history."
-                    : t("emptyState.description") ||
-                      "Your transaction history will appear here once you start using RemitLend."
+                    : t("emptyState.description")
                 }
                 actionLabel={isFilteredView ? undefined : "Send your first remittance"}
                 actionHref={isFilteredView ? undefined : `/${locale}/send-remittance`}
@@ -297,7 +297,7 @@ export default function ActivityPage() {
                       {item.amount}
                     </p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {formatDate(item.timestamp)}
+                      {formatDate(item.timestamp, locale)}
                     </p>
                     <StatusIndicator
                       label={t(`status.${item.status}`)}
@@ -367,14 +367,6 @@ export default function ActivityPage() {
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-}
-
-function formatDate(timestamp: string): string {
-  return new Date(timestamp).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function getStatusTone(status: string): "success" | "warning" | "danger" | "info" | "neutral" {

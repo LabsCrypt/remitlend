@@ -13,6 +13,7 @@ import {
 import { PaginationControls } from "../../components/ui/PaginationControls";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { toast } from "sonner";
+import { formatDate } from "../../utils/date";
 
 const PAGE_SIZE = 10;
 
@@ -44,15 +45,6 @@ function notificationIcon(type: NotificationType) {
   }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function parseType(value: string | null): NotificationType | "all" {
   return NOTIFICATION_TYPES.includes(value as NotificationType)
     ? (value as NotificationType)
@@ -71,6 +63,7 @@ function NotificationRow({
   markReadLabel: string;
 }) {
   const Icon = notificationIcon(notification.type);
+  const locale = useLocale();
 
   return (
     <article
@@ -98,7 +91,12 @@ function NotificationRow({
             </div>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{notification.message}</p>
             <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-              {formatDate(notification.createdAt)}
+              {formatDate(notification.createdAt, locale, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
             </p>
           </div>
         </div>

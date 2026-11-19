@@ -2,6 +2,8 @@
 
 import { TxHashLink } from "./TxHashLink";
 import type { LoanEvent } from "../../hooks/useApi";
+import { useLocale } from "next-intl";
+import { formatDate } from "../../utils/date";
 
 interface LoanTimelineProps {
   events: LoanEvent[];
@@ -20,6 +22,7 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 export function LoanTimeline({ events }: LoanTimelineProps) {
+  const locale = useLocale();
   if (events.length === 0) {
     return <p className="text-sm text-zinc-500 dark:text-zinc-400">No events yet.</p>;
   }
@@ -44,7 +47,13 @@ export function LoanTimeline({ events }: LoanTimelineProps) {
                     {EVENT_LABELS[event.type] ?? event.type}
                   </p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {new Date(event.timestamp).toLocaleString()}
+                    {formatDate(event.timestamp, locale, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
                   </p>
                 </div>
                 {Number(event.amount) > 0 && (

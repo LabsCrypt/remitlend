@@ -29,16 +29,9 @@ import Link from "next/link";
 import { useLocale } from "next-intl";
 import { QRCodeSVG } from "qrcode.react";
 import { COPY_FEEDBACK_RESET_MS } from "../../components/ui";
+import { formatDate } from "../../utils/date";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function getHorizonUrl(networkName: string | null | undefined): string {
   const isMainnet =
@@ -276,6 +269,7 @@ function TransactionHistoryCard({
   horizonUrl: string;
   explorerBase: string;
 }) {
+  const locale = useLocale();
   const [page, setPage] = useState(1);
   const [pageCursors, setPageCursors] = useState<Record<number, string | null>>({ 1: null });
   const { data, isLoading, isError } = useHorizonPayments(
@@ -411,7 +405,7 @@ function TransactionHistoryCard({
                         {paymentAmount(p)}
                       </p>
                       <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                        {formatDate(p.created_at)}
+                        {formatDate(p.created_at, locale)}
                       </p>
                     </div>
                     <a

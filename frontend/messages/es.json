@@ -51,7 +51,14 @@
     "description": "Ver todas tus solicitudes de préstamo, remesas y transacciones en un solo lugar.",
     "notConnected": "Cartera no conectada",
     "connectWalletToViewActivity": "Conecte su cartera para ver su historial de actividad.",
-    "emptyState": "Sin actividad aún. Sus transacciones aparecerán aquí.",
+    "emptyState": {
+      "title": "Aún no hay actividad",
+      "description": "Tu historial de transacciones aparecerá aquí cuando empieces a usar RemitLend."
+    },
+    "errorTitle": "Error al cargar la actividad",
+    "loansError": "No se pudieron cargar los préstamos. Inténtalo de nuevo.",
+    "remittancesError": "No se pudieron cargar las remesas. Inténtalo de nuevo.",
+    "retry": "Reintentar",
     "filters": {
       "all": "Toda la actividad",
       "loan": "Préstamos",
