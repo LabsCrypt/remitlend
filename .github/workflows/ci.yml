@@ -348,6 +348,25 @@ jobs:
       - name: Contracts check
         run: echo "Contracts format, clippy, tests, and build passed"
 
+  # Issue #2286: run the soroban-guard lint (SG002 TTL rule) and its tests.
+  soroban-guard:
+    needs: money-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.85.0
+      - name: soroban-guard rule tests
+        run: cargo test --workspace
+        working-directory: crates
+      - name: soroban-guard scan of contract sources
+        # Report-only until existing findings are triaged; flip to blocking after.
+        continue-on-error: true
+        run: cargo run -q -p soroban-guard -- ../contracts/*/src/lib.rs
+        working-directory: crates
+
   # Issue #2151: the remittance NFT is the borrower's credit identity, so its
   # authorization gates are security-critical. Every release must carry the
   # owner's signature as well as an admin/authorized-minter one, and the

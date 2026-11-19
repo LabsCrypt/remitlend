@@ -52,6 +52,7 @@ const KEY_TARGET: Symbol = symbol_short!("TARGET");
 const KEY_TARGETS: Symbol = symbol_short!("TARGETS");
 const KEY_LAST_CANCELLED_AT: Symbol = symbol_short!("CANCEL_AT");
 const KEY_PROPOSAL_COUNT: Symbol = symbol_short!("COUNT");
+const KEY_UPGRADE: Symbol = symbol_short!("UPGRADE");
 
 const REPROPOSAL_COOLDOWN_SECONDS: u64 = 3600; // 1 hour
 const CURRENT_VERSION: u32 = 1;
@@ -125,6 +126,11 @@ pub enum GovernanceError {
     /// Returned by `propose_admin_transfer` when the `signers` vector contains
     /// the same address more than once.
     DuplicateSigner = 4020,
+    /// Returned by `approve_upgrade` and `upgrade` when no upgrade has been
+    /// proposed via `propose_upgrade`.
+    NoPendingUpgrade = 4022,
+    /// Returned by `upgrade` when the supplied hash differs from the proposed one.
+    UpgradeHashMismatch = 4023,
 }
 
 /// Status of a pending admin transfer proposal.
@@ -155,6 +161,19 @@ pub struct PendingTransfer {
     pub proposed_at: u64,
     /// Lifecycle status of the proposal.
     pub status: ProposalStatus,
+}
+
+/// A pending contract upgrade, gated by the same quorum + timelock rules as
+/// admin transfers.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PendingUpgrade {
+    pub wasm_hash: BytesN<32>,
+    pub signers: Vec<Address>,
+    pub threshold: u32,
+    pub executable_after: u64,
+    pub approvals: Map<Address, bool>,
+    pub proposed_at: u64,
 }
 
 /// Emitted when a transfer is proposed.
@@ -270,10 +289,100 @@ impl GovernanceContract {
         env.storage().instance().get(&KEY_VERSION).unwrap_or(0)
     }
 
+    /// Propose a WASM upgrade. It can only be applied via `upgrade` once
+    /// `threshold` signers have approved and the timelock has elapsed.
+    /// A new proposal replaces any previous one (approvals reset).
+    pub fn propose_upgrade(
+        env: Env,
+        new_wasm_hash: BytesN<32>,
+        signers: Vec<Address>,
+        threshold: u32,
+        delay_seconds: u64,
+    ) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
+        Self::read_admin(&env)?.require_auth();
+
+        if signers.is_empty() {
+            return Err(GovernanceError::EmptySignerList);
+        }
+        if signers.len() > MAX_SIGNERS {
+            return Err(GovernanceError::TooManySigners);
+        }
+        for (i, s) in signers.iter().enumerate() {
+            if signers.iter().skip(i + 1).any(|x| x == s) {
+                return Err(GovernanceError::DuplicateSigner);
+            }
+        }
+        if threshold < 1 {
+            return Err(GovernanceError::ThresholdTooLow);
+        }
+        if threshold > signers.len() {
+            return Err(GovernanceError::ThresholdExceedsSignerCount);
+        }
+        if delay_seconds < MIN_TIMELOCK_SECONDS {
+            return Err(GovernanceError::DelayTooShort);
+        }
+        if delay_seconds > MAX_TIMELOCK_SECONDS {
+            return Err(GovernanceError::DelayTooLong);
+        }
+
+        let now = env.ledger().timestamp();
+        let pending = PendingUpgrade {
+            wasm_hash: new_wasm_hash,
+            signers,
+            threshold,
+            executable_after: now.saturating_add(delay_seconds),
+            approvals: Map::new(&env),
+            proposed_at: now,
+        };
+        env.storage().instance().set(&KEY_UPGRADE, &pending);
+        Ok(())
+    }
+
+    /// Record a signer approval for the pending upgrade.
+    pub fn approve_upgrade(env: Env, signer: Address) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
+        signer.require_auth();
+
+        let mut pending: PendingUpgrade = env
+            .storage()
+            .instance()
+            .get(&KEY_UPGRADE)
+            .ok_or(GovernanceError::NoPendingUpgrade)?;
+        if !pending.signers.iter().any(|s| s == signer) {
+            return Err(GovernanceError::SignerNotAllowed);
+        }
+        pending.approvals.set(signer, true);
+        env.storage().instance().set(&KEY_UPGRADE, &pending);
+        Ok(())
+    }
+
+    /// Apply a previously proposed upgrade. Requires admin auth, a matching
+    /// proposal, an elapsed timelock and the signer quorum.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), GovernanceError> {
         Self::bump_instance_ttl(&env);
         let admin = Self::read_admin(&env)?;
         admin.require_auth();
+
+        let pending: PendingUpgrade = env
+            .storage()
+            .instance()
+            .get(&KEY_UPGRADE)
+            .ok_or(GovernanceError::NoPendingUpgrade)?;
+        if pending.wasm_hash != new_wasm_hash {
+            return Err(GovernanceError::UpgradeHashMismatch);
+        }
+        let now = env.ledger().timestamp();
+        if now < pending.executable_after {
+            return Err(GovernanceError::TimelockNotElapsed);
+        }
+        if now >= pending.proposed_at.saturating_add(PROPOSAL_TTL_SECONDS) {
+            return Err(GovernanceError::ProposalExpired);
+        }
+        if pending.approvals.len() < pending.threshold {
+            return Err(GovernanceError::ThresholdNotMet);
+        }
+        env.storage().instance().remove(&KEY_UPGRADE);
 
         let old_version = Self::version(env.clone());
         let new_version = old_version.saturating_add(1);
