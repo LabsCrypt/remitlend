@@ -115,6 +115,19 @@ describe("useAdminGuard", () => {
     expect(result.current.isAdmin).toBe(false);
   });
 
+  it("tampered store role does not enable admin queries before session resolves", () => {
+    // A client that sets role:"admin" in the persisted store must not get
+    // isAdmin=true until useVerifySession confirms it server-side.
+    mockUser.authToken = "token";
+    mockUser.user = { role: "admin" };
+    // Session still loading — server has not confirmed the role yet.
+    setSession({ isLoading: true });
+
+    const { result } = renderHook(() => useAdminGuard(), { wrapper: createWrapper() });
+
+    expect(result.current.isAdmin).toBe(false);
+  });
+
   it("only enables session verification when a token exists", () => {
     mockUser.authToken = null;
     setSession({});
