@@ -95,8 +95,8 @@ export async function buildUnsignedRepaymentXdr({
   const source = await server.getAccount(borrower);
 
   const borrowerScVal = new Address(borrower).toScVal();
-  const loanIdScVal = nativeToScVal(BigInt(loanId), { type: "u64" });
-  const scaledAmount = toStroops(String(Math.floor(amount)), decimals);
+  const loanIdScVal = nativeToScVal(BigInt(loanId), { type: "u32" }); // Fixed: u32 instead of u64
+  const scaledAmount = toStroops(amount.toString(), decimals); // Fixed: removed Math.floor truncation
   if (scaledAmount === null) {
     throw new Error(`Invalid amount for ${decimals}-decimal asset: ${amount}`);
   }

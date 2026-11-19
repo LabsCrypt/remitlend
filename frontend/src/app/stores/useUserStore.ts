@@ -111,6 +111,8 @@ export const useUserStore = create<UserStore>()(
       }),
       {
         name: "remitlend-user",
+        // Issue #2301: Skip hydration to prevent SSR mismatch
+        skipHydration: true,
         // Only persist the user object — not transient loading/error state
         partialize: (state) => ({
           user: state.user,
@@ -122,6 +124,13 @@ export const useUserStore = create<UserStore>()(
     { name: "UserStore" },
   ),
 );
+
+// Issue #2301: Manual rehydration helper to call in useEffect
+export const rehydrateUserStore = () => {
+  if (typeof window !== "undefined") {
+    useUserStore.persist.rehydrate();
+  }
+};
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 // Exporting selectors avoids inline arrow functions in components

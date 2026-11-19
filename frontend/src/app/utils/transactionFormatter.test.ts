@@ -340,3 +340,161 @@ describe("transactionFormatter", () => {
     });
   });
 });
+
+  // #2147: Edge case tests for missing timestamps, unknown operations, and malformed amounts
+  describe("Edge Cases (#2147)", () => {
+    describe("Malformed Amounts", () => {
+      it("handles zero amount correctly", () => {
+        const result = formatLoanRequest({ amount: 0, borrower: "GABC1234567890DEF" });
+        expect(result.operations[0].amount).toBe("0");
+        expect(result.balanceChanges[0].change).toBe("0");
+      });
+
+      it("handles negative amount", () => {
+        const result = formatLoanRepayment({ loanId: 1, amount: -100 });
+        expect(result.operations[0].amount).toBe("-100");
+        expect(result.balanceChanges[0].change).toBe("--100"); // Note: intentionally testing behavior
+      });
+
+      it("handles very large amounts", () => {
+        const largeAmount = 999999999999.99;
+        const result = formatDeposit({ amount: largeAmount, token: "USDC" });
+        expect(result.operations[0].amount).toBe("999999999999.99");
+        expect(result.balanceChanges[0].change).toBe("-999999999999.99");
+      });
+
+      it("handles extremely small decimal amounts", () => {
+        const result = formatWithdraw({ amount: 0.0000001, token: "USDC" });
+        expect(result.operations[0].amount).toBe("0.0000001");
+        expect(result.balanceChanges[1].change).toBe("0.0000001");
+      });
+
+      it("handles NaN amount gracefully", () => {
+        const result = formatLoanRequest({ amount: NaN, borrower: "GABC1234567890DEF" });
+        expect(result.operations[0].amount).toBe("NaN");
+      });
+
+      it("handles Infinity amount", () => {
+        const result = formatLoanRepayment({ loanId: 1, amount: Infinity });
+        expect(result.operations[0].amount).toBe("Infinity");
+      });
+    });
+
+    describe("Missing or Invalid Data", () => {
+      it("handles empty borrower address", () => {
+        const result = formatLoanRequest({ amount: 100, borrower: "" });
+        expect(result.operations[0].details?.["Borrower Address"]).toBe("...");
+      });
+
+      it("handles very short borrower address", () => {
+        const result = formatLoanRequest({ amount: 100, borrower: "GAB" });
+        expect(result.operations[0].details?.["Borrower Address"]).toBeDefined();
+      });
+
+      it("handles empty token string", () => {
+        const result = formatDeposit({ amount: 100, token: "" });
+        expect(result.operations[0].token).toBe("");
+        expect(result.balanceChanges[1].token).toBe("LP-");
+      });
+
+      it("handles special characters in token name", () => {
+        const result = formatRemittanceSend({
+          amount: 100,
+          recipient: "GABC1234567890DEF",
+          token: "US$DC@123",
+        });
+        expect(result.operations[0].token).toBe("US$DC@123");
+      });
+    });
+
+    describe("Boundary Conditions", () => {
+      it("handles loan ID of 0", () => {
+        const result = formatLoanRepayment({ loanId: 0, amount: 100 });
+        expect(result.operations[0].details?.["Loan ID"]).toBe("0");
+        expect(result.operations[0].description).toContain("Loan #0");
+      });
+
+      it("handles very large loan ID", () => {
+        const result = formatLoanRepayment({ loanId: 2147483647, amount: 100 });
+        expect(result.operations[0].details?.["Loan ID"]).toBe("2147483647");
+      });
+
+      it("handles undefined args in generic transaction", () => {
+        const result = formatGenericTransaction({
+          contractMethod: "test",
+          description: "Test transaction",
+          args: undefined,
+        });
+        expect(result.operations[0].details).toBeUndefined();
+      });
+
+      it("handles empty args object", () => {
+        const result = formatGenericTransaction({
+          contractMethod: "test",
+          description: "Test",
+          args: {},
+        });
+        expect(result.operations[0].details).toEqual({});
+      });
+    });
+
+    describe("Unknown Operations", () => {
+      it("formats unknown operation types through generic formatter", () => {
+        const result = formatGenericTransaction({
+          contractMethod: "unknown_method_xyz",
+          description: "This is an unrecognized contract method",
+          args: { param1: "value1", param2: 42 },
+        });
+        
+        expect(result.operations[0].type).toBe("unknown_method_xyz");
+        expect(result.operations[0].description).toBe("This is an unrecognized contract method");
+        expect(result.operations[0].details).toEqual({ param1: "value1", param2: 42 });
+      });
+
+      it("handles generic transaction with complex args", () => {
+        const result = formatGenericTransaction({
+          contractMethod: "complex_call",
+          description: "Complex operation",
+          args: {
+            nested: "deep",
+            array: 123,
+            boolean: "true",
+          },
+        });
+
+        expect(result.operations[0].type).toBe("complex_call");
+        expect(result.balanceChanges).toHaveLength(0);
+      });
+    });
+
+    describe("Network and Gas Fee Consistency", () => {
+      it("all formatters return consistent network name", () => {
+        const results = [
+          formatLoanRequest({ amount: 100, borrower: "GABC" }),
+          formatLoanRepayment({ loanId: 1, amount: 100 }),
+          formatDeposit({ amount: 100, token: "USDC" }),
+          formatWithdraw({ amount: 100, token: "USDC" }),
+          formatRemittanceSend({ amount: 100, recipient: "GABC", token: "USDC" }),
+          formatGenericTransaction({ contractMethod: "test", description: "Test" }),
+        ];
+
+        results.forEach((result) => {
+          expect(result.network).toBe("Stellar Testnet");
+        });
+      });
+
+      it("all formatters return consistent gas fee format", () => {
+        const results = [
+          formatLoanRequest({ amount: 100, borrower: "GABC" }),
+          formatLoanRepayment({ loanId: 1, amount: 100 }),
+          formatDeposit({ amount: 100, token: "USDC" }),
+        ];
+
+        results.forEach((result) => {
+          expect(result.estimatedGasFee).toBe("0.00001");
+          expect(typeof result.estimatedGasFee).toBe("string");
+        });
+      });
+    });
+  });
+});
