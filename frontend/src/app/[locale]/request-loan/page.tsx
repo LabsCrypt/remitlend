@@ -23,47 +23,45 @@ const LoanApplicationWizard = dynamic(
   { ssr: false, loading: () => <WizardSkeleton /> },
 );
 
-// Score band thresholds
+// Score band thresholds — fixed scoring ranges, not loan policy
 export const EXCELLENT_SCORE_THRESHOLD = 750;
 export const GOOD_SCORE_THRESHOLD = 670;
 export const FAIR_SCORE_THRESHOLD = 580;
 export const MINIMUM_ELIGIBLE_SCORE_THRESHOLD = 500;
 
-// Maximum loan amounts per score band
-export const EXCELLENT_SCORE_MAX_LOAN = 50_000;
-export const GOOD_SCORE_MAX_LOAN = 25_000;
-export const FAIR_SCORE_MAX_LOAN = 10_000;
-export const MINIMUM_SCORE_MAX_LOAN = 5_000;
-
-// Default on-chain maximum loan limit fallback
-export const DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT = 50_000;
-
 // Warning range
 export const NEAR_MINIMUM_SCORE_DELTA = 40;
 
+/**
+ * Returns the band-tier fraction of `maxContractAmount` for the given score.
+ *
+ * Band caps are expressed as fractions of the on-chain `maxAmount` returned by
+ * GET /loans/config — they are NOT hardcoded here. This means the UI always
+ * stays in sync with policy changes without a code deploy.
+ *
+ * Tier fractions (matching historical on-chain defaults):
+ *   excellent (≥750): 100 % of maxAmount
+ *   good      (≥670):  50 %
+ *   fair      (≥580):  20 %
+ *   minimum   (≥500):  10 %
+ *
+ * When `maxContractAmount` is unavailable or invalid we return 0 so the UI
+ * degrades to "eligibility unknown" rather than showing a stale hardcoded cap.
+ */
 export function getScoreBandMax(score: number, maxContractAmount?: number): number {
-  let tierLimit = 0;
-  if (score >= EXCELLENT_SCORE_THRESHOLD) {
-    tierLimit = EXCELLENT_SCORE_MAX_LOAN;
-  } else if (score >= GOOD_SCORE_THRESHOLD) {
-    tierLimit = GOOD_SCORE_MAX_LOAN;
-  } else if (score >= FAIR_SCORE_THRESHOLD) {
-    tierLimit = FAIR_SCORE_MAX_LOAN;
-  } else if (score >= MINIMUM_ELIGIBLE_SCORE_THRESHOLD) {
-    tierLimit = MINIMUM_SCORE_MAX_LOAN;
-  } else {
+  if (
+    typeof maxContractAmount !== "number" ||
+    !Number.isFinite(maxContractAmount) ||
+    maxContractAmount <= 0
+  ) {
     return 0;
   }
 
-  if (
-    typeof maxContractAmount === "number" &&
-    Number.isFinite(maxContractAmount) &&
-    maxContractAmount > 0
-  ) {
-    return Math.min(tierLimit, maxContractAmount);
-  }
-
-  return Math.min(tierLimit, DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT);
+  if (score >= EXCELLENT_SCORE_THRESHOLD) return maxContractAmount;
+  if (score >= GOOD_SCORE_THRESHOLD) return Math.floor(maxContractAmount * 0.5);
+  if (score >= FAIR_SCORE_THRESHOLD) return Math.floor(maxContractAmount * 0.2);
+  if (score >= MINIMUM_ELIGIBLE_SCORE_THRESHOLD) return Math.floor(maxContractAmount * 0.1);
+  return 0;
 }
 
 export default function RequestLoanPage() {

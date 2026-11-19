@@ -1,72 +1,92 @@
+/**
+ * Tests for getScoreBandMax — verifies that band caps are always derived from
+ * the config-endpoint `maxAmount` and never from stale page-level constants.
+ *
+ * Acceptance criteria (issue):
+ *  - Band caps equal policy values (maxAmount from GET /loans/config).
+ *  - Deleting the hardcoded constants does not break the logic.
+ *  - Page caps equal policy values: each band is a fixed fraction of maxAmount.
+ */
 import {
   getScoreBandMax,
-  EXCELLENT_SCORE_MAX_LOAN,
-  GOOD_SCORE_MAX_LOAN,
-  FAIR_SCORE_MAX_LOAN,
-  MINIMUM_SCORE_MAX_LOAN,
-  DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT,
+  EXCELLENT_SCORE_THRESHOLD,
+  GOOD_SCORE_THRESHOLD,
+  FAIR_SCORE_THRESHOLD,
+  MINIMUM_ELIGIBLE_SCORE_THRESHOLD,
 } from "./page";
 
-describe("RequestLoanPage - getScoreBandMax limit clamping", () => {
-  describe("Default score tier limits without contract override", () => {
-    it("returns 0 for ineligible score below minimum (< 500)", () => {
-      expect(getScoreBandMax(450)).toBe(0);
-      expect(getScoreBandMax(499)).toBe(0);
+describe("RequestLoanPage - getScoreBandMax (policy-driven caps)", () => {
+  describe("Returns 0 when maxContractAmount is unavailable or invalid", () => {
+    it("returns 0 when maxContractAmount is undefined", () => {
+      expect(getScoreBandMax(800, undefined)).toBe(0);
     });
 
-    it("returns 5,000 for minimum eligible score band (500 - 579)", () => {
-      expect(getScoreBandMax(500)).toBe(MINIMUM_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(550)).toBe(MINIMUM_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(579)).toBe(MINIMUM_SCORE_MAX_LOAN);
+    it("returns 0 when maxContractAmount is 0", () => {
+      expect(getScoreBandMax(800, 0)).toBe(0);
     });
 
-    it("returns 10,000 for fair score band (580 - 669)", () => {
-      expect(getScoreBandMax(580)).toBe(FAIR_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(620)).toBe(FAIR_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(669)).toBe(FAIR_SCORE_MAX_LOAN);
+    it("returns 0 when maxContractAmount is negative", () => {
+      expect(getScoreBandMax(800, -100)).toBe(0);
     });
 
-    it("returns 25,000 for good score band (670 - 749)", () => {
-      expect(getScoreBandMax(670)).toBe(GOOD_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(700)).toBe(GOOD_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(749)).toBe(GOOD_SCORE_MAX_LOAN);
+    it("returns 0 when maxContractAmount is NaN", () => {
+      expect(getScoreBandMax(800, Number.NaN)).toBe(0);
     });
 
-    it("returns 50,000 for excellent score band (>= 750)", () => {
-      expect(getScoreBandMax(750)).toBe(EXCELLENT_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(800)).toBe(EXCELLENT_SCORE_MAX_LOAN);
-      expect(getScoreBandMax(850)).toBe(EXCELLENT_SCORE_MAX_LOAN);
+    it("returns 0 for ineligible score below minimum", () => {
+      expect(getScoreBandMax(450, 50_000)).toBe(0);
+      expect(getScoreBandMax(499, 50_000)).toBe(0);
     });
   });
 
-  describe("Contract maxAmount clamping", () => {
-    it("clamps excellent score (advertised 50k) to contract limit (e.g. 5,000)", () => {
-      const contractLimit = 5_000;
-      expect(getScoreBandMax(800, contractLimit)).toBe(5_000);
-      expect(getScoreBandMax(750, contractLimit)).toBe(5_000);
+  /**
+   * Policy-equality tests: given a known maxAmount from /loans/config, the band
+   * cap must equal the expected fraction of that value.  When the backend
+   * maxAmount changes these tests update automatically — the page constants do not.
+   */
+  describe("Band caps equal policy values (derived from maxContractAmount)", () => {
+    const POLICY_MAX = 50_000; // simulate GET /loans/config → data.maxAmount
+
+    it("excellent band (≥750): cap equals 100% of maxAmount", () => {
+      expect(getScoreBandMax(EXCELLENT_SCORE_THRESHOLD, POLICY_MAX)).toBe(POLICY_MAX);
+      expect(getScoreBandMax(800, POLICY_MAX)).toBe(POLICY_MAX);
+      expect(getScoreBandMax(850, POLICY_MAX)).toBe(POLICY_MAX);
     });
 
-    it("clamps good score (advertised 25k) to contract limit when limit is lower", () => {
-      const contractLimit = 15_000;
-      expect(getScoreBandMax(700, contractLimit)).toBe(15_000);
-      expect(getScoreBandMax(800, contractLimit)).toBe(15_000);
+    it("good band (≥670): cap equals 50% of maxAmount", () => {
+      expect(getScoreBandMax(GOOD_SCORE_THRESHOLD, POLICY_MAX)).toBe(POLICY_MAX * 0.5);
+      expect(getScoreBandMax(700, POLICY_MAX)).toBe(POLICY_MAX * 0.5);
+      expect(getScoreBandMax(749, POLICY_MAX)).toBe(POLICY_MAX * 0.5);
     });
 
-    it("does not increase score band limit if contract limit is higher", () => {
-      const contractLimit = 100_000;
-      // Fair score max is 10,000 even if contract allows up to 100,000
-      expect(getScoreBandMax(600, contractLimit)).toBe(10_000);
-      // Good score max is 25,000
-      expect(getScoreBandMax(700, contractLimit)).toBe(25_000);
-      // Excellent score max is 50,000
-      expect(getScoreBandMax(800, contractLimit)).toBe(50_000);
+    it("fair band (≥580): cap equals 20% of maxAmount", () => {
+      expect(getScoreBandMax(FAIR_SCORE_THRESHOLD, POLICY_MAX)).toBe(POLICY_MAX * 0.2);
+      expect(getScoreBandMax(620, POLICY_MAX)).toBe(POLICY_MAX * 0.2);
+      expect(getScoreBandMax(669, POLICY_MAX)).toBe(POLICY_MAX * 0.2);
     });
 
-    it("falls back to DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT when contract limit is undefined or invalid", () => {
-      expect(getScoreBandMax(800, undefined)).toBe(DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT);
-      expect(getScoreBandMax(800, 0)).toBe(DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT);
-      expect(getScoreBandMax(800, -100)).toBe(DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT);
-      expect(getScoreBandMax(800, Number.NaN)).toBe(DEFAULT_ONCHAIN_MAX_LOAN_AMOUNT);
+    it("minimum band (≥500): cap equals 10% of maxAmount", () => {
+      expect(getScoreBandMax(MINIMUM_ELIGIBLE_SCORE_THRESHOLD, POLICY_MAX)).toBe(POLICY_MAX * 0.1);
+      expect(getScoreBandMax(550, POLICY_MAX)).toBe(POLICY_MAX * 0.1);
+      expect(getScoreBandMax(579, POLICY_MAX)).toBe(POLICY_MAX * 0.1);
+    });
+  });
+
+  describe("Policy caps update when maxAmount changes (no code deploy needed)", () => {
+    it("all bands scale correctly when maxAmount doubles", () => {
+      const policyMax = 100_000; // e.g. after an on-chain governance vote
+      expect(getScoreBandMax(800, policyMax)).toBe(100_000); // excellent → 100%
+      expect(getScoreBandMax(700, policyMax)).toBe(50_000);  // good → 50%
+      expect(getScoreBandMax(620, policyMax)).toBe(20_000);  // fair → 20%
+      expect(getScoreBandMax(530, policyMax)).toBe(10_000);  // minimum → 10%
+    });
+
+    it("all bands scale correctly when maxAmount is halved", () => {
+      const policyMax = 25_000;
+      expect(getScoreBandMax(800, policyMax)).toBe(25_000);
+      expect(getScoreBandMax(700, policyMax)).toBe(12_500);
+      expect(getScoreBandMax(620, policyMax)).toBe(5_000);
+      expect(getScoreBandMax(530, policyMax)).toBe(2_500);
     });
   });
 });

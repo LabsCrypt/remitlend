@@ -37,7 +37,17 @@ import type { Loan } from "../hooks/useApi";
 const SEVENTY_TWO_HOURS_MS = 72 * 60 * 60 * 1000;
 const SESSION_BANNER_KEY = "repayment_banner_dismissed";
 
+/**
+ * Returns the backend-authoritative due date for a loan.
+ * Prefers `nextPaymentDeadline` (set by the backend, accounts for approval
+ * time and rollovers) and only falls back to the client-side estimate when
+ * the field is absent (e.g. from an older cached response).
+ */
 function getLoanDueDate(loan: Loan): Date {
+  if (loan.nextPaymentDeadline) {
+    return new Date(loan.nextPaymentDeadline);
+  }
+  // Fallback: approximate from creation time + term (may drift from truth)
   return new Date(new Date(loan.createdAt).getTime() + loan.termDays * 24 * 60 * 60 * 1000);
 }
 
@@ -57,7 +67,8 @@ function useRepaymentReminder(loans: Loan[] | undefined) {
       .filter((l) => {
         if (l.status !== "active") return false;
         const due = getLoanDueDate(l).getTime();
-        return due > now && due - now <= SEVENTY_TWO_HOURS_MS;
+        // Include both overdue loans (due <= now) and those due within 72 h
+        return due - now <= SEVENTY_TWO_HOURS_MS;
       })
       .sort((a, b) => getLoanDueDate(a).getTime() - getLoanDueDate(b).getTime());
   }, [loans]);
@@ -83,28 +94,54 @@ function RepaymentReminderBanner({
   if (!mostUrgent) return null;
 
   const dueDate = getLoanDueDate(mostUrgent);
-  const hoursLeft = Math.max(0, Math.floor((dueDate.getTime() - Date.now()) / (60 * 60 * 1000)));
+  const msLeft = dueDate.getTime() - Date.now();
+  const isOverdue = msLeft <= 0;
+  const hoursLeft = isOverdue ? 0 : Math.floor(msLeft / (60 * 60 * 1000));
+
+  const bannerColor = isOverdue
+    ? "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-950/30"
+    : "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-950/30";
+  const iconColor = isOverdue
+    ? "text-red-600 dark:text-red-400"
+    : "text-amber-600 dark:text-amber-400";
+  const headingColor = isOverdue
+    ? "text-red-900 dark:text-red-200"
+    : "text-amber-900 dark:text-amber-200";
+  const subColor = isOverdue
+    ? "text-red-700 dark:text-red-400"
+    : "text-amber-700 dark:text-amber-400";
+  const badgeColor = isOverdue
+    ? "bg-red-200 text-red-800 dark:bg-red-500/30 dark:text-red-300"
+    : "bg-amber-200 text-amber-800 dark:bg-amber-500/30 dark:text-amber-300";
+  const btnColor = isOverdue
+    ? "bg-red-600 hover:bg-red-700"
+    : "bg-amber-600 hover:bg-amber-700";
+  const dismissColor = isOverdue
+    ? "text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20"
+    : "text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-500/20";
 
   return (
     <div
       role="alert"
-      className="flex items-start justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 dark:border-amber-500/30 dark:bg-amber-950/30"
+      className={`flex items-start justify-between gap-4 rounded-xl border px-5 py-4 ${bannerColor}`}
     >
       <div className="flex items-start gap-3">
         <Clock
-          className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400"
+          className={`mt-0.5 h-5 w-5 shrink-0 ${iconColor}`}
           aria-hidden="true"
         />
         <div>
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-            {t("reminder.due", { hours: hoursLeft, loanId: mostUrgent.id })}
+          <p className={`text-sm font-semibold ${headingColor}`}>
+            {isOverdue
+              ? `Repayment overdue — Loan #${mostUrgent.id}`
+              : t("reminder.due", { hours: hoursLeft, loanId: mostUrgent.id })}
             {urgentLoans.length > 1 && (
-              <span className="ml-2 inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-500/30 dark:text-amber-300">
+              <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${badgeColor}`}>
                 +{urgentLoans.length - 1} more
               </span>
             )}
           </p>
-          <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+          <p className={`mt-0.5 text-xs ${subColor}`}>
             Amount due:{" "}
             {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
               mostUrgent.amount,
@@ -122,14 +159,14 @@ function RepaymentReminderBanner({
       <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={() => router.push(`/repay/${mostUrgent.id}`)}
-          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors"
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors ${btnColor}`}
         >
           {t("reminder.repayNow")}
         </button>
         <button
           onClick={onDismiss}
           aria-label={t("reminder.dismiss")}
-          className="rounded p-1 text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+          className={`rounded p-1 transition-colors ${dismissColor}`}
         >
           ✕
         </button>
