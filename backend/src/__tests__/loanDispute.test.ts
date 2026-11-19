@@ -184,7 +184,7 @@ describe('Loan Dispute/Appeal Mechanism', () => {
     expect(eventInsert![0]).toContain('event_id');
     expect(eventInsert![1]).toEqual([
       expect.any(String),
-      String(LOAN_ID),
+      LOAN_ID,
       TEST_PUBLIC_KEY,
       `dispute:${DISPUTE_ID}`,
       process.env.LOAN_MANAGER_CONTRACT_ID || 'offchain_dispute',

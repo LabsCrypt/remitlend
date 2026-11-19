@@ -11,19 +11,11 @@ const config: Config = {
       'ts-jest',
       {
         useESM: true,
-        tsconfig: {
-          module: 'esnext',
-          moduleResolution: 'bundler',
-        },
+        tsconfig: '<rootDir>/tsconfig.json',
       },
     ],
   },
   extensionsToTreatAsEsm: ['.ts'],
-  globals: {
-    'ts-jest': {
-      useESM: true,
-    },
-  },
   moduleNameMapper: {
     // Correct pattern - strips .js so Jest finds the .ts source file
     '^(./|../)(.*)\\.js$': '$1$2',

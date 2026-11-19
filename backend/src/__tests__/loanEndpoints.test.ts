@@ -436,7 +436,7 @@ describe('GET /api/loans/:loanId', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.loanId).toBe('123');
+    expect(response.body.loanId).toBe(123);
     expect(response.body.summary.principal).toBe(10000000000);
     expect(response.body.summary.accruedInterest).toBeGreaterThan(0);
     expect(response.body.summary.totalOwed).toBe(

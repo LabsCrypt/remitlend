@@ -165,6 +165,15 @@ export function createCursorPaginatedResponse<T>(
 }
 
 function parsePositiveInteger(value: unknown, fallback: number, max?: number): number {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value < 0) {
+      return fallback;
+    }
+
+    const parsed = Math.trunc(value);
+    return max !== undefined ? Math.min(parsed, max) : parsed;
+  }
+
   if (typeof value !== 'string') {
     return fallback;
   }

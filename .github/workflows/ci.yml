@@ -413,7 +413,7 @@ jobs:
         run: npm ci
         working-directory: backend
       - name: Backend accrual parity
-        run: node --experimental-vm-modules node_modules/jest/bin/jest.js src/money --forceExit
+        run: node --experimental-vm-modules node_modules/jest/bin/jest.js src/money
         working-directory: backend
       - name: Install frontend dependencies
         run: npm ci
