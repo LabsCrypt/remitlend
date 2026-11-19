@@ -1095,7 +1095,7 @@ impl RemittanceNFT {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
-            return Ok(());
+            return Err(NftError::NftNotFound);
         }
 
         let default_key = DataKey::DefaultCount(user.clone());
@@ -1207,7 +1207,8 @@ impl RemittanceNFT {
         //
         // If a LoanManager address has been registered via `set_loan_manager`,
         // we cross-call it to verify that none of the borrower's loans are in
-        // an active state (Pending = 0, Approved = 1).  This prevents the
+        // a non-terminal state (Pending = 0, Approved = 1, Defaulted = 3,
+        // Liquidated = 4).  This prevents the
         // "credit wash" attack where a borrower facing default races to move
         // their unblemished NFT to a clean address before penalties are applied.
         if let Some(loan_manager_addr) = env
@@ -1218,9 +1219,9 @@ impl RemittanceNFT {
             let loan_manager = LoanManagerClient::new(&env, &loan_manager_addr);
             let loan_ids = loan_manager.get_borrower_loans(&from);
             for loan_id in loan_ids.iter() {
-                // LoanStatus::Pending = 0, LoanStatus::Approved = 1
+                // Pending = 0, Approved = 1, Defaulted = 3, Liquidated = 4
                 let status = loan_manager.get_loan_status(&loan_id);
-                if status == 0 || status == 1 {
+                if matches!(status, 0 | 1 | 3 | 4) {
                     return Err(NftError::ActiveLoanExists);
                 }
             }

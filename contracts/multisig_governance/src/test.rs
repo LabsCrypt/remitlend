@@ -103,6 +103,31 @@ fn upgrade_requires_admin_auth() {
 }
 
 #[test]
+fn upgrade_by_admin_alone_fails_without_quorum_and_timelock() {
+    let (env, client, _admin, _) = setup();
+    set_ts(&env, 1_000);
+    let hash = create_upgrade_hash(&env);
+    assert_eq!(
+        client.try_upgrade(&hash),
+        Err(Ok(GovernanceError::NoPendingUpgrade))
+    );
+
+    let s = Address::generate(&env);
+    let signers = Vec::from_slice(&env, core::slice::from_ref(&s));
+    client.propose_upgrade(&hash, &signers, &1, &MIN_TIMELOCK_SECONDS);
+    assert_eq!(
+        client.try_upgrade(&hash),
+        Err(Ok(GovernanceError::TimelockNotElapsed))
+    );
+
+    set_ts(&env, 1_000 + MIN_TIMELOCK_SECONDS);
+    assert_eq!(
+        client.try_upgrade(&hash),
+        Err(Ok(GovernanceError::ThresholdNotMet))
+    );
+}
+
+#[test]
 fn finalize_succeeds_and_updates_local_and_remote_state() {
     let (env, client, admin, targets) = setup();
     let proposed = Address::generate(&env);

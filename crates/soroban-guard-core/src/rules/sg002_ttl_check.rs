@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use syn::{ImplItem, ImplItemFn, ItemImpl};
@@ -11,13 +12,17 @@ pub struct TtlExtensionRule;
 impl TtlExtensionRule {
     pub const ID: &'static str = "SG002";
 
-    fn check_function(&self, function: &ImplItemFn, diagnostics: &mut Vec<Diagnostic>) {
+    fn check_function(
+        &self,
+        function: &ImplItemFn,
+        helpers: &HashMap<String, (bool, bool)>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) {
         if !is_public(&function.vis) {
             return;
         }
 
-        let mut calls = StorageCalls::default();
-        calls.visit_block(&function.block);
+        let calls = StorageCalls::scan(function, helpers);
 
         if (calls.uses_persistent && !calls.extends_persistent_ttl)
             || (calls.uses_instance && !calls.extends_instance_ttl) {
@@ -49,12 +54,46 @@ impl Rule for TtlExtensionRule {
         let file = syn::parse_file(source)?;
         let mut diagnostics = Vec::new();
 
+        let functions: Vec<&ImplItemFn> = file
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                syn::Item::Impl(item_impl) => Some(item_impl),
+                _ => None,
+            })
+            .flat_map(|item_impl| item_impl.items.iter())
+            .filter_map(|item| match item {
+                ImplItem::Fn(function) => Some(function),
+                _ => None,
+            })
+            .collect();
+
+        // Resolve which helper functions extend TTL (transitively), so calls
+        // like `Self::bump_persistent_ttl(&env, &key)` count as an extension.
+        let mut helpers: HashMap<String, (bool, bool)> = HashMap::new();
+        for _ in 0..=functions.len() {
+            let mut changed = false;
+            for function in &functions {
+                let entry = {
+                    let calls = StorageCalls::scan(function, &helpers);
+                    (calls.extends_persistent_ttl, calls.extends_instance_ttl)
+                };
+                if helpers.get(&function.sig.ident.to_string()) != Some(&entry) {
+                    helpers.insert(function.sig.ident.to_string(), entry);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
         for item in &file.items {
             if let syn::Item::Impl(item_impl) = item {
                 if has_contractimpl_attribute(item_impl) {
                     for item in &item_impl.items {
                         if let ImplItem::Fn(function) = item {
-                            self.check_function(function, &mut diagnostics);
+                            self.check_function(function, &helpers, &mut diagnostics);
                         }
                     }
                 }
@@ -75,41 +114,86 @@ fn has_contractimpl_attribute(item_impl: &ItemImpl) -> bool {
     })
 }
 
-#[derive(Default)]
-struct StorageCalls {
+#[derive(Clone, Copy, PartialEq)]
+enum StorageKind {
+    Persistent,
+    Instance,
+}
+
+struct StorageCalls<'h> {
+    helpers: &'h HashMap<String, (bool, bool)>,
+    locals: HashMap<String, StorageKind>,
     uses_persistent: bool,
     extends_persistent_ttl: bool,
     uses_instance: bool,
     extends_instance_ttl: bool,
 }
 
-impl<'ast> Visit<'ast> for StorageCalls {
-    fn visit_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+impl<'h> StorageCalls<'h> {
+    fn scan(function: &ImplItemFn, helpers: &'h HashMap<String, (bool, bool)>) -> Self {
+        let mut calls = StorageCalls {
+            helpers,
+            locals: HashMap::new(),
+            uses_persistent: false,
+            extends_persistent_ttl: false,
+            uses_instance: false,
+            extends_instance_ttl: false,
+        };
+        calls.visit_block(&function.block);
+        calls
+    }
+
+    /// Storage kind of an expression: `<..>.persistent()`, `<..>.instance()`,
+    /// or a local bound to one of those. Anything else is unknown.
+    fn storage_kind(&self, expr: &syn::Expr) -> Option<StorageKind> {
+        match expr {
+            syn::Expr::MethodCall(call) => match call.method.to_string().as_str() {
+                "persistent" => Some(StorageKind::Persistent),
+                "instance" => Some(StorageKind::Instance),
+                _ => None,
+            },
+            syn::Expr::Path(path) => path
+                .path
+                .get_ident()
+                .and_then(|ident| self.locals.get(&ident.to_string()).copied()),
+            syn::Expr::Reference(reference) => self.storage_kind(&reference.expr),
+            syn::Expr::Paren(paren) => self.storage_kind(&paren.expr),
+            _ => None,
+        }
+    }
+}
+
+impl<'ast, 'h> Visit<'ast> for StorageCalls<'h> {
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        if let (syn::Pat::Ident(pat), Some(init)) = (&local.pat, &local.init) {
+            if let Some(kind) = self.storage_kind(&init.expr) {
+                self.locals.insert(pat.ident.to_string(), kind);
+            }
+        }
+        visit::visit_local(self, local);
+    }
+
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(path) = &*call.func {
+            if let Some(segment) = path.path.segments.last() {
+                if let Some(&(persistent, instance)) = self.helpers.get(&segment.ident.to_string()) {
+                    self.extends_persistent_ttl |= persistent;
+                    self.extends_instance_ttl |= instance;
+                }
+            }
+        }
+        visit::visit_expr_call(self, call);
+    }
+
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
         match call.method.to_string().as_str() {
             "persistent" => self.uses_persistent = true,
             "instance" => self.uses_instance = true,
-            "extend_ttl" => {
-                let recv = call.receiver.to_string();
-                let mut matched = false;
-                if recv.contains("persistent") {
-                    self.extends_persistent_ttl = true;
-                    matched = true;
-                }
-                if recv.contains("instance") {
-                    self.extends_instance_ttl = true;
-                    matched = true;
-                }
-                if !matched {
-                    if self.uses_persistent && !self.uses_instance {
-                        self.extends_persistent_ttl = true;
-                    } else if self.uses_instance && !self.uses_persistent {
-                        self.extends_instance_ttl = true;
-                    } else {
-                        self.extends_persistent_ttl = true;
-                        self.extends_instance_ttl = true;
-                    }
-                }
-            }
+            "extend_ttl" => match self.storage_kind(&call.receiver) {
+                Some(StorageKind::Persistent) => self.extends_persistent_ttl = true,
+                Some(StorageKind::Instance) => self.extends_instance_ttl = true,
+                None => {}
+            },
             _ => {}
         }
         visit::visit_expr_method_call(self, call);
@@ -145,6 +229,14 @@ mod tests {
         let result = diagnostics(include_str!("fixtures/sg002_with_ttl.rs"));
 
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn resolves_ttl_extension_through_helpers() {
+        let result = diagnostics(include_str!("fixtures/sg002_helper_ttl.rs"));
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].function, "unbumped");
     }
 
     #[test]

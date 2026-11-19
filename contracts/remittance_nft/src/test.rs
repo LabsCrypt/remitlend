@@ -2749,6 +2749,27 @@ fn test_transfer_blocked_when_sender_has_approved_loan() {
     );
 }
 
+/// Issue #2283: credit wash — a Defaulted loan blocks transfer, and
+/// record_default on an address without an NFT errors instead of no-op.
+#[test]
+fn test_credit_wash_default_transfer_record_default() {
+    let env = Env::default();
+    let (client, mock_lm_id, borrower, _admin) = setup_nft_with_loan_manager(&env);
+    let new_wallet = Address::generate(&env);
+
+    let mock_lm = MockLoanManagerClient::new(&env, &mock_lm_id);
+    mock_lm.set_loan(&borrower, &7, &3); // Defaulted
+
+    assert_eq!(
+        client.try_transfer(&borrower, &new_wallet, &None),
+        Err(Ok(NftError::ActiveLoanExists))
+    );
+    assert_eq!(
+        client.try_record_default(&new_wallet, &None),
+        Err(Ok(NftError::NftNotFound))
+    );
+}
+
 /// Transfer must succeed when all of the sender's loans are in a terminal
 /// state (Repaid = 2, Cancelled = 5, etc.).
 #[test]
