@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { RemittanceForm } from "../../components/remittance/RemittanceForm";
 import { useWalletStore, selectIsWalletConnected } from "../../stores/useWalletStore";
@@ -9,6 +10,7 @@ import { ErrorBoundary } from "../../components/global_ui/ErrorBoundary";
 
 export default function SendRemittancePage() {
   const router = useRouter();
+  const locale = useLocale();
   const isConnected = useWalletStore(selectIsWalletConnected);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -16,7 +18,7 @@ export default function SendRemittancePage() {
     setIsSubmitted(true);
     // Redirect to remittances page after 2 seconds
     setTimeout(() => {
-      router.push("/remittances");
+      router.push(`/${locale}/remittances`);
     }, 2000);
   };
 
