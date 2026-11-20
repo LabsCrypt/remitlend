@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useLocale } from "next-intl";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Card, CardContent } from "../../components/ui/Card";
@@ -67,6 +68,7 @@ export function getScoreBandMax(score: number, maxContractAmount?: number): numb
 export default function RequestLoanPage() {
   const borrowerAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
+  const locale = useLocale();
   const [successLoanId, setSuccessLoanId] = useState<string | null>(null);
   const addToast = useToastStore((state) => state.addToast);
   const scoreErrorToastRef = useRef<string | null>(null);
@@ -134,7 +136,7 @@ export default function RequestLoanPage() {
               Next steps: monitor approval status and prepare repayment before the due date.
             </p>
             <div className="flex justify-center gap-3 pt-2">
-              <Link href="/loans">
+              <Link href={`/${locale}/loans`}>
                 <Button variant="outline">View Loans</Button>
               </Link>
               <Button onClick={() => setSuccessLoanId(null)}>Request Another</Button>

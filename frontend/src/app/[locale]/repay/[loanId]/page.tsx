@@ -1,29 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { submitLoanTransaction } from "../../../hooks/useApi";
 import { Button } from "../../../components/ui/Button";
-import {
-  TransactionStatusTracker,
-  type TransactionStatusState,
-} from "../../../components/ui/TransactionStatusTracker";
-import {
-  mapTransactionError,
-  type TransactionErrorDetails,
-} from "../../../utils/transactionErrors";
 import {
   selectIsWalletConnected,
   selectWalletAddress,
   selectWalletNetwork,
   useWalletStore,
 } from "../../../stores/useWalletStore";
-import { useWallet } from "../../../components/providers/WalletProvider";
-import { getNetworkPassphrase } from "../../../utils/soroban";
 import { useContractToast } from "../../../hooks/useContractToast";
 import { TransactionPreviewModal } from "../../../components/transaction/TransactionPreviewModal";
 import { useTransactionPreview } from "../../../hooks/useTransactionPreview";
+import { useRepaymentOperation } from "../../../hooks/useRepaymentOperation";
 import {
   buildAmountHelperText,
   getPrecisionError,
@@ -35,60 +25,47 @@ import {
 export default function RepayLoanPage() {
   const params = useParams<{ loanId: string }>();
   const loanId = params?.loanId ?? "unknown";
+  const loanIdNumber = Number(loanId);
   const router = useRouter();
   const t = useTranslations("RepayPage");
 
   const walletAddress = useWalletStore(selectWalletAddress);
   const isWalletConnected = useWalletStore(selectIsWalletConnected);
   const walletNetwork = useWalletStore(selectWalletNetwork);
-  const { signTransaction } = useWallet();
   const toast = useContractToast();
   const txPreview = useTransactionPreview();
+  // Single shared repayment mutation (build → sign → submit) used by both the
+  // standalone repay page and the borrower repayment form (#2257). Errors are
+  // rethrown so `txPreview.confirm` keeps the modal open on failure instead of
+  // silently swallowing them.
+  const repayment = useRepaymentOperation({
+    onSuccess: () => {
+      setTimeout(() => router.refresh(), 2000);
+    },
+  });
 
   const [amount, setAmount] = useState("250");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [trackerState, setTrackerState] = useState<TransactionStatusState>("idle");
-  const [trackerTitle, setTrackerTitle] = useState(() => t("readyTitle"));
-  const [trackerMessage, setTrackerMessage] = useState("");
-  const [trackerGuidance, setTrackerGuidance] = useState<string | undefined>(undefined);
-  const [trackerTxHash, setTrackerTxHash] = useState<string | null>(null);
-  const [lastError, setLastError] = useState<TransactionErrorDetails | null>(null);
 
   const amountNumber = useMemo(() => Number(amount || "0"), [amount]);
   const decimals = getAssetDecimals("USDC");
   const precisionError = getPrecisionError(amount, "USDC");
   const helperText = buildAmountHelperText(amount, "USDC", decimals);
 
-  const cancelFlow = () => {
-    setTrackerState("cancelled");
-    setTrackerTitle(t("cancelledTitle"));
-    setTrackerMessage(t("cancelledMessage"));
-    setTrackerGuidance(t("cancelledGuidance"));
-    setIsSubmitting(false);
-  };
-
   const handleRepayClick = async (event: FormEvent) => {
     event.preventDefault();
     if (walletNetwork && !walletNetwork.isSupported) {
-      setLastError({
-        category: "unknown",
-        title: "Unsupported wallet network",
-        message:
-          "Repayment is not supported on the current wallet network. Switch your wallet to PUBLIC (mainnet) or TESTNET and try again.",
-        guidance:
-          "Open your wallet, switch to a supported network (PUBLIC or TESTNET), then retry the repayment.",
-        retryable: false,
-        cancelledByUser: false,
-      });
       toast.error(
         "Unsupported wallet network",
-        "Switch your wallet to PUBLIC or TESTNET before repaying.",
+        "Repayment is not supported on the current wallet network. Switch your wallet to PUBLIC (mainnet) or TESTNET and try again.",
       );
       return;
     }
     if (!isWalletConnected || !walletAddress || !walletNetwork) {
       toast.error("Wallet not connected", "Please connect your wallet first.");
+      return;
+    }
+    if (!Number.isInteger(loanIdNumber) || loanIdNumber <= 0) {
+      toast.error("Invalid loan", "This repayment link does not reference a valid loan.");
       return;
     }
     if (!amount || Number.isNaN(amountNumber) || amountNumber <= 0) {
@@ -100,108 +77,36 @@ export default function RepayLoanPage() {
       return;
     }
 
-    try {
-      setIsSubmitting(true);
-
-      const contractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
-      if (!contractId) {
-        throw new Error("Contract configuration missing");
-      }
-
-      const networkPassphrase = getNetworkPassphrase(walletNetwork.name);
-
-      const { buildUnsignedRepaymentXdr } = await import("../../../utils/soroban");
-      const xdr = await buildUnsignedRepaymentXdr({
-        borrower: walletAddress,
-        loanId,
-        amount: amountNumber,
-        contractId,
-        networkPassphrase,
-      });
-
-      txPreview.show(
-        {
-          operations: [
-            {
-              type: "Repay Loan",
-              description: `Repaying ${amountNumber} for loan #${loanId}`,
-              amount: amountNumber.toString(),
-              token: "USDC", // Assuming USDC for now
-            },
-          ],
-          balanceChanges: [
-            {
-              token: "USDC",
-              change: `-${amountNumber}`,
-              isPositive: false,
-            },
-          ],
-          estimatedGasFee: "0.01",
-          network: "Stellar Testnet",
-          contractAddress: contractId,
-        },
-        async () => {
-          await executeRepayment(xdr, networkPassphrase);
-        },
-      );
-    } catch (error) {
-      const mapped = mapTransactionError(error);
-      setLastError(mapped);
-      toast.error(mapped.title, mapped.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const executeRepayment = async (unsignedXdr: string, networkPassphrase: string) => {
-    let toastId: string | number | null = null;
-    try {
-      setTrackerState("signing");
-      setTrackerTitle("Awaiting wallet confirmation");
-      setTrackerMessage("Approve the repayment transaction in your wallet.");
-
-      const signedTxXdr = await signTransaction(unsignedXdr, { networkPassphrase });
-
-      setTrackerState("submitting");
-      setTrackerTitle("Submitting repayment");
-      setTrackerMessage("Sending repayment transaction to the network.");
-      toastId = toast.showPending("Repayment transaction submitted");
-
-      const result = await submitLoanTransaction(signedTxXdr);
-
-      if (result.status === "SUCCESS") {
-        setTrackerTxHash(result.txHash);
-        setTrackerState("success");
-        setTrackerTitle("Repayment recorded");
-        setTrackerMessage("Your repayment was submitted and confirmed.");
-
-        toast.showSuccess(toastId!, {
-          successMessage: "Repayment confirmed",
-          txHash: result.txHash,
+    const contractId = process.env.NEXT_PUBLIC_MANAGER_CONTRACT_ID;
+    txPreview.show(
+      {
+        operations: [
+          {
+            type: "Repay Loan",
+            description: `Repaying ${amountNumber} for loan #${loanId}`,
+            amount: amountNumber.toString(),
+            token: "USDC",
+          },
+        ],
+        balanceChanges: [
+          {
+            token: "USDC",
+            change: `-${amountNumber}`,
+            isPositive: false,
+          },
+        ],
+        estimatedGasFee: "0.01",
+        network: "Stellar Testnet",
+        contractAddress: contractId ?? "",
+      },
+      async () => {
+        await repayment.executeRepayment({
+          loanId: loanIdNumber,
+          amount: amountNumber,
+          borrowerAddress: walletAddress!,
         });
-
-        // Invalidate cache (simulated by a short delay before refresh)
-        setTimeout(() => {
-          router.refresh();
-        }, 2000);
-      } else {
-        throw new Error("Transaction failed");
-      }
-    } catch (error) {
-      const mapped = mapTransactionError(error);
-      setLastError(mapped);
-      setTrackerState(mapped.cancelledByUser ? "cancelled" : "error");
-      setTrackerTitle(mapped.title);
-      setTrackerMessage(mapped.message);
-
-      if (toastId) {
-        toast.showError(toastId, {
-          errorMessage: mapped.title,
-        });
-      } else {
-        toast.error(mapped.title, mapped.message);
-      }
-    }
+      },
+    );
   };
 
   return (
@@ -258,24 +163,18 @@ export default function RepayLoanPage() {
         <Button
           type="submit"
           className="w-full"
-          isLoading={isSubmitting}
-          disabled={!!precisionError}
+          isLoading={repayment.isLoading}
+          disabled={!!precisionError || repayment.isLoading}
         >
           {t("submitButton")}
         </Button>
       </form>
 
-      <TransactionStatusTracker
-        state={trackerState}
-        title={trackerTitle}
-        message={trackerMessage}
-        guidance={trackerGuidance}
-        txHash={trackerTxHash}
-        onCancel={
-          trackerState === "signing" || trackerState === "submitting" ? cancelFlow : undefined
-        }
-        disabled={isSubmitting}
-      />
+      {repayment.error && (
+        <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+          {repayment.error}
+        </p>
+      )}
 
       {txPreview.data && (
         <TransactionPreviewModal

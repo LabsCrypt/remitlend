@@ -75,6 +75,16 @@ pub enum LoanError {
     /// Raised when a stored accrual index is older than the ledger the loan
     /// was last accrued at, i.e. the on-chain state is inconsistent (#1382).
     StaleIndex = 31,
+    /// Raised by `extend_loan` when the cumulative term would exceed
+    /// `MaxTermLedgers` (#1661).
+    TermExceedsMax = 32,
+    /// Raised when a batch operation's nonce has already been consumed (or is
+    /// not the next expected value). Prevents replay of an authorized batch
+    /// across the cross-layer ledger (#1375).
+    NonceReused = 33,
+    /// Raised when a batch is submitted after its `valid_until_ledger` window
+    /// has expired (#1375).
+    BatchWindowExpired = 34,
 }
 
 #[contracttype]
@@ -167,6 +177,33 @@ pub enum DataKey {
     BorrowIndex,
     /// The ledger the pool-wide reference index was last advanced at (#1382).
     BorrowIndexLedger,
+    /// Application-level monotonic nonce for idempotent batch authorization.
+    /// Keyed by `(address, op_kind)`; stores the last consumed `nonce` so a
+    /// re-signed batch for an already-applied operation is rejected (#1375).
+    OpNonce(Address, OpKind),
+}
+
+/// Kind of a state-mutating batch operation. Each `(address, op_kind)` pair
+/// tracks an independent monotonic nonce so nonce sequences for different
+/// operation kinds never collide (#1375).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OpKind {
+    ProcessDefaults,
+    ApproveLoans,
+    GovernanceExecute,
+}
+
+/// Per-item outcome recorded in a `batch_receipt` event. Distinguishes an item
+/// that was applied on-chain from one that was skipped (not attempted) or
+/// attempted and reverted, so downstream layers can reconcile precisely
+/// instead of inferring state from ledger events (#1375).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ItemStatus {
+    Applied,
+    Skipped(u32),
+    Reverted(u32),
 }
 
 #[contract]
@@ -393,6 +430,40 @@ impl LoanManager {
             if nft_client.is_paused() {
                 return Err(LoanError::NftPaused);
             }
+        }
+        Ok(())
+    }
+
+    /// Consume a caller-supplied batch nonce for `(address, op_kind)`.
+    ///
+    /// The first valid nonce for a fresh `(address, op_kind)` pair is `1`;
+    /// each subsequent batch must present exactly `last + 1`. Anything else
+    /// is rejected with `NonceReused`. This makes batch authorization
+    /// application-level idempotent so a re-signed/replayed batch cannot
+    /// double-apply on-chain state (#1375).
+    fn consume_nonce(
+        env: &Env,
+        address: &Address,
+        op_kind: OpKind,
+        nonce: u64,
+    ) -> Result<(), LoanError> {
+        let key = DataKey::OpNonce(address.clone(), op_kind);
+        let last: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        let expected = last.checked_add(1).ok_or(LoanError::NonceReused)?;
+        if nonce != expected {
+            return Err(LoanError::NonceReused);
+        }
+        env.storage().persistent().set(&key, &nonce);
+        Self::bump_persistent_ttl(env, &key);
+        Ok(())
+    }
+
+    /// Ensure a batch is executed within its authorized ledger window. A
+    /// stale batch must never mutate state after its authorization expires
+    /// (#1375).
+    fn check_batch_window(env: &Env, valid_until_ledger: u32) -> Result<(), LoanError> {
+        if env.ledger().sequence() > valid_until_ledger {
+            return Err(LoanError::BatchWindowExpired);
         }
         Ok(())
     }
@@ -3285,6 +3356,18 @@ impl LoanManager {
             return Err(LoanError::MaxExtensionsReached);
         }
 
+        // Bound the cumulative term against MaxTermLedgers so a single
+        // extension cannot push a loan's term beyond the configured limit
+        // (#1661).
+        let max_term_ledgers = Self::get_max_term_ledgers(&env);
+        let new_term_ledgers = loan
+            .term_ledgers
+            .checked_add(extra_ledgers)
+            .ok_or(LoanError::TermExceedsMax)?;
+        if new_term_ledgers > max_term_ledgers {
+            return Err(LoanError::TermExceedsMax);
+        }
+
         // Calculate extension fee (1% of remaining principal)
         let remaining_principal = Self::remaining_principal(&loan);
         let extension_fee = remaining_principal
@@ -3300,6 +3383,7 @@ impl LoanManager {
             .checked_add(extra_ledgers)
             .expect("due date overflow");
         loan.due_date = new_due_date;
+        loan.term_ledgers = new_term_ledgers;
 
         loan.extension_count = loan
             .extension_count
@@ -3401,6 +3485,102 @@ impl LoanManager {
         }
 
         Ok(defaulted_count)
+    }
+
+    /// Idempotent, time-bounded batch default processing (#1375).
+    ///
+    /// Authorized by a monotonic `nonce` (replay protection) and an explicit
+    /// `valid_until_ledger` (execution window). Emits exactly one
+    /// `batch_receipt` describing each loan's outcome so downstream indexers
+    /// can reconcile authoritative state without guessing from ledger events.
+    /// A replayed batch with an already-consumed nonce is rejected with
+    /// `NonceReused` before any state is mutated.
+    pub fn process_defaults_batch(
+        env: Env,
+        admin: Address,
+        batch_id: BytesN<32>,
+        loan_ids: Vec<u32>,
+        nonce: u64,
+        valid_until_ledger: u32,
+    ) -> Result<Vec<(u32, ItemStatus)>, LoanError> {
+        admin.require_auth();
+        Self::require_not_paused(&env)?;
+        Self::check_batch_window(&env, valid_until_ledger)?;
+        Self::consume_nonce(&env, &admin, OpKind::ProcessDefaults, nonce)?;
+
+        let mut outcomes: Vec<(u32, ItemStatus)> = Vec::new(&env);
+        for loan_id in loan_ids.iter() {
+            let key = DataKey::Loan(loan_id);
+            let eligible = match env.storage().persistent().get::<_, Loan>(&key) {
+                Some(loan) => loan.status == LoanStatus::Approved,
+                None => false,
+            };
+            if !eligible {
+                outcomes.push_back((loan_id, ItemStatus::Skipped(0)));
+                continue;
+            }
+
+            let mut ids = Vec::new(&env);
+            ids.push_back(loan_id);
+            match Self::check_defaults(env.clone(), ids) {
+                Ok(defaulted) if defaulted > 0 => {
+                    outcomes.push_back((loan_id, ItemStatus::Applied));
+                }
+                Ok(_) => {
+                    outcomes.push_back((loan_id, ItemStatus::Skipped(0)));
+                }
+                Err(err) => {
+                    outcomes.push_back((loan_id, ItemStatus::Reverted(err as u32)));
+                }
+            }
+        }
+
+        events::batch_receipt(&env, batch_id, outcomes.clone());
+        Ok(outcomes)
+    }
+
+    /// Idempotent, time-bounded batch loan approval (#1375).
+    ///
+    /// Mirrors [`Self::process_defaults_batch`] but delegates to
+    /// [`Self::approve_loan`] per item. Uses an independent `OpKind` so nonce
+    /// sequences for approvals and defaults never collide.
+    pub fn approve_loans_batch(
+        env: Env,
+        admin: Address,
+        batch_id: BytesN<32>,
+        loan_ids: Vec<u32>,
+        nonce: u64,
+        valid_until_ledger: u32,
+    ) -> Result<Vec<(u32, ItemStatus)>, LoanError> {
+        admin.require_auth();
+        Self::require_not_paused(&env)?;
+        Self::check_batch_window(&env, valid_until_ledger)?;
+        Self::consume_nonce(&env, &admin, OpKind::ApproveLoans, nonce)?;
+
+        let mut outcomes: Vec<(u32, ItemStatus)> = Vec::new(&env);
+        for loan_id in loan_ids.iter() {
+            let key = DataKey::Loan(loan_id);
+            let is_pending = match env.storage().persistent().get::<_, Loan>(&key) {
+                Some(loan) => loan.status == LoanStatus::Pending,
+                None => false,
+            };
+            if !is_pending {
+                outcomes.push_back((loan_id, ItemStatus::Skipped(0)));
+                continue;
+            }
+
+            match Self::approve_loan(env.clone(), loan_id) {
+                Ok(()) => {
+                    outcomes.push_back((loan_id, ItemStatus::Applied));
+                }
+                Err(err) => {
+                    outcomes.push_back((loan_id, ItemStatus::Reverted(err as u32)));
+                }
+            }
+        }
+
+        events::batch_receipt(&env, batch_id, outcomes.clone());
+        Ok(outcomes)
     }
 }
 

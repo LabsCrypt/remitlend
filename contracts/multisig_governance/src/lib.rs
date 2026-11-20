@@ -53,6 +53,9 @@ const KEY_TARGETS: Symbol = symbol_short!("TARGETS");
 const KEY_LAST_CANCELLED_AT: Symbol = symbol_short!("CANCEL_AT");
 const KEY_PROPOSAL_COUNT: Symbol = symbol_short!("COUNT");
 const KEY_UPGRADE: Symbol = symbol_short!("UPGRADE");
+/// Last consumed execution nonce, keyed per caller. Enforces application-level
+/// idempotency on the state-mutating execution path (#1375).
+const KEY_EXEC_NONCE: Symbol = symbol_short!("EX_NONCE");
 
 const REPROPOSAL_COOLDOWN_SECONDS: u64 = 3600; // 1 hour
 const CURRENT_VERSION: u32 = 1;
@@ -131,6 +134,10 @@ pub enum GovernanceError {
     NoPendingUpgrade = 4022,
     /// Returned by `upgrade` when the supplied hash differs from the proposed one.
     UpgradeHashMismatch = 4023,
+    /// Returned when an execution nonce has already been consumed (or is not
+    /// the next expected value), preventing replay of an authorized execution
+    /// across the cross-layer ledger (#1375).
+    NonceReused = 4024,
 }
 
 /// Status of a pending admin transfer proposal.
@@ -394,6 +401,38 @@ impl GovernanceContract {
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
+    }
+
+    /// Idempotent execution of a previously proposed, quorum-approved upgrade
+    /// (#1375).
+    ///
+    /// This is the nonce-guarded counterpart to [`Self::upgrade`]. The caller
+    /// must supply the next monotonic `nonce` for their address; a replayed or
+    /// out-of-order nonce is rejected with `NonceReused` before any state is
+    /// mutated. Because each caller tracks an independent sequence, one
+    /// caller's nonce cannot block another's. Existing `upgrade` callers stay
+    /// source-compatible.
+    pub fn execute(
+        env: Env,
+        caller: Address,
+        new_wasm_hash: BytesN<32>,
+        nonce: u64,
+    ) -> Result<(), GovernanceError> {
+        Self::bump_instance_ttl(&env);
+        caller.require_auth();
+
+        let nonce_key = (KEY_EXEC_NONCE, caller);
+        let last: u64 = env.storage().instance().get(&nonce_key).unwrap_or(0);
+        let expected = last
+            .checked_add(1)
+            .ok_or(GovernanceError::NonceReused)?;
+        if nonce != expected {
+            return Err(GovernanceError::NonceReused);
+        }
+        env.storage().instance().set(&nonce_key, &nonce);
+        Self::bump_instance_ttl(&env);
+
+        Self::upgrade(env, new_wasm_hash)
     }
 
     // ── Propose ───────────────────────────────────────────────────────────────

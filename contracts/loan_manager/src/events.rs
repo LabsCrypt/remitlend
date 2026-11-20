@@ -42,9 +42,10 @@
 //! | `MaxRateBpsUpdated` | `("MaxRateBpsUpdated", admin: Address)` | `(old_rate: u32, new_rate: u32)` |
 //! | `LoanPurged` | `("LoanPurged",)` | `loan_id: u32` |
 //! | `accrue` | `("accrue", loan_id: u32)` | `(index: i128, index_delta: i128, interest_delta: i128, residual: i128)` |
+//! | `batch_receipt` | `("batch_receipt", batch_id: BytesN<32>)` | `Vec<(loan_id: u32, ItemStatus)>` |
 
-use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
-use crate::LoanManager;
+use soroban_sdk::{symbol_short, Address, BytesN, Env, String, Symbol, Vec};
+use crate::{ItemStatus, LoanManager};
 
 /// Emits event when a borrower requests a new loan.
 ///
@@ -431,6 +432,24 @@ pub fn accrue(
     let topics = (Symbol::new(env, "accrue"), loan_id);
     env.events()
         .publish(topics, (index, index_delta, interest_delta, residual));
+}
+
+/// Emits a single receipt for an idempotent batch operation (#1375).
+///
+/// Exactly one receipt is published per accepted batch. It lets the indexer
+/// reconcile the authoritative per-item outcome (`Applied` / `Skipped` /
+/// `Reverted`) instead of guessing from individual state-change events or from
+/// whether a transaction appeared on-chain.
+///
+/// - **Topics**: `("batch_receipt", batch_id: BytesN<32>)`
+/// - **Data**: `Vec<(loan_id: u32, ItemStatus)>`
+pub fn batch_receipt(
+    env: &Env,
+    batch_id: BytesN<32>,
+    outcomes: Vec<(u32, ItemStatus)>,
+) {
+    let topics = (Symbol::new(env, "batch_receipt"), batch_id);
+    env.events().publish(topics, outcomes);
 }
 
 #[cfg(test)]
