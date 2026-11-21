@@ -31,7 +31,11 @@ export function PauseBanner() {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await fetch("/api/status/pause");
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+      if (!apiBaseUrl) {
+        throw new Error("Pause status endpoint is not configured");
+      }
+      const response = await fetch(`${apiBaseUrl}/api/status/pause`);
       if (!response.ok) {
         throw new Error(`Failed to fetch pause state: ${response.statusText}`);
       }
