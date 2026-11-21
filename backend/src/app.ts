@@ -32,7 +32,9 @@ import { requestIdMiddleware } from './middleware/requestId.js';
 import { pauseGuard } from './middleware/pauseGuard.js';
 import { asyncHandler } from './utils/asyncHandler.js';
 import { AppError } from './errors/AppError.js';
+import { parseTrustProxyHops } from './config/env.js';
 const app = express();
+app.set('trust proxy', parseTrustProxyHops(process.env.TRUST_PROXY_HOPS));
 
 const isProduction = process.env.NODE_ENV === 'production';
 const configuredFrontendUrl = process.env.FRONTEND_URL?.trim();

@@ -1723,8 +1723,7 @@ impl LoanManager {
         let current_ledger = env.ledger().sequence();
         let default_ends = loan
             .due_date
-            .checked_add(Self::default_window_ledgers(&env))
-            .expect("default window overflow");
+            .saturating_add(Self::default_window_ledgers(&env));
         if current_ledger > default_ends {
             return Err(LoanError::LoanPastDue);
         }
@@ -2431,8 +2430,7 @@ impl LoanManager {
         let current_ledger = env.ledger().sequence();
         let default_ends = loan
             .due_date
-            .checked_add(Self::default_window_ledgers(&env))
-            .expect("default window overflow");
+            .saturating_add(Self::default_window_ledgers(&env));
         if current_ledger > default_ends {
             return Err(LoanError::LoanPastDue);
         }
@@ -3345,8 +3343,7 @@ impl LoanManager {
         let current_ledger = env.ledger().sequence();
         let default_ends = loan
             .due_date
-            .checked_add(Self::default_window_ledgers(&env))
-            .expect("default window overflow");
+            .saturating_add(Self::default_window_ledgers(&env));
         if current_ledger > default_ends {
             return Err(LoanError::LoanPastDue);
         }
@@ -3356,17 +3353,18 @@ impl LoanManager {
             return Err(LoanError::MaxExtensionsReached);
         }
 
-        // Bound the cumulative term against MaxTermLedgers so a single
-        // extension cannot push a loan's term beyond the configured limit
-        // (#1661).
-        let max_term_ledgers = Self::get_max_term_ledgers(&env);
+        // Bound `extra_ledgers` against the configured term ceiling
+        // (`MaxTermLedgers`, falling back to `DEFAULT_TERM_LEDGERS`) so a
+        // borrower cannot extend a loan by an unbounded duration (#1126, #1661).
+        let max_extension_ledgers = Self::get_max_term_ledgers(env.clone());
+        if extra_ledgers > max_extension_ledgers {
+            return Err(LoanError::TermExceedsMax);
+        }
+
         let new_term_ledgers = loan
             .term_ledgers
             .checked_add(extra_ledgers)
             .ok_or(LoanError::TermExceedsMax)?;
-        if new_term_ledgers > max_term_ledgers {
-            return Err(LoanError::TermExceedsMax);
-        }
 
         // Calculate extension fee (1% of remaining principal)
         let remaining_principal = Self::remaining_principal(&loan);
@@ -3381,7 +3379,7 @@ impl LoanManager {
         let new_due_date = loan
             .due_date
             .checked_add(extra_ledgers)
-            .expect("due date overflow");
+            .ok_or(LoanError::InvalidExtension)?;
         loan.due_date = new_due_date;
         loan.term_ledgers = new_term_ledgers;
 
