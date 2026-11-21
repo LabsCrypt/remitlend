@@ -25,6 +25,7 @@ services:
       - PII_KMS_ENDPOINT=${PII_KMS_ENDPOINT}
       - PII_KEK_REGION=${PII_KEK_REGION}
       - LOG_REDACTION=strict
+      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-1}
     ports:
       - "3001:3001"
     depends_on:

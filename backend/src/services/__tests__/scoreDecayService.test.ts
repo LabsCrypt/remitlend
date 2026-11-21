@@ -8,6 +8,7 @@ jest.unstable_mockModule('../../db/connection.js', () => ({
 }));
 
 const { getInactiveBorrowers, applyScoreDecay } = await import('../scoreDecayService.js');
+const { runScoreDecayJob } = await import('../../cron/scoreDecayJob.js');
 
 describe('scoreDecayService', () => {
   beforeEach(() => {
@@ -101,23 +102,89 @@ describe('scoreDecayService', () => {
       expect(newScore).toBe(300);
     });
 
-    it('is idempotent for identical borrower input', async () => {
-      const borrower = {
-        borrower: 'user6',
+    it('is idempotent when run twice for the same inactivity window', async () => {
+      const now = Date.now();
+      const sixtyDaysAgo = new Date(now - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const dbRow: { score: number; last_decayed_at: string | null } = {
         score: 700,
-        last_activity: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+        last_decayed_at: null,
       };
 
-      const first = await applyScoreDecay(borrower);
-      const second = await applyScoreDecay(borrower);
+      mockQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+        if (sql.includes('SELECT s.user_id AS borrower')) {
+          return {
+            rows: [
+              {
+                borrower: 'user6',
+                score: dbRow.score,
+                last_activity: sixtyDaysAgo,
+                last_decayed_at: dbRow.last_decayed_at,
+              },
+            ],
+            rowCount: 1,
+          };
+        }
+        if (sql.includes('UPDATE scores')) {
+          dbRow.score = params![0] as number;
+          dbRow.last_decayed_at = params![1] as string;
+          return { rows: [], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      });
 
-      expect(first).toBe(690);
-      expect(second).toBe(690);
-      expect(mockQuery).toHaveBeenCalledTimes(2);
-      expect(mockQuery).toHaveBeenLastCalledWith(
-        'UPDATE scores SET current_score = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
-        [690, 'user6'],
-      );
+      const [firstBorrower] = await getInactiveBorrowers();
+      const firstScore = await applyScoreDecay(firstBorrower!);
+      expect(firstScore).toBe(690);
+      expect(dbRow.score).toBe(690);
+      expect(dbRow.last_decayed_at).not.toBeNull();
+
+      // Re-run in the same inactivity window using the persisted last_decayed_at baseline
+      const [secondBorrower] = await getInactiveBorrowers();
+      const secondScore = await applyScoreDecay(secondBorrower!);
+      expect(secondScore).toBe(690);
+      expect(dbRow.score).toBe(690);
+      // Only 1 UPDATE should have been executed across both runs
+      const updateCalls = mockQuery.mock.calls.filter(([sql]) => sql.includes('UPDATE scores'));
+      expect(updateCalls).toHaveLength(1);
+    });
+
+    it('runScoreDecayJob leaves score unchanged when run twice for the same inactivity window', async () => {
+      const now = Date.now();
+      const sixtyDaysAgo = new Date(now - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const dbRow: { score: number; last_decayed_at: string | null } = {
+        score: 700,
+        last_decayed_at: null,
+      };
+
+      mockQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+        if (sql.includes('SELECT s.user_id AS borrower')) {
+          return {
+            rows: [
+              {
+                borrower: 'user7',
+                score: dbRow.score,
+                last_activity: sixtyDaysAgo,
+                last_decayed_at: dbRow.last_decayed_at,
+              },
+            ],
+            rowCount: 1,
+          };
+        }
+        if (sql.includes('UPDATE scores')) {
+          dbRow.score = params![0] as number;
+          dbRow.last_decayed_at = params![1] as string;
+          return { rows: [], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      });
+
+      await runScoreDecayJob();
+      expect(dbRow.score).toBe(690);
+
+      await runScoreDecayJob();
+      expect(dbRow.score).toBe(690);
+      const updateCalls = mockQuery.mock.calls.filter(([sql]) => sql.includes('UPDATE scores'));
+      expect(updateCalls).toHaveLength(1);
     });
   });
 });

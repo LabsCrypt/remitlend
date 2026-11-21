@@ -25,6 +25,30 @@ const REQUIRED_ENV_VARS = [
 ];
 
 /**
+ * Parses and validates `TRUST_PROXY_HOPS` as a non-negative integer hop count.
+ * Defaults to `0` (do not trust proxy headers) for safe local development.
+ */
+export function parseTrustProxyHops(raw?: string): number {
+  if (raw === undefined || raw.trim() === '') {
+    return 0;
+  }
+
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(
+      `Invalid TRUST_PROXY_HOPS value "${raw}": must be a non-negative integer (e.g. 0 for direct connections, 1 behind a single reverse proxy).`,
+    );
+  }
+
+  const hops = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(hops)) {
+    throw new Error(`Invalid TRUST_PROXY_HOPS value "${raw}": integer out of safe range.`);
+  }
+
+  return hops;
+}
+
+/**
  * Validates that all critical environment variables are set and non-empty.
  * Logs a clear error message and halts the process if any requirements are unmet.
  */
@@ -76,6 +100,18 @@ export function validateEnvVars(): void {
       node_env: process.env.NODE_ENV,
     });
 
+    process.exit(1);
+  }
+
+  try {
+    parseTrustProxyHops(process.env.TRUST_PROXY_HOPS);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`\n\x1b[1;31mFATAL ERROR: ${message}\x1b[0m\n`);
+    logger.error('Invalid TRUST_PROXY_HOPS configuration', {
+      value: process.env.TRUST_PROXY_HOPS,
+      node_env: process.env.NODE_ENV,
+    });
     process.exit(1);
   }
 
