@@ -10,6 +10,7 @@ import { sorobanService } from '../services/sorobanService.js';
 import { rejectLoanSchema } from '../schemas/loanSchemas.js';
 import { createCursorPaginatedResponse, parseCursorQueryParams } from '../utils/pagination.js';
 import logger from '../utils/logger.js';
+import { getLoanSummary } from '../utils/loanState.js';
 import { cacheService } from '../services/cacheService.js';
 import { notificationService } from '../services/notificationService.js';
 import { invalidateOnRepay, invalidateOnLoanRequest } from '../utils/cacheKeys.js';
@@ -66,8 +67,7 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
 
     const borrower = (req as any).user?.publicKey as string;
 
-    const result = await query('SELECT * FROM loans WHERE id = $1', [loanId]);
-    const loan = result.rows[0] as Record<string, unknown> | undefined;
+    const loan = await getLoanSummary(loanId as string);
 
     if (!loan) {
       return res.status(404).json({
@@ -75,7 +75,7 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
       });
     }
 
-    if (!['PENDING', 'OPEN'].includes(loan.status as string)) {
+    if (!['PENDING', 'OPEN'].includes(loan.status)) {
       return res.status(400).json({
         message: 'Loan cannot be cancelled',
       });
@@ -99,8 +99,7 @@ export const buildRejectLoanTx = async (req: Request, res: Response, next: NextF
 
     const { reason } = rejectLoanSchema.parse(req.body);
 
-    const result = await query('SELECT * FROM loans WHERE id = $1', [loanId]);
-    const loan = result.rows[0] as Record<string, unknown> | undefined;
+    const loan = await getLoanSummary(loanId as string);
 
     if (!loan) {
       return res.status(404).json({

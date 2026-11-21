@@ -31,9 +31,9 @@ const mockQuery: jest.MockedFunction<
   if (/from\s+loan_events/i.test(text)) {
     return { rows: loan ? [{ address: loan.address }] : [] };
   }
-  // Controllers load the loan row to check its status.
-  if (/from\s+loans\s+where\s+id/i.test(text)) {
-    return { rows: loan ? [{ id: loanId, status: loan.status }] : [] };
+  // Controllers derive the loan status from contract_events (no `loans` table).
+  if (/from\s+contract_events/i.test(text) && /AS status/i.test(text)) {
+    return { rows: loan ? [{ loan_id: loanId, status: loan.status }] : [] };
   }
   // audit_logs INSERT and anything else: no-op.
   return { rows: [] };

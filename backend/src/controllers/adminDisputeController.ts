@@ -6,6 +6,7 @@ import { notificationService, type NotificationType } from '../services/notifica
 import { defaultChecker } from '../services/defaultChecker.js';
 import { encodeCursor, decodeCursor, parseKeysetParams } from '../utils/pagination.js';
 import logger from '../utils/logger.js';
+import { getLoanSummary } from '../utils/loanState.js';
 
 /**
  * List all loan disputes for admin review with cursor-based pagination.
@@ -130,16 +131,17 @@ export const listLoanDisputes = asyncHandler(async (req, res) => {
  */
 export const getLoanDispute = asyncHandler(async (req, res) => {
   const { disputeId } = req.params;
-  const disputeResult = await query(
-    `SELECT d.*, l.* AS loan FROM loan_disputes d JOIN loans l ON l.id = d.loan_id WHERE d.id = $1`,
-    [disputeId],
-  );
+  const disputeResult = await query(`SELECT d.* FROM loan_disputes d WHERE d.id = $1`, [disputeId]);
 
   if (disputeResult.rows.length === 0) {
     throw AppError.notFound('Dispute not found');
   }
 
-  res.json({ success: true, dispute: disputeResult.rows[0] });
+  const dispute = disputeResult.rows[0] as Record<string, unknown>;
+  // Loan state is derived from contract_events; there is no `loans` table.
+  const loan = await getLoanSummary(dispute.loan_id as string | number);
+
+  res.json({ success: true, dispute: { ...dispute, loan } });
 });
 
 /**

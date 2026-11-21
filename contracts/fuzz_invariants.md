@@ -2,6 +2,8 @@
 
 This document defines the invariants that should always hold true for each contract in the remitlend system.
 
+For how to set up and run the fuzz targets that check these invariants, see [FUZZING_README.md](FUZZING_README.md).
+
 ## LendingPool Contract
 
 ### Core Invariants

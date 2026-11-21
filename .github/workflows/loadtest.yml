@@ -1,5 +1,24 @@
 name: Load Test
 
+# The baseline script load-tests authenticated endpoints, so it needs a JWT.
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#
+#   LOADTEST_JWT         JWT for a borrower wallet on the target deployment
+#                        (scopes read:loans and read:score). Obtain one through
+#                        POST /api/v1/auth/challenge + /auth/login and note that
+#                        tokens expire after 24h, so refresh it before a run.
+#   LOADTEST_LENDER_JWT  Optional. JWT for a lender/admin wallet; when set,
+#                        GET /api/v1/pool/stats is load-tested as well.
+#
+# Required input / variable:
+#
+#   wallet               Public key the LOADTEST_JWT was issued for. The loans
+#                        and score routes reject any other wallet.
+#
+# The run fails when credentials are missing, when the preflight request to an
+# endpoint is not a 200, or when the k6 thresholds (latency, http_req_failed,
+# checks) are breached.
+
 on:
   workflow_dispatch:
     inputs:
@@ -7,6 +26,9 @@ on:
         description: 'Target URL to run the load test against (e.g. deployed staging URL)'
         required: true
         default: 'https://staging.remitlend.com'
+      wallet:
+        description: 'Stellar public key that the LOADTEST_JWT secret was issued for'
+        required: true
 
 jobs:
   k6-load-test:
@@ -15,9 +37,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify load test credentials are configured
+        env:
+          LOADTEST_JWT: ${{ secrets.LOADTEST_JWT }}
+        run: |
+          if [ -z "$LOADTEST_JWT" ]; then
+            echo "::error::Repository secret LOADTEST_JWT is not set (see the header of this workflow)."
+            exit 1
+          fi
+
       - name: Run k6 baseline load test
         uses: grafana/k6-action@v0.3.0
         with:
           filename: scripts/loadtest/baseline.js
         env:
           TARGET_URL: ${{ github.event.inputs.target_url }}
+          LOADTEST_WALLET: ${{ github.event.inputs.wallet }}
+          LOADTEST_JWT: ${{ secrets.LOADTEST_JWT }}
+          LOADTEST_LENDER_JWT: ${{ secrets.LOADTEST_LENDER_JWT }}
