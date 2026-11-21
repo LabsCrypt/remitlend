@@ -21,6 +21,8 @@ let globalPauseState: PauseState = {
   contracts: [],
 };
 
+let pauseRefreshTimer: ReturnType<typeof setInterval> | undefined;
+
 /**
  * Updates the global pause state from the database.
  * Called periodically and after pause/unpause events.
@@ -200,11 +202,31 @@ export async function initializePauseState(): Promise<void> {
     // Load initial state
     await updatePauseStateFromDatabase();
 
+    startPauseStateRefresh();
+
     logger.info('Pause guard initialized');
   } catch (error) {
     logger.error('Failed to initialize pause state', { error });
     throw error;
   }
+}
+
+/** Keep every API replica's in-memory guard synchronized with the shared row. */
+export function startPauseStateRefresh(): void {
+  if (pauseRefreshTimer || process.env.NODE_ENV === 'test') return;
+  const intervalMs = Number.parseInt(process.env.PAUSE_STATE_REFRESH_MS ?? '5000', 10);
+  pauseRefreshTimer = setInterval(
+    () => {
+      void updatePauseStateFromDatabase();
+    },
+    Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 5000,
+  );
+  pauseRefreshTimer.unref?.();
+}
+
+export function stopPauseStateRefresh(): void {
+  if (pauseRefreshTimer) clearInterval(pauseRefreshTimer);
+  pauseRefreshTimer = undefined;
 }
 
 /**
