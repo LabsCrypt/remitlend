@@ -2,6 +2,8 @@
 
 This document describes the comprehensive fuzz testing setup implemented for the RemitLend smart contracts.
 
+> See [fuzz_invariants.md](fuzz_invariants.md) for the full definition of the invariants each fuzz target checks.
+
 ## Overview
 
 Fuzz testing has been implemented to find edge cases and potential vulnerabilities in the RemitLend contracts that traditional unit tests might miss. The setup uses property-based testing to verify invariants across all contract operations.
@@ -24,6 +26,8 @@ The fuzz testing covers all three main contracts:
 - **RemittanceNFT**: Manages user reputation scores and NFTs
 
 ## Invariants Tested
+
+The summary below is condensed; the complete, authoritative list is in [fuzz_invariants.md](fuzz_invariants.md).
 
 ### LendingPool Contract
 

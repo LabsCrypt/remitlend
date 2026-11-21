@@ -203,6 +203,11 @@ cargo install cargo-tarpaulin
 cargo tarpaulin --out Html
 ```
 
+### Fuzz Testing
+
+Fuzz testing setup and campaign instructions live in [FUZZING_README.md](FUZZING_README.md).
+The invariants each fuzz target checks are defined in [fuzz_invariants.md](fuzz_invariants.md).
+
 ## Contract Details
 
 ### 1. Remittance NFT Contract
