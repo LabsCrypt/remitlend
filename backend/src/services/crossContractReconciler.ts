@@ -1,4 +1,4 @@
-import { query } from '../db/connection.js';
+import { query, withAdvisoryLock } from '../db/connection.js';
 import { setAbsoluteUserScoresBulk } from './scoresService.js';
 import { sorobanService } from './sorobanService.js';
 import { jobMetricsService } from './jobMetricsService.js';
@@ -326,7 +326,9 @@ export function startCrossContractReconciler(): void {
     }
     inFlight = true;
     try {
-      await crossContractReconciler.run();
+      await withAdvisoryLock('remitlend:cross-contract-reconciler', () =>
+        crossContractReconciler.run(),
+      );
     } catch (error) {
       logger.withContext().error('Cross-contract reconciler scheduled run failed', { error });
     } finally {
