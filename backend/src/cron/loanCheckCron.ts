@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { query } from '../db/connection.js';
+import { query, withAdvisoryLock } from '../db/connection.js';
 import { notificationService } from '../services/notificationService.js';
 import { jobMetricsService } from '../services/jobMetricsService.js';
 import logger from '../utils/logger.js';
@@ -27,11 +27,12 @@ export function startLoanDueCheckCron() {
     inFlight = true;
 
     try {
-      logger.withContext().info('Running loan due check cron...');
+      await withAdvisoryLock('remitlend:loan-due-check', async () => {
+        logger.withContext().info('Running loan due check cron...');
 
-      // Find loans where a repayment is due in the next 24 hours
-      // This is a simplified query; in a real app, you'd check against a repayment schedule table
-      const result = await query(`
+        // Find loans where a repayment is due in the next 24 hours
+        // This is a simplified query; in a real app, you'd check against a repayment schedule table
+        const result = await query(`
         SELECT le.loan_id, le.address, le.amount
         FROM contract_events le
         WHERE le.event_type = 'LoanApproved'
@@ -50,22 +51,23 @@ export function startLoanDueCheckCron() {
           AND le.ledger_closed_at < NOW() - INTERVAL '30 days' -- Simplified due logic
       `);
 
-      for (const loan of result.rows) {
-        const formattedAmount = Number(loan.amount) / 10_000_000;
-        await notificationService.createNotification({
-          userId: loan.address,
-          type: 'repayment_due',
-          title: 'Repayment Due Soon',
-          message: `Your repayment for loan #${loan.loan_id} of ${formattedAmount} is due.`,
-          loanId: loan.loan_id,
-        });
-      }
+        for (const loan of result.rows) {
+          const formattedAmount = Number(loan.amount) / 10_000_000;
+          await notificationService.createNotification({
+            userId: loan.address,
+            type: 'repayment_due',
+            title: 'Repayment Due Soon',
+            message: `Your repayment for loan #${loan.loan_id} of ${formattedAmount} is due.`,
+            loanId: loan.loan_id,
+          });
+        }
 
-      const durationMs = Date.now() - startTime;
-      jobMetricsService.recordSuccess(jobName, durationMs);
-      logger
-        .withContext()
-        .info(`Loan due check completed. Notified ${result.rows.length} borrowers.`);
+        const durationMs = Date.now() - startTime;
+        jobMetricsService.recordSuccess(jobName, durationMs);
+        logger
+          .withContext()
+          .info(`Loan due check completed. Notified ${result.rows.length} borrowers.`);
+      });
     } catch (error) {
       const durationMs = Date.now() - startTime;
       jobMetricsService.recordFailure(jobName, error as Error | string, durationMs);
