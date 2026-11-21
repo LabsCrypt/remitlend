@@ -100,6 +100,8 @@ router.get('/loan-disputes', requireApiKey('admin:disputes'), listLoanDisputes);
 router.post(
   '/loan-disputes/:disputeId/resolve',
   requireApiKey('admin:disputes'),
+  strictRateLimiter,
+  auditLog,
   resolveLoanDispute,
 );
 // New admin JWT-protected endpoints
@@ -109,12 +111,16 @@ router.post(
   '/disputes/:disputeId/resolve',
   requireJwtAuth,
   requireRoles('admin'),
+  strictRateLimiter,
+  auditLog,
   resolveLoanDispute,
 );
 router.post(
   '/disputes/:disputeId/reject',
   requireJwtAuth,
   requireRoles('admin'),
+  strictRateLimiter,
+  auditLog,
   rejectLoanDispute,
 );
 

@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { jobMetricsService } from '../services/jobMetricsService.js';
 import { applyScoreDecay, getInactiveBorrowers } from '../services/scoreDecayService.js';
 import logger from '../utils/logger.js';
+import { withAdvisoryLock } from '../db/connection.js';
 
 // In-memory guard to prevent overlapping execution states
 let isRunning = false;
@@ -17,6 +18,13 @@ export async function runScoreDecayJob(): Promise<void> {
     return;
   }
 
+  const acquired = await withAdvisoryLock('remitlend:score-decay', async () => {
+    await runScoreDecayJobLocal();
+  });
+  if (acquired === undefined) return;
+}
+
+async function runScoreDecayJobLocal(): Promise<void> {
   isRunning = true;
   const startTime = Date.now();
 

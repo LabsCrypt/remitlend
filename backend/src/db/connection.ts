@@ -176,6 +176,28 @@ export const getClient = async () => {
   });
 };
 
+/** Run one background job at a time across all application replicas. */
+export const withAdvisoryLock = async <T>(
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T | undefined> => {
+  const client = await getClient();
+  try {
+    const result = await client.query<{ locked: boolean }>(
+      'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
+      [key],
+    );
+    if (!result.rows[0]?.locked) return undefined;
+    try {
+      return await fn();
+    } finally {
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [key]);
+    }
+  } finally {
+    client.release();
+  }
+};
+
 const waitForPoolToDrain = async (timeoutMs: number): Promise<void> => {
   const startedAt = Date.now();
 

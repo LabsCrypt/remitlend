@@ -3,6 +3,7 @@ import { setAbsoluteUserScoresBulk } from './scoresService.js';
 import { sorobanService } from './sorobanService.js';
 import { recordScoreReconciliationRun } from '../middleware/metrics.js';
 import { jobMetricsService } from './jobMetricsService.js';
+import { withAdvisoryLock } from '../db/connection.js';
 import logger from '../utils/logger.js';
 
 interface ActiveBorrowerScoreRow {
@@ -300,7 +301,9 @@ export function startScoreReconciliationScheduler(): void {
 
     reconciliationInFlight = true;
     try {
-      await scoreReconciliationService.reconcileActiveBorrowerScores();
+      await withAdvisoryLock('remitlend:score-reconciliation', () =>
+        scoreReconciliationService.reconcileActiveBorrowerScores(),
+      );
     } catch (error) {
       logger.withContext().error('Score reconciliation scheduled run failed', { error });
     } finally {

@@ -1,5 +1,6 @@
 import { query } from '../db/connection.js';
 import logger from '../utils/logger.js';
+import { withAdvisoryLock } from '../db/connection.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import type { Response } from 'express';
 import { encryptPiiValue, readPiiValue, type UserProfilePiiRow } from './userProfilePii.js';
@@ -753,8 +754,10 @@ async function runNotificationCleanup(): Promise<void> {
 
   cleanupRunning = true;
   try {
-    await notificationService.deleteOldNotifications(notificationRetentionDays);
-    await notificationService.deleteReadAndArchived(readNotificationRetentionDays);
+    await withAdvisoryLock('remitlend:notification-cleanup', async () => {
+      await notificationService.deleteOldNotifications(notificationRetentionDays);
+      await notificationService.deleteReadAndArchived(readNotificationRetentionDays);
+    });
   } finally {
     cleanupRunning = false;
   }

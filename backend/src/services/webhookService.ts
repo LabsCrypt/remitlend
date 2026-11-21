@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { query, withTransaction, type PoolClient } from '../db/connection.js';
 import logger from '../utils/logger.js';
 import { postWebhook, type WebhookHttpResponse } from './webhookHttp.js';
+import { decryptWebhookSecret, encryptWebhookSecret } from '../utils/webhookSecret.js';
 
 function maskUrlForLog(rawUrl: string): string {
   try {
@@ -336,7 +337,7 @@ export class WebhookService {
           delivery.id,
           delivery.subscription_id,
           delivery.callback_url,
-          delivery.secret || undefined,
+          decryptWebhookSecret(delivery.secret),
           delivery.event_id,
           delivery.event_type as WebhookEventType,
           delivery.payload,
@@ -477,8 +478,12 @@ export class WebhookService {
     const result = await query(
       `INSERT INTO webhook_subscriptions (callback_url, event_types, secret, is_active)
        VALUES ($1, $2::jsonb, $3, true)
-       RETURNING id, callback_url, event_types, secret, is_active, created_at, updated_at`,
-      [input.callbackUrl, JSON.stringify(input.eventTypes), input.secret ?? null],
+       RETURNING id, callback_url, event_types, is_active, created_at, updated_at`,
+      [
+        input.callbackUrl,
+        JSON.stringify(input.eventTypes),
+        input.secret ? encryptWebhookSecret(input.secret) : null,
+      ],
     );
 
     return this.mapSubscriptionRow(result.rows[0] as Record<string, unknown>);
@@ -486,7 +491,7 @@ export class WebhookService {
 
   async listSubscriptions(): Promise<WebhookSubscription[]> {
     const result = await query(
-      `SELECT id, callback_url, event_types, secret, is_active, created_at, updated_at
+      `SELECT id, callback_url, event_types, is_active, created_at, updated_at
        FROM webhook_subscriptions
        ORDER BY created_at DESC`,
       [],
@@ -545,7 +550,7 @@ export class WebhookService {
           this.sendToWebhook(
             Number((hook as { id: number }).id),
             String((hook as { callback_url: string }).callback_url),
-            ((hook as { secret?: string | null }).secret ?? undefined) || undefined,
+            decryptWebhookSecret((hook as { secret?: string | null }).secret),
             preparedPayload,
           ),
         ),
@@ -666,13 +671,10 @@ export class WebhookService {
   }
 
   private mapSubscriptionRow(row: Record<string, unknown>): WebhookSubscription {
-    const secret = typeof row.secret === 'string' && row.secret.length > 0 ? row.secret : undefined;
-
     return {
       id: Number(row.id),
       callbackUrl: String(row.callback_url),
       eventTypes: (row.event_types as WebhookEventType[]) ?? [],
-      ...(secret ? { secret } : {}),
       isActive: Boolean(row.is_active),
       createdAt: new Date(String(row.created_at)),
       updatedAt: new Date(String(row.updated_at)),

@@ -2,6 +2,7 @@ import logger from '../utils/logger.js';
 import { refreshWebhookRetryQueueDepth } from '../middleware/metrics.js';
 import { WebhookService } from './webhookService.js';
 import { jobMetricsService } from './jobMetricsService.js';
+import { withAdvisoryLock } from '../db/connection.js';
 
 let retryProcessorInterval: NodeJS.Timeout | null = null;
 let inFlight = false;
@@ -39,9 +40,11 @@ export function startWebhookRetryProcessor(): void {
       const jobName = 'webhookRetryProcessor';
 
       try {
-        await refreshWebhookRetryQueueDepth();
-        await WebhookService.processRetries();
-        await refreshWebhookRetryQueueDepth();
+        await withAdvisoryLock('remitlend:webhook-retry', async () => {
+          await refreshWebhookRetryQueueDepth();
+          await WebhookService.processRetries();
+          await refreshWebhookRetryQueueDepth();
+        });
 
         const durationMs = Date.now() - startTime;
         jobMetricsService.recordSuccess(jobName, durationMs);

@@ -11,6 +11,7 @@ import {
 } from '@stellar/stellar-sdk';
 import { query } from '../db/connection.js';
 import logger from '../utils/logger.js';
+import { withAdvisoryLock } from '../db/connection.js';
 import { AppError } from '../errors/AppError.js';
 import { createSorobanRpcServer, getStellarNetworkPassphrase } from '../config/stellar.js';
 
@@ -856,7 +857,9 @@ export function startDefaultCheckerScheduler(): void {
       if (inFlight) return;
       inFlight = true;
       try {
-        await defaultChecker.checkOverdueLoans();
+        await withAdvisoryLock('remitlend:default-checker', () =>
+          defaultChecker.checkOverdueLoans(),
+        );
       } catch (error) {
         logger.withContext().error('Default checker scheduled run failed', { error });
       } finally {
