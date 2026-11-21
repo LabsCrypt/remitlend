@@ -24,6 +24,9 @@ const REQUIRED_ENV_VARS = [
   'SCORE_DELTA_LATE',
 ];
 
+const MIN_SECRET_BYTES = 32;
+const SECRET_ENV_VARS = ['JWT_SECRET', 'INTERNAL_API_KEY'] as const;
+
 /**
  * Parses and validates `TRUST_PROXY_HOPS` as a non-negative integer hop count.
  * Defaults to `0` (do not trust proxy headers) for safe local development.
@@ -100,6 +103,16 @@ export function validateEnvVars(): void {
       node_env: process.env.NODE_ENV,
     });
 
+    process.exit(1);
+  }
+
+  const weakSecrets = SECRET_ENV_VARS.filter(
+    (key) => Buffer.byteLength(process.env[key]!.trim(), 'utf8') < MIN_SECRET_BYTES,
+  );
+  if (weakSecrets.length > 0) {
+    const message = `Security-sensitive variables must be at least ${MIN_SECRET_BYTES} bytes: ${weakSecrets.join(', ')}`;
+    console.error(`\n\x1b[1;31mFATAL ERROR: Environment validation failed\x1b[0m\n${message}\n`);
+    logger.error('Environment validation failure', { weakSecrets, node_env: process.env.NODE_ENV });
     process.exit(1);
   }
 
