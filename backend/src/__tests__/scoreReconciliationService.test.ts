@@ -9,6 +9,7 @@ const mockGetOnChainCreditScore = jest.fn<(userPublicKey: string) => Promise<num
 const mockSetAbsoluteUserScoresBulk = jest.fn<(scores: Map<string, number>) => Promise<void>>();
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn(),

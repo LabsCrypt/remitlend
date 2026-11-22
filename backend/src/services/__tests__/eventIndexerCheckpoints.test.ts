@@ -24,6 +24,7 @@ beforeAll(async () => {
     .mockResolvedValue({ rows: [], rowCount: 0 } as never);
 
   jest.unstable_mockModule('../../db/connection.js', () => ({
+    withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
     query: mockQuery,
     getClient: jest.fn(),
     withTransaction: jest.fn(),

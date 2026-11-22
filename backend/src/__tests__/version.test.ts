@@ -4,6 +4,7 @@ import request from 'supertest';
 // Must mock all app-level dependencies before importing app.
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: {
     query: jest.fn<() => Promise<any>>().mockResolvedValue({ rows: [], rowCount: 0 }),
   },

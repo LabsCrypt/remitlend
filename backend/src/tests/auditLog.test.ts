@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import type { Request, Response, NextFunction } from 'express';
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: jest.fn(),
   default: { query: jest.fn() },
 }));

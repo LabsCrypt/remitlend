@@ -14,6 +14,7 @@ const mockWithTransaction = jest.fn(
   async (fn: (client: { query: typeof mockQuery }) => Promise<unknown>) => fn({ query: mockQuery }),
 );
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
   withTransaction: mockWithTransaction,
@@ -385,8 +386,8 @@ describe('Loan Dispute/Appeal Mechanism', () => {
       .send({ action: 'reverse', resolution: 'Default was incorrect.' });
 
     expect(res.status).toBe(503);
-    // Only the dispute lookup ran — nothing was marked resolved or logged.
-    expect(mockQuery).toHaveBeenCalledTimes(1);
+    // The dispute lookup and error audit log ran — nothing was marked resolved.
+    expect(mockQuery).toHaveBeenCalledTimes(2);
     const statements = mockQuery.mock.calls.map((call) => String(call[0]));
     expect(statements.some((sql) => sql.includes('UPDATE loan_disputes'))).toBe(false);
     expect(statements.some((sql) => sql.includes('DefaultReversed'))).toBe(false);

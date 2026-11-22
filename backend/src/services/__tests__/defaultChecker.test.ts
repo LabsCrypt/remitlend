@@ -28,6 +28,7 @@ const fakeServer = {
 const TEST_CONTRACT_ID = StrKey.encodeContract(Buffer.alloc(32, 1));
 
 jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn(),

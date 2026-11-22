@@ -19,6 +19,7 @@ jest.unstable_mockModule('node-cron', () => ({
 }));
 
 jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
 }));
 

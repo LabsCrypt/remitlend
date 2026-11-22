@@ -10,6 +10,7 @@ type MockQueryResult = { rows: unknown[]; rowCount: number };
 
 // Mock infrastructure dependencies before importing app
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: {
     query: jest.fn<() => Promise<MockQueryResult>>().mockResolvedValue({ rows: [], rowCount: 0 }),
   },

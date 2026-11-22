@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 
 // Use unstable_mockModule for robust ESM mocking of the connection module
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: jest.fn(),
   default: {
     query: jest.fn(),

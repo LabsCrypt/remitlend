@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 
 // Mock the database connection module before any other imports
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: jest.fn(),
   getClient: jest.fn(),
   withTransaction: jest.fn(),

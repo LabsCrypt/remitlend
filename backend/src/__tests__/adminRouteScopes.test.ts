@@ -48,6 +48,7 @@ jest.unstable_mockModule('../services/defaultChecker.js', () => ({
   defaultChecker: { checkOverdueLoans: mockCheckOverdueLoans },
 }));
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
 }));

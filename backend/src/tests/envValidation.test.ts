@@ -10,7 +10,7 @@ describe('Environment Variable Validation', () => {
   function setAllRequiredVars(): void {
     process.env.DATABASE_URL = 'postgres://localhost';
     process.env.REDIS_URL = 'redis://localhost';
-    process.env.JWT_SECRET = 'secret';
+    process.env.JWT_SECRET = 'jwt-secret-for-tests'.repeat(4);
     process.env.STELLAR_RPC_URL = 'http://localhost';
     process.env.STELLAR_NETWORK_PASSPHRASE = 'test';
     process.env.LOAN_MANAGER_CONTRACT_ID = 'C1';
@@ -19,7 +19,7 @@ describe('Environment Variable Validation', () => {
     process.env.MULTISIG_GOVERNANCE_CONTRACT_ID = 'C4';
     process.env.POOL_TOKEN_ADDRESS = 'T1';
     process.env.LOAN_MANAGER_ADMIN_SECRET = 'S1';
-    process.env.INTERNAL_API_KEY = 'K1';
+    process.env.INTERNAL_API_KEY = 'internal-api-key-for-tests'.repeat(4);
     process.env.FRONTEND_URL = 'http://localhost:3000';
     process.env.SCORE_DELTA_REPAY = '15';
     process.env.SCORE_DELTA_DEFAULT = '50';

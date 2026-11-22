@@ -19,6 +19,7 @@ jest.unstable_mockModule('../services/cacheService.js', () => ({
 }));
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: jest.fn(),
   getClient: jest.fn(),
 }));

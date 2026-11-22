@@ -3,6 +3,7 @@ import request from 'supertest';
 
 // Use unstable_mockModule for robust ESM mocking
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: {
     query: jest
       .fn<() => Promise<{ rows: unknown[]; rowCount: number }>>()

@@ -20,6 +20,7 @@ type QueryResult = { rows: Record<string, unknown>[]; rowCount?: number };
 const mockQuery = jest.fn<(text: string, params?: unknown[]) => Promise<QueryResult>>();
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
   getClient: jest.fn(),
   withTransaction: jest.fn(),
@@ -188,9 +189,7 @@ describe('GET /api/indexer/status checkpoints', () => {
       return { rows: [{ total: '5' }] };
     });
 
-    const res = await request(app)
-      .get('/api/indexer/status')
-      .set('x-api-key', 'indexer-value');
+    const res = await request(app).get('/api/indexer/status').set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -222,9 +221,7 @@ describe('GET /api/indexer/status checkpoints', () => {
       return { rows: [{ total: '0' }] };
     });
 
-    const res = await request(app)
-      .get('/api/indexer/status')
-      .set('x-api-key', 'indexer-value');
+    const res = await request(app).get('/api/indexer/status').set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({
@@ -241,9 +238,7 @@ describe('GET /api/indexer/status checkpoints', () => {
   it('returns 404 when no checkpoint exists yet', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
-    const res = await request(app)
-      .get('/api/indexer/status')
-      .set('x-api-key', 'indexer-value');
+    const res = await request(app).get('/api/indexer/status').set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ success: false, message: 'Indexer state not found' });
@@ -252,9 +247,7 @@ describe('GET /api/indexer/status checkpoints', () => {
   it('returns 500 when the checkpoint read fails', async () => {
     mockQuery.mockRejectedValue(new Error('db down'));
 
-    const res = await request(app)
-      .get('/api/indexer/status')
-      .set('x-api-key', 'indexer-value');
+    const res = await request(app).get('/api/indexer/status').set('x-api-key', 'indexer-value');
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ success: false, message: 'Failed to get indexer status' });

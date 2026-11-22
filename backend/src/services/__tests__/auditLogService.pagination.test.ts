@@ -6,6 +6,7 @@ const mockQuery = jest
   .mockResolvedValue({ rows: [], rowCount: 0 });
 
 jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
 }));
 

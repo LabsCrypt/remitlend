@@ -14,6 +14,7 @@ const mockQuery = jest.fn<
 const mockGetAccount = jest.fn<() => Promise<Account>>();
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
   default: { query: mockQuery, connect: jest.fn(), end: jest.fn() },
 }));

@@ -3,6 +3,7 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 const mockQuery = jest.fn<(sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }>>();
 
 jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
 }));
 
