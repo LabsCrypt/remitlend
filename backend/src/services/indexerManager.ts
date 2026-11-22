@@ -4,6 +4,11 @@ import { getStellarRpcUrl } from '../config/stellar.js';
 
 let indexerInstance: EventIndexer | null = null;
 
+const parsePositiveInt = (value: string | undefined, fallback: number): number => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 /**
  * Initialize and start the event indexer
  */
@@ -29,8 +34,8 @@ export const startIndexer = (): void => {
   const contractIds = Object.values(contractEnvMap).filter((id): id is string =>
     Boolean(id && id.trim().length > 0),
   );
-  const pollIntervalMs = parseInt(process.env.INDEXER_POLL_INTERVAL_MS || '30000');
-  const batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '100');
+  const pollIntervalMs = parsePositiveInt(process.env.INDEXER_POLL_INTERVAL_MS, 30000);
+  const batchSize = parsePositiveInt(process.env.INDEXER_BATCH_SIZE, 100);
 
   if (contractIds.length === 0) {
     logger
