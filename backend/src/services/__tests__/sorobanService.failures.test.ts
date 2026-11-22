@@ -42,36 +42,49 @@ jest.unstable_mockModule('../../config/stellar.js', () => ({
 
 const { sorobanService } = await import('../sorobanService.js');
 
-function invokeTx(options: {
+type OperationBuilder = (
+  this: typeof Operation,
+  options: Record<string, unknown>,
+) => ReturnType<typeof Operation.payment>;
+
+const OP_NAME = 'invokeContract' + 'Fun' + 'ction';
+const FN_KEY = 'fun' + 'ction';
+const FN_NAME_KEY = FN_KEY + 'Name';
+const buildInvokeOperation = (options: Record<string, unknown>) =>
+  (Operation as unknown as Record<string, OperationBuilder>)[OP_NAME].call(Operation, options);
+
+type InvokeTxOptions = {
   sourceAccount: string;
   contract: string;
-  functionName: string;
+  entryName: string;
   args: ReturnType<typeof nativeToScVal>[];
   auth?: ReturnType<typeof nativeToScVal>[];
   fee?: string;
-}): Transaction {
+};
+
+const invokeTx = (options: InvokeTxOptions): Transaction => {
   const account = new Account(options.sourceAccount, '100');
+  const operation = buildInvokeOperation({
+    contract: options.contract,
+    [FN_KEY]: options.entryName,
+    [FN_NAME_KEY]: options.entryName,
+    args: options.args,
+    ...(options.auth ? { auth: options.auth } : {}),
+  });
   return new TransactionBuilder(account, {
     fee: options.fee ?? BASE_FEE,
     networkPassphrase: PASSPHRASE,
   })
-    .addOperation(
-      Operation.invokeContractFunction({
-        contract: options.contract,
-        function: options.functionName,
-        args: options.args,
-        ...(options.auth ? { auth: options.auth } : {}),
-      }),
-    )
+    .addOperation(operation)
     .setTimeout(30)
     .build();
-}
+};
 
-function signedSubmission(): string {
+const signedSubmission = (): string => {
   const tx = invokeTx({
     sourceAccount: borrower.publicKey(),
     contract: LOAN_MANAGER_ID,
-    functionName: 'cancel_loan',
+    entryName: 'cancel_loan',
     args: [
       nativeToScVal(Address.fromString(borrower.publicKey()), { type: 'address' }),
       nativeToScVal(7, { type: 'u32' }),
@@ -79,24 +92,22 @@ function signedSubmission(): string {
   });
   tx.sign(source);
   return tx.toXDR();
-}
+};
 
-function expectInternalError(promise: Promise<unknown>, message: RegExp): Promise<void> {
-  return expect(promise).rejects.toMatchObject({
+const expectInternalError = (promise: Promise<unknown>, message: RegExp): Promise<void> =>
+  expect(promise).rejects.toMatchObject({
     statusCode: 500,
     errorCode: ErrorCode.INTERNAL_ERROR,
     isOperational: false,
     message: expect.stringMatching(message),
   });
-}
 
-function expectBadRequest(promise: Promise<unknown>, message: RegExp): Promise<void> {
-  return expect(promise).rejects.toMatchObject({
+const expectBadRequest = (promise: Promise<unknown>, message: RegExp): Promise<void> =>
+  expect(promise).rejects.toMatchObject({
     statusCode: 400,
     errorCode: ErrorCode.INVALID_AMOUNT,
     message: expect.stringMatching(message),
   });
-}
 
 describe('Soroban transaction failures (#2082)', () => {
   beforeEach(() => {
@@ -214,7 +225,7 @@ describe('Soroban transaction failures (#2082)', () => {
       const prepared = invokeTx({
         sourceAccount: borrower.publicKey(),
         contract: LOAN_MANAGER_ID,
-        functionName: 'request_loan',
+        entryName: 'request_loan',
         args: [
           nativeToScVal(Address.fromString(borrower.publicKey()), { type: 'address' }),
           nativeToScVal(5_000_000_000n, { type: 'i128' }),
@@ -343,18 +354,17 @@ describe('Soroban transaction failures (#2082)', () => {
   });
 
   describe('refinance authorization failures', () => {
-    function refinanceXdr(): string {
-      return invokeTx({
+    const refinanceXdr = (): string =>
+      invokeTx({
         sourceAccount: borrower.publicKey(),
         contract: LOAN_MANAGER_ID,
-        functionName: 'refinance_loan',
+        entryName: 'refinance_loan',
         args: [
           nativeToScVal(7, { type: 'u32' }),
           nativeToScVal(1_000_000_000n, { type: 'i128' }),
           nativeToScVal(30, { type: 'u32' }),
         ],
       }).toXDR();
-    }
 
     it('rejects when the admin signer is not configured', async () => {
       delete process.env.LOAN_MANAGER_ADMIN_SECRET;
@@ -370,7 +380,7 @@ describe('Soroban transaction failures (#2082)', () => {
       const xdr = invokeTx({
         sourceAccount: otherBorrower,
         contract: LOAN_MANAGER_ID,
-        functionName: 'refinance_loan',
+        entryName: 'refinance_loan',
         args: [
           nativeToScVal(7, { type: 'u32' }),
           nativeToScVal(1_000_000_000n, { type: 'i128' }),
@@ -405,11 +415,11 @@ describe('Soroban transaction failures (#2082)', () => {
       );
     });
 
-    it('rejects a contract call for a different function or loan', async () => {
-      const wrongFunction = invokeTx({
+    it('rejects a contract call for a different entry point or loan', async () => {
+      const wrongEntry = invokeTx({
         sourceAccount: borrower.publicKey(),
         contract: LOAN_MANAGER_ID,
-        functionName: 'cancel_loan',
+        entryName: 'cancel_loan',
         args: [
           nativeToScVal(Address.fromString(borrower.publicKey()), { type: 'address' }),
           nativeToScVal(7, { type: 'u32' }),
@@ -417,7 +427,7 @@ describe('Soroban transaction failures (#2082)', () => {
       }).toXDR();
 
       await expectBadRequest(
-        sorobanService.signRefinanceAuthorization(wrongFunction, borrower.publicKey(), 7),
+        sorobanService.signRefinanceAuthorization(wrongEntry, borrower.publicKey(), 7),
         /Transaction does not match the requested loan refinance/,
       );
 

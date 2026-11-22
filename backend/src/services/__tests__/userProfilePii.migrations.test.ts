@@ -34,13 +34,10 @@ type BackfillRow = {
   phone_ciphertext: Buffer | null;
 };
 
-function selectResult(rows: BackfillRow[]) {
-  return { rows };
-}
+const selectResult = (rows: BackfillRow[]) => ({ rows });
 
-function updateCall(index = 1): [string, unknown[]] {
-  return mockQuery.mock.calls[index] as [string, unknown[]];
-}
+const updateCall = (index = 1): [string, unknown[]] =>
+  mockQuery.mock.calls[index] as [string, unknown[]];
 
 describe('user profile PII migration gaps (#2083)', () => {
   beforeEach(() => {
@@ -139,7 +136,7 @@ describe('user profile PII migration gaps (#2083)', () => {
             public_key: RECORD_ID,
             email: null,
             phone: '+15551234567',
-            email_ciphertext: Buffer.from('already-encrypted'),
+            email_ciphertext: Buffer.alloc(16, 7),
             phone_ciphertext: null,
           },
         ]),
@@ -175,7 +172,7 @@ describe('user profile PII migration gaps (#2083)', () => {
             email: 'ada@example.com',
             phone: null,
             email_ciphertext: null,
-            phone_ciphertext: Buffer.from('already-encrypted'),
+            phone_ciphertext: Buffer.alloc(16, 7),
           },
         ]),
       )
@@ -199,8 +196,8 @@ describe('user profile PII migration gaps (#2083)', () => {
           public_key: RECORD_ID,
           email: null,
           phone: null,
-          email_ciphertext: Buffer.from('already-encrypted'),
-          phone_ciphertext: Buffer.from('already-encrypted'),
+          email_ciphertext: Buffer.alloc(16, 7),
+          phone_ciphertext: Buffer.alloc(16, 7),
         },
       ]),
     );
@@ -218,13 +215,13 @@ describe('user profile PII migration gaps (#2083)', () => {
             email: 'one@example.com',
             phone: null,
             email_ciphertext: null,
-            phone_ciphertext: Buffer.from('already-encrypted'),
+            phone_ciphertext: Buffer.alloc(16, 7),
           },
           {
             public_key: 'GTWO',
             email: null,
             phone: '+15550000000',
-            email_ciphertext: Buffer.from('already-encrypted'),
+            email_ciphertext: Buffer.alloc(16, 7),
             phone_ciphertext: null,
           },
         ]),

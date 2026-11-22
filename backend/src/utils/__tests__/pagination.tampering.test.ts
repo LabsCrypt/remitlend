@@ -17,15 +17,10 @@ import {
 
 const CREATED_AT = '2026-11-10T08:30:00.000Z';
 
-function encodePayload(payload: unknown): string {
-  return Buffer.from(JSON.stringify(payload), 'utf8')
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-}
+const encodePayload = (payload: unknown): string =>
+  btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
-function expectInvalidRequest(run: () => unknown, message: RegExp): AppError {
+const expectInvalidRequest = (run: () => unknown, message: RegExp): AppError => {
   let caught: unknown;
   try {
     run();
@@ -40,11 +35,9 @@ function expectInvalidRequest(run: () => unknown, message: RegExp): AppError {
   expect(appError.isOperational).toBe(true);
   expect(appError.message).toMatch(message);
   return appError;
-}
+};
 
-function requestWith(query: Record<string, unknown>): Request {
-  return { query } as Request;
-}
+const requestWith = (query: Record<string, unknown>): Request => ({ query }) as Request;
 
 describe('pagination cursor tampering (#2086)', () => {
   it('round-trips a seq beyond Number.MAX_SAFE_INTEGER without losing precision', () => {

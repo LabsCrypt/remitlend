@@ -21,14 +21,17 @@ type EventRow = {
   value: string | null;
 };
 
-function event(eventType: string, amount: string, at: string): EventRow {
-  return { event_type: eventType, amount, ledger_closed_at: at, value: null };
-}
+const event = (eventType: string, amount: string, at: string): EventRow => ({
+  event_type: eventType,
+  amount,
+  ledger_closed_at: at,
+  value: null,
+});
 
-function setEvents(poolEvents: EventRow[], depositorEvents: EventRow[]) {
+const setEvents = (poolEvents: EventRow[], depositorEvents: EventRow[]) => {
   mockQuery.mockResolvedValueOnce({ rows: poolEvents });
   mockQuery.mockResolvedValueOnce({ rows: depositorEvents });
-}
+};
 
 describe('yield history snapshot gaps (#2084)', () => {
   beforeEach(() => {
