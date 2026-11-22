@@ -48,15 +48,13 @@ const CONTRACT_ENV_VARS = [
   'INDEXER_BATCH_SIZE',
 ] as const;
 
-function clearContractEnv(): void {
+const clearContractEnv = (): void => {
   for (const name of CONTRACT_ENV_VARS) {
     delete process.env[name];
   }
-}
+};
 
-function flushAsync(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
+const flushAsync = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 describe('indexerManager', () => {
   beforeEach(async () => {

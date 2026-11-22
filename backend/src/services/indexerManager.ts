@@ -4,10 +4,10 @@ import { getStellarRpcUrl } from '../config/stellar.js';
 
 let indexerInstance: EventIndexer | null = null;
 
-function parsePositiveInt(value: string | undefined, fallback: number): number {
+const parsePositiveInt = (value: string | undefined, fallback: number): number => {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
+};
 
 /**
  * Initialize and start the event indexer

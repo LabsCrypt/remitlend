@@ -27,7 +27,7 @@ const { decryptWebhookSecret, encryptWebhookSecret } = await import('../utils/we
 
 const SECRET_KEY = 'test-webhook-secret-encryption-key';
 
-function buildEvent(overrides: Record<string, unknown> = {}) {
+const buildEvent = (overrides: Record<string, unknown> = {}) => {
   return {
     eventId: 'evt-lifecycle',
     eventType: 'LoanApproved' as const,
@@ -41,9 +41,9 @@ function buildEvent(overrides: Record<string, unknown> = {}) {
     value: 'value-xdr',
     ...overrides,
   };
-}
+};
 
-function subscriptionRow(overrides: Record<string, unknown> = {}) {
+const subscriptionRow = (overrides: Record<string, unknown> = {}) => {
   return {
     id: 1,
     callback_url: 'https://consumer.example',
@@ -53,12 +53,12 @@ function subscriptionRow(overrides: Record<string, unknown> = {}) {
     updated_at: '2025-01-02T00:00:00.000Z',
     ...overrides,
   };
-}
+};
 
-function hmacFor(secret: string, body: string, signatureHeader: string): string {
+const hmacFor = (secret: string, body: string, signatureHeader: string): string => {
   const [, timestamp] = /^t=(\d+),v1=[a-f0-9]{64}$/.exec(signatureHeader)!;
   return crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
-}
+};
 
 describe('webhook subscription lifecycle', () => {
   const originalFetch = global.fetch;
