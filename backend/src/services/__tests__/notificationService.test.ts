@@ -204,11 +204,11 @@ describe('notificationService', () => {
       per_type_overrides: null,
     });
 
-    function mockDeliveryQueries() {
+    const mockDeliveryQueries = () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [notificationRow()], rowCount: 1 })
         .mockResolvedValueOnce({ rows: [profileRow()], rowCount: 1 });
-    }
+    };
 
     beforeEach(() => {
       originalEnv = {};
@@ -288,10 +288,11 @@ describe('notificationService', () => {
     it('keeps admin email and in-app notifications when the webhook provider fails', async () => {
       process.env.ADMIN_EMAIL = 'admin@remitlend.com';
       process.env.ADMIN_WALLETS = 'admin-wallet';
-      process.env.ADMIN_WEBHOOK_URL = 'https://hooks.example.com/secret-token';
+      const adminWebhookUrl = 'https://hooks.example.com/secret-token';
+      process.env.ADMIN_WEBHOOK_URL = adminWebhookUrl;
       const fetchMock = jest.fn(async () => {
         throw new Error('webhook unavailable');
-      }) as unknown as jest.MockedFunction<typeof fetch>;
+      }) as unknown as jest.Mocked<typeof fetch>;
       globalThis.fetch = fetchMock as unknown as typeof fetch;
 
       mockQuery.mockResolvedValueOnce({

@@ -244,8 +244,7 @@ describe('postWebhook', () => {
       const callback = args[2] as (response: IncomingMessage) => void;
       const request = new EventEmitter() as ClientRequest;
       request.end = (() => {
-        const lookup = options.lookup as LookupFunction;
-        lookup(
+        options.lookup!(
           'plain.example',
           { family: 0, hints: 0, all: true, verbatim: false },
           (_error, addresses) => {

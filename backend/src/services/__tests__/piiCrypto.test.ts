@@ -158,7 +158,8 @@ describe('piiCrypto', () => {
 
     it('rejects a tampered nonce without auditing the access', async () => {
       const encrypted = await encryptField('nonce@example.com');
-      const tamperedNonce = Buffer.from(encrypted.gcm_nonce);
+      const tamperedNonce = Buffer.alloc(encrypted.gcm_nonce.length);
+      encrypted.gcm_nonce.copy(tamperedNonce);
       tamperedNonce[0] ^= 0xff;
 
       await expect(
@@ -322,7 +323,7 @@ describe('piiCrypto', () => {
           return {
             ok: true,
             status: 200,
-            json: async () => ({ wrapped_key: Buffer.from('kms-wrapped').toString('base64') }),
+            json: async () => ({ wrapped_key: 'a21zLXdyYXBwZWQ=' }),
           } as Response;
         }
 
