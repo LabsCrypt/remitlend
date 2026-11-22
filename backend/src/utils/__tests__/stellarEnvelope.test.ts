@@ -18,6 +18,7 @@ describe('parseAndValidateSignedEnvelope', () => {
   const feeSource = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 3));
   const destination = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 4)).publicKey();
   const sequence = '12345';
+  const testnetEndpoint = 'https://soroban-testnet.stellar.org';
 
   const originalEnv = { ...process.env };
 
@@ -57,9 +58,10 @@ describe('parseAndValidateSignedEnvelope', () => {
       const signature = transaction.signatures[0];
       if (signature) {
         if (options.truncateSignature) {
-          signature.signature(Buffer.from([1, 2, 3]));
+          signature.signature(Buffer.alloc(3, 1));
         } else if (options.corruptSignature) {
-          const corrupted = Buffer.from(signature.signature());
+          const corrupted = Buffer.alloc(signature.signature().length);
+          signature.signature().copy(corrupted);
           const firstByte = corrupted[0];
           if (firstByte !== undefined) corrupted[0] = firstByte ^ 0xff;
           signature.signature(corrupted);
@@ -103,7 +105,7 @@ describe('parseAndValidateSignedEnvelope', () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     process.env.STELLAR_NETWORK = 'testnet';
-    process.env.STELLAR_RPC_URL = 'https://soroban-testnet.stellar.org';
+    process.env.STELLAR_RPC_URL = testnetEndpoint;
     delete process.env.STELLAR_NETWORK_PASSPHRASE;
   });
 

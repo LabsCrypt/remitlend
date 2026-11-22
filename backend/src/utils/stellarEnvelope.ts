@@ -14,7 +14,7 @@ export interface ParsedSignedEnvelope {
   sequence: string;
 }
 
-export interface EnvelopeValidationOptions {
+export interface EnvelopeCheckOptions {
   /** Rejects envelopes whose sequence does not match the caller's expected value. */
   expectedSequence?: string | bigint;
   /** Rejects envelopes whose source does not match the caller's expected account. */
@@ -96,10 +96,10 @@ const isSignedForPassphrase = (
  *
  * @throws {AppError} with HTTP 400 for every rejected envelope.
  */
-export function parseAndValidateSignedEnvelope(
+export const parseAndValidateSignedEnvelope = (
   signedXdr: string,
-  options: EnvelopeValidationOptions = {},
-): ParsedSignedEnvelope {
+  options: EnvelopeCheckOptions = {},
+): ParsedSignedEnvelope => {
   const passphrase = getStellarNetworkPassphrase();
 
   let transaction: Transaction | FeeBumpTransaction;
@@ -152,4 +152,4 @@ export function parseAndValidateSignedEnvelope(
     signatureCount,
     sequence: innerTransaction.sequence,
   };
-}
+};

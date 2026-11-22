@@ -60,34 +60,36 @@ export function assertValidStellarAddress(
 export const STELLAR_MAX_MEMO_BYTES = 28;
 
 /** Validates a Stellar MEMO_TEXT value using UTF-8 byte length, not character count. */
-export function isValidStellarMemo(memo: unknown): memo is string {
-  return typeof memo === 'string' && Buffer.byteLength(memo, 'utf8') <= STELLAR_MAX_MEMO_BYTES;
-}
+export const isValidStellarMemo = (memo: unknown): memo is string =>
+  typeof memo === 'string' && Buffer.byteLength(memo, 'utf8') <= STELLAR_MAX_MEMO_BYTES;
 
-export function assertValidStellarMemo(
-  memo: unknown,
-  message: string = 'Invalid Stellar memo: maximum length is 28 bytes',
-): asserts memo is string {
+type StellarMemoCheck = (memo: unknown, message?: string) => asserts memo is string;
+
+export const assertValidStellarMemo: StellarMemoCheck = (
+  memo,
+  message = 'Invalid Stellar memo: maximum length is 28 bytes',
+) => {
   if (!isValidStellarMemo(memo)) {
     throw new Error(message);
   }
-}
+};
 
 const STELLAR_ASSET_CODE_REGEX = /^(?:native|XLM|[A-Z0-9]{1,12})$/i;
 
 /** Validates a Stellar asset code (native/XLM or a 1-12 character alphanumeric code). */
-export function isValidAssetCode(code: unknown): code is string {
-  return typeof code === 'string' && STELLAR_ASSET_CODE_REGEX.test(code);
-}
+export const isValidAssetCode = (code: unknown): code is string =>
+  typeof code === 'string' && STELLAR_ASSET_CODE_REGEX.test(code);
 
-export function assertValidAssetCode(
-  code: unknown,
-  message: string = 'Invalid Stellar asset code: must be 1-12 alphanumeric characters or native',
-): asserts code is string {
+type StellarAssetCodeCheck = (code: unknown, message?: string) => asserts code is string;
+
+export const assertValidAssetCode: StellarAssetCodeCheck = (
+  code,
+  message = 'Invalid Stellar asset code: must be 1-12 alphanumeric characters or native',
+) => {
   if (!isValidAssetCode(code)) {
     throw new Error(message);
   }
-}
+};
 
 const invalidStellarAmount = (): never => {
   throw new Error('Invalid Stellar amount: must be a non-negative finite decimal');
@@ -125,10 +127,10 @@ const numberToPlainDecimal = (value: number): string => {
  * Decimal math is delegated to the repository money policy so precision and
  * tie-breaking stay identical across the backend, contracts, and frontend.
  */
-export function parseStellarAmount(
+export const parseStellarAmount = (
   amount: number | string,
   mode: RoundingMode = DEFAULT_MODE,
-): bigint {
+): bigint => {
   if (typeof amount !== 'number' && typeof amount !== 'string') return invalidStellarAmount();
   if (typeof amount === 'number') {
     if (!Number.isFinite(amount) || amount < 0) return invalidStellarAmount();
@@ -143,14 +145,12 @@ export function parseStellarAmount(
     if (error instanceof MoneyError) return invalidStellarAmount();
     throw error;
   }
-}
+};
 
 /** Formats a non-negative Stellar amount at exact stroop precision. */
-export function formatStellarAmount(
+export const formatStellarAmount = (
   amount: number | string,
   mode: RoundingMode = DEFAULT_MODE,
-): string {
-  return fromStroops(parseStellarAmount(amount, mode));
-}
+): string => fromStroops(parseStellarAmount(amount, mode));
 
 export { STROOP_DECIMALS };
