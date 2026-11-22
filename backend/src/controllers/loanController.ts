@@ -797,7 +797,7 @@ export const getLoanDetails = asyncHandler(async (req: Request, res: Response) =
             : 'repaid',
       requestedAt: requestEvent?.ledger_closed_at,
       approvedAt: approvalEvent?.ledger_closed_at,
-      extensionFee: Number(extensionFeeStroops) / 10_000_000,
+      extensionFee: Number(extensionFeeStroops),
       events: events.map((event: Record<string, unknown>) => ({
         type: event.event_type,
         amount: event.amount,

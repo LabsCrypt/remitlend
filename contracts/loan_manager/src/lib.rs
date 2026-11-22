@@ -846,6 +846,32 @@ impl LoanManager {
         Self::bump_persistent_ttl(env, &key);
     }
 
+    fn remove_loan_from_borrower_loans(env: &Env, borrower: &Address, loan_id: u32) {
+        let borrower_loans_key = DataKey::BorrowerLoans(borrower.clone());
+        let mut borrower_loans: Vec<u32> = match env.storage().persistent().get::<_, Vec<u32>>(&borrower_loans_key) {
+            Some(loans) => loans,
+            None => {
+                // Legacy instance-storage fallback.
+                let legacy: Option<Vec<u32>> = env.storage().instance().get(&borrower_loans_key);
+                if legacy.is_some() {
+                    env.storage().instance().remove(&borrower_loans_key);
+                }
+                Vec::new(&env)
+            }
+        };
+        borrower_loans.retain(|&id| id != loan_id);
+        if borrower_loans.is_empty() {
+            env.storage().persistent().remove(&borrower_loans_key);
+            // Drop any stale legacy copy in instance storage.
+            env.storage().instance().remove(&borrower_loans_key);
+        } else {
+            env.storage()
+                .persistent()
+                .set(&borrower_loans_key, &borrower_loans);
+            Self::bump_persistent_ttl(env, &borrower_loans_key);
+        }
+    }
+
     fn accrue_late_fee(env: &Env, loan: &mut Loan) -> i128 {
         if loan.status != LoanStatus::Approved {
             return 0;
@@ -1822,6 +1848,9 @@ impl LoanManager {
             Self::adjust_total_outstanding(&env, &token, -unpaid_principal);
             loan.status = LoanStatus::Repaid;
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
+            // Remove loan ID from borrower's active loan list so terminal loans
+            // no longer accumulate in BorrowerLoans.
+            Self::remove_loan_from_borrower_loans(&env, &loan.borrower, loan_id);
         }
 
         // ── EFFECTS committed to storage before any cross-contract call ─────────
@@ -2152,6 +2181,9 @@ impl LoanManager {
         env.storage().persistent().set(&loan_key, &loan);
         Self::bump_persistent_ttl(&env, &loan_key);
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
+        // Remove loan ID from borrower's active loan list so terminal loans
+        // no longer accumulate in BorrowerLoans.
+        Self::remove_loan_from_borrower_loans(&env, &loan.borrower, loan_id);
 
         let nft_contract = Self::nft_contract(&env);
         let nft_client = NftClient::new(&env, &nft_contract);
@@ -2238,6 +2270,9 @@ impl LoanManager {
         // Decrement the borrower's active loan count so cancelled loans
         // do not permanently consume loan slots. (#1591)
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
+        // Remove loan ID from borrower's active loan list so terminal loans
+        // no longer accumulate in BorrowerLoans.
+        Self::remove_loan_from_borrower_loans(&env, &loan.borrower, loan_id);
 
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;
@@ -2284,6 +2319,9 @@ impl LoanManager {
         // Decrement the borrower's active loan count so rejected loans
         // do not permanently consume loan slots. (#1591)
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
+        // Remove loan ID from borrower's active loan list so terminal loans
+        // no longer accumulate in BorrowerLoans.
+        Self::remove_loan_from_borrower_loans(&env, &loan.borrower, loan_id);
 
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;

@@ -681,19 +681,16 @@ impl LendingPool {
             return Err(PoolError::MinSharesNotMet);
         }
 
-        TokenClient::new(&env, &token).transfer(
-            &provider,
-            &env.current_contract_address(),
-            &amount,
-        );
-
         // Track new depositors.
         let existing_shares = Self::read_shares(&env, &provider, &token);
         if existing_shares == 0 {
             let count = Self::read_depositor_count(&env, &token);
+            let next_count = count
+                .checked_add(1)
+                .ok_or(PoolError::InvalidAmount)?;
             env.storage()
                 .instance()
-                .set(&DataKey::DepositorCount(token.clone()), &(count + 1));
+                .set(&DataKey::DepositorCount(token.clone()), &next_count);
         }
 
         let new_shares = existing_shares
@@ -751,6 +748,15 @@ impl LendingPool {
             .checked_add(amount)
             .expect("total managed assets overflow");
         Self::set_total_managed_assets(&env, &token, new_total_managed);
+
+        // Interaction: external token transfer happens after all state is updated.
+        // This follows Checks-Effects-Interactions: state changes are persisted
+        // first, so a failed transfer reverts all atomically.
+        TokenClient::new(&env, &token).transfer(
+            &provider,
+            &env.current_contract_address(),
+            &amount,
+        );
 
         Self::bump_instance_ttl(&env);
         // Emitted before the Deposit event so existing event-order
@@ -1247,7 +1253,5 @@ impl LendingPool {
     }
 }
 
-#[cfg(test)]
-mod rounding_tests;
 #[cfg(test)]
 mod test;

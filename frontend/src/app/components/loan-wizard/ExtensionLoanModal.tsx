@@ -156,7 +156,7 @@ export function ExtensionLoanModal({
             {extensionFeeLabel}
           </p>
           <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            {extensionFee.toLocaleString(undefined, { maximumFractionDigits: 7 })}
+            {(Number(extensionFee) / 10_000_000).toLocaleString(undefined, { maximumFractionDigits: 7 })}
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{feeDisclosure}</p>
         </div>
