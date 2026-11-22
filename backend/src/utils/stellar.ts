@@ -3,6 +3,14 @@
  *
  * Stellar blockchain utilities: address validation, explorer links, etc.
  */
+import {
+  DEFAULT_MODE,
+  MoneyError,
+  RoundingMode,
+  STROOP_DECIMALS,
+  fromStroops,
+  toStroops,
+} from '../money/decimal.js';
 
 const STELLAR_EXPLORER_URL =
   process.env.STELLAR_EXPLORER_URL ?? 'https://stellar.expert/explorer/testnet';
@@ -47,3 +55,102 @@ export function assertValidStellarAddress(
     throw new Error(message);
   }
 }
+
+/** Maximum byte length of a Stellar MEMO_TEXT value. */
+export const STELLAR_MAX_MEMO_BYTES = 28;
+
+/** Validates a Stellar MEMO_TEXT value using UTF-8 byte length, not character count. */
+export function isValidStellarMemo(memo: unknown): memo is string {
+  return typeof memo === 'string' && Buffer.byteLength(memo, 'utf8') <= STELLAR_MAX_MEMO_BYTES;
+}
+
+export function assertValidStellarMemo(
+  memo: unknown,
+  message: string = 'Invalid Stellar memo: maximum length is 28 bytes',
+): asserts memo is string {
+  if (!isValidStellarMemo(memo)) {
+    throw new Error(message);
+  }
+}
+
+const STELLAR_ASSET_CODE_REGEX = /^(?:native|XLM|[A-Z0-9]{1,12})$/i;
+
+/** Validates a Stellar asset code (native/XLM or a 1-12 character alphanumeric code). */
+export function isValidAssetCode(code: unknown): code is string {
+  return typeof code === 'string' && STELLAR_ASSET_CODE_REGEX.test(code);
+}
+
+export function assertValidAssetCode(
+  code: unknown,
+  message: string = 'Invalid Stellar asset code: must be 1-12 alphanumeric characters or native',
+): asserts code is string {
+  if (!isValidAssetCode(code)) {
+    throw new Error(message);
+  }
+}
+
+const invalidStellarAmount = (): never => {
+  throw new Error('Invalid Stellar amount: must be a non-negative finite decimal');
+};
+
+const numberToPlainDecimal = (value: number): string => {
+  const text = value.toString();
+  const [mantissa, exponentText] = text.toLowerCase().split('e');
+  if (!mantissa || exponentText === undefined) return text;
+
+  const exponent = Number(exponentText);
+  if (!Number.isSafeInteger(exponent)) return invalidStellarAmount();
+
+  const negative = mantissa.startsWith('-');
+  const unsigned = negative ? mantissa.slice(1) : mantissa;
+  const [whole = '0', fraction = ''] = unsigned.split('.');
+  const digits = `${whole}${fraction}`;
+  const decimalPoint = whole.length + exponent;
+
+  let normalized: string;
+  if (decimalPoint <= 0) {
+    normalized = `0.${'0'.repeat(-decimalPoint)}${digits}`;
+  } else if (decimalPoint >= digits.length) {
+    normalized = `${digits}${'0'.repeat(decimalPoint - digits.length)}`;
+  } else {
+    normalized = `${digits.slice(0, decimalPoint)}.${digits.slice(decimalPoint)}`;
+  }
+
+  return negative ? `-${normalized}` : normalized;
+};
+
+/**
+ * Parses a non-negative Stellar amount into exact stroops.
+ *
+ * Decimal math is delegated to the repository money policy so precision and
+ * tie-breaking stay identical across the backend, contracts, and frontend.
+ */
+export function parseStellarAmount(
+  amount: number | string,
+  mode: RoundingMode = DEFAULT_MODE,
+): bigint {
+  if (typeof amount !== 'number' && typeof amount !== 'string') return invalidStellarAmount();
+  if (typeof amount === 'number') {
+    if (!Number.isFinite(amount) || amount < 0) return invalidStellarAmount();
+  }
+
+  const normalized = typeof amount === 'number' ? numberToPlainDecimal(amount) : amount.trim();
+  if (!normalized || normalized.startsWith('-')) return invalidStellarAmount();
+
+  try {
+    return toStroops(normalized, mode);
+  } catch (error) {
+    if (error instanceof MoneyError) return invalidStellarAmount();
+    throw error;
+  }
+}
+
+/** Formats a non-negative Stellar amount at exact stroop precision. */
+export function formatStellarAmount(
+  amount: number | string,
+  mode: RoundingMode = DEFAULT_MODE,
+): string {
+  return fromStroops(parseStellarAmount(amount, mode));
+}
+
+export { STROOP_DECIMALS };

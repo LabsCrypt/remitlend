@@ -63,4 +63,94 @@ describe('Stellar utils', () => {
       expect(getAccountUrl('GABC')).toBe('https://example.com/explorer/account/GABC');
     });
   });
+
+  describe('Stellar memo limits', () => {
+    it('accepts empty, ASCII, and multi-byte memos up to 28 UTF-8 bytes', async () => {
+      const { isValidStellarMemo, assertValidStellarMemo } = await import('../stellar.js');
+      const exactly28Bytes = '🚀'.repeat(7);
+
+      expect(Buffer.byteLength(exactly28Bytes, 'utf8')).toBe(28);
+      expect(isValidStellarMemo('')).toBe(true);
+      expect(isValidStellarMemo('A'.repeat(28))).toBe(true);
+      expect(isValidStellarMemo(exactly28Bytes)).toBe(true);
+      expect(() => assertValidStellarMemo(exactly28Bytes)).not.toThrow();
+    });
+
+    it('rejects memos over 28 bytes and non-string values', async () => {
+      const { isValidStellarMemo, assertValidStellarMemo } = await import('../stellar.js');
+      const overLimit = '🚀'.repeat(8);
+
+      expect(Buffer.byteLength(overLimit, 'utf8')).toBe(32);
+      expect(isValidStellarMemo('A'.repeat(29))).toBe(false);
+      expect(isValidStellarMemo(overLimit)).toBe(false);
+      expect(isValidStellarMemo(null)).toBe(false);
+      expect(isValidStellarMemo(undefined)).toBe(false);
+      expect(isValidStellarMemo(123)).toBe(false);
+      expect(() => assertValidStellarMemo('A'.repeat(29))).toThrow(
+        'Invalid Stellar memo: maximum length is 28 bytes',
+      );
+    });
+  });
+
+  describe('Stellar asset codes', () => {
+    it('accepts native/XLM and 1-12 alphanumeric codes', async () => {
+      const { isValidAssetCode, assertValidAssetCode } = await import('../stellar.js');
+
+      expect(isValidAssetCode('XLM')).toBe(true);
+      expect(isValidAssetCode('native')).toBe(true);
+      expect(isValidAssetCode('USDC')).toBe(true);
+      expect(isValidAssetCode('A')).toBe(true);
+      expect(isValidAssetCode('123456789012')).toBe(true);
+      expect(() => assertValidAssetCode('USDC')).not.toThrow();
+    });
+
+    it('rejects invalid codes with the documented error contract', async () => {
+      const { isValidAssetCode, assertValidAssetCode } = await import('../stellar.js');
+
+      expect(isValidAssetCode('')).toBe(false);
+      expect(isValidAssetCode('TOOLONGASSETCODE13')).toBe(false);
+      expect(isValidAssetCode('USD-C')).toBe(false);
+      expect(isValidAssetCode('USD C')).toBe(false);
+      expect(isValidAssetCode('USDC$')).toBe(false);
+      expect(isValidAssetCode(null)).toBe(false);
+      expect(isValidAssetCode(100)).toBe(false);
+      expect(() => assertValidAssetCode('TOOLONGASSETCODE13')).toThrow(
+        'Invalid Stellar asset code: must be 1-12 alphanumeric characters or native',
+      );
+    });
+  });
+
+  describe('Stellar amount parsing', () => {
+    it('converts decimal amounts to exact stroops and formats at stroop precision', async () => {
+      const { parseStellarAmount, formatStellarAmount } = await import('../stellar.js');
+
+      expect(parseStellarAmount('10')).toBe(100000000n);
+      expect(parseStellarAmount('0.0000001')).toBe(1n);
+      expect(parseStellarAmount(1.5)).toBe(15000000n);
+      expect(parseStellarAmount(1e-7)).toBe(1n);
+      expect(formatStellarAmount(0)).toBe('0.0000000');
+      expect(formatStellarAmount('25.5')).toBe('25.5000000');
+      expect(formatStellarAmount('1.12345674')).toBe('1.1234567');
+      expect(formatStellarAmount('1.12345678')).toBe('1.1234568');
+    });
+
+    it('uses the repository half-even policy by default and supports explicit half-up', async () => {
+      const { parseStellarAmount } = await import('../stellar.js');
+      const { RoundingMode } = await import('../../money/decimal.js');
+
+      expect(parseStellarAmount('0.00000005')).toBe(0n);
+      expect(parseStellarAmount('0.00000015')).toBe(2n);
+      expect(parseStellarAmount('0.00000005', RoundingMode.HalfUp)).toBe(1n);
+    });
+
+    it('rejects malformed, negative, and non-finite amounts', async () => {
+      const { parseStellarAmount, formatStellarAmount } = await import('../stellar.js');
+
+      expect(() => parseStellarAmount('abc')).toThrow('Invalid Stellar amount');
+      expect(() => parseStellarAmount('')).toThrow('Invalid Stellar amount');
+      expect(() => parseStellarAmount(-1)).toThrow('Invalid Stellar amount');
+      expect(() => parseStellarAmount(Infinity)).toThrow('Invalid Stellar amount');
+      expect(() => formatStellarAmount(NaN)).toThrow('Invalid Stellar amount');
+    });
+  });
 });
