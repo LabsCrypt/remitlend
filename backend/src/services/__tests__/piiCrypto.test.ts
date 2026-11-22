@@ -1,4 +1,13 @@
-import { jest, describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
+import {
+  jest,
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from '@jest/globals';
 
 type QueryResult = { rows: unknown[]; rowCount: number };
 
@@ -103,6 +112,8 @@ describe('piiCrypto', () => {
           'req-id',
         ),
       ).rejects.toThrow();
+      // A failed authentication must not be recorded as an approved PII read.
+      expect(mockQuery).not.toHaveBeenCalled();
     });
 
     it('should throw when auth tag is corrupted', async () => {
@@ -125,6 +136,46 @@ describe('piiCrypto', () => {
           'req-id',
         ),
       ).rejects.toThrow();
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('rejects ciphertext shorter than the GCM auth tag without auditing the access', async () => {
+      await expect(
+        decryptField(
+          'rec-short',
+          'email',
+          Buffer.alloc(4),
+          Buffer.alloc(12),
+          Buffer.alloc(28),
+          'test-kek',
+          'actor',
+          'reason',
+          'req-id',
+        ),
+      ).rejects.toThrow();
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('rejects a tampered nonce without auditing the access', async () => {
+      const encrypted = await encryptField('nonce@example.com');
+      const tamperedNonce = Buffer.alloc(encrypted.gcm_nonce.length);
+      encrypted.gcm_nonce.copy(tamperedNonce);
+      tamperedNonce[0] ^= 0xff;
+
+      await expect(
+        decryptField(
+          'rec-nonce',
+          'email',
+          encrypted.ciphertext,
+          tamperedNonce,
+          encrypted.dek_wrapped,
+          encrypted.dek_kek_id,
+          'actor',
+          'reason',
+          'req-id',
+        ),
+      ).rejects.toThrow();
+      expect(mockQuery).not.toHaveBeenCalled();
     });
 
     it('should throw if PII_KEK_KEY is missing during local unwrap/wrap', async () => {
@@ -137,6 +188,62 @@ describe('piiCrypto', () => {
         );
       } finally {
         process.env.PII_KEK_KEY = savedKey;
+      }
+    });
+  });
+
+  describe('KEK rotation', () => {
+    it('decrypts pre-rotation records and stamps new records with the current KEK id', async () => {
+      const savedKekId = process.env.PII_KEK_ID;
+
+      try {
+        process.env.PII_KEK_ID = 'legacy-kek';
+        jest.resetModules();
+        const { encryptField: encryptWithLegacyKek } = await import('../piiCrypto.js');
+        const legacyRecord = await encryptWithLegacyKek('legacy@example.com');
+        expect(legacyRecord.dek_kek_id).toBe('legacy-kek');
+
+        process.env.PII_KEK_ID = 'rotated-kek';
+        jest.resetModules();
+        const { encryptField: encryptWithRotatedKek, decryptField: decryptWithRotatedKek } =
+          await import('../piiCrypto.js');
+        const rotatedRecord = await encryptWithRotatedKek('rotated@example.com');
+        expect(rotatedRecord.dek_kek_id).toBe('rotated-kek');
+
+        await expect(
+          decryptWithRotatedKek(
+            'rec-legacy',
+            'email',
+            legacyRecord.ciphertext,
+            legacyRecord.gcm_nonce,
+            legacyRecord.dek_wrapped,
+            legacyRecord.dek_kek_id,
+            'actor',
+            'rotation verification',
+            'req-rotation-1',
+          ),
+        ).resolves.toBe('legacy@example.com');
+
+        await expect(
+          decryptWithRotatedKek(
+            'rec-rotated',
+            'email',
+            rotatedRecord.ciphertext,
+            rotatedRecord.gcm_nonce,
+            rotatedRecord.dek_wrapped,
+            rotatedRecord.dek_kek_id,
+            'actor',
+            'rotation verification',
+            'req-rotation-2',
+          ),
+        ).resolves.toBe('rotated@example.com');
+      } finally {
+        if (savedKekId === undefined) {
+          delete process.env.PII_KEK_ID;
+        } else {
+          process.env.PII_KEK_ID = savedKekId;
+        }
+        jest.resetModules();
       }
     });
   });
@@ -197,6 +304,58 @@ describe('piiCrypto', () => {
       );
 
       expect(decrypted).toBe(plaintext);
+    });
+
+    it('uses the current KEK id for writes and the stored KEK id for pre-rotation reads', async () => {
+      process.env.PII_KMS_ENDPOINT = KMS_URL;
+
+      const wrapRequests: Array<Record<string, unknown>> = [];
+      const unwrapRequests: Array<Record<string, unknown>> = [];
+      let storedRawKeyBase64 = '';
+
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse((init?.body as string) || '{}') as Record<string, unknown>;
+        const urlStr = url.toString();
+
+        if (urlStr.endsWith('/encrypt')) {
+          wrapRequests.push(body);
+          storedRawKeyBase64 = String(body.plaintext);
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ wrapped_key: 'a21zLXdyYXBwZWQ=' }),
+          } as Response;
+        }
+
+        unwrapRequests.push(body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ plaintext: storedRawKeyBase64 }),
+        } as Response;
+      }) as typeof fetch;
+
+      const encrypted = await encryptField('rotation@example.com');
+      const currentKekId = encrypted.dek_kek_id;
+      expect(currentKekId).toBeTruthy();
+
+      const decrypted = await decryptField(
+        'kms-rotation-1',
+        'email',
+        encrypted.ciphertext,
+        encrypted.gcm_nonce,
+        encrypted.dek_wrapped,
+        'legacy-kek',
+        'kms-actor',
+        'rotation verification',
+        'req-kms-rotation',
+      );
+
+      expect(decrypted).toBe('rotation@example.com');
+      expect(wrapRequests).toHaveLength(1);
+      expect(wrapRequests[0]?.kek_id).toBe(currentKekId);
+      expect(unwrapRequests).toHaveLength(1);
+      expect(unwrapRequests[0]?.kek_id).toBe('legacy-kek');
     });
 
     it('throws when KMS wrap returns a non-OK status', async () => {

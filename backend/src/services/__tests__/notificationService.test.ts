@@ -22,9 +22,11 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 }));
 
 jest.unstable_mockModule('twilio', () => ({
-  default: jest.fn(() => ({ messages: { create: jest.fn() } })),
+  default: jest.fn(() => ({ messages: { create: mockTwilioCreate } })),
 }));
 
+const mockTwilioCreate =
+  jest.fn<(input: { body: string; from: string; to: string }) => Promise<{ sid: string }>>();
 const mockSendGridSend = jest.fn();
 
 jest.unstable_mockModule('@sendgrid/mail', () => ({
@@ -164,6 +166,160 @@ describe('notificationService', () => {
       });
 
       expect(notification.actionUrl).toBeUndefined();
+    });
+  });
+
+  describe('external provider isolation', () => {
+    const envKeys = [
+      'FROM_EMAIL',
+      'SENDGRID_API_KEY',
+      'TWILIO_ACCOUNT_SID',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_PHONE_NUMBER',
+      'ADMIN_EMAIL',
+      'ADMIN_WALLETS',
+      'ADMIN_WEBHOOK_URL',
+    ] as const;
+    const originalFetch = globalThis.fetch;
+    let originalEnv: Record<string, string | undefined>;
+
+    const notificationRow = () => ({
+      id: 10,
+      user_id: 'user1',
+      type: 'repayment_due',
+      title: 'Repayment Due',
+      message: 'Loan payment is due',
+      loan_id: 42,
+      action_url: '/loans/42',
+      read: false,
+      status: 'unread',
+      created_at: new Date('2026-05-28T12:00:00.000Z'),
+    });
+
+    const profileRow = () => ({
+      email: 'borrower@example.com',
+      phone: '+15551234567',
+      email_enabled: true,
+      sms_enabled: true,
+      per_type_overrides: null,
+    });
+
+    const mockDeliveryQueries = () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [notificationRow()], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [profileRow()], rowCount: 1 });
+    };
+
+    beforeEach(() => {
+      originalEnv = {};
+      for (const key of envKeys) {
+        originalEnv[key] = process.env[key];
+      }
+
+      process.env.FROM_EMAIL = 'noreply@remitlend.com';
+      process.env.SENDGRID_API_KEY = 'test-key';
+      process.env.TWILIO_ACCOUNT_SID = 'ACtest';
+      process.env.TWILIO_AUTH_TOKEN = 'test-token';
+      process.env.TWILIO_PHONE_NUMBER = '+15550000000';
+      mockSendGridSend.mockResolvedValue(undefined);
+      mockTwilioCreate.mockResolvedValue({ sid: 'SM123' });
+    });
+
+    afterEach(() => {
+      for (const key of envKeys) {
+        const value = originalEnv[key];
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+      globalThis.fetch = originalFetch;
+      mockSendGridSend.mockReset();
+      mockTwilioCreate.mockReset();
+    });
+
+    it('still sends SMS when the email provider rejects', async () => {
+      mockSendGridSend.mockRejectedValue(new Error('SendGrid outage'));
+      mockDeliveryQueries();
+
+      const notification = await notificationService.createNotification({
+        userId: 'user1',
+        type: 'repayment_due',
+        title: 'Repayment Due',
+        message: 'Loan payment is due',
+        loanId: 42,
+      });
+
+      expect(notification.id).toBe(10);
+      expect(mockSendGridSend).toHaveBeenCalledTimes(1);
+      expect(mockTwilioCreate).toHaveBeenCalledTimes(1);
+      expect(mockTwilioCreate).toHaveBeenCalledWith({
+        body: 'Loan payment is due',
+        from: '+15550000000',
+        to: '+15551234567',
+      });
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[Email] SendGrid failed for bo***@example.com',
+        expect.objectContaining({ error: 'SendGrid outage' }),
+      );
+    });
+
+    it('still sends email when the SMS provider rejects', async () => {
+      mockTwilioCreate.mockRejectedValue(new Error('Twilio outage'));
+      mockDeliveryQueries();
+
+      await notificationService.createNotification({
+        userId: 'user1',
+        type: 'repayment_due',
+        title: 'Repayment Due',
+        message: 'Loan payment is due',
+        loanId: 42,
+      });
+
+      expect(mockSendGridSend).toHaveBeenCalledTimes(1);
+      expect(mockTwilioCreate).toHaveBeenCalledTimes(1);
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[SMS] Failed to send to +xx...****67',
+        expect.objectContaining({ error: 'Twilio outage' }),
+      );
+    });
+
+    it('keeps admin email and in-app notifications when the webhook provider fails', async () => {
+      process.env.ADMIN_EMAIL = 'admin@remitlend.com';
+      process.env.ADMIN_WALLETS = 'admin-wallet';
+      const adminWebhookUrl = 'https://hooks.example.com/secret-token';
+      process.env.ADMIN_WEBHOOK_URL = adminWebhookUrl;
+      const fetchMock = jest.fn(async () => {
+        throw new Error('webhook unavailable');
+      }) as unknown as jest.Mocked<typeof fetch>;
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            ...notificationRow(),
+            user_id: 'admin-wallet',
+            type: 'dispute_contested',
+            title: 'Loan Default Contested',
+          },
+        ],
+        rowCount: 1,
+      });
+
+      await notificationService.notifyAdmins({
+        title: 'Loan Default Contested',
+        message: 'A borrower contested the default',
+        loanId: 42,
+      });
+
+      expect(mockSendGridSend).toHaveBeenCalledTimes(1);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[Admin] Webhook POST failed',
+        expect.objectContaining({ webhookUrl: 'https://hooks.example.com' }),
+      );
     });
   });
 
