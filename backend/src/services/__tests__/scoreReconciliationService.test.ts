@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 
 type QueryResult = { rows: Record<string, unknown>[]; rowCount: number };
 const mockQuery = jest.fn<(sql: string, params?: unknown[]) => Promise<QueryResult>>();
@@ -285,6 +285,174 @@ describe('scoreReconciliationService', () => {
 
       expect(result.correctedCount).toBe(0);
       expect(mockSetAbsoluteUserScoresBulk).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('idempotency and partial failure handling', () => {
+    const autoCorrectEnv = {
+      enabled: 'SCORE_RECONCILIATION_AUTOCORRECT_ENABLED',
+      threshold: 'SCORE_RECONCILIATION_AUTOCORRECT_THRESHOLD',
+    } as const;
+
+    beforeEach(() => {
+      mockQuery.mockReset();
+      mockSetAbsoluteUserScoresBulk.mockReset();
+      mockSetAbsoluteUserScoresBulk.mockResolvedValue(undefined);
+      mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
+      process.env[autoCorrectEnv.enabled] = 'true';
+      process.env[autoCorrectEnv.threshold] = '0';
+    });
+
+    afterEach(() => {
+      delete process.env[autoCorrectEnv.enabled];
+      delete process.env[autoCorrectEnv.threshold];
+      delete process.env.SCORE_RECONCILIATION_BATCH_SIZE;
+    });
+
+    it('does not write corrections again once a record has been reconciled', async () => {
+      const storedScores = new Map<string, number>([['GB...ABC', 700]]);
+      mockSetAbsoluteUserScoresBulk.mockImplementation(async (scores: Map<string, number>) => {
+        for (const [address, score] of scores) {
+          storedScores.set(address, score);
+        }
+      });
+
+      // First run: stale DB score, on-chain score is the source of truth.
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ address: 'GB...ABC', score: storedScores.get('GB...ABC') }],
+        rowCount: 1,
+      });
+      mockGetOnChainCreditScore.mockResolvedValueOnce(750);
+
+      const firstRun = await scoreReconciliationService.reconcileActiveBorrowerScores();
+      expect(firstRun.divergenceCount).toBe(1);
+      expect(firstRun.correctedCount).toBe(1);
+      expect(storedScores.get('GB...ABC')).toBe(750);
+
+      // Second run observes the persisted correction and must stay a no-op.
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ address: 'GB...ABC', score: storedScores.get('GB...ABC') }],
+        rowCount: 1,
+      });
+      mockGetOnChainCreditScore.mockResolvedValueOnce(750);
+
+      const secondRun = await scoreReconciliationService.reconcileActiveBorrowerScores();
+      expect(secondRun.divergenceCount).toBe(0);
+      expect(secondRun.correctedCount).toBe(0);
+      expect(mockSetAbsoluteUserScoresBulk).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries a failed on-chain lookup on the next run and corrects then', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ address: 'GB...RETRY', score: 700 }],
+        rowCount: 1,
+      });
+      mockGetOnChainCreditScore.mockRejectedValueOnce(new Error('RPC timeout'));
+
+      const firstRun = await scoreReconciliationService.reconcileActiveBorrowerScores();
+      expect(firstRun.failedBorrowerCount).toBe(1);
+      expect(firstRun.divergenceCount).toBe(0);
+      expect(mockSetAbsoluteUserScoresBulk).not.toHaveBeenCalled();
+
+      // The failed record is re-read and retried on the next run.
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ address: 'GB...RETRY', score: 700 }],
+        rowCount: 1,
+      });
+      mockGetOnChainCreditScore.mockResolvedValueOnce(720);
+
+      const secondRun = await scoreReconciliationService.reconcileActiveBorrowerScores();
+      expect(secondRun.failedBorrowerCount).toBe(0);
+      expect(secondRun.divergenceCount).toBe(1);
+      expect(secondRun.correctedCount).toBe(1);
+      expect(mockSetAbsoluteUserScoresBulk).toHaveBeenCalledTimes(1);
+      expect(mockSetAbsoluteUserScoresBulk.mock.calls[0]![0]).toEqual(
+        new Map([['GB...RETRY', 720]]),
+      );
+    });
+
+    it('surfaces a partial write failure and records the run as failed', async () => {
+      const writeError = new Error('batch update failed after partial write');
+      mockSetAbsoluteUserScoresBulk.mockRejectedValueOnce(writeError);
+
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { address: 'GB...ONE', score: 700 },
+          { address: 'GB...TWO', score: 600 },
+        ],
+        rowCount: 2,
+      });
+      mockGetOnChainCreditScore.mockResolvedValueOnce(750).mockResolvedValueOnce(650);
+
+      await expect(scoreReconciliationService.reconcileActiveBorrowerScores()).rejects.toThrow(
+        'batch update failed after partial write',
+      );
+
+      expect(mockSetAbsoluteUserScoresBulk).toHaveBeenCalledTimes(1);
+      expect(mockRecordFailure).toHaveBeenCalledWith(
+        'scoreReconciliationService',
+        writeError,
+        expect.any(Number),
+      );
+      expect(mockRecordSuccess).not.toHaveBeenCalled();
+      expect(mockRecordScoreReconciliationRun).not.toHaveBeenCalled();
+    });
+
+    it('leaves the run retryable after a total fetch failure', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('connection reset'));
+
+      await expect(scoreReconciliationService.reconcileActiveBorrowerScores()).rejects.toThrow(
+        'connection reset',
+      );
+      expect(mockRecordFailure).toHaveBeenCalledTimes(1);
+      expect(mockSetAbsoluteUserScoresBulk).not.toHaveBeenCalled();
+
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+      const retryRun = await scoreReconciliationService.reconcileActiveBorrowerScores();
+
+      expect(retryRun.activeBorrowerCount).toBe(0);
+      expect(mockRecordSuccess).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not correct a divergence one point below the threshold', async () => {
+      process.env[autoCorrectEnv.threshold] = '50';
+
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ address: 'GB...NEAR', score: 700 }],
+        rowCount: 1,
+      });
+      mockGetOnChainCreditScore.mockResolvedValueOnce(749);
+
+      const result = await scoreReconciliationService.reconcileActiveBorrowerScores();
+
+      expect(result.divergenceCount).toBe(1);
+      expect(result.divergences[0]?.absoluteDifference).toBe(49);
+      expect(result.correctedCount).toBe(0);
+      expect(mockSetAbsoluteUserScoresBulk).not.toHaveBeenCalled();
+    });
+
+    it('processes every borrower across batch boundaries', async () => {
+      process.env.SCORE_RECONCILIATION_BATCH_SIZE = '2';
+
+      const rows = Array.from({ length: 5 }, (_, index) => ({
+        address: `GB...BATCH${index}`,
+        score: 700,
+      }));
+      mockQuery.mockResolvedValueOnce({ rows, rowCount: rows.length });
+      for (let index = 0; index < rows.length; index += 1) {
+        mockGetOnChainCreditScore.mockResolvedValueOnce(700 + index + 1);
+      }
+
+      const result = await scoreReconciliationService.reconcileActiveBorrowerScores();
+
+      expect(result.activeBorrowerCount).toBe(5);
+      expect(result.checkedBorrowerCount).toBe(5);
+      expect(result.failedBorrowerCount).toBe(0);
+      expect(result.divergenceCount).toBe(5);
+      expect(result.correctedCount).toBe(5);
+      const corrections = mockSetAbsoluteUserScoresBulk.mock.calls[0]![0];
+      expect(corrections.size).toBe(5);
+      expect(mockGetOnChainCreditScore).toHaveBeenCalledTimes(5);
     });
   });
 });

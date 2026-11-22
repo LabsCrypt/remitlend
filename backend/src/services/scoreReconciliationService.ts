@@ -156,7 +156,13 @@ class ScoreReconciliationService {
     const startTime = Date.now();
     const jobName = 'scoreReconciliationService';
 
-    const activeBorrowers = await this.fetchActiveBorrowerScores();
+    let activeBorrowers: ActiveBorrowerScoreRow[];
+    try {
+      activeBorrowers = await this.fetchActiveBorrowerScores();
+    } catch (error) {
+      jobMetricsService.recordFailure(jobName, error as Error | string, Date.now() - startTime);
+      throw error;
+    }
     const batchSize = this.getBatchSize();
     const autoCorrectEnabled = this.isAutoCorrectEnabled();
     const autoCorrectThreshold = this.getAutoCorrectThreshold();
