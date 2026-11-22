@@ -6,6 +6,7 @@ import type { Request, Response, NextFunction } from 'express';
 // guard's own decision logic.
 const mockQuery = jest.fn();
 jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
 }));
 

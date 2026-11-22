@@ -6,6 +6,7 @@ import logger from '../utils/logger.js';
 // database directly; keep the unit test off a real connection.
 const mockQuery = jest.fn<() => Promise<{ rows: unknown[] }>>().mockResolvedValue({ rows: [] });
 await jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: { query: mockQuery },
   query: mockQuery,
   getClient: jest.fn(),

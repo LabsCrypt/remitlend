@@ -117,7 +117,7 @@ export const redactPiiFormat = winston.format((info) => {
 /** Dev: human-readable with colors and optional metadata */
 export const devFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.colorize({ all: true }),
+  winston.format.colorize({ all: true, colors }),
   winston.format.errors({ stack: true }),
   redactPiiFormat(),
   winston.format.printf(({ level, message, timestamp, stack, ...meta }) => {

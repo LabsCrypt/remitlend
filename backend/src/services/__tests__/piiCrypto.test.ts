@@ -7,6 +7,7 @@ const mockQuery = jest.fn<() => Promise<QueryResult>>(async () => ({ rows: [], r
 // The audit trail is written through the shared `query` helper, so the
 // database module is mocked instead of the (real) pool.
 await jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: { query: mockQuery },
   query: mockQuery,
   pool: { query: mockQuery },

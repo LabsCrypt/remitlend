@@ -11,6 +11,7 @@ const mockDbQuery = jest
   .mockResolvedValue({ rows: [{ last_indexed_ledger: 1000 }], rowCount: 1 });
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: { query: mockDbQuery },
   query: mockDbQuery,
   getClient: jest.fn(),

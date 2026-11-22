@@ -1,5 +1,7 @@
 import { jest } from '@jest/globals';
 
+const LEVEL = Symbol.for('level');
+
 describe('logger level resolution', () => {
   const originalEnv = { ...process.env };
 
@@ -56,6 +58,7 @@ describe('log PII redaction', () => {
   });
 
   const buildInfo = () => ({
+    [LEVEL]: 'info',
     level: 'info',
     message: 'loan approved',
     email: 'borrower@example.com',

@@ -14,7 +14,10 @@ const mockGetOnChainCreditScore = jest
 const mockRecordSuccess = jest.fn();
 const mockRecordFailure = jest.fn();
 
-jest.unstable_mockModule('../../db/connection.js', () => ({ query: mockQuery }));
+jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
+  query: mockQuery,
+}));
 jest.unstable_mockModule('../scoresService.js', () => ({
   setAbsoluteUserScoresBulk: mockSetAbsoluteUserScoresBulk,
 }));

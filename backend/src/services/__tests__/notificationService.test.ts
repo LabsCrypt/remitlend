@@ -6,6 +6,7 @@ const mockLoggerError = jest.fn<(message: string, meta?: unknown) => void>();
 const mockLoggerWarn = jest.fn<(message: string, meta?: unknown) => void>();
 
 jest.unstable_mockModule('../../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
 }));
 

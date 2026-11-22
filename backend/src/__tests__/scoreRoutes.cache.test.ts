@@ -18,6 +18,7 @@ const scoresTable = new Map<string, number>();
 const mockQuery = jest.fn<(text: string, params?: unknown[]) => Promise<QueryResult>>();
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   query: mockQuery,
   getClient: jest.fn(),
   withTransaction: jest.fn(),

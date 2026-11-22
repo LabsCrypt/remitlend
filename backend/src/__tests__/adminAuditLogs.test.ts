@@ -9,6 +9,7 @@ const mockRelease = jest.fn();
 const mockClient = { query: mockQuery, release: mockRelease };
 
 jest.unstable_mockModule('../db/connection.js', () => ({
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   default: { query: mockQuery },
   pool: { query: mockQuery },
   query: mockQuery,

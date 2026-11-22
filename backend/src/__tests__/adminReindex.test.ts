@@ -1,5 +1,20 @@
 import request from 'supertest';
-import app from '../app.js';
+import { jest } from '@jest/globals';
+
+const queryMock = jest.fn(async () => ({ rows: [], rowCount: 0 }));
+
+jest.unstable_mockModule('../db/connection.js', () => ({
+  query: queryMock,
+  getClient: jest.fn(),
+  closePool: jest.fn(),
+  withTransaction: jest.fn(async (fn: (client: { query: typeof queryMock }) => Promise<unknown>) =>
+    fn({ query: queryMock }),
+  ),
+  withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
+  default: { query: queryMock },
+}));
+
+const { default: app } = await import('../app.js');
 
 describe('Admin reindex endpoint', () => {
   const apiKey = 'test-internal-api-key';

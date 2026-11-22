@@ -28,6 +28,7 @@ describe('encryptUserProfilePii script (#1828, #2115)', () => {
 
     // Mock the modules
     jest.unstable_mockModule('../../db/connection.js', () => ({
+      withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
       default: { query: mockQuery },
       query: mockQuery,
       pool: { query: mockQuery },
