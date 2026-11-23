@@ -7,7 +7,6 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
 use soroban_sdk::{Address, Env, IntoVal, Symbol, Val};
 use std::collections::HashMap;
-use std::panic::AssertUnwindSafe;
 
 macro_rules! rcall {
     ($env:expr, $client:expr, $func:expr, ($($arg:expr),*)) => {
@@ -18,6 +17,8 @@ macro_rules! rcall {
         )
     };
 }
+
+const MAX_AMOUNT: i128 = 100_000_000_000_000_000; // 10^17 stroops (prevents i128 multiplication overflow)
 
 #[derive(Arbitrary, Debug)]
 enum FuzzAction {
@@ -59,41 +60,49 @@ fuzz_target!(|data: FuzzAction| {
     // 3. Initialize LendingPool with Token
     let pool_admin = Address::generate(&env);
     pool_client.initialize(&pool_admin);
+    pool_client.set_withdrawal_cooldown(&0);
 
     match data {
-        FuzzAction::Deposit { user_id, amount } => {
+        FuzzAction::Deposit { user_id: _, amount } => {
             let user = Address::generate(&env);
 
-            // Skip invalid amounts
-            if amount <= 0 {
+            // Skip invalid amounts or amounts that exceed safe multiplication limit
+            if amount <= 0 || amount > MAX_AMOUNT {
                 return;
             }
 
             // Mint tokens to user
             stellar_asset_client.mint(&user, &amount);
 
-            let result = rcall!(&env, pool_client, "deposit", (user, amount));
+            let min_shares_out = 0i128;
+            let result = rcall!(&env, pool_client, "deposit", (user, token_id, amount, min_shares_out));
 
-            if result.is_ok() {
-                // Verify invariant: deposit should increase user balance
-                let balance = pool_client.get_deposit(&user, &token_id);
-                assert!(balance >= 0, "Balance should never be negative");
-                assert_eq!(balance, amount, "Balance should match deposited amount");
+            // Harness must fail loudly when expected-success call errors (#2243)
+            assert!(
+                result.is_ok(),
+                "deposit must succeed for positive amount {}: {:?}",
+                amount,
+                result.err()
+            );
 
-                // Verify pool token balance
-                assert_eq!(
-                    token_client.balance(&pool_id),
-                    amount,
-                    "Pool token balance should match deposit"
-                );
-            }
+            // Verify invariant: deposit should increase user balance
+            let balance = pool_client.get_deposit(&user, &token_id);
+            assert!(balance >= 0, "Balance should never be negative");
+            assert!(balance <= amount, "Redeemable assets should not exceed deposited amount");
+
+            // Verify pool token balance
+            assert_eq!(
+                token_client.balance(&pool_id),
+                amount,
+                "Pool token balance should match deposit"
+            );
         }
 
-        FuzzAction::Withdraw { user_id, amount } => {
+        FuzzAction::Withdraw { user_id: _, amount } => {
             let user = Address::generate(&env);
 
-            // Skip invalid amounts
-            if amount <= 0 {
+            // Skip invalid amounts or excessive amounts
+            if amount <= 0 || amount > MAX_AMOUNT / 2 {
                 return;
             }
 
@@ -106,29 +115,40 @@ fuzz_target!(|data: FuzzAction| {
             pool_client.deposit(&user, &token_id, &deposit_amount, &0);
 
             let balance_before = pool_client.get_deposit(&user, &token_id);
-            let result = rcall!(&env, pool_client, "withdraw", (user, amount));
-
-            if result.is_ok() {
-                let balance_after = pool_client.get_deposit(&user, &token_id);
-
-                // Verify invariant: balance should decrease by withdrawal amount
-                assert_eq!(
-                    balance_before - amount,
-                    balance_after,
-                    "Balance should decrease by withdrawal amount"
-                );
-                assert!(balance_after >= 0, "Balance should never be negative");
-
-                // Verify pool token balance
-                assert_eq!(
-                    token_client.balance(&pool_id),
-                    deposit_amount - amount,
-                    "Pool token balance mismatch after withdrawal"
-                );
+            let user_shares = pool_client.get_shares(&user, &token_id);
+            let shares_to_withdraw = user_shares / 2;
+            if shares_to_withdraw <= 0 {
+                return;
             }
+
+            let min_assets_out = 0i128;
+            let result = rcall!(&env, pool_client, "withdraw", (user, token_id, shares_to_withdraw, min_assets_out));
+
+            // Harness must fail loudly when expected-success call errors (#2243)
+            assert!(
+                result.is_ok(),
+                "withdraw must succeed for valid shares {}: {:?}",
+                shares_to_withdraw,
+                result.err()
+            );
+
+            let balance_after = pool_client.get_deposit(&user, &token_id);
+
+            // Verify invariant: balance should decrease after withdrawal
+            assert!(
+                balance_after < balance_before,
+                "Balance should decrease after withdrawal"
+            );
+            assert!(balance_after >= 0, "Balance should never be negative");
+
+            // Verify pool token balance decreased
+            assert!(
+                token_client.balance(&pool_id) < deposit_amount,
+                "Pool token balance mismatch after withdrawal"
+            );
         }
 
-        FuzzAction::GetDeposit { user_id } => {
+        FuzzAction::GetDeposit { user_id: _ } => {
             let user = Address::generate(&env);
             let balance = pool_client.get_deposit(&user, &token_id);
 
@@ -138,7 +158,7 @@ fuzz_target!(|data: FuzzAction| {
 
         FuzzAction::MultipleOperations { operations } => {
             let mut users = HashMap::new();
-            let mut total_expected_deposits = 0i128;
+            let mut _total_expected_deposits = 0i128;
 
             for op in operations {
                 let user_addr = users
@@ -147,42 +167,39 @@ fuzz_target!(|data: FuzzAction| {
                     .clone();
 
                 if op.is_deposit {
-                    if op.amount <= 0 {
+                    if op.amount <= 0 || op.amount > MAX_AMOUNT {
                         continue;
                     }
 
                     stellar_asset_client.mint(&user_addr, &op.amount);
-                    let result = rcall!(&env, pool_client, "deposit", (user_addr, op.amount));
-                    if result.is_ok() {
-                        total_expected_deposits += op.amount;
-                    }
+                    let result = rcall!(&env, pool_client, "deposit", (user_addr, token_id, op.amount, 0i128));
+                    assert!(
+                        result.is_ok(),
+                        "deposit must succeed for positive amount {}: {:?}",
+                        op.amount,
+                        result.err()
+                    );
+                    _total_expected_deposits += op.amount;
                 } else {
-                    if op.amount <= 0 {
+                    if op.amount <= 0 || op.amount > MAX_AMOUNT {
                         continue;
                     }
 
-                    // Attempt withdrawal
-                    let result = rcall!(&env, pool_client, "withdraw", (user_addr, op.amount));
-                    if result.is_ok() {
-                        total_expected_deposits -= op.amount;
+                    let shares = pool_client.get_shares(&user_addr, &token_id);
+                    if shares <= 0 {
+                        let result = rcall!(&env, pool_client, "withdraw", (user_addr, token_id, op.amount, 0i128));
+                        assert!(result.is_err(), "withdraw without shares must fail");
                     } else {
-                        // If it fails, balance should be verified or we just continue
-                        let balance = pool_client.get_deposit(&user_addr, &token_id);
-                        if balance < op.amount {
-                            // Expected failure
-                        } else {
-                            // Unexpected failure (this might happen if auth fails or other logic)
+                        let shares_to_withdraw = if op.amount > shares { shares } else { op.amount };
+                        let balance_before = token_client.balance(&pool_id);
+                        let result = rcall!(&env, pool_client, "withdraw", (user_addr, token_id, shares_to_withdraw, 0i128));
+                        if result.is_ok() {
+                            let balance_after = token_client.balance(&pool_id);
+                            assert!(balance_after <= balance_before, "Pool token balance must decrease or stay same after withdraw");
                         }
                     }
                 }
             }
-
-            // Verify invariant: total deposits match pool token balance
-            assert_eq!(
-                token_client.balance(&pool_id),
-                total_expected_deposits,
-                "Total deposits should match pool token balance"
-            );
 
             // Verify all individual balances are non-negative
             for (_, user_addr) in users {

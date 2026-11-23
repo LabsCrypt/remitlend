@@ -3,6 +3,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { query } from '../db/connection.js';
 import { cacheService } from '../services/cacheService.js';
 import { sorobanService } from '../services/sorobanService.js';
+import { SCORES_TABLE } from '../db/scoresTable.js';
 
 // ---------------------------------------------------------------------------
 // Score computation helpers
@@ -61,12 +62,12 @@ export const getScore = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const result = await query('SELECT current_score AS score FROM scores WHERE user_id = $1', [
-    userId,
-  ]);
+  const result = await query(
+    `SELECT ${SCORES_TABLE.columns.score} AS score FROM ${SCORES_TABLE.tableName} WHERE ${SCORES_TABLE.columns.borrower} = $1`,
+    [userId],
+  );
 
-  const score =
-    result.rows.length > 0 ? (result.rows[0].score ?? result.rows[0].current_score) : 500;
+  const score = result.rows.length > 0 ? (result.rows[0].score ?? 500) : 500;
   const band = getCreditBand(score);
 
   await cacheService.set(cacheKey, { score, band }, 300); // 5 minutes TTL
@@ -101,27 +102,27 @@ export const updateScore = asyncHandler(async (req: Request, res: Response) => {
   };
 
   // Get old score first for the response
-  const oldResult = await query('SELECT current_score AS score FROM scores WHERE user_id = $1', [
-    userId,
-  ]);
-  const oldScore =
-    oldResult.rows.length > 0 ? (oldResult.rows[0].score ?? oldResult.rows[0].current_score) : 500;
+  const oldResult = await query(
+    `SELECT ${SCORES_TABLE.columns.score} AS score FROM ${SCORES_TABLE.tableName} WHERE ${SCORES_TABLE.columns.borrower} = $1`,
+    [userId],
+  );
+  const oldScore = oldResult.rows.length > 0 ? (oldResult.rows[0].score ?? 500) : 500;
 
   const delta = onTime ? ON_TIME_DELTA : LATE_DELTA;
 
   // Use UPSERT: Get existing score or start at 500, then apply delta and clamp
   const result = await query(
-    `INSERT INTO scores (user_id, current_score)
+    `INSERT INTO ${SCORES_TABLE.tableName} (${SCORES_TABLE.columns.borrower}, ${SCORES_TABLE.columns.score})
      VALUES ($1, $2)
-     ON CONFLICT (user_id)
+     ON CONFLICT (${SCORES_TABLE.columns.borrower})
      DO UPDATE SET
-       current_score = LEAST(850, GREATEST(300, scores.current_score + $3)),
-       updated_at = CURRENT_TIMESTAMP
-     RETURNING current_score AS score`,
+       ${SCORES_TABLE.columns.score} = LEAST(850, GREATEST(300, ${SCORES_TABLE.tableName}.${SCORES_TABLE.columns.score} + $3)),
+       ${SCORES_TABLE.columns.updatedAt} = CURRENT_TIMESTAMP
+     RETURNING ${SCORES_TABLE.columns.score} AS score`,
     [userId, 500 + delta, delta],
   );
 
-  const newScore = result.rows[0].score ?? result.rows[0].current_score;
+  const newScore = result.rows[0].score;
   const band = getCreditBand(newScore);
 
   // Invalidate cache
@@ -175,9 +176,9 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
        -- returned zero rows for users without a scores row yet, and the CROSS
        -- JOINs below then discarded every computed loan/timing statistic (#141).
        current_score_cte AS (
-         SELECT COALESCE(MAX(current_score), 500) AS current_score
-         FROM scores
-         WHERE user_id = $1
+         SELECT COALESCE(MAX(${SCORES_TABLE.columns.score}), 500) AS score
+         FROM ${SCORES_TABLE.tableName}
+         WHERE ${SCORES_TABLE.columns.borrower} = $1
        ),
        -- All loan events for this borrower
        borrower_events AS (
@@ -246,7 +247,7 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
        -- Final aggregated breakdown
        breakdown_summary AS (
          SELECT 
-           cs.current_score,
+           cs.score,
            COALESCE(ls.total_loans, 0) AS total_loans,
            COALESCE(ls.repaid_count, 0) AS repaid_count,
            COALESCE(ls.defaulted_count, 0) AS defaulted_count,
@@ -259,7 +260,7 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
          CROSS JOIN timing_stats ts
        )
        SELECT 
-         current_score,
+         score,
          total_loans,
          repaid_count,
          defaulted_count,
@@ -272,7 +273,7 @@ export const getScoreBreakdown = asyncHandler(async (req: Request, res: Response
   );
 
   const breakdown = breakdownResult.rows[0] || {};
-  const score = parseInt(breakdown.current_score || breakdown.score || '500', 10);
+  const score = parseInt(breakdown.score || '500', 10);
   const band = getCreditBand(score);
   const totalLoans = parseInt(breakdown.total_loans || '0', 10);
   const repaidOnTime = parseInt(breakdown.on_time_count || '0', 10);

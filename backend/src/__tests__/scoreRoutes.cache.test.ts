@@ -78,8 +78,7 @@ const getScore = (userId: string) => request(app).get(`/api/score/${userId}`).se
 const postUpdate = (body: Record<string, unknown>, apiKey = 'loans-value') =>
   request(app).post('/api/score/update').set('x-api-key', apiKey).send(body);
 
-const scoreReads = () =>
-  mockQuery.mock.calls.filter(([text]) => text.startsWith('SELECT current_score'));
+const scoreReads = () => mockQuery.mock.calls.filter(([text]) => text.startsWith('SELECT score'));
 
 beforeEach(() => {
   scoresTable.clear();
@@ -88,7 +87,7 @@ beforeEach(() => {
   mockQuery.mockReset();
   mockQuery.mockImplementation(async (text: string, params: unknown[] = []) => {
     const userId = params[0] as string;
-    if (text.startsWith('SELECT current_score')) {
+    if (text.startsWith('SELECT score')) {
       return scoresTable.has(userId)
         ? { rows: [{ score: scoresTable.get(userId) }] }
         : { rows: [] };

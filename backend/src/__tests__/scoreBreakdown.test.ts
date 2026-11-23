@@ -72,7 +72,7 @@ describe('GET /api/score/:userId/breakdown', () => {
     mockedQuery.mockResolvedValueOnce({
       rows: [
         {
-          current_score: 720,
+          score: 720,
           total_loans: 5,
           repaid_count: 4,
           defaulted_count: 0,
@@ -123,7 +123,7 @@ describe('GET /api/score/:userId/breakdown', () => {
     mockedQuery.mockResolvedValueOnce({
       rows: [
         {
-          current_score: 500,
+          score: 500,
           total_loans: 2,
           repaid_count: 1,
           defaulted_count: 0,
@@ -151,9 +151,7 @@ describe('GET /api/score/:userId/breakdown', () => {
     // Without an aggregate the CTE yields 0 rows and the CROSS JOINs below
     // discard every computed statistic (#141).
     const breakdownSql = String(mockedQuery.mock.calls[0][0]);
-    expect(breakdownSql).toMatch(
-      /current_score_cte AS \(\s*SELECT COALESCE\(MAX\(current_score\), 500\)/,
-    );
+    expect(breakdownSql).toMatch(/current_score_cte AS \(\s*SELECT COALESCE\(MAX\(score\), 500\)/);
   });
 
   it('should return default values for a user with no history', async () => {

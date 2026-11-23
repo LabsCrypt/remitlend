@@ -31,8 +31,8 @@ describe('scoreDecayService', () => {
       ]);
       const sql = mockQuery.mock.calls[0]![0];
       expect(sql).toContain('FROM scores s');
-      expect(sql).toContain('s.user_id');
-      expect(sql).toContain('s.current_score');
+      expect(sql).toContain('s.borrower');
+      expect(sql).toContain('s.score');
       expect(sql).toContain("e.event_type IN ('LoanApproved', 'LoanRepaid')");
       expect(sql).toContain('HAVING MAX(e.ledger_closed_at) < NOW() - INTERVAL');
       expect(sql).not.toContain('IS NULL');
@@ -112,7 +112,7 @@ describe('scoreDecayService', () => {
       };
 
       mockQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
-        if (sql.includes('SELECT s.user_id AS borrower')) {
+        if (sql.includes('SELECT s.borrower AS borrower')) {
           return {
             rows: [
               {
@@ -158,7 +158,7 @@ describe('scoreDecayService', () => {
       };
 
       mockQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
-        if (sql.includes('SELECT s.user_id AS borrower')) {
+        if (sql.includes('SELECT s.borrower AS borrower')) {
           return {
             rows: [
               {
