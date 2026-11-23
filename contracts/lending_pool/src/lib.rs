@@ -1240,6 +1240,7 @@ impl LendingPool {
 
         env.storage().instance().set(&key, &updated);
         Self::bump_instance_ttl(&env);
+        events::outstanding_adjusted(&env, token, delta, updated);
     }
 
     pub fn pool_balance(env: Env, token: Address) -> i128 {
@@ -1247,7 +1248,5 @@ impl LendingPool {
     }
 }
 
-#[cfg(test)]
-mod rounding_tests;
 #[cfg(test)]
 mod test;

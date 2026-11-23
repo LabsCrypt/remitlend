@@ -330,6 +330,19 @@ jobs:
       - name: Check every backend ErrorCode has a frontend message mapping
         run: node scripts/check-error-code-mappings.mjs
 
+  contract-doc-sync-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check contract documentation sync against code
+        run: node scripts/check-contract-doc-sync.mjs
+      - name: Run contract doc sync tests
+        run: node --test scripts/check-contract-doc-sync.test.mjs
+
   contracts:
     needs: money-policy
     runs-on: ubuntu-latest

@@ -9,6 +9,8 @@
     "gen:money": "ts-node gen-money.ts",
     "gen:money:check": "ts-node gen-money.ts --check",
     "test:env-docs": "node check-env-docs.test.mjs",
+    "test:contract-doc-sync": "node --test check-contract-doc-sync.test.mjs",
+    "check:contract-doc-sync": "node check-contract-doc-sync.mjs",
     "test:deploy": "tsx deploy.test.ts",
     "test:deploy-env": "tsx deploy-env.test.ts",
     "test": "npm run test:env-docs && npm run test:deploy && npm run test:deploy-env",
