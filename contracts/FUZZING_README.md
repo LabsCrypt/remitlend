@@ -19,39 +19,50 @@ Two fuzzing approaches have been implemented:
 
 ### Contract Coverage
 
-The fuzz testing covers all three main contracts:
+The fuzz testing covers all contracts in the system:
 
-- **LendingPool**: Manages deposits and withdrawals
-- **LoanManager**: Handles loan requests and repayments
-- **RemittanceNFT**: Manages user reputation scores and NFTs
+- **LendingPool**: Manages liquidity, share minting/redemption with virtual offsets, and loan disbursements
+- **LoanManager**: Handles loan lifecycle, interest accrual, collateral, and defaults
+- **RemittanceNFT**: Manages borrower reputation scores, remittance history, and transfer guards
+- **MultisigGovernance**: Handles timelocked multi-sig admin handovers and contract upgrades
 
 ## Invariants Tested
 
 The summary below is condensed; the complete, authoritative list is in [fuzz_invariants.md](fuzz_invariants.md).
 
-### LendingPool Contract
+### LendingPool Contract (v2 Share-Based Accounting)
 
-1. **Total Deposits >= Total Withdrawals**: The sum of all deposits should always be greater than or equal to the sum of all withdrawals
-2. **Individual Balance Invariant**: For any user, their balance should never be negative
-3. **Balance Consistency**: The sum of all individual user balances should equal the contract's token balance
-4. **Positive Amounts**: All deposit and withdrawal amounts must be positive
-5. **Authorization Invariant**: Only authorized users can withdraw from their own accounts
+1. **Asset-Liability Consistency (`TotalManagedAssets`)**: Internally tracked assets equal idle pool tokens plus `TotalOutstanding` principal deployed in loans. Unsolicited donations do not inflate share price (#1089).
+2. **Share Price Monotonicity**: Share price is non-decreasing during standard operations and strictly increases upon yield distribution; virtual offsets protect first depositors.
+3. **Total Outstanding Tracking**: `TotalOutstanding` increases on disbursement, decreases on repayment/liquidation, and never exceeds `TotalManagedAssets`.
+4. **Typed Error Rejection**: Non-positive amounts and insufficient liquidity/shares return typed `PoolError` variants, never panic.
+5. **Withdrawal Cooldown & Limits**: Early redemptions enforce withdrawal cooldown periods; utilization is capped at 100%.
+6. **Authorization Chains**: `disburse_loan` is restricted to the authorized LoanManager contract address.
 
 ### LoanManager Contract
 
-1. **Score Threshold**: Users with scores below 500 should not be able to request loans
-2. **Score Non-Negative**: User scores should never be negative
-3. **Score Monotonicity**: Scores should only increase through legitimate repayments
-4. **Authorization Invariant**: Only authorized minters can update scores
-5. **Loan-Score Consistency**: Loan requests should be properly validated against user scores
+1. **Score Threshold & Bounds**: Scores strictly adhere to the 300–850 band; borrowers below `min_score` (default 500) are rejected with `LoanError::ScoreTooLow`.
+2. **Borrower Loan Cap**: Active loan count is capped at `max_loans_per_borrower`.
+3. **Accrual Index Consistency (#1382)**: Interest and late fee accruals follow ledger-based formulas; repayments follow strict late fee -> interest -> principal order; penalties are capped.
+4. **7-State Lifecycle Invariant**: Loans transition strictly across valid states (`Pending`, `Approved`, `Repaid`, `Defaulted`, `Liquidated`, `Cancelled`, `Rejected`).
+5. **Collateral Invariant**: Collateral remains locked during active loan lifetime; released on full repayment; seized on default/liquidation.
+6. **Authorization & Errors**: Administrative actions require admin authentication; invalid inputs return typed `LoanError`.
 
 ### RemittanceNFT Contract
 
-1. **Unique NFT per User**: Each user can only have one NFT
-2. **Score Range**: Scores should be within reasonable bounds (0 to maximum)
-3. **Authorization Invariant**: Only authorized minters can mint/update NFTs
-4. **Metadata Integrity**: History hash should be properly updated and maintained
-5. **Backward Compatibility**: Legacy score data should be properly migrated
+1. **Unique Metadata Record per Borrower**: Each borrower address maintains at most one metadata record.
+2. **Score Range Invariant**: Credit scores are bounded to [300, 850]; invalid values return typed `ContractError::ScoreOutOfRange`.
+3. **Minter Authorization**: Minting and score updates require admin or authorized minter permission.
+4. **Score History & Hash Monotonicity**: Every score change appends an immutable `ScoreHistoryEntry` and updates remittance `history_hash`.
+5. **Active-Loan Transfer Guard**: NFTs cannot be transferred while borrower has active loans in LoanManager.
+
+### MultisigGovernance Contract
+
+1. **Quorum & Threshold Enforcement**: Finalization requires `approvals >= threshold` where `1 <= threshold <= signers.len()`.
+2. **Timelock Delay Enforcement**: Proposals cannot be finalized before `executable_after = proposed_at + timelock_delay`.
+3. **Single Pending Proposal**: At most one admin transfer proposal can be pending at a time.
+4. **Signer Idempotency**: Only registered signers can approve proposals; duplicate approvals are idempotent.
+5. **Emergency Cancellation**: Authorized signers or admin can emergency cancel pending proposals prior to execution.
 
 ## Pull Request Template
 

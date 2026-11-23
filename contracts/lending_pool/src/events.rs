@@ -153,3 +153,43 @@ pub fn price_updated(
     env.events()
         .publish(topics, (ledger_seq, total_managed_assets, total_shares));
 }
+
+/// Emitted when total outstanding debt is adjusted for a token.
+///
+/// **Topics**: `(OutstandingAdjusted, token)`
+/// **Data**: `(delta, new_total)`
+pub fn outstanding_adjusted(env: &Env, token: Address, delta: i128, new_total: i128) {
+    let topics = (Symbol::new(env, "OutstandingAdjusted"), token);
+    env.events().publish(topics, (delta, new_total));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Events as _};
+    use soroban_sdk::{Env, FromVal};
+
+    #[test]
+    fn test_outstanding_adjusted_event_schema() {
+        let env = Env::default();
+        let token = Address::generate(&env);
+
+        let contract_id = env.register(crate::LendingPool, ());
+        env.as_contract(&contract_id, || {
+            outstanding_adjusted(&env, token.clone(), 500, 1500);
+        });
+
+        let events = env.events().all();
+        let event = events.get(0).unwrap();
+
+        assert_eq!(event.1.len(), 2);
+        assert_eq!(
+            Symbol::from_val(&env, &event.1.get(0).unwrap()),
+            Symbol::new(&env, "OutstandingAdjusted")
+        );
+        assert_eq!(Address::from_val(&env, &event.1.get(1).unwrap()), token);
+        let (delta, new_total) = <(i128, i128)>::from_val(&env, &event.2);
+        assert_eq!(delta, 500);
+        assert_eq!(new_total, 1500);
+    }
+}

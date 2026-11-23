@@ -1669,6 +1669,36 @@ fn test_adjust_outstanding_zero_delta_is_a_no_op() {
     assert_eq!(pool_client.get_total_outstanding(&token), 1_000);
 }
 
+#[test]
+fn test_adjust_outstanding_event_emission() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let pool_id = env.register(LendingPool, ());
+    let pool_client = LendingPoolClient::new(&env, &pool_id);
+    pool_client.initialize(&admin);
+
+    pool_client.adjust_outstanding(&token, &1_500);
+
+    let events = env.events().all();
+    let adjust_event = events.get(events.len() - 1).unwrap();
+
+    assert_eq!(adjust_event.1.len(), 2);
+    assert_eq!(
+        soroban_sdk::Symbol::from_val(&env, &adjust_event.1.get(0).unwrap()),
+        soroban_sdk::Symbol::new(&env, "OutstandingAdjusted")
+    );
+    assert_eq!(
+        Address::from_val(&env, &adjust_event.1.get(1).unwrap()),
+        token
+    );
+    let (delta, new_total) = <(i128, i128)>::from_val(&env, &adjust_event.2);
+    assert_eq!(delta, 1_500);
+    assert_eq!(new_total, 1_500);
+}
+
 // ── #1089 / #1380: donation-attack & slippage bounds ────────────────────────
 //
 // These tests reproduce the first-depositor share inflation attack (#1089)

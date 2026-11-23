@@ -553,31 +553,37 @@ graph LR
     subgraph "User Actions"
         B[Borrower]
         L[Lender]
+        A[Admin / Authorized Minter]
     end
     
     subgraph "Smart Contracts"
         NFT[Remittance NFT]
         LM[Loan Manager]
         LP[Lending Pool]
+        GOV[Multisig Governance]
     end
     
-    B -->|1. Mint NFT| NFT
+    A -->|1. Mint Metadata| NFT
     B -->|2. Request Loan| LM
-    LM -->|3. Verify Score| NFT
-    LM -->|4. Lock NFT| NFT
-    LM -->|5. Check Liquidity| LP
-    LM -->|6. Allocate Funds| LP
-    LP -->|7. Disburse| B
-    B -->|8. Repay| LM
-    LM -->|9. Return Funds| LP
-    LM -->|10. Unlock NFT| NFT
+    LM -->|3. Check Score| NFT
+    B -->|4. Deposit Collateral| LM
+    LM -->|5. Disburse Loan| LP
+    LP -->|6. Transfer Principal| B
+    B -->|7. Repay| LM
+    LM -->|8. Repay Principal & Adjust Outstanding| LP
+    LM -->|9. Update Score Delta| NFT
+    LM -->|10. Release Collateral| B
     
     L -->|Deposit| LP
     L -->|Withdraw| LP
+    GOV -->|Timelocked Admin Transfer / Upgrade| LP
+    GOV -->|Timelocked Admin Transfer / Upgrade| LM
+    GOV -->|Timelocked Admin Transfer / Upgrade| NFT
     
     style NFT fill:#e1f5ff
     style LM fill:#ffe1e1
     style LP fill:#e1ffe1
+    style GOV fill:#fff4e1
 ```
 
 ### Contract Communication Flow
@@ -586,120 +592,179 @@ graph LR
 sequenceDiagram
     autonumber
     participant B as Borrower
+    participant M as Admin / Authorized Minter
     participant NFT as NFT Contract
     participant LM as Loan Manager
     participant LP as Lending Pool
     participant L as Lender
     
-    Note over B,L: Phase 1: Setup
-    L->>LP: deposit(5000 XLM)
-    LP->>LP: Update pool balance
+    Note over L,LP: Phase 1: Setup & Liquidity
+    L->>LP: deposit(amount)
+    LP->>LP: Mint LP shares with virtual offset defense
     LP-->>L: Pool shares issued
     
-    Note over B,L: Phase 2: NFT Creation
-    B->>NFT: mint_nft(score=750)
-    NFT->>NFT: Store NFT data
-    NFT-->>B: NFT ID: 1
+    Note over M,NFT: Phase 2: Metadata Creation
+    M->>NFT: mint(caller, borrower, metadata)
+    NFT->>NFT: Store RemittanceMetadata (score 300-850)
+    NFT-->>M: Metadata initialized
     
-    Note over B,L: Phase 3: Loan Request
-    B->>LM: request_loan(nft_id=1, amount=1000)
-    LM->>NFT: verify_score(nft_id=1)
-    NFT-->>LM: score=750 ✓
-    LM->>NFT: lock_nft(nft_id=1)
-    NFT-->>LM: NFT locked ✓
-    LM->>LP: check_liquidity()
-    LP-->>LM: available=5000 XLM ✓
-    LM-->>B: Loan ID: 42 (Pending)
+    Note over B,LM: Phase 3: Loan Request & Collateral
+    B->>LM: request_loan(amount, term_ledgers)
+    LM->>NFT: get_score(borrower)
+    NFT-->>LM: score >= min_score ✓
+    LM->>LM: Create Loan (Status: Pending)
+    B->>LM: deposit_collateral(loan_id, amount)
+    LM->>LM: Lock collateral
     
-    Note over B,L: Phase 4: Approval & Disbursement
-    LM->>LP: allocate_funds(loan_id=42, 1000)
-    LP->>LP: Reserve 1000 XLM
-    LP-->>LM: Funds allocated ✓
-    LM->>B: Transfer 1000 XLM
-    LM->>LM: Set status: Active
+    Note over LM,LP: Phase 4: Approval & Disbursement
+    M->>LM: approve_loan(loan_id)
+    LM->>LP: disburse_loan(token, borrower, amount)
+    LP->>LP: Increment TotalOutstanding, transfer tokens to borrower
+    LP-->>LM: Funds disbursed ✓
+    LM->>LM: Set status: Approved
     
-    Note over B,L: Phase 5: Repayment
-    B->>LM: repay_loan(loan_id=42, 1000)
-    LM->>LP: return_funds(1000 + interest)
-    LP->>LP: Update pool balance
-    LP->>L: Distribute yield
-    LM->>NFT: unlock_nft(nft_id=1)
-    NFT-->>B: NFT returned ✓
-    LM->>LM: Set status: Repaid
+    Note over B,LP: Phase 5: Repayment & Settlement
+    B->>LM: repay(loan_id, amount)
+    LM->>LM: Waterfall: late fee -> interest -> principal
+    LM->>LP: repay_loan_principal(token, principal)
+    LM->>LP: adjust_outstanding(token, -principal)
+    LP->>LP: Decrement TotalOutstanding, restore idle balance
+    LM->>NFT: apply_score_delta(borrower, delta, reason)
+    NFT->>NFT: Record ScoreHistoryEntry & update score
+    LM->>LM: Set status: Repaid, release collateral to borrower
 ```
 
 ### Data Models
 
-#### NFT Data Structure
+#### Remittance NFT Data Structure
 ```rust
-pub struct RemittanceNFT {
-    pub id: u64,
-    pub owner: Address,
-    pub score: u32,              // 0-1000 credit score
-    pub history_hash: BytesN<32>, // Hash of remittance history
-    pub locked: bool,             // True when used as collateral
-    pub minted_at: u64,          // Timestamp
+pub struct RemittanceMetadata {
+    pub score: u32,               // 300-850 credit score band
+    pub history_hash: BytesN<32>, // Deterministic hash of remittance history
+    pub metadata_uri: String,     // Off-chain audit URI
+}
+
+pub struct ScoreHistoryEntry {
+    pub ledger: u32,
+    pub old_score: u32,
+    pub new_score: u32,
+    pub reason: Symbol,
 }
 ```
 
 #### Loan Data Structure
 ```rust
 pub struct Loan {
-    pub id: u64,
     pub borrower: Address,
-    pub nft_id: u64,
-    pub amount: i128,            // Loan amount in stroops
-    pub interest_rate: u32,      // Basis points (e.g., 500 = 5%)
-    pub outstanding: i128,       // Remaining balance
+    pub amount: i128,              // Loan principal in stroops
+    pub collateral_amount: i128,   // Locked collateral in stroops
+    pub principal_paid: i128,
+    pub interest_paid: i128,
+    pub accrued_interest: i128,
+    pub late_fee_paid: i128,
+    pub accrued_late_fee: i128,
+    pub interest_rate_bps: u32,    // Basis points (e.g., 500 = 5%)
+    pub due_date: u32,             // Target ledger sequence
+    pub last_interest_ledger: u32,
+    pub last_late_fee_ledger: u32,
     pub status: LoanStatus,
-    pub created_at: u64,
-    pub due_date: u64,
+    pub interest_residual: i128,
+    pub extension_count: u32,
+    pub term_ledgers: u32,
 }
 
 pub enum LoanStatus {
-    Requested,
+    Pending,
     Approved,
-    Active,
     Repaid,
     Defaulted,
+    Liquidated,
+    Cancelled,
+    Rejected,
 }
 ```
 
-#### Pool Data Structure
+#### Lending Pool Data Structure (v2 Share-Based Accounting)
 ```rust
-pub struct LendingPool {
-    pub total_deposits: i128,
-    pub available_liquidity: i128,
-    pub total_loaned: i128,
-    pub total_shares: i128,
-    pub lenders: Map<Address, LenderInfo>,
+pub struct PoolStats {
+    pub total_deposits: i128,          // Net principal deposited
+    pub total_shares: i128,            // Total outstanding LP shares
+    pub pool_token_balance: i128,      // Available idle liquidity
+    pub depositor_count: u32,          // Active depositor count
+    pub total_yield_distributed: i128, // Cumulative yield distributed
+    pub utilization_bps: u32,          // Fraction deployed in loans (basis points)
+    pub total_managed_assets: i128,    // Internally tracked total assets for pricing
+}
+```
+
+#### Multisig Governance Data Structure
+```rust
+pub struct PendingTransfer {
+    pub id: u32,
+    pub proposed_admin: Address,
+    pub signers: Vec<Address>,
+    pub threshold: u32,
+    pub executable_after: u64,
+    pub approvals: Map<Address, bool>,
+    pub proposed_at: u64,
+    pub status: ProposalStatus,
 }
 
-pub struct LenderInfo {
-    pub shares: i128,
-    pub deposited_at: u64,
+pub struct PendingUpgrade {
+    pub wasm_hash: BytesN<32>,
+    pub signers: Vec<Address>,
+    pub threshold: u32,
+    pub executable_after: u64,
+    pub approvals: Map<Address, bool>,
+    pub proposed_at: u64,
 }
 ```
 
 ### Access Control
 
 **Remittance NFT Contract**:
-- `mint_nft`: Anyone can mint (with valid score from backend)
-- `update_score`: Only authorized minters (backend oracle)
-- `lock_nft`: Only Loan Manager contract
-- `unlock_nft`: Only Loan Manager contract
+- `mint`: Only admin or authorized minter (initializes metadata for borrower)
+- `update_score`, `apply_score_delta`, `decrease_score`: Only admin or authorized minters
+- `record_default`, `clear_default`, `seize_collateral`: Only Loan Manager contract
+- `burn`: Only admin or authorized minters
+- `transfer`: Token owner (guarded against active loans in Loan Manager and transfer cooldown)
+- `authorize_minter`, `revoke_minter`: Only contract admin
+- `set_loan_manager`: Only contract admin
+- `pause`, `unpause`: Only contract admin
+- `set_admin`, `propose_admin`, `accept_admin`: Two-step admin handover
 
 **Loan Manager Contract**:
-- `request_loan`: Only NFT owner
-- `approve_loan`: Only authorized approvers or automated logic
-- `repay_loan`: Only borrower
-- `default_loan`: Only contract admin (after due date)
+- `request_loan`: Only borrower (score >= min_score)
+- `approve_loan`, `approve_loans_batch`: Only contract admin
+- `reject_loan`: Only contract admin
+- `cancel_loan`: Only borrower (while loan is pending)
+- `repay`: Only borrower
+- `deposit_collateral`, `release_collateral`: Only borrower / Loan Manager
+- `check_default`, `check_defaults`, `process_defaults_batch`: Anyone (evaluates overdue status past grace period)
+- `liquidate`: Any liquidator (for undercollateralized loans)
+- `refinance_loan`, `extend_loan`: Borrower / Admin
+- `pause`, `unpause`: Only contract admin
+- `set_interest_rate`, `set_min_score`, `set_max_loan_amount`: Only contract admin
 
 **Lending Pool Contract**:
 - `deposit`: Any lender
-- `withdraw`: Only depositor (with available liquidity)
-- `allocate_funds`: Only Loan Manager contract
-- `return_funds`: Only Loan Manager contract
+- `withdraw`: Only depositor (subject to withdrawal cooldown and available idle liquidity)
+- `disburse_loan`: Only authorized Loan Manager contract
+- `adjust_outstanding`: Only authorized Loan Manager contract
+- `distribute_yield`: Yield distributor or contract admin
+- `emergency_withdraw`: Depositor during emergency pause
+- `pause`, `unpause`: Only contract admin
+- `set_loan_manager`, `set_max_pool_size`, `set_withdrawal_cooldown`: Only contract admin
+
+**Multisig Governance Contract**:
+- `initialize`: Initial contract admin
+- `propose_admin_transfer`, `propose_upgrade`: Any registered multi-sig signer
+- `approve_transfer`, `approve_upgrade`: Registered multi-sig signers (idempotent)
+- `finalize_admin_transfer`: Anyone once quorum threshold and timelock are satisfied
+- `cancel_admin_transfer`: Proposer or signers
+- `emergency_cancel_proposal`: Signers or admin
+- `expire_proposal`: Anyone after proposal time-to-live expires
+- `execute`: Multi-sig dispatcher once approved
 
 ## Security Model
 
