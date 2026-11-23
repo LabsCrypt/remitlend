@@ -1,6 +1,7 @@
 import { cacheService } from './cacheService.js';
 import { type PoolClient, query } from '../db/connection.js';
 import logger from '../utils/logger.js';
+import { SCORES_TABLE } from '../db/scoresTable.js';
 
 /**
  * Apply multiple user score deltas atomically.
@@ -37,12 +38,12 @@ export async function updateUserScoresBulk(
   ).join(', ');
 
   const sql = `
-    INSERT INTO scores (user_id, current_score)
+    INSERT INTO ${SCORES_TABLE.tableName} (${SCORES_TABLE.columns.borrower}, ${SCORES_TABLE.columns.score})
     VALUES ${valuePlaceholders}
-    ON CONFLICT (user_id)
+    ON CONFLICT (${SCORES_TABLE.columns.borrower})
     DO UPDATE SET
-      current_score = LEAST(850, GREATEST(300, scores.current_score + EXCLUDED.current_score - 500)),
-      updated_at = CURRENT_TIMESTAMP`;
+      ${SCORES_TABLE.columns.score} = LEAST(850, GREATEST(300, ${SCORES_TABLE.tableName}.${SCORES_TABLE.columns.score} + EXCLUDED.${SCORES_TABLE.columns.score} - 500)),
+      ${SCORES_TABLE.columns.updatedAt} = CURRENT_TIMESTAMP`;
 
   try {
     if (client) {
@@ -90,15 +91,15 @@ export async function setAbsoluteUserScoresBulk(scores: Map<string, number>): Pr
   // outside the normal 300..850 band (e.g. mid-migration during a contract
   // upgrade) still lands verbatim instead of being silently rewritten.
   const sql = `
-    WITH reconciled_scores (user_id, current_score) AS (
+    WITH reconciled_scores (${SCORES_TABLE.columns.borrower}, ${SCORES_TABLE.columns.score}) AS (
       VALUES ${valuePlaceholders.join(',')}
     )
-    INSERT INTO scores (user_id, current_score)
-    SELECT user_id, current_score FROM reconciled_scores
-    ON CONFLICT (user_id)
+    INSERT INTO ${SCORES_TABLE.tableName} (${SCORES_TABLE.columns.borrower}, ${SCORES_TABLE.columns.score})
+    SELECT ${SCORES_TABLE.columns.borrower}, ${SCORES_TABLE.columns.score} FROM reconciled_scores
+    ON CONFLICT (${SCORES_TABLE.columns.borrower})
     DO UPDATE SET
-      current_score = EXCLUDED.current_score,
-      updated_at = CURRENT_TIMESTAMP
+      ${SCORES_TABLE.columns.score} = EXCLUDED.${SCORES_TABLE.columns.score},
+      ${SCORES_TABLE.columns.updatedAt} = CURRENT_TIMESTAMP
   `;
 
   try {

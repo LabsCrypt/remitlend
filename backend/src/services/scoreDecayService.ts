@@ -2,6 +2,7 @@
 // Provides functions to find inactive borrowers and apply score decay
 
 import { query } from '../db/connection.js';
+import { SCORES_TABLE } from '../db/scoresTable.js';
 
 const DECAY_PER_MONTH = 5;
 const MIN_SCORE = 300; // Adjust as needed
@@ -18,12 +19,12 @@ export interface InactiveBorrower {
 // not evidence of inactivity and must not trigger repeated score decay.
 export async function getInactiveBorrowers(): Promise<InactiveBorrower[]> {
   const result = await query(`
-    SELECT s.user_id AS borrower, s.current_score AS score, s.last_decayed_at, MAX(e.ledger_closed_at) AS last_activity
-    FROM scores s
+    SELECT s.${SCORES_TABLE.columns.borrower} AS borrower, s.${SCORES_TABLE.columns.score} AS score, s.${SCORES_TABLE.columns.lastDecayedAt}, MAX(e.ledger_closed_at) AS last_activity
+    FROM ${SCORES_TABLE.tableName} s
     JOIN contract_events e
-      ON e.address = s.user_id
+      ON e.address = s.${SCORES_TABLE.columns.borrower}
       AND e.event_type IN ('LoanApproved', 'LoanRepaid')
-    GROUP BY s.user_id, s.current_score, s.last_decayed_at
+    GROUP BY s.${SCORES_TABLE.columns.borrower}, s.${SCORES_TABLE.columns.score}, s.${SCORES_TABLE.columns.lastDecayedAt}
     HAVING MAX(e.ledger_closed_at) < NOW() - INTERVAL '1 month'
   `);
   return result.rows as InactiveBorrower[];
@@ -53,7 +54,7 @@ export async function applyScoreDecay(borrower: InactiveBorrower) {
   const decay = monthsToDecay * DECAY_PER_MONTH;
   const newScore = Math.max(MIN_SCORE, borrower.score - decay);
   await query(
-    `UPDATE scores SET current_score = $1, last_decayed_at = $2, updated_at = CURRENT_TIMESTAMP WHERE user_id = $3`,
+    `UPDATE ${SCORES_TABLE.tableName} SET ${SCORES_TABLE.columns.score} = $1, ${SCORES_TABLE.columns.lastDecayedAt} = $2, ${SCORES_TABLE.columns.updatedAt} = CURRENT_TIMESTAMP WHERE ${SCORES_TABLE.columns.borrower} = $3`,
     [newScore, now.toISOString(), borrower.borrower],
   );
   return newScore;

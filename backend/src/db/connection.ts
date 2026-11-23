@@ -147,14 +147,47 @@ const checkExhaustion = () => {
   }
 };
 
-export const query = async (text: string, params?: unknown[]) => {
+const DML_REGEX = /^\s*(?:WITH\s+[\s\S]+?\)\s*)?(INSERT|UPDATE|DELETE|MERGE)\b/i;
+
+/**
+ * Checks whether a SQL statement is mutating DML (INSERT, UPDATE, DELETE, MERGE).
+ * Bare DML statements must not be blanket-retried on transient errors to prevent
+ * duplicate execution (e.g. duplicate contract_events or notifications) when a connection
+ * drops after commit but before acknowledgement.
+ */
+export const isDmlStatement = (sql: string): boolean => {
+  const cleaned = sql
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/--.*$/gm, '')
+    .trim();
+  return DML_REGEX.test(cleaned);
+};
+
+export interface QueryOptions {
+  /**
+   * Explicitly enable or disable retry for this query.
+   * If omitted, read-only queries (SELECT) are retried on transient errors,
+   * while mutating DML statements are NOT retried.
+   */
+  retry?: boolean;
+}
+
+export const query = async <T extends pg.QueryResultRow = any>(
+  text: string,
+  params?: unknown[],
+  options?: QueryOptions,
+): Promise<pg.QueryResult<T>> => {
   if (isShuttingDown) {
     throw new Error('Database pool is shutting down');
   }
   checkExhaustion();
-  return withRetry(async () => {
+
+  const isDml = isDmlStatement(text);
+  const shouldRetry = options?.retry ?? !isDml;
+
+  const execute = async () => {
     const start = Date.now();
-    const result = await pool.query(text, params);
+    const result = await pool.query<T>(text, params);
     const duration = Date.now() - start;
     logger.debug('Executed query', {
       text: text.substring(0, 50),
@@ -162,7 +195,32 @@ export const query = async (text: string, params?: unknown[]) => {
       rows: result.rowCount,
     });
     return result;
-  });
+  };
+
+  if (shouldRetry) {
+    return withRetry(execute);
+  }
+  return execute();
+};
+
+/**
+ * Convenience method for explicitly executing read-only statements with transient retry.
+ */
+export const queryReadOnly = async <T extends pg.QueryResultRow = any>(
+  text: string,
+  params?: unknown[],
+): Promise<pg.QueryResult<T>> => {
+  return query<T>(text, params, { retry: true });
+};
+
+/**
+ * Convenience method for explicitly executing mutating statements without blanket retry.
+ */
+export const executeWrite = async <T extends pg.QueryResultRow = any>(
+  text: string,
+  params?: unknown[],
+): Promise<pg.QueryResult<T>> => {
+  return query<T>(text, params, { retry: false });
 };
 
 export const getClient = async () => {

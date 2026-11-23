@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { closePool, query } from '../db/connection.js';
 import logger from '../utils/logger.js';
+import { SCORES_TABLE } from '../db/scoresTable.js';
 
 dotenv.config();
 
@@ -452,12 +453,12 @@ const seedScores = async () => {
 
   for (const user of devUsers) {
     await query(
-      `INSERT INTO scores (borrower, score, created_at)
+      `INSERT INTO ${SCORES_TABLE.tableName} (${SCORES_TABLE.columns.borrower}, ${SCORES_TABLE.columns.score}, ${SCORES_TABLE.columns.createdAt})
        VALUES ($1, $2, $3)
-       ON CONFLICT (borrower)
+       ON CONFLICT (${SCORES_TABLE.columns.borrower})
        DO UPDATE SET
-         score = EXCLUDED.score,
-         updated_at = CURRENT_TIMESTAMP`,
+         ${SCORES_TABLE.columns.score} = EXCLUDED.${SCORES_TABLE.columns.score},
+         ${SCORES_TABLE.columns.updatedAt} = CURRENT_TIMESTAMP`,
       [user.userId, user.score, NOW],
     );
   }

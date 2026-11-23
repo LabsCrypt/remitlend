@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { query } from '../db/connection.js';
+import { SCORES_TABLE } from '../db/scoresTable.js';
 import { sorobanService } from '../services/sorobanService.js';
 import { fromStroops, MoneyError } from '../money/decimal.js';
 
@@ -26,10 +27,11 @@ export const getRemittanceHistory = asyncHandler(async (req: Request, res: Respo
   const { userId } = req.params;
 
   // 1. Fetch current score from database
-  const scoreResult = await query('SELECT current_score AS score FROM scores WHERE user_id = $1', [
-    userId,
-  ]);
-  const score = scoreResult.rows[0]?.score ?? scoreResult.rows[0]?.current_score ?? 500;
+  const scoreResult = await query(
+    `SELECT ${SCORES_TABLE.columns.score} AS score FROM ${SCORES_TABLE.tableName} WHERE ${SCORES_TABLE.columns.borrower} = $1`,
+    [userId],
+  );
+  const score = scoreResult.rows[0]?.score ?? 500;
 
   // 2. Fetch all repayment and default events for history calculation
   const eventsResult = await query(
@@ -133,10 +135,11 @@ export const simulatePayment = asyncHandler(async (req: Request, res: Response) 
   const userId = req.user!.publicKey;
 
   // Fetch current score
-  const scoreResult = await query('SELECT current_score AS score FROM scores WHERE user_id = $1', [
-    userId,
-  ]);
-  const currentScore = scoreResult.rows[0]?.score ?? scoreResult.rows[0]?.current_score ?? 500;
+  const scoreResult = await query(
+    `SELECT ${SCORES_TABLE.columns.score} AS score FROM ${SCORES_TABLE.tableName} WHERE ${SCORES_TABLE.columns.borrower} = $1`,
+    [userId],
+  );
+  const currentScore = scoreResult.rows[0]?.score ?? 500;
 
   const { repaymentDelta } = sorobanService.getScoreConfig();
   const newScore = Math.min(850, currentScore + repaymentDelta);

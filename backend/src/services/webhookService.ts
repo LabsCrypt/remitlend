@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { query, withTransaction, type PoolClient } from '../db/connection.js';
+import { query, withTransaction } from '../db/connection.js';
 import logger from '../utils/logger.js';
 import { postWebhook, type WebhookHttpResponse } from './webhookHttp.js';
 import { decryptWebhookSecret, encryptWebhookSecret } from '../utils/webhookSecret.js';
@@ -291,7 +291,7 @@ export class WebhookService {
           ? withTransaction
           : async (fn: (client: { query: typeof query }) => Promise<unknown>) => fn({ query });
 
-      const rows = (await executeInTx(async (client: PoolClient | { query: typeof query }) => {
+      const rows = (await executeInTx(async (client: any) => {
         const result = await client.query(
           `SELECT wd.id, wd.subscription_id, ws.callback_url, ws.secret, wd.event_id, wd.event_type, 
                   wd.payload, wd.attempt_count
