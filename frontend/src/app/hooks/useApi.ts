@@ -820,7 +820,7 @@ function normalizePaginatedList<T>(response: RawPaginatedResponse<T[]>): Paginat
   };
 }
 
-export function normalizeLiquidatableLoan(row: RawLiquidatableLoan): LiquidatableLoan {
+export const normalizeLiquidatableLoan = (row: RawLiquidatableLoan): LiquidatableLoan => {
   const rawHealth = row.healthFactor ?? row.health_factor ?? row.health;
   const rawRatio = row.collateralRatio ?? row.collateral_ratio ?? row.ratio;
 

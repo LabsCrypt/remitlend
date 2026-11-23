@@ -36,7 +36,7 @@ For how to set up and run the fuzz targets that check these invariants, see [FUZ
 
 6. **Authorization Chains**:
    - `disburse_loan` and `repay_loan_principal` are gated strictly to the registered `LoanManager` contract address (`PoolError::Unauthorized`).
-   - Administrative functions (`set_loan_manager`, `set_max_pool_size`, `set_withdrawal_cooldown`, `pause`, `unpause`) require admin authentication.
+   - Administrative operations (`set_loan_manager`, `set_max_pool_size`, `set_withdrawal_cooldown`, `pause`, `unpause`) require admin authentication.
 
 ### Edge Cases to Test
 
@@ -62,7 +62,7 @@ For how to set up and run the fuzz targets that check these invariants, see [FUZ
    - A borrower cannot have more active loans than `max_loans_per_borrower`. Subsequent loan requests fail with `LoanError::MaxLoansExceeded` until existing loans are repaid or resolved.
 
 3. **Accrual Index Consistency (#1382)**:
-   - Interest and late fees accrue strictly as functions of elapsed ledgers:
+   - Interest and late fees accrue strictly as a calculation of elapsed ledgers:
      `accrued_interest = (principal * interest_rate_bps * elapsed_ledgers) / (10_000 * LEDGERS_PER_YEAR)`.
    - Repayments follow strict waterfall allocation: `accrued_late_fee` -> `accrued_interest` -> `principal`.
    - Late fee rates and penalties respect bounded limits (`MAX_PENALTY_MULTIPLIER` and `max_rate_bps`).
@@ -84,7 +84,7 @@ For how to set up and run the fuzz targets that check these invariants, see [FUZ
    - Upon default or liquidation, collateral is seized or transferred to the liquidator/pool.
 
 6. **Authorization & Error Guarantees**:
-   - Admin functions (`approve_loan`, `reject_loan`, `set_*`) require admin authentication.
+   - Admin operations (`approve_loan`, `reject_loan`, `set_*`) require admin authentication.
    - Invalid or unauthorized requests return typed `LoanError`, never unhandled panic.
 
 ### Edge Cases to Test

@@ -740,7 +740,7 @@ pub struct PendingUpgrade {
 - `cancel_loan`: Only borrower (while loan is pending)
 - `repay`: Only borrower
 - `deposit_collateral`, `release_collateral`: Only borrower / Loan Manager
-- `check_default`, `check_defaults`, `process_defaults_batch`: Anyone (evaluates overdue status past grace period)
+- `check_default`, `check_defaults`, `process_defaults_batch`: Anyone (assesses overdue status past grace period)
 - `liquidate`: Any liquidator (for undercollateralized loans)
 - `refinance_loan`, `extend_loan`: Borrower / Admin
 - `pause`, `unpause`: Only contract admin

@@ -28,9 +28,9 @@ export const CONTRACT_MAPPINGS = {
 };
 
 /**
- * Extracts public function names declared inside #[contractimpl] blocks in Rust source code.
+ * Extracts public entrypoint names declared inside #[contractimpl] blocks in Rust source code.
  */
-export function parseContractImplMethods(rustSource) {
+export const parseContractImplMethods = (rustSource) => {
   const methods = new Set();
   const implRegex = /#\[contractimpl\]\s*impl(?:\s+<[^>]+>)?\s+\w+(?:\s+for\s+\w+)?\s*\{/g;
   let match;
@@ -56,13 +56,13 @@ export function parseContractImplMethods(rustSource) {
   }
 
   return methods;
-}
+};
 
 /**
  * Parses documented contract entrypoints from ARCHITECTURE.md access-control sections.
  * Returns a Map of contract name -> Set of documented entrypoint names.
  */
-export function parseDocumentedMethods(markdownContent) {
+export const parseDocumentedMethods = (markdownContent) => {
   const result = new Map();
   for (const name of Object.keys(CONTRACT_MAPPINGS)) {
     result.set(name, new Set());
@@ -112,16 +112,16 @@ export function parseDocumentedMethods(markdownContent) {
       const codeMatches = trimmed.matchAll(/`([a-z0-9_]+)`/g);
       for (const m of codeMatches) {
         const fnName = m[1];
-        // Filter out non-function tokens or keywords if needed
+        // Filter out non-entrypoint tokens or keywords if needed
         result.get(currentContract)?.add(fnName);
       }
     }
   }
 
   return result;
-}
+};
 
-export function runChecks({ docPath, repoRoot } = {}) {
+export const runChecks = ({ docPath, repoRoot } = {}) => {
   const docFile = docPath || join(root, "ARCHITECTURE.md");
   const baseDir = repoRoot || root;
 
