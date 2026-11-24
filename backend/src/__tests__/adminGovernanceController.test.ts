@@ -85,7 +85,7 @@ describe('adminGovernanceController - getPendingGovernance', () => {
 
     expect(res.json).toHaveBeenCalledTimes(1);
 
-    const responseData = (res.json as jest.Mock).mock.calls[0]?.[0] as Record<string, any>;
+    const responseData = (res.json as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
 
     expect(responseData.pendingProposal).toBeDefined();
     expect(responseData.pendingProposal.id).toBe('prop-2');

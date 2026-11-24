@@ -37,7 +37,7 @@ jest.unstable_mockModule('../services/defaultChecker.js', () => ({
 
 let request: typeof import('supertest');
 let jwt: typeof import('jsonwebtoken');
-let app: any;
+let app: unknown;
 // Dynamic imports after mocks
 beforeAll(async () => {
   ({ default: request } = await import('supertest'));
