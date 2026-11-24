@@ -194,4 +194,142 @@ describe('Idempotency Middleware', () => {
     expect(res.status).toHaveBeenCalledWith(409);
     expect(next).not.toHaveBeenCalled();
   });
+
+  describe('concurrent requests, failed replay, and expired keys', () => {
+    it('rejects concurrent duplicate request with 409 while the first request is in-flight', async () => {
+      const key = 'in-flight-key';
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+      (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(false);
+
+      await idempotencyMiddleware(req as Request, res as Response, next);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'A request with this Idempotency-Key is already in progress.',
+      });
+      expect(next).not.toHaveBeenCalled();
+      expect(cacheService.set).not.toHaveBeenCalled();
+    });
+
+    it('does not cache 5xx server errors on finish, allowing client retries', async () => {
+      const key = 'server-error-key';
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+      (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(true);
+
+      let finishHandler: () => void = () => {};
+      (res.on as jest.Mock).mockImplementation((_: string, cb: () => void) => {
+        finishHandler = cb;
+        return res;
+      });
+
+      res.statusCode = 500;
+      await idempotencyMiddleware(req as Request, res as Response, next);
+
+      (res.json as unknown as (b: unknown) => void)({ error: 'Internal server error' });
+      await finishHandler();
+
+      expect(cacheService.delete).toHaveBeenCalledWith(`idemp:anon:${key}:lock`);
+      expect(cacheService.set).not.toHaveBeenCalled();
+    });
+
+    it('caches 4xx client errors on finish with request fingerprint', async () => {
+      const key = 'bad-request-key';
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+      (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(true);
+
+      let finishHandler: () => void = () => {};
+      (res.on as jest.Mock).mockImplementation((_: string, cb: () => void) => {
+        finishHandler = cb;
+        return res;
+      });
+
+      res.statusCode = 400;
+      await idempotencyMiddleware(req as Request, res as Response, next);
+
+      (res.json as unknown as (b: unknown) => void)({ error: 'Invalid loan amount' });
+      await finishHandler();
+
+      expect(cacheService.delete).toHaveBeenCalledWith(`idemp:anon:${key}:lock`);
+      expect(cacheService.set).toHaveBeenCalledWith(
+        `idemp:anon:${key}`,
+        {
+          status: 400,
+          body: { error: 'Invalid loan amount' },
+          fingerprint: computeFingerprint(req as Request).fingerprint,
+        },
+        86400,
+      );
+    });
+
+    it('handles expired keys as fresh cache misses and sets fresh headers', async () => {
+      const key = 'expired-key';
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+      (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(true);
+
+      await idempotencyMiddleware(req as Request, res as Response, next);
+
+      expect(res.set).toHaveBeenCalledWith('X-Idempotent-Replayed', 'false');
+      expect(next).toHaveBeenCalledTimes(1);
+    });
+
+    it('isolates idempotency locks between different authenticated users with identical keys', async () => {
+      const key = 'shared-client-key';
+      (req as unknown as { user: { publicKey: string } }).user = {
+        publicKey: 'G_ALICE_111111111111111111111111111111111111111111111111',
+      };
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+      (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(true);
+
+      await idempotencyMiddleware(req as Request, res as Response, next);
+
+      expect(cacheService.get).toHaveBeenCalledWith(
+        'idemp:G_ALICE_111111111111111111111111111111111111111111111111:shared-client-key',
+      );
+      expect(cacheService.setNotExists).toHaveBeenCalledWith(
+        'idemp:G_ALICE_111111111111111111111111111111111111111111111111:shared-client-key:lock',
+        expect.any(Object),
+        30,
+      );
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('gracefully degrades and continues pipeline if cache lookup throws', async () => {
+      const key = 'erroring-key';
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockRejectedValue(
+        new Error('Redis connection refused'),
+      );
+
+      await idempotencyMiddleware(req as Request, res as Response, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('continues request without failing if lock deletion throws on finish', async () => {
+      const key = 'delete-error-key';
+      asMock(req.header).mockReturnValue(key);
+      (cacheService.get as jest.Mock<() => Promise<unknown>>).mockResolvedValue(null);
+      (cacheService.setNotExists as jest.Mock<() => Promise<unknown>>).mockResolvedValue(true);
+      (cacheService.delete as jest.Mock<() => Promise<unknown>>).mockRejectedValue(
+        new Error('Redis delete failed'),
+      );
+
+      let finishHandler: () => void = () => {};
+      (res.on as jest.Mock).mockImplementation((_: string, cb: () => void) => {
+        finishHandler = cb;
+        return res;
+      });
+
+      await idempotencyMiddleware(req as Request, res as Response, next);
+      (res.json as unknown as (b: unknown) => void)({ success: true });
+
+      await expect(finishHandler()).resolves.not.toThrow();
+    });
+  });
 });

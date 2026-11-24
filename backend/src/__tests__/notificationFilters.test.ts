@@ -35,6 +35,7 @@ await jest.unstable_mockModule('../services/cacheService.js', () => ({
 await import('../db/connection.js');
 const { default: app } = await import('../app.js');
 const { generateJwtToken } = await import('../services/authService.js');
+const { default: jwt } = await import('jsonwebtoken');
 
 const userId = 'GTESTUSER1111111111111111111111111111111111111111111111111';
 
@@ -236,5 +237,156 @@ describe('notification filters', () => {
 
     expect(responseTooLarge.status).toBe(400);
     expect(responseTooLarge.body.success).toBe(false);
+  });
+
+  describe('stable pagination, status filters, and deleted records', () => {
+    it('uses default limit of 50 and orders by created_at DESC when limit is omitted', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+      const response = await request(app).get('/api/notifications').set(bearer(userId));
+
+      expect(response.status).toBe(200);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY created_at DESC'),
+        expect.arrayContaining([userId, 50]),
+      );
+    });
+
+    it('supports pagination boundary limit=1 and limit=100 with SQL parameters', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+      const resMin = await request(app).get('/api/notifications?limit=1').set(bearer(userId));
+
+      expect(resMin.status).toBe(200);
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('ORDER BY created_at DESC'), [
+        userId,
+        1,
+      ]);
+
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+      const resMax = await request(app).get('/api/notifications?limit=100').set(bearer(userId));
+
+      expect(resMax.status).toBe(200);
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('ORDER BY created_at DESC'), [
+        userId,
+        100,
+      ]);
+    });
+
+    it('filters notifications by status=unread and returns unread count', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 11,
+            user_id: userId,
+            type: 'loan_approved',
+            title: 'Loan Approved',
+            message: 'Your loan was approved',
+            loan_id: 5,
+            action_url: '/loans/5',
+            read: false,
+            status: 'unread',
+            created_at: new Date('2024-04-01'),
+          },
+        ],
+      });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ count: '1' }],
+      });
+
+      const response = await request(app)
+        .get('/api/notifications?status=unread')
+        .set(bearer(userId));
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.notifications).toHaveLength(1);
+      expect(response.body.data.notifications[0].status).toBe('unread');
+      expect(response.body.data.notifications[0].actionUrl).toBe('/loans/5');
+      expect(response.body.data.unreadCount).toBe(1);
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('status = $2'), [
+        userId,
+        'unread',
+        50,
+      ]);
+    });
+
+    it('filters notifications by status=archived and handles custom action URLs', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 12,
+            user_id: userId,
+            type: 'repayment_due',
+            title: 'Repayment Due',
+            message: 'Repayment deadline approaching',
+            loan_id: null,
+            action_url: '/custom/repay',
+            read: true,
+            status: 'archived',
+            created_at: new Date('2024-03-01'),
+          },
+        ],
+      });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ count: '0' }],
+      });
+
+      const response = await request(app)
+        .get('/api/notifications?status=archived')
+        .set(bearer(userId));
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.notifications).toHaveLength(1);
+      expect(response.body.data.notifications[0].status).toBe('archived');
+      expect(response.body.data.notifications[0].actionUrl).toBe('/custom/repay');
+      expect(response.body.data.unreadCount).toBe(0);
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('status = $2'), [
+        userId,
+        'archived',
+        50,
+      ]);
+    });
+
+    it('handles empty notification lists when records are deleted or absent', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ count: '0' }] });
+
+      const response = await request(app).get('/api/notifications').set(bearer(userId));
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.notifications).toEqual([]);
+      expect(response.body.data.unreadCount).toBe(0);
+    });
+
+    it('rejects requests missing authentication credentials with 401', async () => {
+      const response = await request(app).get('/api/notifications');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('rejects requests whose token lacks the read:notifications scope with 403', async () => {
+      const tokenWithoutScope = jwt.sign(
+        {
+          publicKey: userId,
+          role: 'user',
+          scopes: ['read:profile'],
+          jti: 'test-jti-no-scope',
+        },
+        process.env.JWT_SECRET as string,
+      );
+
+      const response = await request(app)
+        .get('/api/notifications')
+        .set({ Authorization: `Bearer ${tokenWithoutScope}` });
+
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+    });
   });
 });

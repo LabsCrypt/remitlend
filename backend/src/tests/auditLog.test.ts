@@ -141,4 +141,138 @@ describe('Audit Log Middleware', () => {
       expect.objectContaining({ err: failure }),
     );
   });
+
+  describe('anonymous requests, impersonation, and failed writes', () => {
+    it('attributes unauthenticated requests to actor "unknown"', async () => {
+      req.headers = {};
+      delete (req as unknown as { user?: unknown }).user;
+      req.method = 'GET';
+      req.path = '/api/loans/101';
+      req.params = { id: '101' };
+      req.body = undefined;
+
+      auditLog(req as Request, res as Response, next);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(next).toHaveBeenCalled();
+      expect(mockPersist).toHaveBeenCalledWith(
+        'unknown',
+        'GET /api/loans/101',
+        'ID:101',
+        undefined,
+        '127.0.0.1',
+        200,
+      );
+    });
+
+    it('prioritizes JWT authenticated user over API key header during impersonation or hybrid requests', async () => {
+      (req as unknown as { user: { publicKey: string } }).user = {
+        publicKey: 'G-IMPERSONATED-USER',
+      };
+      req.headers = { 'x-api-key': 'admin-api-key-value' };
+
+      auditLog(req as Request, res as Response, next);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockPersist).toHaveBeenCalledWith(
+        'G-IMPERSONATED-USER',
+        'POST /admin/check-defaults',
+        'LoanIDs:[1,2,3]',
+        { loanIds: [1, 2, 3] },
+        '127.0.0.1',
+        200,
+      );
+    });
+
+    it('extracts client IP from first hop of x-forwarded-for header string', async () => {
+      req.ip = '';
+      req.headers = {
+        'x-api-key': 'key',
+        'x-forwarded-for': '203.0.113.195, 70.41.3.18, 150.172.238.178',
+      };
+
+      auditLog(req as Request, res as Response, next);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockPersist).toHaveBeenCalledWith(
+        'INTERNAL_API_KEY',
+        'POST /admin/check-defaults',
+        'LoanIDs:[1,2,3]',
+        { loanIds: [1, 2, 3] },
+        '203.0.113.195',
+        200,
+      );
+    });
+
+    it('extracts client IP from x-forwarded-for header array', async () => {
+      req.ip = '';
+      req.headers = {
+        'x-api-key': 'key',
+        'x-forwarded-for': ['198.51.100.42', '10.0.0.1'] as unknown as string,
+      };
+
+      auditLog(req as Request, res as Response, next);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockPersist).toHaveBeenCalledWith(
+        'INTERNAL_API_KEY',
+        'POST /admin/check-defaults',
+        'LoanIDs:[1,2,3]',
+        { loanIds: [1, 2, 3] },
+        '198.51.100.42',
+        200,
+      );
+    });
+
+    it('falls back to socket remoteAddress when ip and forwarded headers are missing', async () => {
+      req.ip = '';
+      req.headers = { 'x-api-key': 'key' };
+      req.socket = { remoteAddress: '192.168.1.100' } as import('net').Socket;
+
+      auditLog(req as Request, res as Response, next);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockPersist).toHaveBeenCalledWith(
+        'INTERNAL_API_KEY',
+        'POST /admin/check-defaults',
+        'LoanIDs:[1,2,3]',
+        { loanIds: [1, 2, 3] },
+        '192.168.1.100',
+        200,
+      );
+    });
+
+    it('extracts targets from path params and body fields', async () => {
+      req.params = { loanId: '456' };
+      req.body = { borrowerPublicKey: 'G-BORROWER-KEY' };
+
+      auditLog(req as Request, res as Response, next);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockPersist).toHaveBeenCalledWith(
+        'INTERNAL_API_KEY',
+        'POST /admin/check-defaults',
+        'LoanID:456',
+        { borrowerPublicKey: 'G-BORROWER-KEY' },
+        '127.0.0.1',
+        200,
+      );
+    });
+
+    it('catches middleware configuration errors and continues request flow', () => {
+      const faultyReq = {
+        get method() {
+          throw new Error('Getter failure');
+        },
+      } as unknown as Request;
+
+      auditLog(faultyReq, res as Response, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        'Audit log middleware error',
+        expect.objectContaining({ err: expect.any(Error) }),
+      );
+    });
+  });
 });
