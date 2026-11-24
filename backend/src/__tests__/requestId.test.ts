@@ -34,7 +34,7 @@ describe('Request ID middleware', () => {
       res.sendStatus(200);
     });
 
-    const infoSpy = jest.spyOn(logger, 'info').mockImplementation(() => logger as any);
+    const infoSpy = jest.spyOn(logger, 'info').mockImplementation(() => logger);
 
     const response = await request(tempApp).get('/test');
     const requestId = response.headers['x-request-id'];
