@@ -1,7 +1,9 @@
 import { jest, describe, it, expect } from '@jest/globals';
-import express, { type Request, type Response, type NextFunction } from 'express';
+import express, { type Request, type Response } from 'express';
 import request from 'supertest';
 import { asyncHandler } from '../asyncHandler.js';
+
+type NextFn = (err?: unknown) => void;
 
 const flushAsync = async (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -21,7 +23,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, createMockRes(), next as unknown as NextFunction);
+      handler({} as Request, createMockRes(), next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -34,7 +36,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, createMockRes(), next as unknown as NextFunction);
+      handler({} as Request, createMockRes(), next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -51,7 +53,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, createMockRes(), next as unknown as NextFunction);
+      handler({} as Request, createMockRes(), next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -68,7 +70,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, createMockRes(), next as unknown as NextFunction);
+      handler({} as Request, createMockRes(), next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -85,7 +87,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, createMockRes(), next as unknown as NextFunction);
+      handler({} as Request, createMockRes(), next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -101,7 +103,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, createMockRes(), next as unknown as NextFunction);
+      handler({} as Request, createMockRes(), next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -120,7 +122,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, res, next as unknown as NextFunction);
+      handler({} as Request, res, next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -134,7 +136,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, res, next as unknown as NextFunction);
+      handler({} as Request, res, next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -151,7 +153,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, res, next as unknown as NextFunction);
+      handler({} as Request, res, next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);
@@ -175,7 +177,7 @@ describe('asyncHandler', () => {
       );
 
       // Custom error middleware delegating to next(err) if headers are sent
-      app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+      app.use((err: unknown, _req: Request, res: Response, _next: NextFn) => {
         capturedError = err;
         headersWereSentInErrorHandler = res.headersSent;
         if (res.headersSent) {
@@ -203,7 +205,7 @@ describe('asyncHandler', () => {
 
       const res = createMockRes();
       const next = jest.fn();
-      handler({} as Request, res, next as unknown as NextFunction);
+      handler({} as Request, res, next as unknown as NextFn);
       await flushAsync();
 
       expect(res.status).toHaveBeenCalledWith(200);
@@ -218,7 +220,7 @@ describe('asyncHandler', () => {
 
       const res = createMockRes();
       const next = jest.fn();
-      handler({} as Request, res, next as unknown as NextFunction);
+      handler({} as Request, res, next as unknown as NextFn);
       await flushAsync();
 
       expect(res.status).toHaveBeenCalledWith(204);
@@ -231,7 +233,7 @@ describe('asyncHandler', () => {
       });
 
       const next = jest.fn();
-      handler({} as Request, createMockRes(), next as unknown as NextFunction);
+      handler({} as Request, createMockRes(), next as unknown as NextFn);
       await flushAsync();
 
       expect(next).toHaveBeenCalledTimes(1);

@@ -313,7 +313,7 @@ describe('rate limiter key isolation', () => {
     const { client } = createClientMock(async (args) => {
       const [command, , , key] = args;
       if (command === 'SCRIPT') return 'sha';
-      if (command === 'EVALSHA' && key) {
+      if (command.endsWith('SHA') && key) {
         executedKeys.push(key);
         return [1, 60000];
       }
