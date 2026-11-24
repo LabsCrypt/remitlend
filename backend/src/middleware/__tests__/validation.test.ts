@@ -2,6 +2,7 @@ import { describe, it, expect, jest } from '@jest/globals';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import request from 'supertest';
 import { z } from 'zod';
+import { borrowerLoansQuerySchema } from '../../schemas/loanSchemas.js';
 import {
   validateBody,
   validateParams,
@@ -91,6 +92,10 @@ contractApp.get(
     res.json({ id: req.params.id, page: req.query.page });
   },
 );
+
+contractApp.get('/borrower-cursor', validateQuery(borrowerLoansQuerySchema), (req, res) => {
+  res.json({ cursor: req.query.cursor ?? null });
+});
 
 contractApp.use(errorHandler);
 
@@ -200,5 +205,43 @@ describe('validation middleware error contract (#2095)', () => {
 
     expect(response.status).toBe(400);
     expect(JSON.stringify(response.body)).not.toContain('super-secret-token-value');
+  });
+});
+
+
+describe('borrower loans cursor validation (#2231)', () => {
+  it.each(['abc', '12abc', '0', '-1', '', '2147483648', '1.5', ' 12', '12 '])(
+    'rejects invalid cursor %j with the standard 400 error contract',
+    async (cursor) => {
+      const response = await request(contractApp).get('/borrower-cursor').query({ cursor });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        success: false,
+        message: 'Validation failed',
+        error: { code: 'VALIDATION_ERROR', field: 'cursor' },
+      });
+      expect(response.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'cursor' })]),
+      );
+    },
+  );
+
+  it('accepts a valid cursor without changing its decimal representation', async () => {
+    const response = await request(contractApp).get('/borrower-cursor?cursor=12');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ cursor: '12' });
+  });
+
+  it('allows a request without a cursor for the first page', async () => {
+    const response = await request(contractApp).get('/borrower-cursor');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ cursor: null });
+  });
+
+  it('accepts the maximum PostgreSQL int4 cursor', async () => {
+    const response = await request(contractApp).get('/borrower-cursor?cursor=2147483647');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ cursor: '2147483647' });
   });
 });
