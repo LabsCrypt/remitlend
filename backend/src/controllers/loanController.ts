@@ -382,6 +382,7 @@ export async function loadLoanSettlements(loanIds: number[]): Promise<{
     rows = result.rows as Record<string, unknown>[];
   } catch (error) {
     logger.withContext().error('Failed to load loan settlements', { error });
+    // Propagate failure instead of masking it
     throw error;
   }
 
