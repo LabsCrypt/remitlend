@@ -10,7 +10,7 @@ test('loadLoanSettlements error propagation', async () => {
   };
 
   try {
-    await loadLoanSettlements('loan-123');
+    await loadLoanSettlements([123]);
     assert.fail('Expected loadLoanSettlements to throw an error');
   } catch (err: unknown) {
     const error = err as Error;
