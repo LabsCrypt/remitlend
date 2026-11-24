@@ -47,7 +47,7 @@ jest.unstable_mockModule('../../services/defaultChecker.js', () => ({
 
 let request: typeof import('supertest');
 let jwt: typeof import('jsonwebtoken');
-let app: any;
+let app: unknown;
 
 const TEST_PUBLIC_KEY = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
 const ADMIN_API_KEY = 'test-api-key';
