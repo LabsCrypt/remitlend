@@ -11,6 +11,10 @@ export const asyncHandler = (
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void> | void,
 ): RequestHandler => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    Promise.resolve(fn(req, res, next)).catch((err) => next(normalizeError(err)));
+    try {
+      Promise.resolve(fn(req, res, next)).catch((err) => next(normalizeError(err)));
+    } catch (err) {
+      next(normalizeError(err));
+    }
   };
 };
