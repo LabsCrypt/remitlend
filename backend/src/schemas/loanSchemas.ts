@@ -71,7 +71,7 @@ export const liquidateLoanSchema = z.object({
  * `from`    – ISO-8601 date string (start of approved_at range)
  * `to`      – ISO-8601 date string (end of approved_at range)
  * `limit`   – page size (default 50, max 100)
- * `cursor`  – opaque cursor (loan_id string from previous response)
+ * `cursor`  – positive decimal loan_id (PostgreSQL int4) from previous response
  */
 const isoDateString = z.string().refine((val) => !Number.isNaN(Date.parse(val)), {
   message: 'Must be a valid ISO-8601 date string',
@@ -82,5 +82,5 @@ export const borrowerLoansQuerySchema = z.object({
   from: isoDateString.optional(),
   to: isoDateString.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
-  cursor: z.string().optional(),
+  cursor: z\n    .string()\n    .regex(/^[0-9]+$/, 'Cursor must be a positive integer')\n    .refine((value) => {\n      const parsed = Number(value);\n      return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 2147483647;\n    }, 'Cursor must be a positive 32-bit integer')\n    .optional(),
 });
