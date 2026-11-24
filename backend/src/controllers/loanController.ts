@@ -65,7 +65,7 @@ export const buildCancelLoanTx = async (req: Request, res: Response, next: NextF
   try {
     const { loanId } = req.params;
 
-    const borrower = (req as any).user?.publicKey as string;
+    const borrower = req.user?.publicKey as string;
 
     const loan = await getLoanSummary(loanId as string);
 
