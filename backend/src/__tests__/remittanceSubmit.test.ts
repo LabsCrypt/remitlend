@@ -216,9 +216,49 @@ describe('POST /api/remittances/:id/submit', () => {
       'failed',
       undefined,
       expect.stringContaining('not confirmed'),
+      'processing',
     );
     expect(mockCreateNotification).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 500 }));
+  });
+
+  it('keeps a confirmed remittance completed when the confirmation notification throws (#2230)', async () => {
+    mockGetRemittance.mockResolvedValue({
+      id: 'remit-1',
+      senderId: SENDER,
+      status: 'pending',
+      amount: 100,
+      fromCurrency: 'USDC',
+    });
+    mockSubmitSignedTx.mockResolvedValue({ txHash: 'txhash-abc', status: 'SUCCESS' });
+    // The on-chain payment already succeeded; delivery of the notification is
+    // best-effort and must not reach the failure path.
+    mockCreateNotification.mockRejectedValue(new Error('notification service unavailable'));
+
+    const req = makeReq(buildSignedXdr()) as Request;
+    const res = makeRes();
+    const next = jest.fn();
+
+    (submitRemittanceTransaction as (req: Request, res: Response, next: () => void) => void)(
+      req,
+      res,
+      next,
+    );
+    await flush();
+
+    // The request still succeeds and the record stays completed.
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        data: expect.objectContaining({ status: 'completed', txHash: 'txhash-abc' }),
+      }),
+    );
+
+    const failedCalls = mockUpdateRemittanceStatus.mock.calls.filter(
+      (call: unknown[]) => call[1] === 'failed',
+    );
+    expect(failedCalls).toHaveLength(0);
   });
 
   it('rejects an invalid signed XDR with a 400 without touching the record or calling the RPC', async () => {

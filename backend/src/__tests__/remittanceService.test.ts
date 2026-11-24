@@ -461,6 +461,51 @@ describe('remittanceService.updateRemittanceStatus status transitions (#1850)', 
     );
   });
 
+  it('guards a `failed` transition on the remittance still being `processing` (#2230)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [row('failed')],
+      rowCount: 1,
+      command: 'UPDATE',
+      oid: 0,
+      fields: [],
+    });
+
+    const updated = await remittanceService.updateRemittanceStatus(
+      'remit-1',
+      'failed',
+      undefined,
+      'boom',
+      'processing',
+    );
+
+    expect(updated?.status).toBe('failed');
+
+    const [text] = mockQuery.mock.calls[0]! as [string, unknown[]];
+    expect(text.replace(/\s+/g, ' ').trim()).toBe(
+      `UPDATE remittances SET status = $1, transaction_hash = $2, error_message = $3, updated_at = $4 WHERE id = $5 AND status = 'processing' RETURNING *`,
+    );
+  });
+
+  it('resolves null instead of overwriting a completed remittance (#2230)', async () => {
+    mockQuery.mockResolvedValueOnce(emptyResult).mockResolvedValueOnce({
+      rows: [{ id: 'remit-1' }],
+      rowCount: 1,
+      command: 'SELECT',
+      oid: 0,
+      fields: [],
+    });
+
+    await expect(
+      remittanceService.updateRemittanceStatus(
+        'remit-1',
+        'failed',
+        undefined,
+        'boom',
+        'processing',
+      ),
+    ).resolves.toBeNull();
+  });
+
   it('keeps terminal transitions unguarded for the request that owns the claim', async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [row('completed')],
