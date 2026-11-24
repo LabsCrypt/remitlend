@@ -4,8 +4,8 @@ type CronCallback = () => Promise<void>;
 let capturedCallback: CronCallback | null = null;
 const mockScheduleStop = jest.fn();
 
-const mockQuery = jest.fn<() => Promise<{ rows: any[] }>>();
-const mockCreateNotification = jest.fn<() => Promise<any>>();
+const mockQuery = jest.fn<() => Promise<{ rows: Record<string, unknown>[] }>>();
+const mockCreateNotification = jest.fn<() => Promise<unknown>>();
 const mockRecordSuccess = jest.fn();
 const mockRecordFailure = jest.fn();
 
@@ -206,8 +206,8 @@ describe('loanDueCheckCron (#2028, #2116)', () => {
       const callback = capturedCallback!;
 
       // Mock a slow query - returns a promise we can control
-      let resolveQuery: (value: { rows: any[] }) => void;
-      const queryPromise = new Promise<{ rows: any[] }>((resolve) => {
+      let resolveQuery: (value: { rows: Record<string, unknown>[] }) => void;
+      const queryPromise = new Promise<{ rows: Record<string, unknown>[] }>((resolve) => {
         resolveQuery = resolve;
       });
       mockQuery.mockReturnValueOnce(queryPromise);

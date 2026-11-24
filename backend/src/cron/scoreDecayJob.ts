@@ -46,7 +46,7 @@ async function runScoreDecayJobLocal(): Promise<void> {
     logger
       .withContext()
       .info('Score decay processing pass completed successfully.', { processed: borrowers.length });
-  } catch (error: any) {
+  } catch (error: unknown) {
     await jobMetricsService.recordFailure(
       'score-decay-job',
       error instanceof Error ? error : String(error),

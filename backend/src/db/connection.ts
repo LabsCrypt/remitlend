@@ -172,7 +172,7 @@ export interface QueryOptions {
   retry?: boolean;
 }
 
-export const query = async <T extends pg.QueryResultRow = any>(
+export const query = async <T extends pg.QueryResultRow = Record<string, unknown>>(
   text: string,
   params?: unknown[],
   options?: QueryOptions,
@@ -206,7 +206,7 @@ export const query = async <T extends pg.QueryResultRow = any>(
 /**
  * Convenience method for explicitly executing read-only statements with transient retry.
  */
-export const queryReadOnly = async <T extends pg.QueryResultRow = any>(
+export const queryReadOnly = async <T extends pg.QueryResultRow = Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ): Promise<pg.QueryResult<T>> => {
@@ -216,7 +216,7 @@ export const queryReadOnly = async <T extends pg.QueryResultRow = any>(
 /**
  * Convenience method for explicitly executing mutating statements without blanket retry.
  */
-export const executeWrite = async <T extends pg.QueryResultRow = any>(
+export const executeWrite = async <T extends pg.QueryResultRow = Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ): Promise<pg.QueryResult<T>> => {
