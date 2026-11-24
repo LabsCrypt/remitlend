@@ -359,7 +359,7 @@ export const previewLoanAmortizationSchedule = asyncHandler(async (req: Request,
  * because a repayment is split across the outstanding principal, the accrued
  * interest and the accrued late fee.
  */
-async function loadLoanSettlements(loanIds: number[]): Promise<{
+export async function loadLoanSettlements(loanIds: number[]): Promise<{
   settlements: Map<number, LoanSettlement[]>;
   lateFees: Map<number, bigint>;
 }> {
@@ -381,10 +381,9 @@ async function loadLoanSettlements(loanIds: number[]): Promise<{
     );
     rows = result.rows as Record<string, unknown>[];
   } catch (error) {
-    logger.withContext().warn('Failed to load loan settlements', { error });
-    return { settlements, lateFees };
+    logger.withContext().error('Failed to load loan settlements', { error });
+    throw error;
   }
-
   for (const row of rows) {
     const loanId = Number(row.loan_id);
     if (!Number.isFinite(loanId)) continue;
