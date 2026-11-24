@@ -384,6 +384,7 @@ export async function loadLoanSettlements(loanIds: number[]): Promise<{
     logger.withContext().error('Failed to load loan settlements', { error });
     throw error;
   }
+
   for (const row of rows) {
     const loanId = Number(row.loan_id);
     if (!Number.isFinite(loanId)) continue;
