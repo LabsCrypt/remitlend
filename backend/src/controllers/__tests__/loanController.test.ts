@@ -14,7 +14,9 @@ describe('loadLoanSettlements error handling', () => {
       async () => {
         await loadLoanSettlements([123]);
       },
-      { message: 'DB connection error' }
+      {
+        message: 'DB connection error',
+      },
     );
   });
 });
