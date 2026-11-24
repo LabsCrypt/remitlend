@@ -107,7 +107,9 @@ describe('pagination and filtering', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.total_count).toBe(2);
+    // The status filter runs over the accrued loans (#2232), so the page's
+    // total is the number of matching rows rather than a SQL window count.
+    expect(response.body.total_count).toBe(1);
     expect(response.body.page_info).toEqual({
       limit: 1,
       count: 1,

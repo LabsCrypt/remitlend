@@ -209,8 +209,11 @@ describe('GET /api/loans/borrower/:borrower – filters', () => {
 
   describe('combined status + date-range filter', () => {
     it('returns loans matching both status and date range', async () => {
+      // The row is an active loan: status is derived from the windowed accrual
+      // of the row (#2232), so an unrepaid loan is active regardless of the
+      // SQL `status` column.
       const row = makeLoanRow({
-        status: 'repaid',
+        status: 'active',
         approved_at: '2024-06-01T00:00:00.000Z',
       });
 
@@ -222,7 +225,7 @@ describe('GET /api/loans/borrower/:borrower – filters', () => {
       });
 
       const res = await request(app)
-        .get(`/api/loans/borrower/${TEST_BORROWER}?status=repaid&from=2024-01-01&to=2024-12-31`)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?status=active&from=2024-01-01&to=2024-12-31`)
         .set(bearer(TEST_BORROWER));
 
       expect(res.status).toBe(200);
