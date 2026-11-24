@@ -359,7 +359,7 @@ export const previewLoanAmortizationSchedule = asyncHandler(async (req: Request,
  * because a repayment is split across the outstanding principal, the accrued
  * interest and the accrued late fee.
  */
-async function loadLoanSettlements(loanIds: number[]): Promise<{
+export async function loadLoanSettlements(loanIds: number[]): Promise<{
   settlements: Map<number, LoanSettlement[]>;
   lateFees: Map<number, bigint>;
 }> {

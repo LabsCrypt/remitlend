@@ -5,16 +5,17 @@ import * as dbConnection from '../db/connection.js';
 
 test('loadLoanSettlements surfaces settlement-load failure as an error', async () => {
   const originalQuery = dbConnection.query;
-  (dbConnection as any).query = async () => {
+  (dbConnection as { query: typeof dbConnection.query }).query = (async () => {
     throw new Error('Database connection failed');
-  };
+  }) as typeof dbConnection.query;
 
   try {
     await loadLoanSettlements([123]);
     assert.fail('Expected loadLoanSettlements to throw an error');
-  } catch (error: any) {
-    assert.strictEqual(error.message, 'Database connection failed');
+  } catch (error: unknown) {
+    const err = error as Error;
+    assert.strictEqual(err.message, 'Database connection failed');
   } finally {
-    (dbConnection as any).query = originalQuery;
+    (dbConnection as { query: typeof dbConnection.query }).query = originalQuery;
   }
 });
