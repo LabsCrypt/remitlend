@@ -333,9 +333,7 @@ describe('GET /api/loans/borrower/:borrower – filters', () => {
           code: 'VALIDATION_ERROR',
           field: 'cursor',
         });
-        expect(
-          mockQuery.mock.calls.some(([sql]) => sql.includes('loan_id > $8')),
-        ).toBe(false);
+        expect(mockQuery.mock.calls.some(([sql]) => sql.includes('loan_id > $8'))).toBe(false);
       },
     );
   });
