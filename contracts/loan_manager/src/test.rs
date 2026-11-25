@@ -7035,6 +7035,7 @@ fn test_stale_index_is_reported_instead_of_being_used() {
 fn test_high_rate_interest_respects_global_debt_cap_across_windows() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
+    env.ledger().set_sequence_number(1);
 
     let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
     let borrower = Address::generate(&env);
