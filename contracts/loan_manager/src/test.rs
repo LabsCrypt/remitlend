@@ -7029,3 +7029,56 @@ fn test_stale_index_is_reported_instead_of_being_used() {
     let result = LoanManager::check_index_freshness(0, 1);
     assert!(matches!(result, Ok(())));
 }
+
+
+#[test]
+fn test_term_default_matches_enforced_limit_and_rejects_u32_max() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+    let (manager, nft_client, _pool, _token, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let history_hash = BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://term-boundary"),
+        &create_test_commitment(&env, 19),
+        &None,
+    );
+    let max_term = manager.get_max_term_ledgers();
+    assert_eq!(max_term, 17_280);
+    assert_eq!(
+        manager.try_request_loan(&borrower, &1_000, &u32::MAX),
+        Err(Ok(LoanError::InvalidTerm))
+    );
+    assert_eq!(
+        manager.try_request_loan(&borrower, &1_000, &(max_term + 1)),
+        Err(Ok(LoanError::InvalidTerm))
+    );
+    assert!(manager.try_request_loan(&borrower, &1_000, &max_term).is_ok());
+}
+
+#[test]
+fn test_approval_rejects_due_date_overflow_without_approving_loan() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+    let (manager, nft_client, _pool, _token, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    let history_hash = BytesN::from_array(&env, &[0u8; 32]);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &history_hash,
+        &String::from_str(&env, "ipfs://overflow"),
+        &create_test_commitment(&env, 20),
+        &None,
+    );
+    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
+    env.ledger().set_sequence_number(u32::MAX - 100);
+    assert_eq!(
+        manager.try_approve_loan(&loan_id),
+        Err(Ok(LoanError::InvalidTerm))
+    );
+    assert_eq!(manager.get_loan(&loan_id).status, LoanStatus::Pending);
+}
