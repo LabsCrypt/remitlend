@@ -200,8 +200,8 @@ const decodeQuarantinedRawEvent = (row: QuarantineEventRow): SorobanRawEvent | n
 export const getIndexerStatus = async (_req: Request, res: Response) => {
   try {
     const result = await query(
-      'SELECT last_indexed_ledger, last_indexed_cursor, updated_at FROM indexer_state ORDER BY id DESC LIMIT 1',
-      [],
+      'SELECT last_ledger, updated_at FROM indexer_state WHERE contract = $1 LIMIT 1',
+      [process.env.LOAN_MANAGER_CONTRACT_ID ?? 'default'],
     );
 
     if (result.rows.length === 0) {
@@ -217,8 +217,8 @@ export const getIndexerStatus = async (_req: Request, res: Response) => {
     return res.json({
       success: true,
       data: {
-        lastIndexedLedger: state.last_indexed_ledger,
-        lastIndexedCursor: state.last_indexed_cursor,
+        lastIndexedLedger: Number(state.last_ledger),
+        lastIndexedCursor: null,
         lastUpdated: state.updated_at,
         totalEvents,
         eventsByType,
