@@ -605,11 +605,33 @@ impl LoanManager {
             .checked_add(additional_interest)
             .ok_or(LoanError::AmountTooLarge)?;
 
+        // Interest and late fees share the same outstanding-debt ceiling.
+        // Cap the *new* interest rather than rejecting settlement: otherwise
+        // a high-rate loan could become impossible to repay.
+        let max_total_debt = loan
+            .amount
+            .checked_mul(Self::MAX_PENALTY_MULTIPLIER)
+            .ok_or(LoanError::AmountTooLarge)?;
+        let current_total_debt = remaining_principal
+            .checked_add(loan.accrued_interest)
+            .and_then(|value| value.checked_add(loan.accrued_late_fee))
+            .ok_or(LoanError::AmountTooLarge)?;
+        let available_interest = max_total_debt.saturating_sub(current_total_debt);
+        let charged_interest = total_accrued_delta.min(available_interest);
         loan.accrued_interest = loan
             .accrued_interest
-            .checked_add(total_accrued_delta)
+            .checked_add(charged_interest)
             .ok_or(LoanError::AmountTooLarge)?;
-        loan.interest_residual = final_residual;
+        // Discard fractional carry once the cap is reached, so later accrual
+        // windows cannot collect interest that was previously capped.
+        let charged_residual = if charged_interest < total_accrued_delta
+            || charged_interest == available_interest
+        {
+            0
+        } else {
+            final_residual
+        };
+        loan.interest_residual = charged_residual;
         loan.last_interest_ledger = current_ledger;
 
         if settle {
@@ -621,8 +643,8 @@ impl LoanManager {
                 loan_id,
                 index_after,
                 index_delta,
-                total_accrued_delta,
-                final_residual,
+                charged_interest,
+                charged_residual,
             );
             Self::advance_borrow_index(env, current_ledger)?;
         }
