@@ -208,7 +208,6 @@ describe('validation middleware error contract (#2095)', () => {
   });
 });
 
-
 describe('borrower loans cursor validation (#2231)', () => {
   it.each(['abc', '12abc', '0', '-1', '', '2147483648', '1.5', ' 12', '12 '])(
     'rejects invalid cursor %j with the standard 400 error contract',
