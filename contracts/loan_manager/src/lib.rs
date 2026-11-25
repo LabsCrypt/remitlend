@@ -1344,7 +1344,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::MaxTermLedgers)
-            .unwrap_or(u32::MAX);
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
         if term < min_term || term > max_term {
             return Err(LoanError::InvalidTerm);
         }
@@ -1515,7 +1515,11 @@ impl LoanManager {
 
         loan.status = LoanStatus::Approved;
         loan.term_ledgers = term_ledgers;
-        loan.due_date = env.ledger().sequence() + term_ledgers;
+        loan.due_date = env
+            .ledger()
+            .sequence()
+            .checked_add(term_ledgers)
+            .ok_or(LoanError::InvalidTerm)?;
         loan.last_interest_ledger = env.ledger().sequence();
         loan.last_late_fee_ledger = loan
             .due_date
@@ -2451,7 +2455,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::MaxTermLedgers)
-            .unwrap_or(u32::MAX);
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
         if new_term < min_term || new_term > max_term {
             return Err(LoanError::InvalidTerm);
         }
@@ -2592,7 +2596,9 @@ impl LoanManager {
         loan.interest_rate_bps =
             Self::compute_interest_rate(&env, &loan.borrower, new_amount, current_score);
         loan.last_interest_ledger = current_ledger;
-        loan.due_date = current_ledger + new_term;
+        loan.due_date = current_ledger
+            .checked_add(new_term)
+            .ok_or(LoanError::InvalidTerm)?;
         loan.last_late_fee_ledger = loan.due_date;
 
         env.storage().persistent().set(&loan_key, &loan);
@@ -2983,7 +2989,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::MaxTermLedgers)
-            .unwrap_or(u32::MAX);
+            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
         if min_term > max_term {
             return Err(LoanError::InvalidTerm);
         }
@@ -3014,7 +3020,7 @@ impl LoanManager {
             .instance()
             .get(&DataKey::MinTermLedgers)
             .unwrap_or(0);
-        if max_term < min_term {
+        if max_term == 0 || max_term < min_term {
             return Err(LoanError::InvalidTerm);
         }
         Self::admin(&env).require_auth();
