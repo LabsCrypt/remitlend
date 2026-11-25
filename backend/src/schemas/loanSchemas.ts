@@ -82,5 +82,12 @@ export const borrowerLoansQuerySchema = z.object({
   from: isoDateString.optional(),
   to: isoDateString.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
-  cursor: z\n    .string()\n    .regex(/^[0-9]+$/, 'Cursor must be a positive integer')\n    .refine((value) => {\n      const parsed = Number(value);\n      return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 2147483647;\n    }, 'Cursor must be a positive 32-bit integer')\n    .optional(),
+  cursor: z
+    .string()
+    .regex(/^[0-9]+$/, 'Cursor must be a positive integer')
+    .refine((value) => {
+      const parsed = Number(value);
+      return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 2147483647;
+    }, 'Cursor must be a positive 32-bit integer')
+    .optional(),
 });
