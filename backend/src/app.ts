@@ -235,9 +235,11 @@ app.get(
       ),
       withTimeout(
         pool
-          .query('SELECT last_indexed_ledger FROM indexer_state ORDER BY id DESC LIMIT 1')
+          .query('SELECT last_ledger FROM indexer_state WHERE contract = $1 LIMIT 1', [
+            process.env.LOAN_MANAGER_CONTRACT_ID ?? 'default',
+          ])
           .then((r) => ({
-            lastIndexedLedger: r.rows[0]?.last_indexed_ledger ?? null,
+            lastIndexedLedger: r.rows[0]?.last_ledger ?? null,
           }))
           .catch(() => ({ lastIndexedLedger: null })),
         { lastIndexedLedger: null },
