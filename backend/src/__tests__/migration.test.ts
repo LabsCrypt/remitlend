@@ -126,6 +126,62 @@ describeIf('Migrations', () => {
     expect(Number(result.rows[0]?.last_ledger ?? 0)).toBe(42);
   });
 
+  it('supports contract-scoped indexer reads after migration', async () => {
+    const contract = 'test_contract';
+    const otherContract = 'test_contract_other';
+
+    try {
+      await query(
+        `INSERT INTO indexer_state (contract, last_ledger)
+         VALUES ($1, $2), ($3, $4)
+         ON CONFLICT (contract) DO UPDATE SET last_ledger = EXCLUDED.last_ledger`,
+        [contract, 42, otherContract, 900],
+      );
+
+      // Loan controller, health check, and indexer status must all use
+      // the migrated column and select the requested contract.
+      const loanLedger = await query(
+        'SELECT last_ledger FROM indexer_state WHERE contract = $1 LIMIT 1',
+        [contract],
+      );
+      expect(Number(loanLedger.rows[0]?.last_ledger)).toBe(42);
+
+      const status = await query(
+        'SELECT last_ledger, updated_at FROM indexer_state WHERE contract = $1 LIMIT 1',
+        [contract],
+      );
+      expect(Number(status.rows[0]?.last_ledger)).toBe(42);
+      expect(status.rows[0]?.updated_at).toBeDefined();
+
+      const health = await query(
+        'SELECT last_ledger FROM indexer_state WHERE contract = $1 LIMIT 1',
+        [contract],
+      );
+      expect(Number(health.rows[0]?.last_ledger)).toBe(42);
+
+      // Development seeding must update only the configured contract.
+      await query(
+        `UPDATE indexer_state SET last_ledger = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE contract = $2`,
+        [50, contract],
+      );
+      const rows = await query(
+        'SELECT contract, last_ledger FROM indexer_state WHERE contract IN ($1, $2)',
+        [contract, otherContract],
+      );
+      const ledgers = new Map(
+        rows.rows.map((row: { contract: string; last_ledger: number }) => [
+          row.contract,
+          Number(row.last_ledger),
+        ]),
+      );
+      expect(ledgers.get(contract)).toBe(50);
+      expect(ledgers.get(otherContract)).toBe(900);
+    } finally {
+      await query('DELETE FROM indexer_state WHERE contract = $1', [otherContract]);
+    }
+  });
+
   it('should have the loan_disputes table after running up', async () => {
     const result = await query(
       `SELECT EXISTS (
