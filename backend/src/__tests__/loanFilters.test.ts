@@ -301,7 +301,7 @@ describe('GET /api/loans/borrower/:borrower – filters', () => {
       expect(resMax.status).toBe(200);
     });
 
-    it('accepts cursor parameter for pagination', async () => {
+    it('accepts a positive integer cursor for pagination', async () => {
       mockQuery.mockImplementation(async (sql: unknown) => {
         if (typeof sql === 'string' && sql.includes('indexer_state')) {
           return { rows: [{ last_indexed_ledger: 1000 }], rowCount: 1 };
@@ -310,11 +310,34 @@ describe('GET /api/loans/borrower/:borrower – filters', () => {
       });
 
       const res = await request(app)
-        .get(`/api/loans/borrower/${TEST_BORROWER}?cursor=sample-cursor-token`)
+        .get(`/api/loans/borrower/${TEST_BORROWER}?cursor=12`)
         .set(bearer(TEST_BORROWER));
 
       expect(res.status).toBe(200);
+      expect(mockQuery.mock.calls).toEqual(
+        expect.arrayContaining([
+          [expect.stringContaining('loan_id > $8'), expect.arrayContaining([12])],
+        ]),
+      );
     });
+
+    it.each(['abc', '12abc', 'sample-cursor-token'])(
+      'returns 400 for malformed cursor %s',
+      async (cursor) => {
+        const res = await request(app)
+          .get(`/api/loans/borrower/${TEST_BORROWER}?cursor=${cursor}`)
+          .set(bearer(TEST_BORROWER));
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatchObject({
+          code: 'VALIDATION_ERROR',
+          field: 'cursor',
+        });
+        expect(
+          mockQuery.mock.calls.some(([sql]) => sql.includes('loan_id > $8')),
+        ).toBe(false);
+      },
+    );
   });
 
   describe('authorization paths', () => {
