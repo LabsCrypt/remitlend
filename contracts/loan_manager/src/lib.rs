@@ -859,7 +859,13 @@ impl LoanManager {
                 Vec::new(&env)
             }
         };
-        borrower_loans.retain(|&id| id != loan_id);
+        let mut new_loans: Vec<u32> = Vec::new(&env);
+        for id in borrower_loans {
+            if id != loan_id {
+                new_loans.push_back(id);
+            }
+        }
+        borrower_loans = new_loans;
         if borrower_loans.is_empty() {
             env.storage().persistent().remove(&borrower_loans_key);
             // Drop any stale legacy copy in instance storage.
@@ -1848,9 +1854,8 @@ impl LoanManager {
             Self::adjust_total_outstanding(&env, &token, -unpaid_principal);
             loan.status = LoanStatus::Repaid;
             Self::decrement_borrower_loan_count(&env, &loan.borrower);
-            // Remove loan ID from borrower's active loan list so terminal loans
-            // no longer accumulate in BorrowerLoans.
-            Self::remove_loan_from_borrower_loans(&env, &loan.borrower, loan_id);
+            // Loan ID remains in borrower_loans as a historical record.
+            // It will be removed when purge_loan is called.
         }
 
         // ── EFFECTS committed to storage before any cross-contract call ─────────
@@ -2269,10 +2274,9 @@ impl LoanManager {
 
         // Decrement the borrower's active loan count so cancelled loans
         // do not permanently consume loan slots. (#1591)
+        // Loan ID remains in borrower_loans as a historical record.
+        // It will be removed when purge_loan is called.
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
-        // Remove loan ID from borrower's active loan list so terminal loans
-        // no longer accumulate in BorrowerLoans.
-        Self::remove_loan_from_borrower_loans(&env, &loan.borrower, loan_id);
 
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;
@@ -2319,10 +2323,8 @@ impl LoanManager {
         // Decrement the borrower's active loan count so rejected loans
         // do not permanently consume loan slots. (#1591)
         Self::decrement_borrower_loan_count(&env, &loan.borrower);
-        // Remove loan ID from borrower's active loan list so terminal loans
-        // no longer accumulate in BorrowerLoans.
-        Self::remove_loan_from_borrower_loans(&env, &loan.borrower, loan_id);
-
+        // Loan ID remains in borrower_loans as a historical record.
+        // It will be removed when purge_loan is called.
         if collateral_to_release > 0 {
             use soroban_sdk::token::TokenClient;
             let token: Address = env
