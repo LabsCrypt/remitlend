@@ -276,6 +276,7 @@ jobs:
           src/app/stores/__tests__/useGamificationStore.rewardDedup.test.ts
           src/app/utils/csv.test.ts
           src/app/utils/piiMask.test.ts
+          src/app/components/global_ui/LanguageSwitcher.test.tsx
           --runInBand
         working-directory: frontend
 
