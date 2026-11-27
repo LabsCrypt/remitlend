@@ -701,24 +701,24 @@ const seedIndexerState = async () => {
   logger.info('Updating indexer_state...');
 
   const lastSeededLedger = Math.max(...loanEventSeeds.map((event) => event.ledger));
-  const existing = await query(`SELECT id FROM indexer_state ORDER BY id DESC LIMIT 1`);
+  const contract = process.env.LOAN_MANAGER_CONTRACT_ID ?? 'default';
+  const existing = await query('SELECT id FROM indexer_state WHERE contract = $1', [contract]);
 
   if ((existing.rowCount ?? 0) > 0) {
     await query(
       `UPDATE indexer_state
-       SET last_indexed_ledger = $1,
-           last_indexed_cursor = $2,
+       SET last_ledger = $1,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = (SELECT id FROM indexer_state ORDER BY id DESC LIMIT 1)`,
-      [lastSeededLedger, 'seeded-dev-data'],
+       WHERE contract = $2`,
+      [lastSeededLedger, contract],
     );
     return;
   }
 
   await query(
-    `INSERT INTO indexer_state (last_indexed_ledger, last_indexed_cursor, updated_at)
+    `INSERT INTO indexer_state (contract, last_ledger, updated_at)
      VALUES ($1, $2, CURRENT_TIMESTAMP)`,
-    [lastSeededLedger, 'seeded-dev-data'],
+    [contract, lastSeededLedger],
   );
 };
 
@@ -738,9 +738,10 @@ const resetDevelopmentData = async () => {
 
   await query(
     `UPDATE indexer_state
-     SET last_indexed_ledger = 0,
-         last_indexed_cursor = NULL,
-         updated_at = CURRENT_TIMESTAMP`,
+     SET last_ledger = 0,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE contract = $1`,
+    [process.env.LOAN_MANAGER_CONTRACT_ID ?? 'default'],
   );
 };
 

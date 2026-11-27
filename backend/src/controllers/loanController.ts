@@ -248,12 +248,11 @@ type BorrowerLoan = {
 };
 
 const getLatestLedger = async (): Promise<number> => {
-  const result = await query(
-    'SELECT last_indexed_ledger FROM indexer_state ORDER BY id DESC LIMIT 1',
-    [],
-  );
+  const result = await query('SELECT last_ledger FROM indexer_state WHERE contract = $1 LIMIT 1', [
+    process.env.LOAN_MANAGER_CONTRACT_ID ?? 'default',
+  ]);
 
-  return result.rows[0]?.last_indexed_ledger ?? 0;
+  return Number(result.rows[0]?.last_ledger ?? 0);
 };
 
 export { roundToCents };
