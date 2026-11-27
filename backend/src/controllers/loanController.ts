@@ -248,10 +248,9 @@ type BorrowerLoan = {
 };
 
 const getLatestLedger = async (): Promise<number> => {
-  const result = await query(
-    'SELECT last_ledger FROM indexer_state WHERE contract = $1 LIMIT 1',
-    [process.env.LOAN_MANAGER_CONTRACT_ID ?? 'default'],
-  );
+  const result = await query('SELECT last_ledger FROM indexer_state WHERE contract = $1 LIMIT 1', [
+    process.env.LOAN_MANAGER_CONTRACT_ID ?? 'default',
+  ]);
 
   return Number(result.rows[0]?.last_ledger ?? 0);
 };
