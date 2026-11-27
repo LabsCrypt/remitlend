@@ -7029,3 +7029,49 @@ fn test_stale_index_is_reported_instead_of_being_used() {
     let result = LoanManager::check_index_freshness(0, 1);
     assert!(matches!(result, Ok(())));
 }
+
+
+#[test]
+fn test_high_rate_interest_respects_global_debt_cap_across_windows() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+    env.ledger().set_sequence_number(1);
+
+    let (manager, nft_client, pool_client, token_id, _admin) = setup_test(&env);
+    let borrower = Address::generate(&env);
+    nft_client.mint(
+        &borrower,
+        &600,
+        &BytesN::from_array(&env, &[0u8; 32]),
+        &String::from_str(&env, "ipfs://high-rate-cap"),
+        &create_test_commitment(&env, 1),
+        &None,
+    );
+    StellarAssetClient::new(&env, &token_id).mint(&pool_client, &10_000);
+
+    manager.set_min_rate_bps(&100);
+    manager.set_max_rate_bps(&50_000);
+    manager.set_interest_rate(&50_000);
+
+    let loan_id = manager.request_loan(&borrower, &1_000, &1_000);
+    manager.approve_loan(&loan_id);
+    let approval_ledger = env.ledger().sequence();
+
+    // At 500% interest over one term, uncapped interest would be 5,000.
+    env.ledger().set_sequence_number(approval_ledger + 1_000);
+    let capped = manager.get_loan(&loan_id);
+    let outstanding = capped.amount - capped.principal_paid
+        + capped.accrued_interest + capped.accrued_late_fee;
+    assert_eq!(outstanding, 2_000);
+    assert_eq!(capped.accrued_interest, 1_000);
+    assert_eq!(capped.interest_residual, 0);
+
+    // Subsequent windows and late fees must not exceed the same ceiling.
+    env.ledger().set_sequence_number(approval_ledger + 2_000);
+    let later = manager.get_loan(&loan_id);
+    let later_outstanding = later.amount - later.principal_paid
+        + later.accrued_interest + later.accrued_late_fee;
+    assert_eq!(later_outstanding, 2_000);
+    assert_eq!(later.accrued_interest, 1_000);
+    assert_eq!(later.accrued_late_fee, 0);
+}
