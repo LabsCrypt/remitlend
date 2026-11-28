@@ -478,69 +478,62 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
           ) as dispute_freeze_ledger
         FROM loan_summaries
       ),
-      loan_fin AS (
-        SELECT
-          *,
-          FLOOR(GREATEST(0, principal - total_repaid) * effective_rate_bps * GREATEST(0, COALESCE(dispute_freeze_ledger, $2) - effective_approved_ledger) / (10000 * effective_term_ledgers)) as accrued_interest
-        FROM loan_calculations
-      ),
       loan_final AS (
         SELECT
           *,
-          (principal + accrued_interest - total_repaid) as total_owed,
-          CASE 
+          CASE
             WHEN approved_at IS NOT NULL THEN (approved_at + (effective_term_ledgers * ${LEDGER_CLOSE_SECONDS} || ' seconds')::interval)
             ELSE NOW()
           END as next_payment_deadline,
-          CASE 
+          -- active vs repaid is NOT decided here: the response derives it
+          -- from the windowed accrual replay below, which a whole-term SQL
+          -- formula cannot reproduce for multi-instalment loans (#1382).
+          -- Keeping a second formula here made the status filter disagree
+          -- with the status the same endpoint returns (#2232), so the SQL
+          -- only classifies the states that do not depend on accrual.
+          CASE
             WHEN approved_ledger IS NULL OR approved_ledger = 0 OR $2 < approved_ledger THEN 'pending_indexing'
             WHEN is_defaulted = 1 THEN 'defaulted'
-            WHEN (principal + accrued_interest - total_repaid) > 0.01 THEN 'active'
-            ELSE 'repaid'
+            ELSE 'active'
           END as status
-        FROM loan_fin
+        FROM loan_calculations
       )
-      SELECT *, COUNT(*) OVER() as full_count
+      SELECT *
       FROM loan_final
-      WHERE ($3::text IS NULL OR status = $3)
-        AND ($4::numeric IS NULL OR principal >= $4)
-        AND ($5::numeric IS NULL OR principal <= $5)
-        AND ($6::timestamp IS NULL OR approved_at >= $6)
-        AND ($7::timestamp IS NULL OR approved_at <= $7)
-        AND ($8::int IS NULL OR loan_id > $8)
+      WHERE ($3::numeric IS NULL OR principal >= $3)
+        AND ($4::numeric IS NULL OR principal <= $4)
+        AND ($5::timestamp IS NULL OR approved_at >= $5)
+        AND ($6::timestamp IS NULL OR approved_at <= $6)
       ORDER BY loan_id ASC
-      LIMIT $9
     `;
 
   const cursorValue = cursor ? Number.parseInt(cursor, 10) : null;
   const queryParams = [
     borrower,
     currentLedger,
-    status && status !== 'all' ? status : null,
     amountRange?.min ?? null,
     amountRange?.max ?? null,
     effectiveDateRange?.start ?? null,
     effectiveDateRange?.end ?? null,
-    cursorValue,
-    limit + 1,
   ];
 
   const result = await query(loansQuery, queryParams);
-
-  const totalCount = result.rows.length > 0 ? Number.parseInt(result.rows[0].full_count, 10) : 0;
-
-  const hasNext = result.rows.length > limit;
-  const trimmedRows = hasNext ? result.rows.slice(0, limit) : result.rows;
+  const candidateRows = result.rows as Record<string, unknown>[];
 
   // Issue #1382: the borrower's loans are accrued with the same windowed
   // replay the detail endpoint uses, so both endpoints report the same
   // interest and owed amount for a loan.
-  const listedLoanIds = trimmedRows.map((row: Record<string, unknown>) => Number(row.loan_id));
+  //
+  // Issue #2232: the loan status filter is applied to the status this replay
+  // produces (below), not to a whole-term SQL formula, so a `?status=` page
+  // always agrees with the `status` reported in the payload. That requires
+  // accruing every candidate loan before a page can be taken.
+  const listedLoanIds = candidateRows.map((row) => Number(row.loan_id));
   const { settlements: settlementsByLoan, lateFees: lateFeesByLoan } =
     await loadLoanSettlements(listedLoanIds);
   const snapshotsByLoan = await loadAccrueSnapshots(listedLoanIds);
 
-  const loans: BorrowerLoan[] = trimmedRows.map((row: Record<string, unknown>) => {
+  const allLoans: BorrowerLoan[] = candidateRows.map((row) => {
     const isPending = row.status === 'pending_indexing';
     const loanId = Number(row.loan_id);
     const loanSettlements = settlementsByLoan.get(loanId) ?? [];
@@ -599,6 +592,18 @@ export const getBorrowerLoans = asyncHandler(async (req: Request, res: Response)
         : {}),
     };
   });
+
+  const statusFilter = status && status !== 'all' ? status : null;
+  const filteredLoans = statusFilter
+    ? allLoans.filter((loan) => loan.status === statusFilter)
+    : allLoans;
+  const totalCount = filteredLoans.length;
+  const remainingLoans =
+    cursorValue === null
+      ? filteredLoans
+      : filteredLoans.filter((loan) => loan.loanId > cursorValue);
+  const hasNext = remainingLoans.length > limit;
+  const loans = hasNext ? remainingLoans.slice(0, limit) : remainingLoans;
 
   const lastLoan = loans.length > 0 ? loans[loans.length - 1] : undefined;
   const nextCursor = hasNext && lastLoan ? String(lastLoan.loanId) : null;

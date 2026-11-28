@@ -226,6 +226,8 @@ describe('disputed-loan accrued interest parity across loan endpoints', () => {
 
     expect(borrowerListSql).toContain('dispute_freeze_ledger');
     expect(borrowerListSql).toContain("d.status = 'open'");
-    expect(borrowerListSql).toContain('COALESCE(dispute_freeze_ledger, $2)');
+    // The freeze ledger is resolved in SQL and applied by the windowed replay
+    // in the controller, not by a whole-term interest formula in the query.
+    expect(borrowerListSql).not.toContain('COALESCE(dispute_freeze_ledger, $2)');
   });
 });
