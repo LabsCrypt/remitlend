@@ -1344,7 +1344,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::MaxTermLedgers)
-            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
+            .unwrap_or(u32::MAX);
         if term < min_term || term > max_term {
             return Err(LoanError::InvalidTerm);
         }
@@ -2455,7 +2455,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::MaxTermLedgers)
-            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
+            .unwrap_or(u32::MAX);
         if new_term < min_term || new_term > max_term {
             return Err(LoanError::InvalidTerm);
         }
@@ -2989,7 +2989,7 @@ impl LoanManager {
             .storage()
             .instance()
             .get(&DataKey::MaxTermLedgers)
-            .unwrap_or(Self::DEFAULT_TERM_LEDGERS);
+            .unwrap_or(u32::MAX);
         if min_term > max_term {
             return Err(LoanError::InvalidTerm);
         }
@@ -3020,7 +3020,7 @@ impl LoanManager {
             .instance()
             .get(&DataKey::MinTermLedgers)
             .unwrap_or(0);
-        if max_term == 0 || max_term < min_term {
+        if max_term < min_term {
             return Err(LoanError::InvalidTerm);
         }
         Self::admin(&env).require_auth();
