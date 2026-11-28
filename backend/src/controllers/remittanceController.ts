@@ -322,7 +322,13 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
         txHash: stellarResult.txHash,
         status: stellarResult.status,
       });
-      await remittanceService.updateRemittanceStatus(id, 'failed', undefined, failureMessage);
+      await remittanceService.updateRemittanceStatus(
+        id,
+        'failed',
+        undefined,
+        failureMessage,
+        'processing',
+      );
       throw AppError.internal(failureMessage);
     }
 
@@ -345,14 +351,23 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
       status: stellarResult.status,
     });
 
-    // Notify sender of successful submission
-    await notificationService.createNotification({
-      userId: senderAddress,
-      type: 'repayment_confirmed',
-      title: 'Remittance Sent',
-      message: `Your remittance of ${remittance.amount} ${remittance.fromCurrency} was submitted successfully. Transaction: ${stellarResult.txHash}`,
-      actionUrl: `/remittances/${remittance.id}`,
-    });
+    // Notify sender of successful submission. Delivery is best-effort: the
+    // payment is already confirmed and persisted, so a notification outage must
+    // never surface as a failed submit or roll the record back (#2230).
+    try {
+      await notificationService.createNotification({
+        userId: senderAddress,
+        type: 'repayment_confirmed',
+        title: 'Remittance Sent',
+        message: `Your remittance of ${remittance.amount} ${remittance.fromCurrency} was submitted successfully. Transaction: ${stellarResult.txHash}`,
+        actionUrl: `/remittances/${remittance.id}`,
+      });
+    } catch (notificationError) {
+      logger.withContext().warn('Failed to send remittance confirmation notification', {
+        remittanceId: id,
+        error: notificationError instanceof Error ? notificationError.message : 'Unknown error',
+      });
+    }
 
     res.json({
       success: true,
@@ -373,12 +388,22 @@ export const submitRemittanceTransaction = asyncHandler(async (req: Request, res
       error instanceof AppError && error.statusCode >= 400 && error.statusCode < 500;
 
     if (id && !isClientError) {
-      await remittanceService.updateRemittanceStatus(
+      // Only a remittance that is still in flight may be marked failed. Once the
+      // completion write has landed the money moved on-chain, so this guarded
+      // transition leaves the terminal `completed` status untouched (#2230).
+      const markedFailed = await remittanceService.updateRemittanceStatus(
         id,
         'failed',
         undefined,
         error instanceof Error ? error.message : 'Unknown error',
+        'processing',
       );
+
+      if (!markedFailed) {
+        logger.withContext().warn('Remittance was not marked failed; it is no longer processing', {
+          remittanceId: id,
+        });
+      }
     }
 
     throw error;

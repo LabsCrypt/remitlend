@@ -332,25 +332,30 @@ export const remittanceService = {
    * resolves `null` when that guard matched nothing because a concurrent
    * submission claimed the remittance first (#1850). Callers must treat `null`
    * as "already submitted" rather than overwriting the other request's state.
-   * The unguarded `completed` / `failed` transitions only ever miss the row
-   * when it does not exist, which still throws 404.
+   * Without `fromStatus` the `completed` / `failed` transitions only ever miss
+   * the row when it does not exist, which still throws 404. Passing
+   * `fromStatus` guards them the same way, so a caller can demand that the row
+   * is still in flight before overwriting it (a `failed` write can then never
+   * clobber a `completed` payment, #2230).
    */
   async updateRemittanceStatus(
     id: string,
     status: 'processing' | 'completed' | 'failed',
     transactionHash?: string,
     errorMessage?: string,
+    fromStatus?: 'pending' | 'processing',
   ): Promise<Remittance | null> {
     try {
       // Two concurrent submissions can both read `pending` before either write
       // lands, so the claim is conditioned on the row's current status inside
       // the same statement: exactly one matches, everyone else gets no rows.
-      const pendingGuard = status === 'processing' ? `AND status = 'pending'` : '';
+      const guardStatus = status === 'processing' ? 'pending' : fromStatus;
+      const statusGuard = guardStatus ? `AND status = '${guardStatus}'` : '';
 
       const result = await query(
         `UPDATE remittances 
          SET status = $1, transaction_hash = $2, error_message = $3, updated_at = $4
-         WHERE id = $5 ${pendingGuard}
+         WHERE id = $5 ${statusGuard}
          RETURNING *`,
         [status, transactionHash || null, errorMessage || null, new Date().toISOString(), id],
       );
