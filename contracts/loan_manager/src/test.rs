@@ -7032,7 +7032,7 @@ fn test_stale_index_is_reported_instead_of_being_used() {
 
 
 #[test]
-fn test_term_default_matches_enforced_limit_and_rejects_u32_max() {
+fn test_configured_max_term_is_enforced_without_changing_legacy_default() {
     let env = Env::default();
     env.mock_all_auths_allowing_non_root_auth();
     let (manager, nft_client, _pool, _token, _admin) = setup_test(&env);
@@ -7046,17 +7046,17 @@ fn test_term_default_matches_enforced_limit_and_rejects_u32_max() {
         &create_test_commitment(&env, 19),
         &None,
     );
-    let max_term = manager.get_max_term_ledgers();
-    assert_eq!(max_term, 17_280);
+    manager.set_max_term_ledgers(&17_280);
+    assert_eq!(manager.get_max_term_ledgers(), 17_280);
     assert_eq!(
         manager.try_request_loan(&borrower, &1_000, &u32::MAX),
         Err(Ok(LoanError::InvalidTerm))
     );
     assert_eq!(
-        manager.try_request_loan(&borrower, &1_000, &(max_term + 1)),
+        manager.try_request_loan(&borrower, &1_000, &17_281),
         Err(Ok(LoanError::InvalidTerm))
     );
-    assert!(manager.try_request_loan(&borrower, &1_000, &max_term).is_ok());
+    assert!(manager.try_request_loan(&borrower, &1_000, &17_280).is_ok());
 }
 
 #[test]
@@ -7074,8 +7074,10 @@ fn test_approval_rejects_due_date_overflow_without_approving_loan() {
         &create_test_commitment(&env, 20),
         &None,
     );
-    let loan_id = manager.request_loan(&borrower, &1_000, &17_280);
-    env.ledger().set_sequence_number(u32::MAX - 100);
+    // Legacy configurations permit large terms. The overflow must be
+    // rejected at approval without advancing the ledger so far that the
+    // Soroban test host archives the contract instance.
+    let loan_id = manager.request_loan(&borrower, &1_000, &u32::MAX);
     assert_eq!(
         manager.try_approve_loan(&loan_id),
         Err(Ok(LoanError::InvalidTerm))
